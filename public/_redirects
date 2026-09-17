@@ -1,0 +1,5 @@
+/calculadora.html /calculadora.html 200
+/calculadora/index.html /calculadora/index.html 200
+/calculadora/* /calculadora/:splat 200
+/* /index.html 200
+

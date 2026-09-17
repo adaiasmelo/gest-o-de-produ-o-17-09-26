@@ -1,0 +1,57 @@
+
+                     })).filter(i => i.value > 0);
+                 }
+
+                 if (data.length === 0) return null;
+                 
+                 // Sort data descending for rank
+                 data.sort((a, b) => b.value - a.value);
+
+                 return (
+                  <div id={`chart-${idx}`} key={idx} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col">
+                    {/* Header */}
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h3 className="text-sm font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
+                           {idx === 0 && <span className="text-yellow-500">🏆</span>} {chart.title}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mt-1">{chart.description}</p>
+                      </div>
+                      <button onClick={() => handleDownloadChartPNG(`chart-${idx}`, chart.title)} className="p-2 text-blue-500 bg-blue-50 rounded-xl hover:bg-blue-100 transition-all">
+                        <ImageIcon size={18} />
+                      </button>
+                    </div>
+
+                    {/* Chart */}
+                    <div className="h-72 relative w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={data}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={70}
+                            outerRadius={90}
+                            paddingAngle={3}
+                            dataKey="value"
+                            stroke="none"
+                            labelLine={{ stroke: '#cbd5e1', strokeWidth: 1.5 }}
+                            label={renderCustomizedLabel}
+                          >
+                            {data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={chart.color[index % chart.color.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', padding: '12px' }}
+                            itemStyle={{ fontSize: '12px', fontWeight: 'bold', color: '#1e293b' }}
+                            formatter={(value: number) => [chart.formatter(value), '']}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-3">
+                       {data.map((entry, i) => (
+     

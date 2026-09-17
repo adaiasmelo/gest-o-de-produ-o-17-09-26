@@ -1,0 +1,6 @@
+{
+  "name": "Manupackaging - Controle de Produção",
+  "description": "Aplicativo de apontamento de produção industrial com dashboard de eficiência, metas e análise de perdas.",
+  "requestFramePermissions": ["notifications", "camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,893 @@
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { 
+  Plus, Settings, BarChart3, FileText, Search, 
+  Printer, ShieldCheck, Download, Upload, Trash2, Cpu, 
+  Save, X, Edit2, LogOut, Calendar, CalendarDays, TrendingUp, AlertTriangle, CheckSquare, Square, FileSpreadsheet, Info, ChevronLeft, ChevronRight, FileDown, AlertCircle, ImageIcon, Target, LayoutDashboard, Users, PieChart as PieChartIcon, EyeOff, ChevronDown, Filter, RotateCcw, Clock, Briefcase, MapPin, UserCheck
+} from 'lucide-react';
+import { 
+  Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend 
+} from 'recharts';
+import confetti from 'canvas-confetti';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { ProductionEntry, Shift, Employee } from './types';
+import { INITIAL_DATA, GOAL_VALUE as DEFAULT_GOAL, DEFAULT_OPERATORS, DEFAULT_EMPLOYEES } from './constants';
+import LaunchModal from './components/LaunchModal';
+import ShiftModal from './components/ShiftModal';
+import OperatorModal from './components/OperatorModal';
+import EmployeeModal from './components/EmployeeModal';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
+
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  if (!percent || percent < 0.01) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius * 1.25;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black">
+      {`${(percent * 100).toFixed(1)}%`}
+    </text>
+  );
+};
+
+interface OperatorStat {
+  name: string;
+  prod: number;
+  ecoA: number;
+  ecoBP: number;
+  ecoBM: number;
+  borra: number;
+  p_manut: number;
+  p_proc: number;
+  p_outros: number;
+}
+
+const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('manupackaging_session'));
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'personnel'>(() => {
+    return (localStorage.getItem('manupackaging_active_tab') as 'dashboard' | 'reports' | 'personnel') || 'dashboard';
+  });
+  const [selectedTimeframe, setSelectedTimeframe] = useState<'month' | 'today' | 'yesterday' | 'week'>(() => {
+    return (localStorage.getItem('manupackaging_timeframe') as 'month' | 'today' | 'yesterday' | 'week') || 'month';
+  });
+
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  
+  const [dashOperator, setDashOperator] = useState('');
+  const [dashMachine, setDashMachine] = useState('');
+  const [dashStartDate, setDashStartDate] = useState('');
+  const [dashEndDate, setDashEndDate] = useState('');
+  
+  const [selectedChartId, setSelectedChartId] = useState<string | null>('all');
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const [dashboardMonth, setDashboardMonth] = useState(() => {
+    const savedMonth = localStorage.getItem('manupackaging_dashboard_month');
+    return savedMonth || new Date().toISOString().slice(0, 7);
+  });
+
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_data');
+      let data = saved ? JSON.parse(saved) : INITIAL_DATA;
+      if (Array.isArray(data)) {
+        return data.map((item: any) => ({
+          ...item,
+          id: item.id || Math.random().toString(36).substr(2, 9)
+        }));
+      }
+      return INITIAL_DATA;
+    } catch (e) {
+      return INITIAL_DATA;
+    }
+  });
+
+  const [goalValue, setGoalValue] = useState<number>(() => {
+    const saved = localStorage.getItem('manupackaging_goal');
+    return saved ? parseFloat(saved) : DEFAULT_GOAL;
+  });
+
+  const [operators, setOperators] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_operators');
+      return saved ? JSON.parse(saved) : DEFAULT_OPERATORS;
+    } catch (e) {
+      return DEFAULT_OPERATORS;
+    }
+  });
+
+  const [shifts, setShifts] = useState<Shift[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_shifts');
+      return saved ? JSON.parse(saved) : [
+        { id: '1', name: 'Diurno 1', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+        { id: '2', name: 'Noturno 1', startTime: '19:00', endTime: '07:00', type: 'Noturno' }
+      ];
+    } catch (e) {
+      return [
+        { id: '1', name: 'Diurno 1', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+        { id: '2', name: 'Noturno 1', startTime: '19:00', endTime: '07:00', type: 'Noturno' }
+      ];
+    }
+  });
+
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_employees');
+      return saved ? JSON.parse(saved) : DEFAULT_EMPLOYEES;
+    } catch (e) {
+      return DEFAULT_EMPLOYEES;
+    }
+  });
+
+  const activeMachines = ['Cast 1', 'Cast 2', 'Erema 1', 'Ghezzi', 'Lintech', 'Wutec'];
+
+  useEffect(() => { localStorage.setItem('manupackaging_data', JSON.stringify(productionData)); }, [productionData]);
+  useEffect(() => { localStorage.setItem('manupackaging_shifts', JSON.stringify(shifts)); }, [shifts]);
+  useEffect(() => { localStorage.setItem('manupackaging_goal', goalValue.toString()); }, [goalValue]);
+  useEffect(() => { localStorage.setItem('manupackaging_operators', JSON.stringify(operators)); }, [operators]);
+  useEffect(() => { localStorage.setItem('manupackaging_active_tab', activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem('manupackaging_timeframe', selectedTimeframe); }, [selectedTimeframe]);
+  useEffect(() => { localStorage.setItem('manupackaging_dashboard_month', dashboardMonth); }, [dashboardMonth]);
+  useEffect(() => { localStorage.setItem('manupackaging_employees', JSON.stringify(employees)); }, [employees]);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ProductionEntry | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSaveEntry = (newEntry: Omit<ProductionEntry, 'id'> & { id?: string }) => {
+    if (newEntry.id) {
+      setProductionData(prev => prev.map(e => e.id === newEntry.id ? (newEntry as ProductionEntry) : e));
+    } else {
+      setProductionData(prev => [{ ...newEntry, id: Math.random().toString(36).substr(2, 9) } as ProductionEntry, ...prev]);
+    }
+  };
+
+  const handleSaveEmployee = (emp: any) => {
+    if (emp.id) {
+      setEmployees(prev => prev.map(e => e.id === emp.id ? { ...emp } : e));
+    } else {
+      setEmployees(prev => [...prev, { ...emp, id: Math.random().toString(36).substr(2, 9) }]);
+    }
+  };
+
+  const handleDeleteEmployee = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Colaborador',
+      message: 'Deseja remover este colaborador da gestão de pessoal?',
+      onConfirm: () => {
+        setEmployees(prev => prev.filter(e => e.id !== id));
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const handleDeleteReportItem = (id: string) => {
+    if (!id) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Registro',
+      message: 'Tem certeza que deseja excluir permanentemente este registro de produção?',
+      onConfirm: () => {
+        setProductionData(prev => prev.filter(item => item.id !== id));
+        setSelectedIds(prev => prev.filter(sid => sid !== id));
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Selecionados',
+      message: `Tem certeza que deseja excluir permanentemente os ${selectedIds.length} registros selecionados?`,
+      onConfirm: () => {
+        setProductionData(prev => prev.filter(item => !selectedIds.includes(item.id)));
+        setSelectedIds([]);
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const toggleSelectAll = (filtered: ProductionEntry[]) => {
+    if (filtered.length === 0) return;
+    if (selectedIds.length === filtered.length) setSelectedIds([]);
+    else setSelectedIds(filtered.map(i => i.id));
+  };
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleExportBackup = () => {
+    const backup = {
+      productionData,
+      goalValue,
+      shifts,
+      operators,
+      employees,
+      version: '1.0.0',
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backup_manupackaging_${new Date().toLocaleDateString('sv-SE')}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportCSV = () => {
+    const dataToExport = filteredReports;
+    if (dataToExport.length === 0) {
+      alert('Nenhum dado para exportar.');
+      return;
+    }
+    const headers = ['Data', 'Operador', 'Máquina', 'Turno', 'Peso Bruto', 'Tara', 'Peso Líquido', 'Volumes', 'Tubetes', 'Eco A', 'Eco B (P)', 'Eco B (M)', 'Borra Total', 'Manutencao (min)', 'Processo (min)', 'Outros (min)'];
+    const rows = dataToExport.map(e => [e.date, `"${e.operator}"`, `"${e.machine}"`, `"${e.shift}"`, e.grossWeight, e.tara, e.netWeight, e.volumes, e.tubetes, e.ecoA, e.ecoBP, e.ecoBM, e.borraTotal, e.manutencaoMin, e.processoMin, e.outrosMin]);
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `producao_manupackaging_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.productionData) setProductionData(data.productionData);
+        if (data.goalValue) setGoalValue(Number(data.goalValue));
+        if (data.shifts) setShifts(data.shifts);
+        if (data.operators) setOperators(data.operators);
+        if (data.employees) setEmployees(data.employees);
+        alert('Backup carregado com sucesso!');
+      } catch (err) {
+        alert('Erro ao processar o arquivo de backup.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleResetSystem = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Resetar Sistema',
+      message: 'ATENÇÃO: Isso apagará todos os dados de produção, turnos e equipe, restaurando o sistema para as configurações de fábrica. Esta ação não pode ser desfeita!',
+      onConfirm: () => {
+        localStorage.clear();
+        window.location.reload();
+      }
+    });
+  };
+
+  const formatWeight = (val: number) => {
+    if (val >= 1000) {
+      return (val / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' T';
+    }
+    return val.toLocaleString('pt-BR') + ' KG';
+  };
+  
+  const formatMinutes = (val: number) => val >= 60 ? `${Math.floor(val / 60)}h ${val % 60}m` : `${val} min`;
+
+  const getShiftDuration = (shiftName: string) => {
+    const shift = shifts.find(s => s.name === shiftName);
+    if (!shift) return 720;
+    const [h1, m1] = shift.startTime.split(':').map(Number);
+    const [h2, m2] = shift.endTime.split(':').map(Number);
+    let minutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+    if (minutes < 0) minutes += 1440;
+    return minutes === 0 ? 1440 : minutes;
+  };
+
+  const filteredDataForCharts = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toLocaleDateString('sv-SE');
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toLocaleDateString('sv-SE');
+
+    return productionData.filter(e => {
+      if (dashOperator && e.operator !== dashOperator) return false;
+      if (dashMachine && e.machine !== dashMachine) return false;
+      if (dashStartDate && dashEndDate) return e.date >= dashStartDate && e.date <= dashEndDate;
+      else if (dashStartDate) return e.date >= dashStartDate;
+      else if (dashEndDate) return e.date <= dashEndDate;
+
+      if (selectedTimeframe === 'today') return e.date === todayStr;
+      if (selectedTimeframe === 'yesterday') return e.date === yesterdayStr;
+      if (selectedTimeframe === 'month') return e.date.startsWith(dashboardMonth);
+      if (selectedTimeframe === 'week') {
+        const startOfWeek = new Date(now);
+        startOfWeek.setHours(0,0,0,0);
+        startOfWeek.setDate(now.getDate() - now.getDay()); 
+        const entryDate = new Date(e.date + 'T00:00:00');
+        return entryDate >= startOfWeek;
+      }
+      return true;
+    });
+  }, [productionData, selectedTimeframe, dashboardMonth, dashOperator, dashMachine, dashStartDate, dashEndDate]);
+
+  const filteredReports = useMemo(() => {
+    return productionData.filter(e => {
+      const matchesSearch = e.operator.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            e.machine.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            e.date.includes(searchTerm);
+      const matchesStart = filterStartDate ? e.date >= filterStartDate : true;
+      const matchesEnd = filterEndDate ? e.date <= filterEndDate : true;
+      return matchesSearch && matchesStart && matchesEnd;
+    });
+  }, [productionData, searchTerm, filterStartDate, filterEndDate]);
+
+  const reportSums = useMemo(() => {
+    return filteredReports.reduce((acc, e) => {
+      acc.grossWeight += (e.grossWeight || 0);
+      acc.tara += (e.tara || 0);
+      acc.netWeight += (e.netWeight || 0);
+      acc.volumes += (e.volumes || 0);
+      acc.tubetes += (e.tubetes || 0);
+      acc.ecoA += (e.ecoA || 0);
+      acc.ecoBP += (e.ecoBP || 0);
+      acc.ecoBM += (e.ecoBM || 0);
+      acc.borraTotal += (e.borraTotal || 0);
+      acc.manutencaoMin += (e.manutencaoMin || 0);
+      acc.processoMin += (e.processoMin || 0);
+      acc.outrosMin += (e.outrosMin || 0);
+      return acc;
+    }, {
+      grossWeight: 0, tara: 0, netWeight: 0, volumes: 0, tubetes: 0,
+      ecoA: 0, ecoBP: 0, ecoBM: 0, borraTotal: 0, manutencaoMin: 0, processoMin: 0, outrosMin: 0
+    });
+  }, [filteredReports]);
+
+  const totals = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toLocaleDateString('sv-SE');
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toLocaleDateString('sv-SE');
+    const startOfWeek = new Date(now);
+    startOfWeek.setHours(0,0,0,0);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    const baseFiltered = productionData.filter(e => {
+      const matchesOp = dashOperator ? e.operator === dashOperator : true;
+      const matchesMac = dashMachine ? e.machine === dashMachine : true;
+      return matchesOp && matchesMac;
+    });
+    const results = { month: 0, today: 0, yesterday: 0, week: 0, range: 0, rangeCast1: 0, rangeCast2: 0 };
+    baseFiltered.forEach(e => {
+      if (dashStartDate || dashEndDate) {
+        let inRange = true;
+        if (dashStartDate && e.date < dashStartDate) inRange = false;
+        if (dashEndDate && e.date > dashEndDate) inRange = false;
+        if (inRange) {
+          results.range += e.netWeight;
+          if (e.machine === 'Cast 1') results.rangeCast1 += e.netWeight;
+          if (e.machine === 'Cast 2') results.rangeCast2 += e.netWeight;
+        }
+      }
+      if (e.date.startsWith(dashboardMonth)) results.month += e.netWeight;
+      if (e.date === todayStr) results.today += e.netWeight;
+      if (e.date === yesterdayStr) results.yesterday += e.netWeight;
+      const entryDate = new Date(e.date + 'T00:00:00');
+      if (entryDate >= startOfWeek) results.week += e.netWeight;
+    });
+    return results;
+  }, [productionData, dashboardMonth, dashOperator, dashMachine, dashStartDate, dashEndDate]);
+
+  const projection = useMemo(() => {
+    const today = new Date();
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const currentDay = today.getDate();
+    const daysRemaining = Math.max(1, lastDayOfMonth - currentDay + 1);
+    const remainingToGoal = Math.max(0, goalValue - totals.month);
+    const dailyTargetNeeded = remainingToGoal / daysRemaining;
+    return { daysRemaining, remainingToGoal, dailyTargetNeeded };
+  }, [totals.month, goalValue]);
+
+  const stats = useMemo(() => {
+    const initialStats: Record<string, OperatorStat> = {};
+    operators.forEach(op => {
+      initialStats[op] = { name: op, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, p_manut: 0, p_proc: 0, p_outros: 0 };
+    });
+    filteredDataForCharts.forEach(e => {
+      if (!initialStats[e.operator]) {
+        initialStats[e.operator] = { name: e.operator, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, p_manut: 0, p_proc: 0, p_outros: 0 };
+      }
+      initialStats[e.operator].prod += (e.netWeight || 0);
+      initialStats[e.operator].ecoA += (e.ecoA || 0);
+      initialStats[e.operator].ecoBP += (e.ecoBP || 0);
+      initialStats[e.operator].ecoBM += (e.ecoBM || 0);
+      initialStats[e.operator].borra += (e.borraTotal || 0);
+      initialStats[e.operator].p_manut += (e.manutencaoMin || 0);
+      initialStats[e.operator].p_proc += (e.processoMin || 0);
+      initialStats[e.operator].p_outros += (e.outrosMin || 0);
+    });
+    return Object.values(initialStats);
+  }, [filteredDataForCharts, operators]);
+
+  const isRangeActive = !!(dashStartDate || dashEndDate);
+
+  const allCharts = [
+    { id: 'prod', title: '🏆 Produção Líquida', key: 'prod', color: COLORS, formatter: formatWeight, description: 'Distribuição da produção total de material acabado entre os operadores no período.' },
+    { id: 'ecoA', title: '♻️ Eco A (KG)', key: 'ecoA', color: ['#10b981', '#34d399', '#6ee7b7'], formatter: formatWeight, description: 'Volume total de material reciclado do tipo Eco A gerado durante o processo.' },
+    { id: 'ecoBP', title: '♻️ Eco B Produção', key: 'ecoBP', color: ['#3b82f6', '#60a5fa', '#93c5fd'], formatter: formatWeight, description: 'Resíduos tipo Eco B originados diretamente da operação normal das máquinas.' },
+    { id: 'ecoBM', title: '♻️ Eco B Manutenção', key: 'ecoBM', color: ['#8b5cf6', '#a78bfa', '#c4b5fd'], formatter: formatWeight, description: 'Resíduos tipo Eco B gerados especificamente em processos de manutenção e ajuste.' },
+    { id: 'borra', title: '🗑️ Borra Total', key: 'borra', color: ['#f43f5e', '#fb7185', '#fda4af'], formatter: formatWeight, description: 'Desperdício não reaproveitável (purga) gerado por cada operador/máquina.' },
+    { id: 'p_manut', title: '⏱️ Paradas (Min)', key: 'p_manut', color: ['#ef4444', '#f59e0b', '#64748b'], formatter: formatMinutes, description: 'Tempo total em minutos que as máquinas ficaram inoperantes por diversos motivos.' },
+    { id: 'comp_prod_ecob', title: '📊 Líquido vs Eco B', key: 'comparison_prod_ecob', color: ['#3b82f6', '#8b5cf6'], formatter: formatWeight, description: 'Comparação proporcional entre o material final produzido e o volume de Eco B gerado.' },
+    { id: 'comp_ecob_rec', title: '📊 Eco B vs Reciclado', key: 'comparison_ecob_recycled', color: ['#f59e0b', '#10b981'], formatter: formatWeight, description: 'Análise entre o material de descarte (Eco B) gerado na extrusão e o volume recuperado pela Erema.' },
+    { id: 'comp_prod_borra', title: '📊 Líquido vs Borra', key: 'comparison_prod_borra', color: ['#3b82f6', '#ef4444'], formatter: formatWeight, description: 'Análise de eficiência comparando o peso líquido produzido contra o desperdício total.' },
+    { id: 'comp_time', title: '⏱️ Tempo Máquina (Min)', key: 'comparison_time', color: ['#3b82f6', '#ef4444'], formatter: formatMinutes, description: 'Indicador de disponibilidade: tempo de operação ativa vs tempo total de paradas.' }
+  ];
+
+  const visibleCharts = useMemo(() => {
+    if (selectedChartId === null) return [];
+    if (selectedChartId === 'all') return allCharts;
+    return allCharts.filter(c => c.id === selectedChartId);
+  }, [selectedChartId]);
+
+  const handleSaveDashboardPDF = async () => {
+    if (!dashboardRef.current || isGeneratingPDF) return;
+    setIsGeneratingPDF(true);
+    try {
+      const canvas = await html2canvas(dashboardRef.current, { scale: 2, useCORS: true, backgroundColor: '#f8fafc' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 10;
+      const contentWidth = pageWidth - (margin * 2);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(18);
+      pdf.text("Manupackaging - Controle de Produção", margin, 15);
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfImgHeight = (imgProps.height * contentWidth) / imgProps.width;
+      pdf.addImage(imgData, 'PNG', margin, 35, contentWidth, pdfImgHeight);
+      pdf.save(`dashboard_producao_${dashboardMonth}.pdf`);
+    } catch (error) { alert("Erro ao gerar PDF."); }
+    finally { setIsGeneratingPDF(false); }
+  };
+
+  const handleDownloadChartPNG = async (id: string, title: string) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    try {
+      const canvas = await html2canvas(element, { scale: 3, backgroundColor: '#ffffff' });
+      const url = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `grafico_${title.replace(/\s/g, '_')}.png`;
+      link.click();
+    } catch (e) { alert("Erro ao salvar imagem."); }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg mb-4">
+              <ShieldCheck size={32} />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">Manupackaging</h1>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Painel de Acesso</p>
+          </div>
+          <button onClick={() => { localStorage.setItem('manupackaging_session', 'true'); setIsAuthenticated(true); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-blue-200 uppercase text-xs">Entrar no Sistema</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Cpu size={20} /></div>
+          <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase">Controle de Produção</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setEditingEntry(null); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-lg shadow-blue-100 transition-all flex items-center justify-center"><Plus size={24} /></button>
+          <button onClick={() => setIsMenuOpen(true)} className="p-2.5 text-slate-400 hover:bg-slate-100 rounded-xl transition-all relative"><Settings size={20} /></button>
+        </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto px-4 mt-6 no-print">
+        <div className="flex items-center p-1 bg-slate-200/50 rounded-2xl w-fit">
+          <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+            <BarChart3 size={18} /><span className="text-[11px] font-black uppercase tracking-tighter">Painel de Indicadores</span>
+          </button>
+          <button onClick={() => setActiveTab('reports')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl transition-all ${activeTab === 'reports' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+            <FileText size={18} /><span className="text-[11px] font-black uppercase tracking-tighter">Relatórios Analíticos</span>
+          </button>
+          <button onClick={() => setActiveTab('personnel')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl transition-all ${activeTab === 'personnel' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+            <Users size={18} /><span className="text-[11px] font-black uppercase tracking-tighter">Gestão de Pessoal</span>
+          </button>
+        </div>
+      </div>
+
+      <main className="max-w-[100vw] mx-auto p-4 space-y-6 overflow-x-hidden">
+        {activeTab === 'dashboard' ? (
+          <div ref={dashboardRef} className="space-y-6 max-w-6xl mx-auto">
+            <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-wrap items-center gap-4 no-print">
+              <div className="flex items-center gap-2 mr-2">
+                <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center"><Filter size={16} /></div>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Filtros</span>
+              </div>
+              <div className="flex-1 min-w-[180px]">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Operador</label>
+                <select value={dashOperator} onChange={(e) => setDashOperator(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-700 outline-none">
+                  <option value="">Todos os Operadores</option>
+                  {operators.map(op => <option key={op} value={op}>{op}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[180px]">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Máquina</label>
+                <select value={dashMachine} onChange={(e) => setDashMachine(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-700 outline-none">
+                  <option value="">Todas as Máquinas</option>
+                  {activeMachines.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[150px]">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Data Inicial</label>
+                <input type="date" value={dashStartDate} onChange={(e) => setDashStartDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-700 outline-none" />
+              </div>
+              <div className="flex-1 min-w-[150px]">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Data Final</label>
+                <input type="date" value={dashEndDate} onChange={(e) => setDashEndDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-700 outline-none" />
+              </div>
+              {(dashOperator || dashMachine || dashStartDate || dashEndDate) && (
+                <button onClick={() => { setDashOperator(''); setDashMachine(''); setDashStartDate(''); setDashEndDate(''); }} className="self-end px-4 py-2.5 text-red-500 hover:bg-red-50 rounded-xl text-[10px] font-black uppercase">Limpar</button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <button 
+                onClick={() => setSelectedTimeframe('month')} 
+                className={`flex flex-col p-6 rounded-2xl border transition-all duration-300 h-full ${ 
+                  selectedTimeframe === 'month' 
+                  ? 'bg-blue-600 border-blue-500 shadow-xl text-white' 
+                  : 'bg-white border-slate-100 text-slate-800 shadow-sm' 
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${selectedTimeframe === 'month' ? 'bg-white/20' : 'bg-blue-50 text-blue-600'}`}>
+                    <Target size={24} />
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-[10px] font-black uppercase tracking-widest block ${selectedTimeframe === 'month' ? 'text-blue-100' : 'text-slate-400'}`}>
+                      Meta Mensal
+                    </span>
+                    <span className={`text-[9px] font-bold ${selectedTimeframe === 'month' ? 'text-blue-200' : 'text-slate-400'}`}>
+                      Alvo: {formatWeight(goalValue)}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-2xl font-black leading-none mb-1">{formatWeight(totals.month)}</div>
+                    <p className={`text-[9px] font-bold uppercase tracking-tighter ${selectedTimeframe === 'month' ? 'text-blue-200' : 'text-slate-400'}`}>Produzido até agora</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="w-full bg-black/10 h-2.5 rounded-full overflow-hidden border border-white/10">
+                      <div className={`h-full transition-all duration-700 ${selectedTimeframe === 'month' ? 'bg-white' : 'bg-blue-500'}`} style={{ width: `${Math.min((totals.month / (goalValue || 1)) * 100, 100)}%` }}></div>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tighter">
+                      <span>{((totals.month / (goalValue || 1)) * 100).toFixed(1)}%</span>
+                      <span>Faltam {formatWeight(projection.remainingToGoal)}</span>
+                    </div>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${selectedTimeframe === 'month' ? 'bg-white/10 border-white/20' : 'bg-slate-50 border-slate-100'}`}>
+                    <div className="flex justify-between items-center">
+                      <div className="space-y-0.5">
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${selectedTimeframe === 'month' ? 'text-blue-200' : 'text-slate-400'}`}>Média p/ bater meta</p>
+                        <p className="text-sm font-black">{formatWeight(projection.dailyTargetNeeded)}/dia</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${selectedTimeframe === 'month' ? 'text-blue-200' : 'text-slate-400'}`}>Dias Restantes</p>
+                        <p className="text-sm font-black">{projection.daysRemaining} dias</p>
+                      </div>
+                    </div>
+                  </div>
+                  {isRangeActive && (
+                    <div className="pt-2 border-t border-white/20">
+                       <p className="text-[9px] font-black uppercase tracking-widest text-blue-200">Total no Filtro</p>
+                       <p className="text-sm font-black">{formatWeight(totals.range)}</p>
+                    </div>
+                  )}
+                </div>
+              </button>
+              <button onClick={() => setSelectedTimeframe('yesterday')} className={`flex flex-col p-6 rounded-2xl border transition-all duration-300 h-full ${ selectedTimeframe === 'yesterday' ? 'bg-emerald-600 border-emerald-500 shadow-xl text-white' : 'bg-white border-slate-100 text-slate-800 shadow-sm' }`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${selectedTimeframe === 'yesterday' ? 'bg-white/20' : 'bg-emerald-50 text-emerald-600'}`}>
+                    {isRangeActive ? <Cpu size={24} /> : <TrendingUp size={24} />}
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${selectedTimeframe === 'yesterday' ? 'text-emerald-100' : 'text-slate-400'}`}>
+                    {isRangeActive ? 'Total Cast 1' : 'Ontem'}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-2xl font-black">{formatWeight(isRangeActive ? totals.rangeCast1 : totals.yesterday)}</div>
+                  <p className="text-[9px] font-bold uppercase tracking-tighter opacity-80">{isRangeActive ? 'Produção Cast 1 no Período' : 'Produção do Dia Anterior'}</p>
+                </div>
+              </button>
+              <button onClick={() => setSelectedTimeframe('week')} className={`flex flex-col p-6 rounded-2xl border transition-all duration-300 h-full ${ selectedTimeframe === 'week' ? 'bg-violet-600 border-violet-500 shadow-xl text-white' : 'bg-white border-slate-100 text-slate-800 shadow-sm' }`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${selectedTimeframe === 'week' ? 'bg-white/20' : 'bg-violet-50 text-violet-600'}`}>
+                    {isRangeActive ? <Cpu size={24} /> : <CalendarDays size={24} />}
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${selectedTimeframe === 'week' ? 'text-violet-100' : 'text-slate-400'}`}>
+                    {isRangeActive ? 'Total Cast 2' : 'Esta Semana'}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-2xl font-black">{formatWeight(isRangeActive ? totals.rangeCast2 : totals.week)}</div>
+                  <p className="text-[9px] font-bold uppercase tracking-tighter opacity-80">{isRangeActive ? 'Produção Cast 2 no Período' : 'Acumulado da Semana'}</p>
+                </div>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4 no-print">
+              <div className="relative group">
+                <select value={selectedChartId || ''} onChange={(e) => setSelectedChartId(e.target.value === '' ? null : e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-xs font-black text-slate-700 outline-none appearance-none uppercase tracking-widest pr-12">
+                  <option value="all">📊 Mostrar Todos os Gráficos</option>
+                  {allCharts.map(chart => ( <option key={chart.id} value={chart.id}>{chart.title}</option> ))}
+                  <option value="">Nenhum gráfico selecionado...</option>
+                </select>
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"> <ChevronDown size={20} /> </div>
+              </div>
+            </div>
+
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-500 animate-in slide-in-from-bottom-4 ${selectedChartId !== 'all' ? 'lg:grid-cols-1 max-w-2xl mx-auto' : ''}`}>
+              {visibleCharts.map((chart, idx) => {
+                let chartData: any[] = [];
+                let dataKey = chart.key;
+                const isOperatorChart = !chart.key.startsWith('comparison_');
+                if (chart.key === 'comparison_prod_ecob') {
+                  const totalProd = filteredDataForCharts.reduce((acc, c) => acc + (c.netWeight || 0), 0);
+                  const totalEcoB = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoBP || 0) + (c.ecoBM || 0), 0);
+                  chartData = [{ name: 'Produção', value: totalProd }, { name: 'Eco B', value: totalEcoB }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else if (chart.key === 'comparison_prod_borra') {
+                  const totalProd = filteredDataForCharts.reduce((acc, c) => acc + (c.netWeight || 0), 0);
+                  const totalBorra = filteredDataForCharts.reduce((acc, c) => acc + (c.borraTotal || 0), 0);
+                  chartData = [{ name: 'Produção', value: totalProd }, { name: 'Borra', value: totalBorra }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else if (chart.key === 'comparison_ecob_recycled') {
+                  const totalEcoB = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoBP || 0) + (c.ecoBM || 0), 0);
+                  const totalRecycled = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoA || 0), 0);
+                  chartData = [{ name: 'Eco B', value: totalEcoB }, { name: 'Reciclado', value: totalRecycled }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else if (chart.key === 'comparison_time') {
+                  let totalAvailable = 0; let totalDowntime = 0;
+                  filteredDataForCharts.forEach(item => { const shiftDuration = getShiftDuration(item.shift); totalAvailable += shiftDuration; totalDowntime += (item.manutencaoMin || 0) + (item.processoMin || 0) + (item.outrosMin || 0); });
+                  const totalRunning = Math.max(0, totalAvailable - totalDowntime);
+                  chartData = [{ name: 'Operação', value: totalRunning }, { name: 'Parada', value: totalDowntime }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else {
+                  chartData = stats.filter(s => (s[chart.key as keyof OperatorStat] as number) > 0).sort((a, b) => (b[chart.key as keyof OperatorStat] as number) - (a[chart.key as keyof OperatorStat] as number));
+                }
+                const cardId = `chart-card-${idx}`;
+                return (
+                  <div key={idx} id={cardId} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 min-h-[460px] flex flex-col group/card transition-all hover:shadow-xl">
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="font-black text-xs uppercase tracking-widest text-slate-800">{chart.title}</h3>
+                      <button onClick={() => handleDownloadChartPNG(cardId, chart.title)} className="p-1.5 text-slate-300 hover:text-blue-600 no-print"> <ImageIcon size={16} /> </button>
+                    </div>
+                    <div className="flex-1">
+                      {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} dataKey={isOperatorChart ? chart.key : dataKey} nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                              {chartData.map((_, i) => <Cell key={i} fill={chart.color[i % chart.color.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(val: any) => chart.formatter(val)} />
+                            <Legend iconType="circle" formatter={(value, entry: any) => <span className="text-[10px] font-bold text-slate-600">{value} ({chart.formatter(entry.payload.value || entry.payload[chart.key])})</span>} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : ( <div className="h-full flex items-center justify-center text-slate-300 font-bold text-xs uppercase text-center">Sem dados</div> )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : activeTab === 'reports' ? (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden max-w-6xl mx-auto">
+            <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4 flex-1 min-w-[300px]">
+                <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none" />
+                <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none" />
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Pesquisar..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 no-print">
+                {selectedIds.length > 0 && (
+                  <button onClick={handleDeleteSelected} className="p-2.5 bg-red-500 text-white rounded-xl flex items-center gap-2 text-[10px] font-black uppercase shadow-lg shadow-red-100">
+                    <Trash2 size={18} /> Excluir ({selectedIds.length})
+                  </button>
+                )}
+                <button onClick={handleExportCSV} className="p-2.5 bg-emerald-600 text-white rounded-xl flex items-center gap-2 text-[10px] font-black uppercase"><FileSpreadsheet size={18} /> CSV</button>
+                <button onClick={() => window.print()} className="p-2.5 bg-slate-800 text-white rounded-xl"><Printer size={18} /></button>
+              </div>
+            </div>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-[1500px]">
+                <thead>
+                  <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-4 py-4 text-center no-print">
+                      <button onClick={() => toggleSelectAll(filteredReports)}>
+                        {selectedIds.length === filteredReports.length && filteredReports.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}
+                      </button>
+                    </th>
+                    <th className="px-4 py-4">Data</th><th className="px-4 py-4">Operador</th><th className="px-4 py-4">Máquina</th><th className="px-4 py-4">Turno</th><th className="px-4 py-4 text-right">Peso Bruto</th><th className="px-4 py-4 text-right">Peso Líquido</th><th className="px-4 py-4 text-right">Eco A</th><th className="px-4 py-4 text-right">Borra</th><th className="px-4 py-4 text-right no-print">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[10px] font-bold">
+                  {filteredReports.map((e) => (
+                    <tr key={e.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.includes(e.id) ? 'bg-blue-50/30' : ''}`}>
+                      <td className="px-4 py-4 text-center no-print"><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggleSelectId(e.id)} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" /></td>
+                      <td className="px-4 py-4">{e.date}</td><td className="px-4 py-4">{e.operator}</td><td className="px-4 py-4 uppercase">{e.machine}</td><td className="px-4 py-4">{e.shift}</td><td className="px-4 py-4 text-right">{e.grossWeight}</td><td className="px-4 py-4 text-right text-blue-600 font-black">{e.netWeight}</td><td className="px-4 py-4 text-right">{e.ecoA}</td><td className="px-4 py-4 text-right text-red-500">{e.borraTotal}</td>
+                      <td className="px-4 py-4 text-right no-print">
+                        <button onClick={() => { setEditingEntry(e); setIsModalOpen(true); }} className="text-blue-500 p-1.5 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={12} /></button>
+                        <button onClick={() => handleDeleteReportItem(e.id)} className="text-red-400 p-1.5 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-800 text-white font-black">
+                    <td colSpan={5} className="px-4 py-3 text-right uppercase text-[10px]">TOTAIS:</td>
+                    <td className="px-4 py-3 text-right">{reportSums.grossWeight}</td><td className="px-4 py-3 text-right text-blue-300">{reportSums.netWeight}</td><td className="px-4 py-3 text-right">{reportSums.ecoA}</td><td className="px-4 py-3 text-right text-red-300">{reportSums.borraTotal}</td><td className="no-print"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+               <div className="flex items-center gap-4">
+                  <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-100"><Users size={28} /></div>
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800 leading-none">Gestão de Pessoal</h2>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Escala Industrial Manupackaging</p>
+                  </div>
+               </div>
+               <button onClick={() => { setEditingEmployee(null); setIsEmployeeModalOpen(true); }} className="px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all flex items-center gap-3">
+                  <Plus size={18} /> Novo Colaborador
+               </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+               <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><UserCheck size={24} /></div>
+                  <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ativos</p><p className="text-xl font-black">{employees.filter(e => e.status === 'Ativo').length}</p></div>
+               </div>
+               <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                  <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><Calendar size={24} /></div>
+                  <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Férias</p><p className="text-xl font-black">{employees.filter(e => e.status === 'Férias').length}</p></div>
+               </div>
+               <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center"><AlertCircle size={24} /></div>
+                  <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vagas</p><p className="text-xl font-black">{employees.filter(e => e.status === 'Vaga Aberta').length}</p></div>
+               </div>
+               <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                  <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><Briefcase size={24} /></div>
+                  <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total</p><p className="text-xl font-black">{employees.length}</p></div>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {employees.length > 0 ? employees.map((emp) => (
+                 <div key={emp.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 hover:shadow-xl transition-all group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 opacity-[0.03] rotate-12 transition-all group-hover:scale-110 group-hover:rotate-0"><Users size={96} /></div>
+                    <div className="flex justify-between items-start mb-6">
+                       <div className="flex items-center gap-4">
+                          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg ${emp.status === 'Ativo' ? 'bg-blue-50 text-blue-600' : emp.status === 'Férias' ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-600'}`}>
+                            {emp.name ? emp.name.substring(0, 2).toUpperCase() : '??'}
+                          </div>
+                          <div>
+                            <h3 className="font-black text-slate-800 text-lg leading-none">{emp.name || 'Vaga Aberta'}</h3>
+                            <span className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest mt-2 ${emp.status === 'Ativo' ? 'bg-emerald-100 text-emerald-700' : emp.status === 'Férias' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>{emp.status}</span>
+                          </div>
+                       </div>
+                       <div className="flex gap-1">
+                          <button onClick={() => { setEditingEmployee(emp); setIsEmployeeModalOpen(true); }} className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={16} /></button>
+                          <button onClick={() => handleDeleteEmployee(emp.id)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-1"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Briefcase size={10} /> Função</p><p className="text-xs font-bold text-slate-700">{emp.role}</p></div>
+                       <div className="space-y-1"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Clock size={10} /> Turno</p><p className="text-xs font-bold text-slate-700">{emp.group}</p></div>
+                       <div className="space-y-1"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={10} /> Setor</p><p className="text-xs font-bold text-slate-700">{emp.sector}</p></div>
+                       <div className="space-y-1"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Cpu size={10} /> Máquina</p><p className="text-xs font-bold text-slate-700">{emp.machine}</p></div>
+                    </div>
+                    {emp.status === 'Férias' && (
+                      <div className="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between">
+                         <div><p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Retorno Previsto</p><p className="text-sm font-black text-orange-600">{emp.returnDate || 'Não definido'}</p></div>
+                         <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center"><Calendar size={18} /></div>
+                      </div>
+                    )}
+                 </div>
+               )) : (
+                 <div className="col-span-full py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100 flex flex-col items-center text-center space-y-4">
+                    <div className="w-20 h-20 bg-slate-50 text-slate-300 rounded-3xl flex items-center justify-center"><Users size={40} /></div>
+                    <div className="max-w-xs"><h3 className="text-lg font-black text-slate-800">Nenhum colaborador cadastrado</h3><p className="text-sm font-medium text-slate-400 mt-2">Comece adicionando os membros da sua equipe para gerenciar turnos e status.</p></div>
+                 </div>
+               )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)}></div>
+          <div className="relative w-85 bg-white shadow-2xl p-0 flex flex-col h-full animate-in slide-in-from-right duration-300">
+            <div className="bg-[#1e293b] p-8 text-white"><h2 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3"><Settings size={26} className="text-blue-500" /> Configurações</h2><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Sistema Manupackaging v1.0</p></div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              <div className="space-y-3"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Meta Mensal de Produção (KG)</label><div className="relative"><Target size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500" /><input type="number" value={goalValue} onChange={(e) => setGoalValue(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-100 p-4 pl-12 rounded-2xl font-black text-blue-600 outline-none focus:ring-4 focus:ring-blue-500/10" /></div></div>
+              <div className="grid grid-cols-1 gap-3">
+                <button onClick={() => { setIsOperatorModalOpen(true); setIsMenuOpen(false); }} className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-blue-50 text-slate-700 rounded-2xl text-[10px] font-black uppercase transition-all group"><span className="flex items-center gap-3"><Users size={18} className="text-blue-500" /> Gerenciar Equipe Prod.</span><ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500" /></button>
+                <button onClick={() => { setActiveTab('personnel'); setIsMenuOpen(false); }} className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-blue-50 text-slate-700 rounded-2xl text-[10px] font-black uppercase transition-all group"><span className="flex items-center gap-3"><UserCheck size={18} className="text-blue-500" /> Gestão de Pessoal</span><ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500" /></button>
+              </div>
+              <div className="pt-4 border-t border-slate-100 space-y-3"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Segurança e Dados</label><button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 p-4 bg-emerald-50 text-emerald-700 rounded-2xl text-[10px] font-black uppercase transition-all hover:bg-emerald-100"><Upload size={18} /> Importar Backup</button><input type="file" ref={fileInputRef} onChange={handleImport} accept=".json" className="hidden" /><button onClick={handleExportBackup} className="w-full flex items-center gap-3 p-4 bg-blue-50 text-blue-700 rounded-2xl text-[10px] font-black uppercase transition-all hover:bg-blue-100"><Download size={18} /> Exportar Backup</button><button onClick={handleResetSystem} className="w-full flex items-center gap-3 p-4 bg-red-50 text-red-700 rounded-2xl text-[10px] font-black uppercase transition-all hover:bg-red-100"><RotateCcw size={18} /> Resetar Sistema</button></div>
+              <div className="pt-4 space-y-3"><button onClick={handleSaveDashboardPDF} className="w-full p-4 bg-slate-800 hover:bg-black text-white rounded-2xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-3 shadow-xl shadow-slate-200"><FileDown size={18} /> Exportar PDF Dashboard</button></div>
+            </div>
+            <div className="p-6 bg-slate-50 border-t border-slate-100"><button onClick={() => { localStorage.removeItem('manupackaging_session'); setIsAuthenticated(false); }} className="w-full p-4 bg-white border border-red-100 text-red-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-red-50 transition-all"><LogOut size={16}/> Sair do Sistema</button></div>
+          </div>
+        </div>
+      )}
+
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-8 w-full max-sm shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4"><div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center"><AlertTriangle size={32} /></div><h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">{confirmDialog.title}</h3><p className="text-slate-500 text-sm font-medium">{confirmDialog.message}</p></div>
+            <div className="flex gap-3"><button onClick={() => setConfirmDialog(prev => ({...prev, isOpen: false}))} className="flex-1 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[10px] uppercase hover:bg-slate-200 transition-all">Cancelar</button><button onClick={confirmDialog.onConfirm} className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg shadow-red-100 hover:bg-red-700 transition-all">Confirmar</button></div>
+          </div>
+        </div>
+      )}
+
+      <LaunchModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingEntry(null); }} onSave={handleSaveEntry} operators={operators} activeMachines={activeMachines} availableShifts={shifts} initialData={editingEntry} />
+      <OperatorModal isOpen={isOperatorModalOpen} onClose={() => setIsOperatorModalOpen(false)} operators={operators} onUpdate={setOperators} />
+      <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={(newShift) => setShifts(prev => [...prev, { ...newShift, id: Math.random().toString(36).substr(2, 9) }])} />
+      <EmployeeModal isOpen={isEmployeeModalOpen} onClose={() => { setIsEmployeeModalOpen(false); setEditingEmployee(null); }} onSave={handleSaveEmployee} availableShifts={shifts} availableMachines={activeMachines} editingEmployee={editingEmployee} />
+    </div>
+  );
+};
+
+export default App;

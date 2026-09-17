@@ -1,0 +1,1006 @@
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { 
+  Plus, Settings, BarChart3, FileText, Search, 
+  Printer, ShieldCheck, Download, Upload, Trash2, Cpu, 
+  Save, X, Edit2, LogOut, Calendar, CalendarDays, TrendingUp, AlertTriangle, CheckSquare, Square, FileSpreadsheet, Info, ChevronLeft, ChevronRight, FileDown, AlertCircle, ImageIcon, Target, LayoutDashboard, Users, PieChart as PieChartIcon, EyeOff, ChevronDown
+} from 'lucide-react';
+import { 
+  Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend 
+} from 'recharts';
+import confetti from 'canvas-confetti';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { ProductionEntry, Shift } from './types';
+import { INITIAL_DATA, GOAL_VALUE as DEFAULT_GOAL, DEFAULT_OPERATORS } from './constants';
+import LaunchModal from './components/LaunchModal';
+import ShiftModal from './components/ShiftModal';
+import OperatorModal from './components/OperatorModal';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
+
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  if (!percent || percent < 0.01) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius * 1.25;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black">
+      {`${(percent * 100).toFixed(1)}%`}
+    </text>
+  );
+};
+
+interface OperatorStat {
+  name: string;
+  prod: number;
+  ecoA: number;
+  ecoBP: number;
+  ecoBM: number;
+  borra: number;
+  p_manut: number;
+  p_proc: number;
+  p_outros: number;
+}
+
+const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('manupackaging_session'));
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'reports'>(() => {
+    return (localStorage.getItem('manupackaging_active_tab') as 'dashboard' | 'reports') || 'dashboard';
+  });
+  const [selectedTimeframe, setSelectedTimeframe] = useState<'month' | 'today' | 'yesterday' | 'week'>(() => {
+    return (localStorage.getItem('manupackaging_timeframe') as 'month' | 'today' | 'yesterday' | 'week') || 'month';
+  });
+
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  
+  const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const [dashboardMonth, setDashboardMonth] = useState(() => {
+    const savedMonth = localStorage.getItem('manupackaging_dashboard_month');
+    return savedMonth || new Date().toISOString().slice(0, 7);
+  });
+
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_data');
+      let data = saved ? JSON.parse(saved) : INITIAL_DATA;
+      if (Array.isArray(data)) {
+        return data.map((item: any) => ({
+          ...item,
+          id: item.id || Math.random().toString(36).substr(2, 9)
+        }));
+      }
+      return INITIAL_DATA;
+    } catch (e) {
+      return INITIAL_DATA;
+    }
+  });
+
+  const [goalValue, setGoalValue] = useState<number>(() => {
+    const saved = localStorage.getItem('manupackaging_goal');
+    return saved ? parseFloat(saved) : DEFAULT_GOAL;
+  });
+
+  const [operators, setOperators] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_operators');
+      return saved ? JSON.parse(saved) : DEFAULT_OPERATORS;
+    } catch (e) {
+      return DEFAULT_OPERATORS;
+    }
+  });
+
+  const [shifts, setShifts] = useState<Shift[]>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_shifts');
+      return saved ? JSON.parse(saved) : [
+        { id: '1', name: 'Diurno 1', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+        { id: '2', name: 'Noturno 1', startTime: '19:00', endTime: '07:00', type: 'Noturno' }
+      ];
+    } catch (e) {
+      return [
+        { id: '1', name: 'Diurno 1', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+        { id: '2', name: 'Noturno 1', startTime: '19:00', endTime: '07:00', type: 'Noturno' }
+      ];
+    }
+  });
+
+  useEffect(() => { localStorage.setItem('manupackaging_data', JSON.stringify(productionData)); }, [productionData]);
+  useEffect(() => { localStorage.setItem('manupackaging_shifts', JSON.stringify(shifts)); }, [shifts]);
+  useEffect(() => { localStorage.setItem('manupackaging_goal', goalValue.toString()); }, [goalValue]);
+  useEffect(() => { localStorage.setItem('manupackaging_operators', JSON.stringify(operators)); }, [operators]);
+  useEffect(() => { localStorage.setItem('manupackaging_active_tab', activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem('manupackaging_timeframe', selectedTimeframe); }, [selectedTimeframe]);
+  useEffect(() => { localStorage.setItem('manupackaging_dashboard_month', dashboardMonth); }, [dashboardMonth]);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ProductionEntry | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSaveEntry = (newEntry: Omit<ProductionEntry, 'id'> & { id?: string }) => {
+    if (newEntry.id) {
+      setProductionData(prev => prev.map(e => e.id === newEntry.id ? (newEntry as ProductionEntry) : e));
+    } else {
+      setProductionData(prev => [{ ...newEntry, id: Math.random().toString(36).substr(2, 9) } as ProductionEntry, ...prev]);
+    }
+  };
+
+  const handleDeleteReportItem = (id: string) => {
+    if (!id) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Registro',
+      message: 'Tem certeza que deseja excluir permanentemente este registro de produção?',
+      onConfirm: () => {
+        setProductionData(prev => prev.filter(item => item.id !== id));
+        setSelectedIds(prev => prev.filter(sid => sid !== id));
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Selecionados',
+      message: `Tem certeza que deseja excluir permanentemente os ${selectedIds.length} registros selecionados?`,
+      onConfirm: () => {
+        setProductionData(prev => prev.filter(item => !selectedIds.includes(item.id)));
+        setSelectedIds([]);
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const toggleSelectAll = (filtered: ProductionEntry[]) => {
+    if (selectedIds.length === filtered.length) setSelectedIds([]);
+    else setSelectedIds(filtered.map(i => i.id));
+  };
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.productionData) setProductionData(data.productionData);
+        if (data.goalValue) setGoalValue(Number(data.goalValue));
+        if (data.shifts) setShifts(data.shifts);
+        if (data.operators) setOperators(data.operators);
+        alert('Backup carregado com sucesso!');
+      } catch (err) {
+        alert('Erro ao processar o backup.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const formatWeight = (val: number) => {
+    if (val >= 1000) {
+      return (val / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' T';
+    }
+    return val.toLocaleString('pt-BR') + ' KG';
+  };
+  
+  const formatMinutes = (val: number) => val >= 60 ? `${Math.floor(val / 60)}h ${val % 60}m` : `${val} min`;
+
+  const getShiftDuration = (shiftName: string) => {
+    const shift = shifts.find(s => s.name === shiftName);
+    if (!shift) return 720;
+    const [h1, m1] = shift.startTime.split(':').map(Number);
+    const [h2, m2] = shift.endTime.split(':').map(Number);
+    let minutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+    if (minutes < 0) minutes += 1440;
+    return minutes === 0 ? 1440 : minutes;
+  };
+
+  const filteredDataForCharts = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toLocaleDateString('sv-SE');
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toLocaleDateString('sv-SE');
+
+    return productionData.filter(e => {
+      if (selectedTimeframe === 'today') return e.date === todayStr;
+      if (selectedTimeframe === 'yesterday') return e.date === yesterdayStr;
+      if (selectedTimeframe === 'month') return e.date.startsWith(dashboardMonth);
+      if (selectedTimeframe === 'week') {
+        const startOfWeek = new Date(now);
+        startOfWeek.setHours(0,0,0,0);
+        startOfWeek.setDate(now.getDate() - now.getDay()); 
+        const entryDate = new Date(e.date + 'T00:00:00');
+        return entryDate >= startOfWeek;
+      }
+      return true;
+    });
+  }, [productionData, selectedTimeframe, dashboardMonth]);
+
+  const filteredReports = useMemo(() => {
+    return productionData.filter(e => {
+      const matchesSearch = e.operator.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            e.machine.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            e.date.includes(searchTerm);
+      const matchesStart = filterStartDate ? e.date >= filterStartDate : true;
+      const matchesEnd = filterEndDate ? e.date <= filterEndDate : true;
+      return matchesSearch && matchesStart && matchesEnd;
+    });
+  }, [productionData, searchTerm, filterStartDate, filterEndDate]);
+
+  const reportSums = useMemo(() => {
+    return filteredReports.reduce((acc, e) => {
+      acc.grossWeight += (e.grossWeight || 0);
+      acc.tara += (e.tara || 0);
+      acc.netWeight += (e.netWeight || 0);
+      acc.volumes += (e.volumes || 0);
+      acc.tubetes += (e.tubetes || 0);
+      acc.ecoA += (e.ecoA || 0);
+      acc.ecoBP += (e.ecoBP || 0);
+      acc.ecoBM += (e.ecoBM || 0);
+      acc.borraTotal += (e.borraTotal || 0);
+      acc.manutencaoMin += (e.manutencaoMin || 0);
+      acc.processoMin += (e.processoMin || 0);
+      acc.outrosMin += (e.outrosMin || 0);
+      return acc;
+    }, {
+      grossWeight: 0, tara: 0, netWeight: 0, volumes: 0, tubetes: 0,
+      ecoA: 0, ecoBP: 0, ecoBM: 0, borraTotal: 0, manutencaoMin: 0, processoMin: 0, outrosMin: 0
+    });
+  }, [filteredReports]);
+
+  const handleExportCSV = () => {
+    if (filteredReports.length === 0) return;
+    const headers = ['Data', 'Operador', 'Maquina', 'Turno', 'Peso Bruto', 'Tara', 'Peso Liquido', 'Volumes', 'Tubetes', 'Eco A', 'Eco B (P)', 'Eco B (M)', 'Borra Total', 'Manut (Min)', 'Proc (Min)', 'Outros (Min)'];
+    const rows = filteredReports.map(e => [e.date, e.operator, e.machine.toUpperCase(), e.shift, e.grossWeight, e.tara, e.netWeight, e.volumes, e.tubetes, e.ecoA, e.ecoBP, e.ecoBM, e.borraTotal, e.manutencaoMin, e.processoMin, e.outrosMin]);
+    const totalRow = ['TOTAIS', '', '', '', reportSums.grossWeight, reportSums.tara, reportSums.netWeight, reportSums.volumes, reportSums.tubetes, reportSums.ecoA, reportSums.ecoBP, reportSums.ecoBM, reportSums.borraTotal, reportSums.manutencaoMin, reportSums.processoMin, reportSums.outrosMin];
+    const csvContent = [headers, ...rows, totalRow].map(row => row.join(';')).join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `relatorio_producao_${new Date().toLocaleDateString('sv-SE')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleSaveDashboardPDF = async () => {
+    if (!dashboardRef.current || isGeneratingPDF) return;
+    setIsGeneratingPDF(true);
+    try {
+      const canvas = await html2canvas(dashboardRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#f8fafc'
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 10;
+      const contentWidth = pageWidth - (margin * 2);
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(18);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text("Manupackaging - Controle de Produção", margin, 15);
+      
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(71, 85, 105);
+      pdf.text("Relatório Geral de Indicadores Industriais", margin, 22);
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`Referência: ${getMonthName(dashboardMonth).toUpperCase()}`, margin, 28);
+      
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, 32, pageWidth - margin, 32);
+
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfImgHeight = (imgProps.height * contentWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', margin, 35, contentWidth, pdfImgHeight);
+      
+      pdf.save(`dashboard_producao_${dashboardMonth}.pdf`);
+    } catch (error) {
+      console.error(error);
+      alert("Ocorreu um erro ao gerar o PDF.");
+    } finally {
+      setIsGeneratingPDF(false);
+      setIsMenuOpen(false);
+    }
+  };
+
+  const handleDownloadChartPNG = async (id: string, title: string) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const buttons = element.querySelectorAll('.download-chart-btn');
+    buttons.forEach(btn => (btn as HTMLElement).style.display = 'none');
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      const url = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `grafico_${title.toLowerCase().replace(/[^a-z0-9]/g, '_')}.png`;
+      link.click();
+    } catch (error) {
+      alert("Erro ao exportar imagem do gráfico.");
+    } finally {
+      buttons.forEach(btn => (btn as HTMLElement).style.display = 'flex');
+    }
+  };
+
+  const stats = useMemo(() => {
+    const initialStats: Record<string, OperatorStat> = {};
+    operators.forEach(op => {
+      initialStats[op] = { name: op, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, p_manut: 0, p_proc: 0, p_outros: 0 };
+    });
+    filteredDataForCharts.forEach(e => {
+      if (!initialStats[e.operator]) {
+        initialStats[e.operator] = { name: e.operator, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, p_manut: 0, p_proc: 0, p_outros: 0 };
+      }
+      initialStats[e.operator].prod += (e.netWeight || 0);
+      initialStats[e.operator].ecoA += (e.ecoA || 0);
+      initialStats[e.operator].ecoBP += (e.ecoBP || 0);
+      initialStats[e.operator].ecoBM += (e.ecoBM || 0);
+      initialStats[e.operator].borra += (e.borraTotal || 0);
+      initialStats[e.operator].p_manut += (e.manutencaoMin || 0);
+      initialStats[e.operator].p_proc += (e.processoMin || 0);
+      initialStats[e.operator].p_outros += (e.outrosMin || 0);
+    });
+    return Object.values(initialStats);
+  }, [filteredDataForCharts, operators]);
+
+  const totals = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toLocaleDateString('sv-SE');
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toLocaleDateString('sv-SE');
+
+    const startOfWeek = new Date(now);
+    startOfWeek.setHours(0,0,0,0);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    return productionData.reduce((acc, e) => {
+      if (e.date.startsWith(dashboardMonth)) acc.month += e.netWeight;
+      if (e.date === todayStr) acc.today += e.netWeight;
+      if (e.date === yesterdayStr) acc.yesterday += e.netWeight;
+      const entryDate = new Date(e.date + 'T00:00:00');
+      if (entryDate >= startOfWeek) acc.week += e.netWeight;
+      return acc;
+    }, { month: 0, today: 0, yesterday: 0, week: 0 });
+  }, [productionData, dashboardMonth]);
+
+  const dailyTarget = useMemo(() => {
+    const now = new Date();
+    const currentMonthStr = now.toISOString().slice(0, 7);
+    if (!dashboardMonth.startsWith(currentMonthStr)) return 0;
+    const [year, month] = dashboardMonth.split('-').map(Number);
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const today = now.getDate();
+    const remainingDays = Math.max(1, lastDayOfMonth - today + 1);
+    const remainingToProduce = goalValue - totals.month;
+    if (remainingToProduce <= 0) return 0;
+    return remainingToProduce / remainingDays;
+  }, [totals.month, goalValue, dashboardMonth]);
+
+  useEffect(() => {
+    if (totals.month >= goalValue && totals.month > 0) {
+      const duration = 5 * 1000;
+      const animationEnd = Date.now() + duration;
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
+      const randomInRange = (min: number, someMax: number) => Math.random() * (someMax - min) + min;
+      const interval: any = setInterval(function() {
+        const timeLeft = animationEnd - Date.now();
+        if (timeLeft <= 0) return clearInterval(interval);
+        const particleCount = 50 * (timeLeft / duration);
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+      }, 250);
+      return () => clearInterval(interval);
+    }
+  }, [totals.month, goalValue]);
+
+  const changeMonth = (direction: number) => {
+    const [year, month] = dashboardMonth.split('-').map(Number);
+    const date = new Date(year, month - 1 + direction, 1);
+    setDashboardMonth(date.toISOString().slice(0, 7));
+  };
+
+  const getMonthName = (monthStr: string) => {
+    const [year, month] = monthStr.split('-').map(Number);
+    return new Date(year, month - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  };
+
+  const allCharts = [
+    { id: 'prod', title: '🏆 Produção Líquida', key: 'prod', color: COLORS, formatter: formatWeight, description: 'Distribuição da produção total de material acabado entre os operadores no período.' },
+    { id: 'ecoA', title: '♻️ Eco A (KG)', key: 'ecoA', color: ['#10b981', '#34d399', '#6ee7b7'], formatter: formatWeight, description: 'Volume total de material reciclado do tipo Eco A gerado durante o processo.' },
+    { id: 'ecoBP', title: '♻️ Eco B Produção', key: 'ecoBP', color: ['#3b82f6', '#60a5fa', '#93c5fd'], formatter: formatWeight, description: 'Resíduos tipo Eco B originados diretamente da operação normal das máquinas.' },
+    { id: 'ecoBM', title: '♻️ Eco B Manutenção', key: 'ecoBM', color: ['#8b5cf6', '#a78bfa', '#c4b5fd'], formatter: formatWeight, description: 'Resíduos tipo Eco B gerados especificamente em processos de manutenção e ajuste.' },
+    { id: 'borra', title: '🗑️ Borra Total', key: 'borra', color: ['#f43f5e', '#fb7185', '#fda4af'], formatter: formatWeight, description: 'Desperdício não reaproveitável (purga) gerado por cada operador/máquina.' },
+    { id: 'p_manut', title: '⏱️ Paradas (Min)', key: 'p_manut', color: ['#ef4444', '#f59e0b', '#64748b'], formatter: formatMinutes, description: 'Tempo total em minutos que as máquinas ficaram inoperantes por diversos motivos.' },
+    { id: 'comp_prod_ecob', title: '📊 Líquido vs Eco B', key: 'comparison_prod_ecob', color: ['#3b82f6', '#8b5cf6'], formatter: formatWeight, description: 'Comparação proporcional entre o material final produzido e o volume de Eco B gerado.' },
+    { id: 'comp_ecob_rec', title: '📊 Eco B vs Reciclado', key: 'comparison_ecob_recycled', color: ['#f59e0b', '#10b981'], formatter: formatWeight, description: 'Análise entre o material de descarte (Eco B) gerado na extrusão e o volume recuperado pela Erema.' },
+    { id: 'comp_prod_borra', title: '📊 Líquido vs Borra', key: 'comparison_prod_borra', color: ['#3b82f6', '#ef4444'], formatter: formatWeight, description: 'Análise de eficiência comparando o peso líquido produzido contra o desperdício total.' },
+    { id: 'comp_time', title: '⏱️ Tempo Máquina (Min)', key: 'comparison_time', color: ['#3b82f6', '#ef4444'], formatter: formatMinutes, description: 'Indicador de disponibilidade: tempo de operação ativa vs tempo total de paradas.' }
+  ];
+
+  const visibleCharts = useMemo(() => {
+    if (selectedChartId === null) return [];
+    if (selectedChartId === 'all') return allCharts;
+    return allCharts.filter(c => c.id === selectedChartId);
+  }, [selectedChartId]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg mb-4">
+              <ShieldCheck size={32} />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">Manupackaging</h1>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Painel de Acesso</p>
+          </div>
+          <button onClick={() => { localStorage.setItem('manupackaging_session', 'true'); setIsAuthenticated(true); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-blue-200 uppercase text-xs">Entrar no Sistema</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Cpu size={20} /></div>
+          <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase">Controle de Produção</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => { setEditingEntry(null); setIsModalOpen(true); }} 
+            className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-lg shadow-blue-100 transition-all flex items-center justify-center"
+            title="Novo Lançamento"
+          >
+            <Plus size={24} />
+          </button>
+          <button onClick={() => setIsMenuOpen(true)} className="p-2.5 text-slate-400 hover:bg-slate-100 rounded-xl transition-all relative">
+            <Settings size={20} />
+            <span className="absolute top-1 right-1 w-2 h-2 bg-blue-600 rounded-full border-2 border-white"></span>
+          </button>
+        </div>
+      </header>
+
+      {/* Tabs Selector Side by Side */}
+      <div className="max-w-6xl mx-auto px-4 mt-6 no-print">
+        <div className="flex items-center p-1 bg-slate-200/50 rounded-2xl w-fit">
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl transition-all duration-300 ${
+              activeTab === 'dashboard' 
+              ? 'bg-white text-blue-600 shadow-md' 
+              : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <BarChart3 size={18} />
+            <span className="text-[11px] font-black uppercase tracking-tighter">Painel de Indicadores</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('reports')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl transition-all duration-300 ${
+              activeTab === 'reports' 
+              ? 'bg-white text-blue-600 shadow-md' 
+              : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <FileText size={18} />
+            <span className="text-[11px] font-black uppercase tracking-tighter">Relatórios Analíticos</span>
+          </button>
+        </div>
+      </div>
+
+      <main className="max-w-[100vw] mx-auto p-4 space-y-6 overflow-x-hidden">
+        {activeTab === 'dashboard' ? (
+          <div ref={dashboardRef} className="space-y-6 max-w-6xl mx-auto">
+            {/* New 3-Column Indicator Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Meta Mensal Card */}
+              <button 
+                onClick={() => setSelectedTimeframe('month')} 
+                className={`relative group overflow-hidden flex flex-col p-6 rounded-2xl border transition-all duration-300 h-full ${
+                  selectedTimeframe === 'month' 
+                  ? 'bg-blue-600 border-blue-500 shadow-xl shadow-blue-200 text-white' 
+                  : 'bg-white border-slate-100 hover:border-blue-200 text-slate-800 shadow-sm'
+                } ${totals.month >= goalValue ? 'animate-goal-reached' : ''}`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${selectedTimeframe === 'month' ? 'bg-white/20' : 'bg-blue-50 text-blue-600'}`}>
+                    <Target size={24} />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${selectedTimeframe === 'month' ? 'text-blue-100' : 'text-slate-400'}`}>
+                    Meta Mensal
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-2xl font-black">{formatWeight(totals.month)}</div>
+                  <div className="w-full bg-black/10 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-1000 ${selectedTimeframe === 'month' ? 'bg-white' : 'bg-blue-600'}`} 
+                      style={{ width: `${Math.min((totals.month / (goalValue || 1)) * 100, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className={`text-[9px] font-bold flex flex-col gap-2 ${selectedTimeframe === 'month' ? 'text-blue-100' : 'text-slate-400'}`}>
+                    <div className="flex justify-between items-center">
+                      <span>{((totals.month / goalValue) * 100).toFixed(1)}% atingido</span>
+                      {totals.month < goalValue && <span className="italic font-black">Faltam {formatWeight(goalValue - totals.month)}</span>}
+                    </div>
+                    {dailyTarget > 0 && (
+                      <div className={`pt-2 border-t ${selectedTimeframe === 'month' ? 'border-white/10' : 'border-slate-100'} flex justify-between items-center`}>
+                        <span className="uppercase tracking-tighter">P/ bater meta:</span>
+                        <span className="font-black underline">{formatWeight(Math.ceil(dailyTarget))} / dia</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+
+              {/* Ontem Card */}
+              <button 
+                onClick={() => setSelectedTimeframe('yesterday')} 
+                className={`flex flex-col p-6 rounded-2xl border transition-all duration-300 h-full ${
+                  selectedTimeframe === 'yesterday' 
+                  ? 'bg-emerald-600 border-emerald-500 shadow-xl shadow-emerald-200 text-white' 
+                  : 'bg-white border-slate-100 hover:border-emerald-200 text-slate-800 shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${selectedTimeframe === 'yesterday' ? 'bg-white/20' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <TrendingUp size={24} />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${selectedTimeframe === 'yesterday' ? 'text-emerald-100' : 'text-slate-400'}`}>
+                    Ontem
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-2xl font-black">{formatWeight(totals.yesterday)}</div>
+                  <p className={`text-[9px] font-bold uppercase tracking-tighter ${selectedTimeframe === 'yesterday' ? 'text-emerald-100' : 'text-slate-400'}`}>
+                    Produção do Dia Anterior
+                  </p>
+                </div>
+              </button>
+
+              {/* Esta Semana Card */}
+              <button 
+                onClick={() => setSelectedTimeframe('week')} 
+                className={`flex flex-col p-6 rounded-2xl border transition-all duration-300 h-full ${
+                  selectedTimeframe === 'week' 
+                  ? 'bg-violet-600 border-violet-500 shadow-xl shadow-violet-200 text-white' 
+                  : 'bg-white border-slate-100 hover:border-violet-200 text-slate-800 shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${selectedTimeframe === 'week' ? 'bg-white/20' : 'bg-violet-50 text-violet-600'}`}>
+                    <CalendarDays size={24} />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${selectedTimeframe === 'week' ? 'text-violet-100' : 'text-slate-400'}`}>
+                    Esta Semana
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-2xl font-black">{formatWeight(totals.week)}</div>
+                  <p className={`text-[9px] font-bold uppercase tracking-tighter ${selectedTimeframe === 'week' ? 'text-violet-100' : 'text-slate-400'}`}>
+                    Acumulado (Dom - Sáb)
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4 no-print">
+              <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                  <PieChartIcon size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-none">Análise de Gráficos</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Escolha uma métrica para visualização detalhada</p>
+                </div>
+              </div>
+
+              <div className="relative group">
+                <select 
+                  value={selectedChartId || ''} 
+                  onChange={(e) => setSelectedChartId(e.target.value === '' ? null : e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10 transition-all cursor-pointer appearance-none uppercase tracking-widest pr-12"
+                >
+                  <option value="">Nenhum gráfico selecionado...</option>
+                  <option value="all">📊 Mostrar Todos os Gráficos</option>
+                  {allCharts.map(chart => (
+                    <option key={chart.id} value={chart.id}>{chart.title}</option>
+                  ))}
+                </select>
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 group-hover:text-blue-600 transition-colors">
+                  <ChevronDown size={20} />
+                </div>
+              </div>
+            </div>
+
+            {selectedChartId === null ? (
+              <div className="bg-white/50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center flex flex-col items-center gap-4 transition-all duration-500 no-print">
+                 <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-slate-300 shadow-sm border border-slate-100">
+                    <EyeOff size={32} />
+                 </div>
+                 <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Aguardando Seleção</p>
+                    <p className="text-[10px] text-slate-400 italic">Selecione um gráfico na caixa acima para carregar as informações.</p>
+                 </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 px-2 no-print-section animate-in fade-in duration-700">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Analisando: <span className="text-blue-600">{selectedChartId === 'all' ? 'Todos os Indicadores' : allCharts.find(c => c.id === selectedChartId)?.title}</span> 
+                    • Período: <span className="text-slate-600">{selectedTimeframe === 'today' ? 'Hoje' : selectedTimeframe === 'yesterday' ? 'Ontem' : selectedTimeframe === 'week' ? 'Esta Semana' : getMonthName(dashboardMonth)}</span>
+                  </p>
+                </div>
+
+                <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-500 animate-in slide-in-from-bottom-4 ${selectedChartId !== 'all' ? 'lg:grid-cols-1 max-w-2xl mx-auto' : ''}`}>
+                  {visibleCharts.map((chart, idx) => {
+                    let chartData: any[] = [];
+                    let dataKey = chart.key;
+                    const isOperatorChart = !chart.key.startsWith('comparison_');
+                    
+                    if (chart.key === 'comparison_prod_ecob') {
+                      const totalProd = filteredDataForCharts.reduce((acc, c) => acc + (c.netWeight || 0), 0);
+                      const totalEcoB = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoBP || 0) + (c.ecoBM || 0), 0);
+                      chartData = [{ name: 'Produção', value: totalProd }, { name: 'Eco B', value: totalEcoB }].filter(d => d.value > 0);
+                      dataKey = 'value';
+                    } else if (chart.key === 'comparison_ecob_recycled') {
+                      const totalEcoB = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoBP || 0) + (c.ecoBM || 0), 0);
+                      const totalRecycled = filteredDataForCharts.reduce((acc, c) => {
+                        if (c.machine.toLowerCase().includes('erema')) return acc + (c.netWeight || 0);
+                        return acc;
+                      }, 0);
+                      chartData = [{ name: 'Eco B Gerado', value: totalEcoB }, { name: 'Reciclado Erema', value: totalRecycled }].filter(d => d.value > 0);
+                      dataKey = 'value';
+                    } else if (chart.key === 'comparison_prod_borra') {
+                      const totalProd = filteredDataForCharts.reduce((acc, c) => acc + (c.netWeight || 0), 0);
+                      const totalBorra = filteredDataForCharts.reduce((acc, c) => acc + (c.borraTotal || 0), 0);
+                      chartData = [{ name: 'Produção', value: totalProd }, { name: 'Borra', value: totalBorra }].filter(d => d.value > 0);
+                      dataKey = 'value';
+                    } else if (chart.key === 'comparison_time') {
+                      let totalAvailable = 0;
+                      let totalDowntime = 0;
+                      filteredDataForCharts.forEach(item => {
+                         const shiftDuration = getShiftDuration(item.shift);
+                         if (item.isNoWorkDay) { totalAvailable += shiftDuration; totalDowntime += shiftDuration; } else { const stops = (item.manutencaoMin || 0) + (item.processoMin || 0) + (item.outrosMin || 0); totalAvailable += shiftDuration; totalDowntime += stops; }
+                      });
+                      const totalRunning = Math.max(0, totalAvailable - totalDowntime);
+                      chartData = [{ name: 'Produção', value: totalRunning }, { name: 'Parada', value: totalDowntime }].filter(d => d.value > 0);
+                      dataKey = 'value';
+                    } else {
+                      chartData = stats.filter(s => (s[chart.key as keyof OperatorStat] as number) > 0).sort((a, b) => (b[chart.key as keyof OperatorStat] as number) - (a[chart.key as keyof OperatorStat] as number));
+                    }
+                    const cardId = `chart-card-${idx}`;
+                    return (
+                      <div key={idx} id={cardId} className={`bg-white rounded-3xl p-6 shadow-sm border border-slate-100 min-h-[460px] flex flex-col hover:shadow-xl transition-all duration-500 hover:-translate-y-1 group/card ${selectedChartId !== 'all' ? 'min-h-[500px]' : ''}`}>
+                        <div className="flex justify-between items-start mb-4">
+                          <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 group-hover/card:text-blue-600 transition-colors">{chart.title}</h3>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDownloadChartPNG(cardId, chart.title); }}
+                            className="download-chart-btn p-1.5 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all no-print"
+                            title="Baixar PNG"
+                          >
+                            <ImageIcon size={16} />
+                          </button>
+                        </div>
+                        <div className="flex-1">
+                          {chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} dataKey={dataKey} nameKey="name" label={renderCustomizedLabel} paddingAngle={2} isAnimationActive={!isGeneratingPDF} animationBegin={200} animationDuration={1500} animationEasing="ease-out">
+                                  {chartData.map((_, i) => <Cell key={i} fill={chart.color[i % chart.color.length]} stroke="none" className="transition-all duration-300 hover:opacity-80 cursor-pointer" />)}
+                                </Pie>
+                                <Tooltip formatter={(val: any) => chart.formatter(val)} />
+                                <Legend iconType="circle" formatter={(value, entry: any, index: number) => (<span className="text-[10px] font-bold text-slate-600 ml-1">{isOperatorChart ? `${index + 1}º ` : ''}{value} ({chart.formatter(entry.payload.value || entry.payload[chart.key])})</span>)} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-slate-300 font-bold text-xs uppercase text-center">Sem dados para análise</div>
+                          )}
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-slate-50">
+                          <p className="text-[9px] font-medium text-slate-400 italic leading-relaxed flex items-start gap-1.5"><Info size={10} className="mt-0.5 shrink-0 text-blue-400" />{chart.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4 flex-1 min-w-[300px]">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Data Inicial</label>
+                  <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Data Final</label>
+                  <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none" />
+                </div>
+                <div className="flex flex-col gap-1 flex-1 min-w-[150px]">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Pesquisar</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Pesquisar registros..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 no-print self-end mb-1">
+                {selectedIds.length > 0 && (
+                  <button onClick={handleDeleteSelected} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-red-100 transition-all hover:bg-red-700 active:scale-95"><Trash2 size={14} /> Excluir ({selectedIds.length})</button>
+                )}
+                <button onClick={handleExportCSV} className="p-2.5 bg-emerald-600 text-white rounded-xl flex items-center gap-2 text-[10px] font-black uppercase transition-all hover:bg-emerald-700 shadow-lg shadow-emerald-100" title="Exportar Excel/CSV"><FileSpreadsheet size={18} /> Exportar CSV</button>
+                <button type="button" onClick={() => window.print()} className="p-2.5 bg-slate-800 text-white rounded-xl"><Printer size={18} /></button>
+              </div>
+            </div>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-[1500px]">
+                <thead>
+                  <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-4 py-4 text-center no-print">
+                      <button onClick={() => toggleSelectAll(filteredReports)} className="text-slate-400 hover:text-blue-500">{selectedIds.length > 0 && selectedIds.length === filteredReports.length ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button>
+                    </th>
+                    <th className="px-4 py-4">Data</th>
+                    <th className="px-4 py-4">Operador</th>
+                    <th className="px-4 py-4">Máquina</th>
+                    <th className="px-4 py-4">Turno</th>
+                    <th className="px-4 py-4 text-right">Peso Bruto</th>
+                    <th className="px-4 py-4 text-right">Tara</th>
+                    <th className="px-4 py-4 text-right">Peso Líquido</th>
+                    <th className="px-4 py-4 text-right">Volumes</th>
+                    <th className="px-4 py-4 text-right">Tubetes</th>
+                    <th className="px-4 py-4 text-right">Eco A</th>
+                    <th className="px-4 py-4 text-right">Eco B (P)</th>
+                    <th className="px-4 py-4 text-right">Eco B (M)</th>
+                    <th className="px-4 py-4 text-right">Borra Total</th>
+                    <th className="px-4 py-4 text-right">Manut. (Min)</th>
+                    <th className="px-4 py-4 text-right">Proc. (Min)</th>
+                    <th className="px-4 py-4 text-right">Outros (Min)</th>
+                    <th className="px-4 py-4 text-right no-print">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[10px] font-bold">
+                  {filteredReports.length > 0 ? (
+                    <>
+                      {filteredReports.map((e) => (
+                        <tr key={e.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.includes(e.id) ? 'bg-blue-50/30' : ''}`}>
+                          <td className="px-4 py-4 text-center no-print">
+                             <button onClick={() => toggleSelectId(e.id)} className="text-slate-300 hover:text-blue-500">{selectedIds.includes(e.id) ? <CheckSquare size={14} className="text-blue-600" /> : <Square size={14} />}</button>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">{e.date}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{e.operator}</td>
+                          <td className="px-4 py-4 whitespace-nowrap uppercase">{e.machine}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{e.shift}</td>
+                          <td className="px-4 py-4 text-right">{e.grossWeight}</td>
+                          <td className="px-4 py-4 text-right">{e.tara}</td>
+                          <td className="px-4 py-4 text-right text-blue-600 font-black">{e.netWeight}</td>
+                          <td className="px-4 py-4 text-right">{e.volumes}</td>
+                          <td className="px-4 py-4 text-right">{e.tubetes}</td>
+                          <td className="px-4 py-4 text-right text-emerald-600">{e.ecoA}</td>
+                          <td className="px-4 py-4 text-right text-emerald-600">{e.ecoBP}</td>
+                          <td className="px-4 py-4 text-right text-emerald-600">{e.ecoBM}</td>
+                          <td className="px-4 py-4 text-right text-red-500">{e.borraTotal}</td>
+                          <td className="px-4 py-4 text-right">{e.manutencaoMin}</td>
+                          <td className="px-4 py-4 text-right">{e.processoMin}</td>
+                          <td className="px-4 py-4 text-right">{e.outrosMin}</td>
+                          <td className="px-4 py-4 text-right space-x-2 no-print whitespace-nowrap">
+                            <button type="button" onClick={() => { setEditingEntry(e); setIsModalOpen(true); }} className="text-blue-500 p-1.5 hover:bg-blue-50 rounded-lg" title="Editar"><Edit2 size={12} /></button>
+                            <button type="button" onClick={(evt) => { evt.stopPropagation(); handleDeleteReportItem(e.id); }} className="text-red-400 p-1.5 hover:bg-red-50 rounded-lg transition-colors group" title="Excluir"><Trash2 size={12} className="group-hover:text-red-600" /></button>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-slate-800 text-white font-black text-[10px]">
+                        <td colSpan={5} className="px-4 py-3 text-right uppercase tracking-widest">Totais Registrados:</td>
+                        <td className="px-4 py-3 text-right">{reportSums.grossWeight}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.tara}</td>
+                        <td className="px-4 py-3 text-right text-blue-300 underline decoration-2">{reportSums.netWeight}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.volumes}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.tubetes}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.ecoA}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.ecoBP}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.ecoBM}</td>
+                        <td className="px-4 py-3 text-right text-red-300">{reportSums.borraTotal}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.manutencaoMin}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.processoMin}</td>
+                        <td className="px-4 py-3 text-right">{reportSums.outrosMin}</td>
+                        <td className="no-print"></td>
+                      </tr>
+                    </>
+                  ) : (
+                    <tr>
+                      <td colSpan={18} className="px-6 py-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300"><AlertTriangle size={28} /></div>
+                          <p className="text-[10px] font-black uppercase tracking-widest">Nenhum dado registrado neste relatório</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <div className={`fixed inset-0 z-50 transition-all ${isMenuOpen ? 'visible' : 'invisible'}`}>
+        <div className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity ${isMenuOpen ? 'opacity-100' : 'opacity-0'}`} onClick={() => setIsMenuOpen(false)} />
+        <div className={`absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl transition-transform duration-300 transform p-8 flex flex-col gap-6 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <h2 className="text-xl font-black text-slate-800 flex items-center gap-2"><LayoutDashboard size={22} className="text-blue-600" /> Menu</h2>
+            <button onClick={() => setConfirmDialog({ isOpen: true, title: 'Encerrar Sessão', message: 'Tem certeza que deseja sair?', onConfirm: () => { localStorage.removeItem('manupackaging_session'); setIsAuthenticated(false); } })} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={24} /></button>
+          </div>
+          
+          <div className="space-y-6 overflow-y-auto custom-scrollbar pr-2 flex-1">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                <Calendar size={12} className="text-blue-500" /> Referência Atual
+              </label>
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 flex items-center justify-between shadow-sm">
+                <span className="text-sm font-black text-slate-700 capitalize">{getMonthName(dashboardMonth)}</span>
+                <div className="flex gap-1">
+                   <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all border border-transparent hover:border-slate-100"><ChevronLeft size={16} /></button>
+                   <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all border border-transparent hover:border-slate-100"><ChevronRight size={16} /></button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Navegação Principal</label>
+              <div className="grid grid-cols-1 gap-2">
+                <button 
+                  onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}
+                  className={`flex items-center gap-4 px-5 py-4 rounded-2xl text-xs font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                >
+                  <BarChart3 size={20} /> Painel Dashboard
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}
+                  className={`flex items-center gap-4 px-5 py-4 rounded-2xl text-xs font-black uppercase transition-all ${activeTab === 'reports' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                >
+                  <FileText size={20} /> Relatórios Analíticos
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-slate-100">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Settings size={12} /> Configuração de Meta</label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={goalValue} 
+                    onChange={(e) => setGoalValue(parseFloat(e.target.value) || 0)} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 text-sm font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-500/10" 
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase">KG</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Equipe</label>
+                <button 
+                  onClick={() => { setIsOperatorModalOpen(true); setIsMenuOpen(false); }}
+                  className="w-full flex items-center justify-between px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] font-black uppercase text-slate-600 hover:bg-slate-100 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <Users size={18} className="text-blue-500" />
+                    Gerenciar Operadores
+                  </div>
+                  <Plus size={16} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <button 
+                onClick={handleSaveDashboardPDF} 
+                disabled={isGeneratingPDF || activeTab !== 'dashboard'}
+                className={`w-full flex items-center justify-center gap-3 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${activeTab !== 'dashboard' ? 'bg-slate-50 text-slate-300 cursor-not-allowed' : 'bg-slate-800 text-white shadow-lg shadow-slate-200'}`}
+              >
+                <FileDown size={16} /> {isGeneratingPDF ? 'Gerando...' : 'Exportar PDF Dashboard'}
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => {
+                  const data = { productionData, shifts, goalValue, operators };
+                  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a'); a.href = url; a.download = 'backup_manupackaging.json'; a.click();
+                }} className="flex flex-col items-center justify-center gap-2 bg-slate-100 py-3 rounded-2xl text-[9px] font-black uppercase text-slate-600 hover:bg-slate-200 transition-colors"><Download size={14} /> Exportar</button>
+                <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center gap-2 bg-blue-50 py-3 rounded-2xl text-[9px] font-black uppercase text-blue-600 hover:bg-blue-100 transition-colors"><Upload size={14} /> Importar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-sm shadow-2xl p-6 space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center shadow-inner">
+                <AlertCircle size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">{confirmDialog.title}</h3>
+                <p className="text-xs text-slate-500 font-medium leading-relaxed px-4">{confirmDialog.message}</p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button 
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="flex-1 px-4 py-3 bg-slate-50 text-slate-500 rounded-2xl font-black text-[10px] uppercase hover:bg-slate-100 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmDialog.onConfirm}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-red-200 hover:bg-red-700 transition-all"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json" />
+      <LaunchModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingEntry(null); }} onSave={handleSaveEntry} operators={operators} activeMachines={['Cast 1', 'Cast 2', 'Erema 1']} availableShifts={shifts} initialData={editingEntry} />
+      <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={(s) => setShifts(prev => [...prev, { ...s, id: Math.random().toString() }])} />
+      <OperatorModal isOpen={isOperatorModalOpen} onClose={() => setIsOperatorModalOpen(false)} operators={operators} onUpdate={setOperators} />
+    </div>
+  );
+};
+
+export default App;

@@ -1,0 +1,270 @@
+={24} />
+                        </div>
+                     </div>
+                     <div className="mt-6">
+                        <span className="text-4xl font-black text-slate-800">{formatWeight(totals.yesterday)}</span>
+                        <p className="text-xs font-bold text-slate-400 mt-1">Acumulado diário</p>
+                     </div>
+                  </div>
+
+                  {/* Card Erema Mensal */}
+                  <div 
+                    onClick={() => setIsEremaChartModalOpen(true)}
+                    className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between cursor-pointer hover:scale-[1.02] transition-transform hover:shadow-md group"
+                  >
+                     <div className="flex justify-between items-start">
+                        <div>
+                           <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1 group-hover:underline">RECICLAGEM</p>
+                           <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">EREMA MENSAL <ChevronRight size={16} className="text-slate-300 group-hover:text-emerald-500 transition-colors"/></h3>
+                        </div>
+                        <div className="bg-emerald-50 p-2.5 rounded-xl text-emerald-500 group-hover:bg-emerald-100 transition-colors">
+                           <RotateCcw size={24} />
+                        </div>
+                     </div>
+                     <div className="mt-6">
+                        <span className="text-4xl font-black text-slate-800">{formatWeight(totals.eremaMonth)}</span>
+                        <p className="text-xs font-bold text-slate-400 mt-1">Recuperado este mês</p>
+                     </div>
+                  </div>
+              </div>
+            </div>
+
+            {/* Gráficos em Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {allCharts.map((chart, idx) => {
+                 let data: any[] = [];
+                 const isComparison = chart.key.startsWith('comparison_');
+
+                 if (isComparison) {
+                     if (chart.key === 'comparison_prod_ecob') {
+                        data = [
+                            { name: 'Prod. Liq', value: stats.reduce((acc, s) => acc + s.prod, 0) },
+                            { name: 'Eco B', value: stats.reduce((acc, s) => acc + s.ecoBP + s.ecoBM, 0) }
+                        ];
+                     } else if (chart.key === 'comparison_prod_borra') {
+                        data = [
+                            { name: 'Prod. Liq', value: stats.reduce((acc, s) => acc + s.prod, 0) },
+                            { name: 'Borra', value: stats.reduce((acc, s) => acc + s.borra, 0) }
+                        ];
+                     } else if (chart.key === 'comparison_ecob_recycled') {
+                         const totalErema = filteredDataForCharts
+                            .filter(e => e.machine.toLowerCase().includes('erema'))
+                            .reduce((acc, e) => acc + (e.netWeight || 0), 0);
+                         
+                         const totalEcoB = stats.reduce((acc, s) => acc + s.ecoBP + s.ecoBM, 0);
+
+                         data = [
+                            { name: 'Eco B', value: totalEcoB },
+                            { name: 'Reciclado (Erema)', value: totalErema }
+                        ];
+                     } else if (chart.key === 'comparison_time') {
+                         const totalTime = stats.reduce((acc, s) => acc + s.p_manut + s.p_proc + s.p_outros, 0);
+                         const totalProd = stats.reduce((acc, s) => acc + s.prod, 0); // Mock ratio for demo
+                         data = [
+                            { name: 'Operando', value: 1000 }, 
+                            { name: 'Parado', value: totalTime }
+                         ];
+                     }
+                 } else {
+                     data = stats.map(s => ({ 
+                        name: s.name, 
+                        value: (s as any)[chart.key] 
+                     })).filter(i => i.value > 0);
+                 }
+
+                 if (data.length === 0) return null;
+                 
+                 // Sort data descending for rank
+                 data.sort((a, b) => b.value - a.value);
+
+                 return (
+                  <div id={`chart-${idx}`} key={idx} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col">
+                    {/* Header */}
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h3 className="text-sm font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
+                           {idx === 0 && <span className="text-yellow-500">🏆</span>} {chart.title}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mt-1">{chart.description}</p>
+                      </div>
+                      <button onClick={() => handleDownloadChartPNG(`chart-${idx}`, chart.title)} className="p-2 text-blue-500 bg-blue-50 rounded-xl hover:bg-blue-100 transition-all">
+                        <ImageIcon size={18} />
+                      </button>
+                    </div>
+
+                    {/* Chart */}
+                    <div className="h-72 relative w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={data}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={70}
+                            outerRadius={90}
+                            paddingAngle={3}
+                            dataKey="value"
+                            stroke="none"
+                            labelLine={{ stroke: '#cbd5e1', strokeWidth: 1.5 }}
+                            label={renderCustomizedLabel}
+                          >
+                            {data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={chart.color[index % chart.color.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', padding: '12px' }}
+                            itemStyle={{ fontSize: '12px', fontWeight: 'bold', color: '#1e293b' }}
+                            formatter={(value: number) => [chart.formatter(value), '']}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-3">
+                       {data.map((entry, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs">
+                             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: chart.color[i % chart.color.length] }}></div>
+                             <div className="flex items-baseline gap-1">
+                                {chart.key === 'prod' && <span className="font-black text-slate-400">{i + 1}º</span>}
+                                <span className="font-bold text-slate-600">{entry.name}:</span>
+                                <span className="font-black text-slate-800">{chart.formatter(entry.value)}</span>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                  </div>
+                 );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ... (rest of reports tab remains same) ... */}
+        {activeTab === 'reports' && (
+           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              
+              {/* Toolbar */}
+              <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                 <div className="flex flex-1 items-center gap-2 w-full">
+                    <div className="relative flex-1 group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
+                        <input 
+                            type="text" 
+                            placeholder="Buscar por operador, máquina..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-slate-50 border-none rounded-2xl py-3.5 pl-12 pr-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl">
+                        <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="bg-white border-none rounded-xl text-xs font-bold text-slate-600 py-2 px-3 outline-none" />
+                        <span className="text-slate-300 font-bold">-</span>
+                        <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="bg-white border-none rounded-xl text-xs font-bold text-slate-600 py-2 px-3 outline-none" />
+                    </div>
+                 </div>
+                 
+                 <div className="flex items-center gap-2 w-full md:w-auto">
+                    {selectedIds.length > 0 && (
+                        <button 
+                            onClick={handleBulkDelete}
+                            className="bg-red-50 text-red-600 px-4 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:bg-red-100 transition-colors animate-in fade-in"
+                        >
+                            <Trash2 size={16} /> Excluir ({selectedIds.length})
+                        </button>
+                    )}
+                    <button onClick={handleExportCSV} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:bg-slate-900 transition-all shadow-lg shadow-slate-200">
+                        <FileDown size={16} /> Exportar CSV
+                    </button>
+                 </div>
+              </div>
+
+              {/* Table Container */}
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden relative">
+                 <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/80 border-b border-slate-100">
+                                <th className="px-4 py-4 w-4">
+                                    <input type="checkbox" onChange={handleSelectAll} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                                </th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Data / Turno</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Maq.</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Op.</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">P. Bruto</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Tara</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">P. Líq</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Vols</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Tub.</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Eco A</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Eco B P</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Eco B M</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Borra</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Manut</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Proc</th>
+                                <th className="px-4 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Outros</th>
+                                <th className="px-4 py-4 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {filteredReports.map((item) => (
+                                <tr key={item.id} className={`group transition-colors hover:bg-blue-50/30 ${selectedIds.includes(item.id) ? 'bg-blue-50/50' : ''}`}>
+                                    <td className="px-4 py-3">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={selectedIds.includes(item.id)}
+                                            onChange={() => handleSelectOne(item.id)}
+                                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" 
+                                        />
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-[11px] font-bold text-slate-700 whitespace-nowrap">{item.date.split('-').reverse().join('/')}</span>
+                                            <span className="text-[9px] font-semibold text-slate-400">{item.shift}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 text-slate-600 tracking-wide whitespace-nowrap">
+                                            {item.machine}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-slate-600 whitespace-nowrap">{item.operator.split(' ')[0]}</td>
+                                    
+                                    <td className="px-4 py-3 text-[10px] font-bold text-slate-500 text-right">{item.grossWeight || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-slate-500 text-right">{item.tara || '-'}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        {item.isMaintenanceEntry || item.isNoWorkDay ? (
+                                            <span className="text-slate-300 font-bold">-</span>
+                                        ) : (
+                                            <span className="text-[11px] font-black text-slate-800">{item.netWeight}</span>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-slate-500 text-right">{item.volumes || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-slate-500 text-right">{item.tubetes || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-emerald-600 text-right">{item.ecoA || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-emerald-600 text-right">{item.ecoBP || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-emerald-600 text-right">{item.ecoBM || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-red-400 text-right">{item.borraTotal || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-orange-400 text-right">{item.manutencaoMin || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-orange-400 text-right">{item.processoMin || '-'}</td>
+                                    <td className="px-4 py-3 text-[10px] font-bold text-orange-400 text-right">{item.outrosMin || '-'}</td>
+
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => { setEditingEntry(item); setIsModalOpen(true); }} className="p-1.5 bg-white border border-slate-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"><Edit2 size={12}/></button>
+                                            <button onClick={() => handleDeleteReportItem(item.id)} className="p-1.5 bg-white border border-slate-200 text-red-500 rounded-lg hover:bg-red-50 transition-colors"><Trash2 size={12}/></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot className="bg-slate-50 font-black text-slate-700 border-t border-slate-200">
+                           <tr>
+                              <td colSpan={4} className="px-4 py-3 text-[10px] uppercase text-right tracking-widest text-slate-400">Totais:</td>
+                              <td className="px-4 py-3 text-[10px] text-right">{reportTotals.gross > 0 ? reportTotals.gross : '-'}</td>
+                              <td className="px-4 py-3 text-[10px] text-right">{reportTotals.tara > 0 ? reportTotals.tara : '-'}</td>
+                              <td className="px-4 py-3 text-[10px] text-right text-blue-600">{reportTotals.net > 0 ? reportTotals.net : '-'}</td>
+                              <td className="px-4 py-3 text-[10px] text-right">{reportTotals.volumes > 0 ? reportTotals.volumes : '-'}</td>
+                              <td className="px-4 py-3 text-[10px] text-right">{reportTotals.tubetes > 0 ? reportTotals.tubetes : '-'}</td>
+                              <td className="px-4 py-3 text-[10px] text-right text-emerald-600">{reportTotals.ecoA > 0 ? reportTotals.ec

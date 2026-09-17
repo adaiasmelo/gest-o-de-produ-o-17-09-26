@@ -1,0 +1,135 @@
+v>
+                     <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm"><p className="text-[9px] font-bold uppercase opacity-70 mb-1">Média Nec.</p><p className="text-sm font-bold">{formatWeight(totals.dailyRequired)}/dia</p></div>
+                     <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm"><p className="text-[9px] font-bold uppercase opacity-70 mb-1">Projeção</p><p className="text-sm font-bold">{formatWeight(totals.projection)}</p></div>
+                     <div onClick={() => setIsEremaChartModalOpen(true)} className="bg-emerald-500/20 rounded-xl p-3 backdrop-blur-sm cursor-pointer hover:bg-emerald-500/30 transition-all"><p className="text-[9px] font-bold uppercase opacity-70 mb-1">Erema</p><p className="text-sm font-bold">{formatWeight(totals.eremaMonth)}</p></div>
+                 </div>
+            </div>
+
+            {/* Detailed Charts Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {allCharts.map((chart, idx) => {
+                    const data = stats.map(s => {
+                        let value = 0;
+                        if (chart.key === 'prod') value = s.prod;
+                        else if (chart.key === 'ecoA') value = s.ecoA;
+                        else if (chart.key === 'borra') value = s.borra;
+                        else if (chart.key === 'eco_total') value = s.ecoBP + s.ecoBM;
+                        else if (chart.key === 'stop_total') value = s.p_manut + s.p_proc + s.p_outros;
+                        return { name: s.name, value };
+                    }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
+
+                    if (data.length === 0) return null;
+
+                    return (
+                        <div key={idx} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col">
+                            <div className="mb-4">
+                                <h3 className="text-sm font-black uppercase text-slate-800 tracking-tight">{chart.title}</h3>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{chart.description}</p>
+                            </div>
+                            <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={data}
+                                            cx="50%" cy="50%"
+                                            innerRadius={60} outerRadius={80}
+                                            paddingAngle={4} dataKey="value" stroke="none"
+                                            label={renderCustomizedLabel}
+                                        >
+                                            {data.map((_, i) => <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                                        </Pie>
+                                        <Tooltip formatter={(v: number) => chart.formatter(v)} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="mt-4 space-y-1">
+                                {data.slice(0, 3).map((item, i) => (
+                                    <div key={i} className="flex justify-between items-center text-[10px] font-bold">
+                                        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div><span className="text-slate-500 uppercase">{item.name}</span></div>
+                                        <span className="text-slate-800">{chart.formatter(item.value)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+           <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                 <div className="flex flex-1 items-center gap-2 w-full">
+                    <Search className="text-slate-400" size={20} />
+                    <input type="text" placeholder="Buscar registros..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
+                 </div>
+                 <button onClick={() => fileInputRef.current?.click()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:bg-slate-900 transition-all"><Upload size={16} /> Restaurar Backup</button>
+              </div>
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                 <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/80 border-b border-slate-100">
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Data / Turno</th>
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Máquina</th>
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Operador</th>
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Peso Líq</th>
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Eco A</th>
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Borra</th>
+                                <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Parada</th>
+                                <th className="px-6 py-4 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {filteredReports.map(item => (
+                                <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                                    <td className="px-6 py-4"><span className="text-[11px] font-black text-slate-700 block">{item.date.split('-').reverse().join('/')}</span><span className="text-[9px] font-bold text-slate-400">{item.shift}</span></td>
+                                    <td className="px-6 py-4"><span className="inline-flex px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-slate-100 text-slate-600">{item.machine}</span></td>
+                                    <td className="px-6 py-4 text-[10px] font-bold text-slate-600">{item.operator}</td>
+                                    <td className="px-6 py-4 text-right text-[11px] font-black text-slate-800">{formatWeight(item.netWeight)}</td>
+                                    <td className="px-6 py-4 text-right text-[10px] font-bold text-emerald-600">{item.ecoA} kg</td>
+                                    <td className="px-6 py-4 text-right text-[10px] font-bold text-red-400">{item.borraTotal} kg</td>
+                                    <td className="px-6 py-4 text-right text-[10px] font-bold text-orange-400">{item.manutencaoMin + item.processoMin + item.outrosMin} min</td>
+                                    <td className="px-6 py-4"><button onClick={() => { setEditingEntry(item); setIsModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={12}/></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot className="bg-slate-50 font-black text-slate-700 border-t border-slate-200">
+                           <tr>
+                              <td colSpan={3} className="px-6 py-4 text-[10px] uppercase text-right tracking-widest text-slate-400">Totais:</td>
+                              <td className="px-6 py-4 text-[10px] text-right text-blue-600">{formatWeight(reportTotals.net)}</td>
+                              <td className="px-6 py-4 text-[10px] text-right text-emerald-600">{reportTotals.ecoA} kg</td>
+                              <td className="px-6 py-4 text-[10px] text-right text-red-500">{reportTotals.borra} kg</td>
+                              <td className="px-6 py-4 text-[10px] text-right text-orange-500">{reportTotals.paradas} min</td>
+                              <td></td>
+                           </tr>
+                        </tfoot>
+                    </table>
+                 </div>
+              </div>
+           </div>
+        )}
+      </main>
+
+      <input type="file" ref={fileInputRef} onChange={handleImport} accept=".json" className="hidden" />
+
+      <LaunchModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingEntry(null); }} onSave={handleSaveEntry} operators={operators} activeMachines={activeMachines} availableShifts={shifts} initialData={editingEntry} />
+
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setIsMenuOpen(false)}>
+            <div className="w-80 bg-white h-full shadow-2xl p-6 animate-in slide-in-from-right duration-300" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-8"><h2 className="text-xl font-black uppercase text-slate-800">Opções</h2><button onClick={() => setIsMenuOpen(false)}><X size={24} /></button></div>
+                <div className="space-y-6">
+                    <div><label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Meta Mensal</label><input type="number" value={goalValue} onChange={e => setGoalValue(Number(e.target.value))} className="w-full bg-slate-50 border rounded-xl px-4 py-3 font-bold" /></div>
+                    <div className="pt-6 border-t space-y-3">
+                        <button onClick={() => fileInputRef.current?.click()} className="w-full py-3 bg-blue-50 text-blue-600 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2"><Upload size={14}/> Carregar Backup</button>
+                        <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-3 bg-red-50 text-red-600 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2"><RotateCcw size={14}/> Resetar Sistema</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+    </div>
+  );
+};

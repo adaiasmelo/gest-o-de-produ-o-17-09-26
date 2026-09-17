@@ -1,0 +1,602 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Menu, Plus, Download, Trash2, Cpu, CheckCircle2, AlertTriangle, X, Settings, RefreshCw, Printer, BarChart3, FileText, Search, MessageSquare, Send, Palmtree, ChevronDown, ShieldCheck, LogOut, Save, Upload, Users2, Edit2 } from 'lucide-react';
+import { Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import { toPng } from 'html-to-image';
+import { ProductionEntry } from './types';
+import { INITIAL_DATA, GOAL_VALUE as DEFAULT_GOAL, DEFAULT_OPERATORS } from './constants';
+import LaunchModal from './components/LaunchModal';
+
+const APP_DATA_VERSION = '7.4.0'; 
+
+const PERSONNEL_INITIAL_DATA = [
+  { id: 1, name: 'Marcelo', role: 'Operador', sector: 'Extrusão', machine: 'Cast 1', shiftType: '12x36', group: 'Diurno 1', startDate: '2023-01-01', status: 'Ativo' },
+  { id: 2, name: 'Márcio', role: 'Auxiliar', sector: 'Extrusão', machine: 'Cast 1', shiftType: '12x36', group: 'Diurno 1', startDate: '2023-01-01', status: 'Ativo' },
+  { id: 4, name: 'Everson', role: 'Operador', sector: 'Extrusão', machine: 'Cast 2', shiftType: '12x36', group: 'Diurno 1', startDate: '2023-01-01', status: 'Ativo' },
+  { id: 19, name: 'Cidonei', role: 'Operador', sector: 'Extrusão', machine: 'Cast 1', shiftType: '12x36', group: 'Noturno 1', startDate: '2023-01-01', status: 'Ativo' },
+  { id: 22, name: 'Deywis', role: 'Operador', sector: 'Extrusão', machine: 'Cast 2', shiftType: '12x36', group: 'Noturno 1', startDate: '2023-01-01', status: 'Ativo' },
+  { id: 7, name: 'Erivan', role: 'Operador', sector: 'Extrusão', machine: 'Cast 1', shiftType: '12x36', group: 'Diurno 2', startDate: '2023-01-02', status: 'Ativo' },
+  { id: 10, name: 'Franck', role: 'Operador', sector: 'Extrusão', machine: 'Cast 2', shiftType: '12x36', group: 'Diurno 2', startDate: '2023-01-02', status: 'Ativo' },
+  { id: 13, name: 'Philip', role: 'Operador', sector: 'Extrusão', machine: 'Cast 1', shiftType: '12x36', group: 'Noturno 2', startDate: '2023-01-02', status: 'Ativo' },
+  { id: 16, name: 'Edilson', role: 'Operador', sector: 'Extrusão', machine: 'Cast 2', shiftType: '12x36', group: 'Noturno 2', startDate: '2023-01-02', status: 'Ativo' },
+];
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
+
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  const radius = outerRadius * 1.15;
+  const x = cx + radius * Math.cos(-midAngle * Math.PI / 180);
+  const y = cy + radius * Math.sin(-midAngle * Math.PI / 180);
+  return (
+    <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black">
+      {`${(percent * 100).toFixed(1)}%`}
+    </text>
+  );
+};
+
+const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('manupackaging_session'));
+  const [authData] = useState({ user: 'adaiasmelo', pass: '123456' }); 
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'personnel'>('dashboard');
+
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
+    const saved = localStorage.getItem('manupackaging_data');
+    return saved ? JSON.parse(saved) : INITIAL_DATA;
+  });
+
+  const [goalValue, setGoalValue] = useState<number>(() => {
+    const saved = localStorage.getItem('manupackaging_goal');
+    return saved ? parseFloat(saved) : DEFAULT_GOAL;
+  });
+
+  const [operators, setOperators] = useState<string[]>(() => {
+    const saved = localStorage.getItem('manupackaging_operators');
+    return saved ? JSON.parse(saved) : DEFAULT_OPERATORS;
+  });
+
+  const [employees, setEmployees] = useState<any[]>(() => {
+    const saved = localStorage.getItem('manupackaging_employees');
+    return saved ? JSON.parse(saved) : PERSONNEL_INITIAL_DATA;
+  });
+
+  const [vacancies, setVacancies] = useState<any[]>(() => {
+    const saved = localStorage.getItem('manupackaging_vacancies');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [machineManualStatus] = useState<Record<string, 'Operando' | 'Manutenção'>>({ 'Cast 1': 'Operando', 'Cast 2': 'Operando' });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ProductionEntry | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatMessages, setChatMessages] = useState<any[]>(() => JSON.parse(localStorage.getItem('manupackaging_chat_history') || '[]'));
+  const [teamViewMode, setTeamViewMode] = useState<'active' | 'vacancies'>('active');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [isVacationModalOpen, setIsVacationModalOpen] = useState(false);
+  const [vacationForm, setVacationForm] = useState({ empId: 0, days: 30, startDate: '' });
+  
+  // Novos estados para edição de pessoal
+  const [isEditPersonnelModalOpen, setIsEditPersonnelModalOpen] = useState(false);
+  const [editingPersonnel, setEditingPersonnel] = useState<any | null>(null);
+
+  // Estado para nova vaga
+  const [isAddVacancyModalOpen, setIsAddVacancyModalOpen] = useState(false);
+  const [newVacancyForm, setNewVacancyForm] = useState({ name: '', group: 'Diurno 1', role: 'Operador' });
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { localStorage.setItem('manupackaging_data', JSON.stringify(productionData)); }, [productionData]);
+  useEffect(() => { localStorage.setItem('manupackaging_employees', JSON.stringify(employees)); }, [employees]);
+  useEffect(() => { localStorage.setItem('manupackaging_vacancies', JSON.stringify(vacancies)); }, [vacancies]);
+  useEffect(() => { localStorage.setItem('manupackaging_goal', goalValue.toString()); }, [goalValue]);
+  useEffect(() => { localStorage.setItem('manupackaging_operators', JSON.stringify(operators)); }, [operators]);
+  useEffect(() => { 
+    localStorage.setItem('manupackaging_chat_history', JSON.stringify(chatMessages));
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const handleSaveEntry = (newEntry: Omit<ProductionEntry, 'id'> & { id?: string }) => {
+    if (newEntry.id) {
+      setProductionData(prev => prev.map(e => e.id === newEntry.id ? (newEntry as ProductionEntry) : e));
+    } else {
+      setProductionData(prev => [{ ...newEntry, id: Math.random().toString(36).substr(2, 9) } as ProductionEntry, ...prev]);
+    }
+    setEditingEntry(null);
+  };
+
+  const handleDeleteEntry = (id: string) => {
+    if (window.confirm('Excluir este lançamento permanentemente?')) {
+      setProductionData(prev => prev.filter(e => e.id !== id));
+    }
+  };
+
+  const handleDismiss = (e: React.MouseEvent, emp: any) => {
+    e.stopPropagation(); 
+    if (window.confirm(`Tem certeza que deseja remover ${emp.name} da equipe ativa?`)) {
+      setEmployees(prev => prev.filter(el => el.id !== emp.id));
+      setVacancies(prev => [...prev, { ...emp, id: Date.now(), openSince: new Date().toLocaleDateString('pt-BR') }]);
+      setSelectedEmployeeId(null);
+    }
+  };
+
+  const handleToggleVacation = (e: React.MouseEvent, emp: any) => {
+    e.stopPropagation();
+    if (emp.status === 'Férias') {
+      setEmployees(employees.map(el => el.id === emp.id ? { ...el, status: 'Ativo', vacationInfo: null } : el));
+    } else {
+      setVacationForm({ empId: emp.id, days: 30, startDate: new Date().toISOString().split('T')[0] });
+      setIsVacationModalOpen(true);
+    }
+  };
+
+  const handleSaveVacation = (e: React.FormEvent) => {
+    e.preventDefault();
+    const returnDate = new Date(vacationForm.startDate);
+    returnDate.setDate(returnDate.getDate() + vacationForm.days);
+    setEmployees(employees.map(emp => emp.id === vacationForm.empId ? { 
+      ...emp, status: 'Férias', vacationInfo: { return: returnDate.toISOString().split('T')[0] } 
+    } : emp));
+    setIsVacationModalOpen(false);
+    setSelectedEmployeeId(null);
+  };
+
+  const handleSavePersonnel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPersonnel) return;
+    setEmployees(employees.map(emp => emp.id === editingPersonnel.id ? editingPersonnel : emp));
+    setIsEditPersonnelModalOpen(false);
+    setEditingPersonnel(null);
+    setSelectedEmployeeId(null);
+  };
+
+  const handleSaveNewVacancy = (e: React.FormEvent) => {
+    e.preventDefault();
+    const vacancy = {
+      id: Date.now(),
+      name: newVacancyForm.name || 'Nova Vaga',
+      group: newVacancyForm.group,
+      role: newVacancyForm.role,
+      sector: 'Extrusão',
+      openSince: new Date().toLocaleDateString('pt-BR'),
+      status: 'Aberto'
+    };
+    setVacancies(prev => [...prev, vacancy]);
+    setIsAddVacancyModalOpen(false);
+    setNewVacancyForm({ name: '', group: 'Diurno 1', role: 'Operador' });
+  };
+
+  const handleExportData = () => {
+    const data = { production: productionData, employees, goal: goalValue, operators };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `manupackaging_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.production) setProductionData(data.production);
+        if (data.employees) setEmployees(data.employees);
+        if (data.goal) setGoalValue(data.goal);
+        alert('Dados importados com sucesso!');
+      } catch { alert('Erro na leitura do arquivo.'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const filteredData = useMemo<ProductionEntry[]>(() => {
+    return productionData.filter(e => {
+      const s = searchTerm.toLowerCase();
+      return !searchTerm || e.operator.toLowerCase().includes(s) || e.machine.toLowerCase().includes(s) || e.date.includes(s);
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [productionData, searchTerm]);
+
+  const operatorStats = useMemo(() => {
+    const stats: Record<string, { name: string, prod: number, ecoA: number, ecoBP: number, ecoBM: number }> = {};
+    operators.forEach(op => stats[op] = { name: op, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0 });
+    
+    productionData.forEach(e => {
+      if (stats[e.operator]) {
+        stats[e.operator].prod += (e.netWeight || 0);
+        stats[e.operator].ecoA += (e.ecoA || 0);
+        stats[e.operator].ecoBP += (e.ecoBP || 0);
+        stats[e.operator].ecoBM += (e.ecoBM || 0);
+      }
+    });
+    return Object.values(stats);
+  }, [productionData, operators]);
+
+  const prodChartData = useMemo(() => [...operatorStats].filter(s => s.prod > 0).sort((a, b) => b.prod - a.prod), [operatorStats]);
+  const ecoAChartData = useMemo(() => [...operatorStats].filter(s => s.ecoA > 0).sort((a, b) => b.ecoA - a.ecoA), [operatorStats]);
+  const ecoBPChartData = useMemo(() => [...operatorStats].filter(s => s.ecoBP > 0).sort((a, b) => b.ecoBP - a.ecoBP), [operatorStats]);
+  
+  const ecoBOverviewData = useMemo(() => {
+    const totalP = operatorStats.reduce((sum, s) => sum + s.ecoBP, 0);
+    const totalM = operatorStats.reduce((sum, s) => sum + s.ecoBM, 0);
+    return [
+      { name: 'Eco B Produção', value: totalP },
+      { name: 'Eco B Manutenção', value: totalM }
+    ].filter(item => item.value > 0);
+  }, [operatorStats]);
+
+  const currentMonthStats = useMemo(() => {
+    const prefix = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    return productionData.filter(e => e.date.startsWith(prefix)).reduce((s, e) => s + (e.netWeight || 0), 0);
+  }, [productionData]);
+
+  const groupedPersonnel = useMemo<Record<string, any[]>>(() => {
+    const g: Record<string, any[]> = {};
+    employees.forEach(e => {
+      const key = `${e.sector} - ${e.group}`;
+      if (!g[key]) g[key] = [];
+      g[key].push(e);
+    });
+    return g;
+  }, [employees]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 w-full max-w-md space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg mb-4"><ShieldCheck size={32} /></div>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">Manupackaging <span className="text-blue-600">Pro</span></h1>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Controle de Acesso</p>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); localStorage.setItem('manupackaging_session', 'true'); setIsAuthenticated(true); }} className="space-y-6">
+            <input type="text" value={authData.user} readOnly className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" />
+            <input type="password" value={authData.pass} readOnly className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" />
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all">Entrar</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white"><Cpu size={18} /></div>
+           <span className="tracking-tight">Manupackaging <span className="text-blue-600">Pro</span></span>
+        </h1>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportData} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Save size={18} /><span className="hidden sm:inline">Backup</span></button>
+          <button onClick={() => { setEditingEntry(null); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus size={18} /><span className="hidden sm:inline">Lançar</span></button>
+          <button onClick={() => setIsMenuOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Settings size={24} /></button>
+        </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto px-4 mt-6 no-print">
+        <div className="bg-slate-200/50 p-1 rounded-2xl inline-flex gap-1 overflow-x-auto no-scrollbar max-w-full">
+          {['dashboard', 'reports', 'personnel'].map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              {tab === 'dashboard' ? <BarChart3 size={16} /> : tab === 'reports' ? <FileText size={16} /> : <Users2 size={16} />}
+              {tab === 'dashboard' ? 'Dashboard' : tab === 'reports' ? 'Relatórios' : 'Pessoal'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <main className="max-w-6xl mx-auto p-4 space-y-6">
+        {activeTab === 'dashboard' ? (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-blue-500/10 space-y-4">
+              <div className="flex items-center justify-between font-black">
+                <div><span className="text-[10px] uppercase text-slate-400">Progresso do Mês</span><div className="flex items-baseline gap-2"><span className="text-3xl text-slate-800 tracking-tighter">{(currentMonthStats/1000).toFixed(1)} T</span><span className="text-slate-400 font-medium text-xs">/ {(goalValue/1000).toFixed(1)} T</span></div></div>
+                <span className={`text-3xl ${currentMonthStats >= goalValue ? 'text-emerald-600' : 'text-blue-600'}`}>{goalValue > 0 ? Math.round((currentMonthStats / goalValue) * 100) : 0}%</span>
+              </div>
+              <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-1000 ${currentMonthStats >= goalValue ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${Math.min((currentMonthStats / (goalValue || 1)) * 100, 100)}%` }}></div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4 flex items-center gap-2">🏆 Produção Líquida por Operador (KG)</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={prodChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="prod" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {prodChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => `${val.toLocaleString()} KG`} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4 flex items-center gap-2">♻️ Eco A por Operador (KG)</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={ecoAChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="ecoA" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {ecoAChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => `${val.toLocaleString()} KG`} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4 flex items-center gap-2">📦 Eco B Produção por Operador</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={ecoBPChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="ecoBP" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {ecoBPChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => `${val.toLocaleString()} KG`} contentStyle={{borderRadius: '16px', border: 'none'}} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4 flex items-center gap-2">📊 Resumo Eco B: Produção vs Manutenção</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={ecoBOverviewData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="value" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        <Cell fill="#3b82f6" stroke="none" />
+                        <Cell fill="#ef4444" stroke="none" />
+                      </Pie>
+                      <Tooltip formatter={(val: number) => `${val.toLocaleString()} KG`} contentStyle={{borderRadius: '16px', border: 'none'}} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+            </div>
+          </div>
+        ) : activeTab === 'reports' ? (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-4 bg-slate-50/50">
+               <div className="relative flex-1 max-w-md">
+                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                 <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Pesquisar registros..." className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none" />
+               </div>
+               <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold uppercase no-print"><Printer size={16} /> Imprimir</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[900px]">
+                <thead>
+                  <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-4 py-3">Data</th>
+                    <th className="px-4 py-3">Operador</th>
+                    <th className="px-4 py-3">Máquina</th>
+                    <th className="px-4 py-3 font-black text-blue-700">Líquido (KG)</th>
+                    <th className="px-4 py-3 text-emerald-600">Eco A</th>
+                    <th className="px-4 py-3 text-red-500">Borra</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[10px] font-bold">
+                  {filteredData.map((e) => (
+                    <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">{e.date}</td>
+                      <td className="px-4 py-3">{e.operator}</td>
+                      <td className="px-4 py-3">{e.machine}</td>
+                      <td className="px-4 py-3 font-black">{e.netWeight}</td>
+                      <td className="px-4 py-3 text-emerald-600">{e.ecoA}</td>
+                      <td className="px-4 py-3 text-red-500">{e.borraTotal}</td>
+                      <td className="px-4 py-3 text-right space-x-2">
+                        <button onClick={() => { setEditingEntry(e); setIsModalOpen(true); }} className="text-blue-500 p-1.5 hover:bg-blue-50 rounded-lg transition-all"><FileText size={14} /></button>
+                        <button onClick={() => handleDeleteEntry(e.id)} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+               <div className="flex gap-4">
+                  <button onClick={() => setTeamViewMode('active')} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 transition-all ${teamViewMode === 'active' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Ativos</button>
+                  <button onClick={() => setTeamViewMode('vacancies')} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 transition-all ${teamViewMode === 'vacancies' ? 'border-red-600 text-red-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Vagas/Saídas</button>
+               </div>
+               <button onClick={() => setIsAddVacancyModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl text-xs font-black uppercase hover:bg-slate-100 transition-all"><Plus size={16} /> Nova Vaga</button>
+            </div>
+
+            {teamViewMode === 'active' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(Object.entries(groupedPersonnel) as [string, any[]][]).map(([key, emps]) => (
+                  <div key={key} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                    <div className="bg-slate-50 px-4 py-2 font-bold text-[10px] text-slate-500 uppercase border-b">{key}</div>
+                    <div className="divide-y divide-slate-100">
+                      {emps.map(emp => (
+                        <div key={emp.id} className={`p-4 transition-all ${selectedEmployeeId === emp.id ? 'bg-slate-50' : 'hover:bg-slate-50'}`}>
+                          <div className="flex items-center justify-between group cursor-pointer" onClick={() => setSelectedEmployeeId(selectedEmployeeId === emp.id ? null : emp.id)}>
+                            <div className="flex items-center gap-3">
+                               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-white transition-all ${emp.group.includes('Noturno') ? 'bg-indigo-600' : 'bg-orange-500'} ${emp.status === 'Férias' ? 'grayscale opacity-50' : ''}`}>{emp.name[0]}</div>
+                               <div>
+                                  <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    {emp.name}
+                                    {emp.status === 'Férias' && <span className="text-[8px] bg-orange-100 text-orange-700 px-1.5 rounded uppercase font-black">Férias</span>}
+                                  </h4>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase">{emp.role}</p>
+                               </div>
+                            </div>
+                            <ChevronDown size={14} className={`text-slate-300 transition-transform ${selectedEmployeeId === emp.id ? 'rotate-180' : ''}`} />
+                          </div>
+                          
+                          {selectedEmployeeId === emp.id && (
+                            <div className="mt-4 flex gap-2 animate-in slide-in-from-top-1">
+                               <button onClick={(e) => { e.stopPropagation(); setEditingPersonnel({...emp}); setIsEditPersonnelModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 py-2 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100 transition-all">
+                                 <Edit2 size={14} /> Editar
+                               </button>
+                               <button onClick={(e) => handleToggleVacation(e, emp)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${emp.status === 'Férias' ? 'bg-white text-slate-600 border-slate-200' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
+                                 <Palmtree size={14} /> {emp.status === 'Férias' ? 'Retornar' : 'Férias'}
+                               </button>
+                               <button onClick={(e) => handleDismiss(e, emp)} className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-50 text-red-600 border border-red-100 rounded-xl text-[10px] font-black uppercase hover:bg-red-100 transition-all">
+                                 <Trash2 size={14} /> Excluir
+                               </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                 {vacancies.map(v => (
+                   <div key={v.id} className="bg-white p-4 rounded-3xl border-l-4 border-l-red-500 border border-slate-200 flex items-center justify-between shadow-sm animate-in slide-in-from-left-2">
+                      <div>
+                        <h4 className="font-bold text-slate-800">{v.name} <span className="ml-2 text-[10px] text-slate-400 font-bold uppercase">({v.group})</span></h4>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Aberto em {v.openSince}</p>
+                      </div>
+                      <button onClick={() => setVacancies(prev => prev.filter(x => x.id !== v.id))} className="text-slate-400 hover:text-red-600 p-1.5"><X size={16} /></button>
+                   </div>
+                 ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Vacation Modal */}
+      {isVacationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6">
+             <div className="flex items-center justify-between mb-4">
+               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Palmtree size={20} className="text-orange-500" /> Agendar Férias</h2>
+               <button onClick={() => setIsVacationModalOpen(false)}><X size={20} className="text-slate-400" /></button>
+             </div>
+             <form onSubmit={handleSaveVacation} className="space-y-4">
+                <div>
+                   <label className="text-[10px] font-bold text-slate-500 uppercase">Data Início</label>
+                   <input required type="date" value={vacationForm.startDate} onChange={e => setVacationForm({...vacationForm, startDate: e.target.value})} className="w-full mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" />
+                </div>
+                <div>
+                   <label className="text-[10px] font-bold text-slate-500 uppercase">Dias</label>
+                   <input required type="number" value={vacationForm.days} onChange={e => setVacationForm({...vacationForm, days: parseInt(e.target.value)})} className="w-full mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" />
+                </div>
+                <button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95">Confirmar Férias</button>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Personnel Modal */}
+      {isEditPersonnelModalOpen && editingPersonnel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6">
+             <div className="flex items-center justify-between mb-4">
+               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users2 size={20} className="text-blue-600" /> Editar Colaborador</h2>
+               <button onClick={() => setIsEditPersonnelModalOpen(false)}><X size={20} className="text-slate-400" /></button>
+             </div>
+             <form onSubmit={handleSavePersonnel} className="space-y-4">
+                <div>
+                   <label className="text-[10px] font-bold text-slate-500 uppercase">Nome Completo</label>
+                   <input required type="text" value={editingPersonnel.name} onChange={e => setEditingPersonnel({...editingPersonnel, name: e.target.value})} className="w-full mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" />
+                </div>
+                <div>
+                   <label className="text-[10px] font-bold text-slate-500 uppercase">Grupo / Turno</label>
+                   <select value={editingPersonnel.group} onChange={e => setEditingPersonnel({...editingPersonnel, group: e.target.value})} className="w-full mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold">
+                      <option value="Diurno 1">Diurno 1 (Dia)</option>
+                      <option value="Diurno 2">Diurno 2 (Dia)</option>
+                      <option value="Noturno 1">Noturno 1 (Noite)</option>
+                      <option value="Noturno 2">Noturno 2 (Noite)</option>
+                   </select>
+                </div>
+                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95">Salvar Alterações</button>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Vacancy Modal */}
+      {isAddVacancyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6">
+             <div className="flex items-center justify-between mb-4">
+               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Plus size={20} className="text-blue-600" /> Abrir Nova Vaga</h2>
+               <button onClick={() => setIsAddVacancyModalOpen(false)}><X size={20} className="text-slate-400" /></button>
+             </div>
+             <form onSubmit={handleSaveNewVacancy} className="space-y-4">
+                <div>
+                   <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Vaga / Posição</label>
+                   <input required type="text" placeholder="Ex: Operador Reserva" value={newVacancyForm.name} onChange={e => setNewVacancyForm({...newVacancyForm, name: e.target.value})} className="w-full mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" />
+                </div>
+                <div>
+                   <label className="text-[10px] font-bold text-slate-500 uppercase">Grupo / Turno Alvo</label>
+                   <select value={newVacancyForm.group} onChange={e => setNewVacancyForm({...newVacancyForm, group: e.target.value})} className="w-full mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold">
+                      <option value="Diurno 1">Diurno 1 (Dia)</option>
+                      <option value="Diurno 2">Diurno 2 (Dia)</option>
+                      <option value="Noturno 1">Noturno 1 (Noite)</option>
+                      <option value="Noturno 2">Noturno 2 (Noite)</option>
+                   </select>
+                </div>
+                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95">Confirmar Abertura</button>
+             </form>
+          </div>
+        </div>
+      )}
+
+      <div className={`fixed inset-0 z-50 transition-all duration-300 ${isMenuOpen ? 'visible' : 'invisible'}`}>
+        <div className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 ${isMenuOpen ? 'opacity-100' : 'opacity-0'}`} onClick={() => setIsMenuOpen(false)} />
+        <div className={`absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl transition-transform duration-300 transform p-6 flex flex-col gap-6 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto`}>
+          <div className="flex items-center justify-between"><h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Settings size={20} className="text-blue-600" /> OPÇÕES</h2><button onClick={() => setIsMenuOpen(false)} className="p-2 text-slate-400"><X size={24} /></button></div>
+          <div className="space-y-6">
+             <div className="space-y-4 pt-4 border-t border-slate-100">
+               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><RefreshCw size={14} /> Sincronização</h3>
+               <div className="grid grid-cols-2 gap-2">
+                 <button onClick={handleExportData} className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-600 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border border-slate-200"><Download size={14} /> Exportar</button>
+                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-600 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border border-slate-200"><Upload size={14} /> Importar</button>
+               </div>
+               <input type="file" ref={fileInputRef} onChange={handleImportData} className="hidden" accept=".json" />
+             </div>
+             <div className="pt-4 border-t border-slate-100">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Meta Mensal (KG)</label>
+                <input type="number" value={goalValue} onChange={(e) => setGoalValue(parseFloat(e.target.value) || 0)} className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-black text-blue-600 outline-none" />
+             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 no-print">
+        {isChatOpen && (
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-80 h-96 flex flex-col overflow-hidden mb-2 animate-in slide-in-from-bottom-10">
+             <div className="bg-blue-600 p-3 flex items-center justify-between text-white font-bold text-sm"><span className="flex items-center gap-2"><MessageSquare size={16} /> Chat de Turno</span><button onClick={() => setIsChatOpen(false)}><X size={16} /></button></div>
+             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+               {chatMessages.map(msg => (
+                 <div key={msg.id} className={`flex flex-col ${msg.user === authData.user ? 'items-end' : 'items-start'}`}>
+                   <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs font-medium shadow-sm ${msg.user === authData.user ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>{msg.text}</div>
+                   <span className="text-[9px] text-slate-400 mt-1 px-1 font-bold">{msg.time}</span>
+                 </div>
+               ))}
+               <div ref={chatEndRef} />
+             </div>
+             <form onSubmit={(e) => {
+               e.preventDefault();
+               if (!chatMessage.trim()) return;
+               const msg = { id: Date.now(), user: authData.user, text: chatMessage, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) };
+               setChatMessages(prev => [...prev, msg]);
+               setChatMessage('');
+             }} className="p-3 bg-white border-t flex gap-2">
+               <input className="flex-1 bg-slate-100 rounded-xl px-4 py-2 text-xs focus:outline-none font-medium" placeholder="Mensagem..." value={chatMessage} onChange={e => setChatMessage(e.target.value)} />
+               <button type="submit" className="bg-blue-600 text-white p-2.5 rounded-xl hover:bg-blue-700 active:scale-95 transition-all"><Send size={16} /></button>
+             </form>
+          </div>
+        )}
+        <button onClick={() => setIsChatOpen(!isChatOpen)} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-xl transition-all active:scale-90 flex items-center justify-center relative">
+          {isChatOpen ? <X size={24} /> : <MessageSquare size={24} />}
+          {!isChatOpen && chatMessages.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
+        </button>
+      </div>
+
+      <LaunchModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingEntry(null); }} onSave={handleSaveEntry} operators={operators} activeMachines={['Cast 1', 'Cast 2']} initialData={editingEntry} />
+    </div>
+  );
+};
+
+export default App;

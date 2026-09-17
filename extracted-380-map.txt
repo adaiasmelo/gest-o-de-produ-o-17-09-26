@@ -1,0 +1,116 @@
+ay' ? 'text-emerald-100' : 'text-slate-400'}`}>Produção Ontem</p>
+                 <h2 className="text-3xl font-black mt-2">{formatWeight(totals.yesterday)}</h2>
+                 <p className="text-[11px] mt-1 opacity-80">Acumulado diário</p>
+              </button>
+              <button onClick={() => setSelectedTimeframe('week')} className={`p-6 rounded-3xl text-left transition-all ${selectedTimeframe === 'week' ? 'bg-violet-600 text-white shadow-xl' : 'bg-white border border-slate-100 text-slate-800'}`}>
+                 <p className={`text-[10px] font-black uppercase tracking-widest ${selectedTimeframe === 'week' ? 'text-violet-100' : 'text-slate-400'}`}>Produção Semanal</p>
+                 <h2 className="text-3xl font-black mt-2">{formatWeight(totals.week)}</h2>
+                 <p className="text-[11px] mt-1 opacity-80">Últimos 7 dias</p>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {allCharts.map((chart, idx) => {
+                let chartData: any[] = [];
+                let dataKey = chart.key;
+                const isOperatorChart = !chart.key.startsWith('comparison_');
+                
+                if (chart.key === 'comparison_prod_ecob') {
+                  const totalProd = filteredDataForCharts.reduce((acc, c) => acc + (c.netWeight || 0), 0);
+                  const totalEcoB = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoBP || 0) + (c.ecoBM || 0), 0);
+                  chartData = [{ name: 'Produção', value: totalProd }, { name: 'Eco B', value: totalEcoB }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else if (chart.key === 'comparison_prod_borra') {
+                  const totalProd = filteredDataForCharts.reduce((acc, c) => acc + (c.netWeight || 0), 0);
+                  const totalBorra = filteredDataForCharts.reduce((acc, c) => acc + (c.borraTotal || 0), 0);
+                  chartData = [{ name: 'Produção', value: totalProd }, { name: 'Borra', value: totalBorra }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else if (chart.key === 'comparison_ecob_recycled') {
+                  const totalEcoB = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoBP || 0) + (c.ecoBM || 0), 0);
+                  const totalRecycled = filteredDataForCharts.reduce((acc, c) => acc + (c.ecoA || 0), 0);
+                  chartData = [{ name: 'Eco B', value: totalEcoB }, { name: 'Reciclado', value: totalRecycled }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else if (chart.key === 'comparison_time') {
+                  let totalAvailable = 0; let totalDowntime = 0;
+                  filteredDataForCharts.forEach(item => { const shiftDuration = getShiftDuration(item.shift); totalAvailable += shiftDuration; totalDowntime += (item.manutencaoMin || 0) + (item.processoMin || 0) + (item.outrosMin || 0); });
+                  const totalRunning = Math.max(0, totalAvailable - totalDowntime);
+                  chartData = [{ name: 'Operação', value: totalRunning }, { name: 'Parada', value: totalDowntime }].filter(d => d.value > 0);
+                  dataKey = 'value';
+                } else {
+                  chartData = stats.filter(s => (s[chart.key as keyof OperatorStat] as number) > 0);
+                }
+
+                if (chartData.length === 0) return null;
+                const cardId = `chart-card-${idx}`;
+                return (
+                  <div key={idx} id={cardId} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 h-[450px] flex flex-col group/card hover:shadow-xl transition-all">
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="font-black text-xs uppercase tracking-widest text-slate-800">{chart.title}</h3>
+                      <button onClick={() => handleDownloadChartPNG(cardId, chart.title)} className="p-1.5 text-slate-300 hover:text-blue-600 no-print"> <ImageIcon size={16} /> </button>
+                    </div>
+                    <div className="flex-1">
+                       <ResponsiveContainer width="100%" height="100%">
+                         <PieChart>
+                           <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} dataKey={isOperatorChart ? chart.key : dataKey} nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                             {chartData.map((_, i) => <Cell key={i} fill={chart.color[i % chart.color.length]} />)}
+                           </Pie>
+                           <Tooltip formatter={(v: any) => chart.formatter(v)} />
+                           <Legend iconType="circle" />
+                         </PieChart>
+                       </ResponsiveContainer>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in duration-300">
+            <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+               <div className="relative flex-1 min-w-[300px]">
+                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                 <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Pesquisar..." className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold outline-none" />
+               </div>
+               <div className="flex items-center gap-2">
+                 <button onClick={handleExportCSV} className="px-4 py-3 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase flex items-center gap-2"><FileSpreadsheet size={16}/> CSV</button>
+                 <button onClick={() => window.print()} className="p-3 bg-slate-800 text-white rounded-2xl"><Printer size={18}/></button>
+               </div>
+            </div>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-[1200px]">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-6 py-4">Data</th>
+                    <th className="px-6 py-4">Operador</th>
+                    <th className="px-6 py-4">Máquina</th>
+                    <th className="px-6 py-4 text-right">Bruto (Kg)</th>
+                    <th className="px-6 py-4 text-right">Líquido (Kg)</th>
+                    <th className="px-6 py-4 text-right">Eco A</th>
+                    <th className="px-6 py-4 text-right">Paradas (Min)</th>
+                    <th className="px-6 py-4 text-right no-print">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-bold">
+                  {filteredReports.map((e) => (
+                    <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">{e.date}</td>
+                      <td className="px-6 py-4">{e.operator}</td>
+                      <td className="px-6 py-4 uppercase font-black text-slate-500">{e.machine}</td>
+                      <td className="px-6 py-4 text-right">{e.grossWeight}</td>
+                      <td className="px-6 py-4 text-right text-blue-600 font-black">{e.netWeight}</td>
+                      <td className="px-6 py-4 text-right text-emerald-600">{e.ecoA}</td>
+                      <td className="px-6 py-4 text-right text-red-500">{e.manutencaoMin + e.processoMin + e.outrosMin}</td>
+                      <td className="px-6 py-4 text-right no-print">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => {setEditingEntry(e); setIsModalOpen(true);}} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={14}/></button>
+                          <button onClick={() => handleDeleteReportItem(e.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={14}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-800 text-white font-black">
+                    <td colSpan={3} className="px-6 py-4 text-right uppercase">Totais:</td>
+                    <td className="px-6 py-4 text-right">{reportSums.grossWeight}</td>
+                    <td className="px-6 py-4 text-right text-blue-400">{reportSums.netWeight}</td>
+                    <td className="px-6 py-4 text-right text-emerald-400">{reportSums.ecoA}</td>
+                    <td className="px-6 py-4 text-right text-red-400">{reportSums.manutencaoMin + reportSums.processoMin + reportSums.

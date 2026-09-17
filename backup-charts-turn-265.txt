@@ -1,0 +1,464 @@
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Menu, Plus, RotateCcw, Download, Trash2, Cpu, CheckCircle2, AlertTriangle, X, Settings, Target, RefreshCw, Filter, Info, Power, Users, Printer, Leaf } from 'lucide-react';
+import { Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import { toPng } from 'html-to-image';
+import { ProductionEntry } from './types';
+import { INITIAL_DATA, GOAL_VALUE as DEFAULT_GOAL } from './constants';
+import LaunchModal from './components/LaunchModal';
+
+const APP_DATA_VERSION = '4.7'; 
+
+const App: React.FC = () => {
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
+    const savedVersion = localStorage.getItem('manupackaging_version');
+    const savedData = localStorage.getItem('manupackaging_data');
+    if (savedVersion !== APP_DATA_VERSION) return INITIAL_DATA;
+    return savedData ? JSON.parse(savedData) : INITIAL_DATA;
+  });
+
+  const [goalValue, setGoalValue] = useState<number>(() => {
+    const savedGoal = localStorage.getItem('manupackaging_goal');
+    return savedGoal ? parseFloat(savedGoal) : DEFAULT_GOAL;
+  });
+
+  const [operators, setOperators] = useState<string[]>(() => {
+    const savedVersion = localStorage.getItem('manupackaging_version');
+    const savedOps = localStorage.getItem('manupackaging_operators');
+    const defaultOps = ['Carlos Philips', 'Deyvis', 'Edilson', 'Erivan', 'Everson', 'Marcelo', 'Nahin', 'Sidoneide'].sort();
+    if (savedVersion !== APP_DATA_VERSION) return defaultOps;
+    return savedOps ? JSON.parse(savedOps) : defaultOps;
+  });
+
+  const [machineManualStatus, setMachineManualStatus] = useState<Record<string, 'Operando' | 'Manutenção'>>(() => {
+    const saved = localStorage.getItem('manupackaging_machine_status');
+    return saved ? JSON.parse(saved) : { 'Cast 1': 'Operando', 'Cast 2': 'Operando' };
+  });
+
+  const [newOperatorName, setNewOperatorName] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [selectedMachine, setSelectedMachine] = useState<string>('Todas');
+  const [selectedOperator, setSelectedOperator] = useState<string>('Todos');
+
+  const prodCardRef = useRef<HTMLDivElement>(null);
+  const stopCardRef = useRef<HTMLDivElement>(null);
+  const ecoACardRef = useRef<HTMLDivElement>(null);
+  const ecoBCardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('manupackaging_data', JSON.stringify(productionData));
+    localStorage.setItem('manupackaging_version', APP_DATA_VERSION);
+  }, [productionData]);
+
+  useEffect(() => {
+    localStorage.setItem('manupackaging_goal', goalValue.toString());
+  }, [goalValue]);
+
+  useEffect(() => {
+    localStorage.setItem('manupackaging_operators', JSON.stringify(operators));
+  }, [operators]);
+
+  useEffect(() => {
+    localStorage.setItem('manupackaging_machine_status', JSON.stringify(machineManualStatus));
+  }, [machineManualStatus]);
+
+  const filteredData = useMemo(() => {
+    return productionData.filter(entry => {
+      const entryDate = entry.date;
+      const matchesStart = !startDate || entryDate >= startDate;
+      const matchesEnd = !endDate || entryDate <= endDate;
+      const matchesMachine = selectedMachine === 'Todas' || entry.machine === selectedMachine;
+      const matchesOperator = selectedOperator === 'Todos' || entry.operator === selectedOperator;
+      return matchesStart && matchesEnd && matchesMachine && matchesOperator;
+    });
+  }, [productionData, startDate, endDate, selectedMachine, selectedOperator]);
+
+  const stats = useMemo(() => {
+    return filteredData.reduce((acc, curr) => ({
+      totalNet: acc.totalNet + (curr.netWeight || 0),
+      totalGross: acc.totalGross + (curr.grossWeight || 0),
+      ecoA: acc.ecoA + (curr.ecoA || 0),
+      ecoBP: acc.ecoBP + (curr.ecoBP || 0),
+      ecoBM: acc.ecoBM + (curr.ecoBM || 0),
+      borra: acc.borra + (curr.borraTotal || 0),
+      paradas: acc.paradas + (curr.manutencaoMin || 0) + (curr.processoMin || 0) + (curr.outrosMin || 0),
+      manut: acc.manut + (curr.manutencaoMin || 0),
+      proc: acc.proc + (curr.processoMin || 0),
+      outros: acc.outros + (curr.outrosMin || 0),
+    }), { totalNet: 0, totalGross: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, paradas: 0, manut: 0, proc: 0, outros: 0 });
+  }, [filteredData]);
+
+  const qualityEfficiency = useMemo(() => {
+    return stats.totalGross > 0 ? (stats.totalNet / stats.totalGross) * 100 : 0;
+  }, [stats]);
+
+  const currentMonthStats = useMemo(() => {
+    const now = new Date();
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyData = productionData.filter(entry => entry.date.startsWith(currentMonthPrefix));
+    return monthlyData.reduce((sum, entry) => sum + (entry.netWeight || 0), 0);
+  }, [productionData]);
+
+  const currentMonthName = useMemo(() => {
+    return new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date()).toUpperCase();
+  }, []);
+
+  const isGoalAchieved = currentMonthStats >= goalValue && goalValue > 0;
+
+  const machineStatusCards = useMemo(() => {
+    const machines = ['Cast 1', 'Cast 2'];
+    return machines.map(m => {
+      const status = machineManualStatus[m] || 'Operando';
+      const color = status === 'Operando' ? 'emerald' : 'orange';
+      const lastEntry = [...productionData].filter(e => e.machine === m).sort((a, b) => b.date.localeCompare(a.date))[0];
+      return { name: m, status, color, lastOp: lastEntry?.operator || '---' };
+    });
+  }, [productionData, machineManualStatus]);
+
+  const toggleMachineStatus = (machineName: string) => {
+    setMachineManualStatus(prev => ({
+      ...prev,
+      [machineName]: prev[machineName] === 'Operando' ? 'Manutenção' : 'Operando'
+    }));
+  };
+
+  const activeMachines = useMemo(() => {
+    return Object.entries(machineManualStatus)
+      .filter(([_, status]) => status === 'Operando')
+      .map(([name]) => name);
+  }, [machineManualStatus]);
+
+  const handleSaveEntry = (newEntry: Omit<ProductionEntry, 'id'>) => {
+    const entryWithId: ProductionEntry = {
+      ...newEntry,
+      id: Math.random().toString(36).substr(2, 9),
+    };
+    setProductionData(prev => [...prev, entryWithId]);
+  };
+
+  const handleResetData = () => {
+    if (confirm('Deseja resetar todos os dados?')) {
+      setProductionData(INITIAL_DATA);
+      setGoalValue(DEFAULT_GOAL);
+      setSelectedOperator('Todos');
+      setIsMenuOpen(false);
+    }
+  };
+
+  const downloadCardAsImage = (containerRef: React.RefObject<HTMLDivElement>, fileName: string) => {
+    if (!containerRef.current) return;
+    const filter = (node: HTMLElement) => !(node.tagName === 'BUTTON' || node.classList?.contains('no-export'));
+    toPng(containerRef.current, { filter, backgroundColor: '#ffffff', pixelRatio: 2 })
+    .then((dataUrl) => {
+      const link = document.createElement('a');
+      link.download = `${fileName}_${new Date().toISOString().split('T')[0]}.png`;
+      link.href = dataUrl;
+      link.click();
+    }).catch(err => console.error(err));
+  };
+
+  const formatWeight = (val: number, unitOverride?: string) => {
+    if (unitOverride === 'MIN') return `${val.toLocaleString('pt-BR')} MIN (${(val / 60).toFixed(1)}h)`;
+    if (val >= 1000) return `${(val / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} T`;
+    return `${val.toLocaleString('pt-BR')} KG`;
+  };
+
+  // LÓGICA DE RANKING RIGOROSA - ORDENAÇÃO POR VALOR DECRESCENTE
+  const mainChartData = useMemo(() => {
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#f97316', '#64748b', '#ef4444', '#06b6d4'];
+    if (selectedOperator === 'Todos') {
+      const performanceMap: Record<string, number> = {};
+      operators.forEach(op => { performanceMap[op] = 0; });
+      filteredData.forEach(entry => {
+        if (performanceMap[entry.operator] !== undefined) performanceMap[entry.operator] += (entry.netWeight || 0);
+      });
+      return Object.entries(performanceMap)
+        .sort((a, b) => b[1] - a[1]) 
+        .map(([name, kg], index) => ({ 
+          name, value: kg, color: colors[index % colors.length], unit: 'KG'
+        }));
+    } else {
+      return [
+        { name: 'PROD. LÍQUIDA', value: stats.totalNet, unit: 'KG' },
+        { name: 'ECO A', value: stats.ecoA, unit: 'KG' },
+        { name: 'ECO B', value: stats.ecoBP + stats.ecoBM, unit: 'KG' },
+        { name: 'BORRA', value: stats.borra, unit: 'KG' }
+      ].filter(d => d.value > 0).sort((a, b) => b.value - a.value).map((item, index) => ({ ...item, color: colors[index % colors.length] }));
+    }
+  }, [filteredData, selectedOperator, stats, operators]);
+
+  // RANKING ECO A
+  const ecoAChartData = useMemo(() => {
+    const colors = ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#059669', '#065f46', '#064e3b', '#3b82f6'];
+    const performanceMap: Record<string, number> = {};
+    operators.forEach(op => { performanceMap[op] = 0; });
+    filteredData.forEach(entry => {
+      if (performanceMap[entry.operator] !== undefined) performanceMap[entry.operator] += (entry.ecoA || 0);
+    });
+    return Object.entries(performanceMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, kg], index) => ({ 
+        name, value: kg, color: colors[index % colors.length], unit: 'KG'
+      }));
+  }, [filteredData, operators]);
+
+  // RANKING ECO B
+  const ecoBChartData = useMemo(() => {
+    const colors = ['#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#7c3aed', '#6d28d9', '#5b21b6', '#3b82f6'];
+    const performanceMap: Record<string, number> = {};
+    operators.forEach(op => { performanceMap[op] = 0; });
+    filteredData.forEach(entry => {
+      if (performanceMap[entry.operator] !== undefined) performanceMap[entry.operator] += (entry.ecoBP || 0) + (entry.ecoBM || 0);
+    });
+    return Object.entries(performanceMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, kg], index) => ({ 
+        name, value: kg, color: colors[index % colors.length], unit: 'KG'
+      }));
+  }, [filteredData, operators]);
+
+  const downtimePieData = useMemo(() => {
+    const colors = ['#f97316', '#f59e0b', '#94a3b8'];
+    return [
+      { name: 'MANUTENÇÃO', value: stats.manut, unit: 'MIN' },
+      { name: 'PROCESSO', value: stats.proc, unit: 'MIN' },
+      { name: 'OUTROS', value: stats.outros, unit: 'MIN' }
+    ].filter(d => d.value > 0).sort((a, b) => b.value - a.value).map((item, index) => ({ ...item, color: colors[index % colors.length] }));
+  }, [stats]);
+
+  const renderGridLegend = (props: any) => {
+    const { payload } = props;
+    if (!payload) return null;
+    const sortedPayload = [...payload].sort((a: any, b: any) => b.payload.value - a.payload.value);
+
+    return (
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-8 max-w-lg mx-auto px-4">
+        {sortedPayload.map((entry: any, index: number) => {
+          const data = entry.payload;
+          const isMin = data.unit === 'MIN';
+          
+          let rankClass = "bg-slate-100 text-slate-600 border-slate-200";
+          if (index === 0) rankClass = "bg-amber-400 text-white border-amber-500 shadow-md shadow-amber-100";
+          if (index === 1) rankClass = "bg-slate-300 text-white border-slate-400 shadow-md shadow-slate-100";
+          if (index === 2) rankClass = "bg-orange-400 text-white border-orange-500 shadow-md shadow-orange-100";
+
+          return (
+            <div key={`rank-${index}`} className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-50 transition-colors">
+              <div className={`flex items-center justify-center w-5 h-5 rounded-md text-[8px] font-black shrink-0 border ${rankClass}`}>
+                {index + 1}º
+              </div>
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+              <div className="flex flex-col min-w-0">
+                <span className="text-[10px] font-black text-slate-700 uppercase truncate leading-none mb-0.5">{entry.value}:</span>
+                <span className={`text-[10px] font-black ${isMin ? 'text-orange-600' : 'text-blue-600'}`}>
+                  {formatWeight(data.value, data.unit)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, fill }: any) => {
+    const RADIAN = Math.PI / 180;
+    const sin = Math.sin(-midAngle * RADIAN);
+    const cos = Math.cos(-midAngle * RADIAN);
+    const sx = cx + (outerRadius) * cos;
+    const sy = cy + (outerRadius) * sin;
+    const mx = cx + (outerRadius + 15) * cos;
+    const my = cy + (outerRadius + 15) * sin;
+    const ex = mx + (cos >= 0 ? 1 : -1) * 8;
+    const ey = my;
+    const textAnchor = cos >= 0 ? 'start' : 'end';
+    return (
+      <g>
+        <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={fill} fill="none" strokeWidth={1.5} />
+        <circle cx={ex} cy={ey} r={1.5} fill={fill} stroke="none" />
+        <text x={ex + (cos >= 0 ? 1 : -1) * 6} y={ey + 3} textAnchor={textAnchor} fill="#64748b" fontSize={9} fontWeight="black">
+          {`${(percent * 100).toFixed(1)}%`}
+        </text>
+      </g>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20 overflow-x-hidden">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white"><Cpu size={18} /></div>
+          <span className="tracking-tight">Manupackaging <span className="text-blue-600">Pro</span></span>
+        </h1>
+        <div className="flex items-center gap-2">
+           <button onClick={() => window.print()} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200"><Printer size={18} /></button>
+           <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg shadow-blue-200 text-sm"><Plus size={18} /><span className="hidden sm:inline">Novo Lançamento</span></button>
+           <button onClick={() => setIsMenuOpen(true)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600"><Menu size={24} /></button>
+        </div>
+      </header>
+
+      <div id="menu-lateral" className={`fixed inset-0 z-50 transition-all duration-300 ${isMenuOpen ? 'visible' : 'invisible'}`}>
+        <div className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 ${isMenuOpen ? 'opacity-100' : 'opacity-0'}`} onClick={() => setIsMenuOpen(false)} />
+        <div className={`absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl transition-transform duration-300 transform p-6 flex flex-col gap-6 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto custom-scrollbar`}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Settings size={20} className="text-blue-600" /> OPÇÕES</h2>
+            <button onClick={() => setIsMenuOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={24} /></button>
+          </div>
+          <div className="space-y-4">
+             <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Filtrar Operador</label>
+                <select value={selectedOperator} onChange={(e) => setSelectedOperator(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold text-slate-700 focus:outline-none">
+                  <option value="Todos">Todos</option>
+                  {operators.map(op => (<option key={op} value={op}>{op}</option>))}
+                </select>
+             </div>
+             <div className="space-y-3 pt-4 border-t border-slate-100">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Meta Mensal (KG)</h3>
+                <input type="number" value={goalValue} onChange={(e) => setGoalValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-black text-blue-600 focus:outline-none" />
+             </div>
+             <button onClick={handleResetData} className="w-full bg-slate-100 text-slate-500 p-4 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-between hover:bg-slate-200 mt-auto">Resetar Dados <RefreshCw size={16} /></button>
+          </div>
+        </div>
+      </div>
+
+      <main className="max-w-6xl mx-auto p-4 space-y-6">
+        {/* Status Máquinas */}
+        <div className="grid grid-cols-2 gap-4">
+          {machineStatusCards.map((m) => (
+            <div key={m.name} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{m.name}</span>
+                <button onClick={() => toggleMachineStatus(m.name)} className={`p-1.5 rounded-lg transition-all no-print ${m.status === 'Operando' ? 'text-emerald-600 bg-emerald-50' : 'text-orange-600 bg-orange-50'}`}><Power size={14} /></button>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${m.status === 'Operando' ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                  {m.status === 'Operando' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+                </div>
+                <div>
+                   <span className="text-sm font-bold text-slate-700 block">{m.status}</span>
+                   <p className="text-[9px] text-slate-400 font-medium">Últ. Op: {m.lastOp}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Status Rápido */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100"><span className="text-[9px] font-black text-slate-400 uppercase block">Eficiência</span><span className="text-xl font-black text-emerald-500">{qualityEfficiency.toFixed(1)}%</span></div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100"><span className="text-[9px] font-black text-slate-400 uppercase block">Total Borra</span><span className="text-xl font-black text-red-500">{formatWeight(stats.borra)}</span></div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100"><span className="text-[9px] font-black text-slate-400 uppercase block">Paradas</span><span className="text-xl font-black text-orange-500">{(stats.paradas / 60).toFixed(1)}h</span></div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100"><span className="text-[9px] font-black text-slate-400 uppercase block">Produção Total</span><span className="text-xl font-black text-blue-600">{formatWeight(stats.totalNet)}</span></div>
+        </div>
+
+        {/* Meta Mensal */}
+        <div className={`bg-white rounded-2xl p-6 shadow-sm border transition-all ${isGoalAchieved ? 'border-emerald-500' : 'border-blue-500/10'}`}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Meta Mensal ({currentMonthName})</span>
+               <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-black text-slate-800 tracking-tighter">{formatWeight(currentMonthStats)}</span>
+                  <span className="text-slate-400 font-medium text-xs">/ {formatWeight(goalValue)}</span>
+               </div>
+            </div>
+            <span className={`text-3xl font-black ${isGoalAchieved ? 'text-emerald-600' : 'text-blue-600'}`}>{goalValue > 0 ? Math.round((currentMonthStats / goalValue) * 100) : 0}%</span>
+          </div>
+          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-1000 ${isGoalAchieved ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${Math.min((currentMonthStats / (goalValue || 1)) * 100, 100)}%` }}></div>
+          </div>
+        </div>
+
+        {/* Dashboard de Gráficos em Grade 2x2 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div ref={prodCardRef} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col min-h-[580px]">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">LEADERBOARD PRODUÇÃO TOTAL</h3>
+              <button onClick={() => downloadCardAsImage(prodCardRef, 'ranking_total')} className="p-1.5 text-slate-300 hover:text-blue-600 rounded-lg no-export"><Download size={16} /></button>
+            </div>
+            <div className="h-[400px] w-full pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={mainChartData} cx="50%" cy="45%" innerRadius={55} outerRadius={75} dataKey="value" label={renderCustomLabel} paddingAngle={4} isAnimationActive={false}>
+                    {mainChartData.map((e, i) => <Cell key={`cell-${i}`} fill={e.color} stroke="none" />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" content={renderGridLegend} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div ref={stopCardRef} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col min-h-[580px]">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest text-orange-600">IMPACTO DE PARADAS</h3>
+              <button onClick={() => downloadCardAsImage(stopCardRef, 'paradas')} className="p-1.5 text-slate-300 hover:text-orange-600 rounded-lg no-export"><Download size={16} /></button>
+            </div>
+            <div className="h-[400px] w-full pt-4">
+              {stats.paradas > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={downtimePieData} cx="50%" cy="45%" innerRadius={55} outerRadius={75} dataKey="value" label={renderCustomLabel} paddingAngle={6}>
+                      {downtimePieData.map((e, i) => <Cell key={`cell-d-${i}`} fill={e.color} stroke="none" />)}
+                    </Pie>
+                    <Tooltip />
+                    <Legend verticalAlign="bottom" content={renderGridLegend} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-300 font-bold uppercase text-xs">Sem paradas registradas</div>
+              )}
+            </div>
+          </div>
+
+          {/* Gráfico ECO A */}
+          <div ref={ecoACardRef} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col min-h-[580px]">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-black text-emerald-700 text-xs uppercase tracking-widest flex items-center gap-2"><Leaf size={14} /> DISTRIBUIÇÃO ECO A</h3>
+              <button onClick={() => downloadCardAsImage(ecoACardRef, 'ranking_ecoA')} className="p-1.5 text-slate-300 hover:text-emerald-600 rounded-lg no-export"><Download size={16} /></button>
+            </div>
+            <div className="h-[400px] w-full pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={ecoAChartData.filter(d => d.value > 0)} cx="50%" cy="45%" innerRadius={55} outerRadius={75} dataKey="value" label={renderCustomLabel} paddingAngle={4}>
+                    {ecoAChartData.filter(d => d.value > 0).map((e, i) => <Cell key={`cell-ecoA-${i}`} fill={e.color} stroke="none" />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" content={renderGridLegend} />
+                </PieChart>
+              </ResponsiveContainer>
+              {ecoAChartData.every(d => d.value === 0) && <div className="text-center text-slate-300 text-[10px] font-bold uppercase mt-20">Sem dados de Eco A</div>}
+            </div>
+          </div>
+
+          {/* Gráfico ECO B */}
+          <div ref={ecoBCardRef} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col min-h-[580px]">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-black text-purple-700 text-xs uppercase tracking-widest flex items-center gap-2"><Leaf size={14} /> DISTRIBUIÇÃO ECO B</h3>
+              <button onClick={() => downloadCardAsImage(ecoBCardRef, 'ranking_ecoB')} className="p-1.5 text-slate-300 hover:text-purple-600 rounded-lg no-export"><Download size={16} /></button>
+            </div>
+            <div className="h-[400px] w-full pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={ecoBChartData.filter(d => d.value > 0)} cx="50%" cy="45%" innerRadius={55} outerRadius={75} dataKey="value" label={renderCustomLabel} paddingAngle={4}>
+                    {ecoBChartData.filter(d => d.value > 0).map((e, i) => <Cell key={`cell-ecoB-${i}`} fill={e.color} stroke="none" />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" content={renderGridLegend} />
+                </PieChart>
+              </ResponsiveContainer>
+              {ecoBChartData.every(d => d.value === 0) && <div className="text-center text-slate-300 text-[10px] font-bold uppercase mt-20">Sem dados de Eco B</div>}
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <LaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveEntry} operators={operators} activeMachines={activeMachines} />
+    </div>
+  );
+};
+
+export default App;

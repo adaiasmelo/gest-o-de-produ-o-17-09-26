@@ -1,0 +1,374 @@
+
+import React, { useState, useMemo } from 'react';
+import { Menu, Plus, TrendingUp, BarChart2, Calendar, Pencil, Filter, RotateCcw, PieChart as PieChartIcon, Download, Clock, Zap } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import { ProductionEntry } from './types';
+import { INITIAL_DATA, GOAL_VALUE } from './constants';
+import LaunchModal from './components/LaunchModal';
+import StatsCard from './components/StatsCard';
+
+const App: React.FC = () => {
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(INITIAL_DATA);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Filter States
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
+  // Filter Logic
+  const filteredData = useMemo(() => {
+    return productionData.filter(entry => {
+      const entryDate = entry.date;
+      const matchesStart = !startDate || entryDate >= startDate;
+      const matchesEnd = !endDate || entryDate <= endDate;
+      return matchesStart && matchesEnd;
+    });
+  }, [productionData, startDate, endDate]);
+
+  const stats = useMemo(() => {
+    const s = filteredData.reduce((acc, curr) => ({
+      totalNet: acc.totalNet + curr.netWeight,
+      totalGross: acc.totalGross + curr.grossWeight,
+      ecoA: acc.ecoA + curr.ecoA,
+      ecoBP: acc.ecoBP + curr.ecoBP,
+      ecoBM: acc.ecoBM + curr.ecoBM,
+      borra: acc.borra + curr.borraTotal,
+      paradas: acc.paradas + curr.manutencaoMin + curr.processoMin + curr.outrosMin,
+    }), { totalNet: 0, totalGross: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, paradas: 0 });
+    
+    const qualityEfficiency = s.totalGross > 0 ? (s.totalNet / s.totalGross) * 100 : 0;
+    
+    return { ...s, qualityEfficiency };
+  }, [filteredData]);
+
+  // Data for Shift Comparison
+  const shiftData = useMemo(() => {
+    const shifts = filteredData.reduce((acc, curr) => {
+      const shift = curr.shift;
+      if (!acc[shift]) acc[shift] = 0;
+      acc[shift] += curr.netWeight;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return Object.entries(shifts).map(([name, value]) => ({ name, value }));
+  }, [filteredData]);
+
+  const percentageGoal = Math.round((stats.totalNet / GOAL_VALUE) * 100);
+
+  const chartData = useMemo(() => {
+    return filteredData.map(entry => ({
+      name: entry.operator,
+      value: entry.netWeight,
+      borra: entry.borraTotal
+    }));
+  }, [filteredData]);
+
+  const lossDistributionData = useMemo(() => {
+    return [
+      { name: 'Eco A', value: stats.ecoA, color: '#10b981' },
+      { name: 'Eco B (Prod)', value: stats.ecoBP, color: '#fbbf24' },
+      { name: 'Eco B (Manut)', value: stats.ecoBM, color: '#fb923c' },
+      { name: 'Borra', value: stats.borra, color: '#ef4444' },
+    ].filter(item => item.value > 0);
+  }, [stats]);
+
+  const handleSaveEntry = (newEntry: Omit<ProductionEntry, 'id'>) => {
+    const entryWithId: ProductionEntry = {
+      ...newEntry,
+      id: Math.random().toString(36).substr(2, 9),
+    };
+    setProductionData(prev => [...prev, entryWithId]);
+  };
+
+  const clearFilters = () => {
+    setStartDate('');
+    setEndDate('');
+  };
+
+  const exportToCSV = () => {
+    const headers = ['Data', 'Operador', 'Maquina', 'Turno', 'Peso Bruto', 'Tara', 'Peso Liquido', 'Eco A', 'Eco B P', 'Eco B M', 'Borra', 'Parada Manut (min)', 'Motivo Manut', 'Parada Proc (min)', 'Motivo Proc', 'Parada Outros (min)', 'Motivo Outros'];
+    const rows = filteredData.map(e => [
+      e.date, e.operator, e.machine, e.shift, e.grossWeight, e.tara, e.netWeight, e.ecoA, e.ecoBP, e.ecoBM, e.borraTotal, 
+      e.manutencaoMin, e.manutencaoMotivo || '', e.processoMin, e.processoMotivo || '', e.outrosMin, e.outrosMotivo || ''
+    ]);
+
+    const csvContent = [headers, ...rows].map(r => r.join(';')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `producao_manupackaging_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100">
+        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+          Controle de Produção 2026
+        </h1>
+        <div className="flex items-center gap-2">
+           <button 
+             onClick={exportToCSV}
+             className="text-slate-500 p-2 hover:bg-slate-100 rounded-lg flex items-center gap-2 text-sm font-medium"
+             title="Exportar Dados"
+           >
+             <Download size={20} />
+             <span className="hidden sm:inline">Exportar</span>
+           </button>
+           <button className="text-slate-600 p-1 hover:bg-slate-100 rounded-lg">
+             <Menu size={24} />
+           </button>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-4 space-y-6">
+        {/* Banner Card */}
+        <div className="relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-white shadow-xl min-h-[160px] flex flex-col justify-between">
+          <div className="relative z-10 flex items-center gap-3">
+             <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <Zap size={20} className="text-white fill-white" />
+             </div>
+             <div>
+               <span className="text-xl font-bold tracking-tight block">Manupackaging</span>
+               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Dashboard Industrial</span>
+             </div>
+          </div>
+          
+          <div className="flex justify-end relative z-10 mt-4">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold px-6 py-2 rounded-full flex items-center gap-2 transition-transform active:scale-95 shadow-lg shadow-yellow-900/20"
+            >
+              <Plus size={20} />
+              Lançar Produção
+            </button>
+          </div>
+
+          <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-blue-600 rounded-full opacity-10 blur-3xl pointer-events-none"></div>
+        </div>
+
+        {/* Quick Insights Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase block">Eficiência Qualidade</span>
+            <span className="text-xl font-black text-emerald-500">{stats.qualityEfficiency.toFixed(1)}%</span>
+          </div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase block">Tempo Parado</span>
+            <span className="text-xl font-black text-slate-700">{stats.paradas} min</span>
+          </div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase block">Peso Médio/Lanç</span>
+            <span className="text-xl font-black text-blue-600">
+              {filteredData.length > 0 ? Math.round(stats.totalNet / filteredData.length).toLocaleString('pt-BR') : 0} kg
+            </span>
+          </div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase block">Lançamentos</span>
+            <span className="text-xl font-black text-slate-700">{filteredData.length}</span>
+          </div>
+        </div>
+
+        {/* Filters Section */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col md:flex-row items-end md:items-center gap-4">
+          <div className="flex-1 w-full space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+              <Calendar size={12} /> Período Inicial
+            </label>
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none text-slate-700 font-medium"
+            />
+          </div>
+          <div className="flex-1 w-full space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+              <Calendar size={12} /> Período Final
+            </label>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none text-slate-700 font-medium"
+            />
+          </div>
+          <button 
+            onClick={clearFilters}
+            className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold transition-colors"
+          >
+            <RotateCcw size={16} /> Reset
+          </button>
+        </div>
+
+        {/* Goal Section */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-blue-500/10">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+               <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Atingimento da Meta</span>
+               <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-black text-slate-800 tracking-tighter">
+                    {stats.totalNet.toLocaleString('pt-BR')}
+                  </span>
+                  <span className="text-slate-400 font-medium text-sm">/ {GOAL_VALUE.toLocaleString('pt-BR')} kg</span>
+               </div>
+            </div>
+            <div className="text-right">
+              <span className="text-3xl font-black text-blue-600">{percentageGoal}%</span>
+              <span className="block text-[9px] font-bold text-slate-400 uppercase">Progresso Atual</span>
+            </div>
+          </div>
+
+          <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden p-1">
+            <div 
+              className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 rounded-full transition-all duration-1000 ease-out shadow-sm"
+              style={{ width: `${Math.min(percentageGoal, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Efficiency Chart */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+               <TrendingUp size={18} className="text-blue-500" />
+               <h3 className="font-bold text-slate-800">Eficiência por Operador</h3>
+            </div>
+            <div className="h-[240px] w-full">
+              {filteredData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                    <Tooltip cursor={{ fill: '#f8fafc' }} />
+                    <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={30} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <NoDataView /> }
+            </div>
+          </div>
+
+          {/* Shift Comparison Chart */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+               <Zap size={18} className="text-amber-500" />
+               <h3 className="font-bold text-slate-800">Produção por Turno</h3>
+            </div>
+            <div className="h-[240px] w-full">
+              {shiftData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={shiftData} layout="vertical">
+                    <CartesianGrid horizontal={false} stroke="#f1f5f9" />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                    <Tooltip cursor={{ fill: '#f8fafc' }} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={40}>
+                      {shiftData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.name === 'Diurno' ? '#60a5fa' : '#818cf8'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <NoDataView /> }
+            </div>
+          </div>
+        </div>
+
+        {/* Analysis Section - Loss Distribution */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-8">
+             <PieChartIcon size={18} className="text-purple-500" />
+             <h3 className="font-bold text-slate-800">Distribuição de Materiais e Perdas</h3>
+          </div>
+          <div className="h-[280px] w-full">
+            {lossDistributionData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={lossDistributionData}
+                    cx="50%" cy="45%"
+                    innerRadius={60} outerRadius={90}
+                    paddingAngle={5} dataKey="value"
+                  >
+                    {lossDistributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" align="center" iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <NoDataView /> }
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <StatsCard label="PRODUÇÃO LÍQUIDA" value={stats.totalNet.toLocaleString('pt-BR')} sublabel="Kg" borderColor="border-blue-500" />
+          <StatsCard label="ECO A (NOBRE)" value={stats.ecoA.toLocaleString('pt-BR')} sublabel="Kg" borderColor="border-emerald-500" />
+          <StatsCard label="BORRA (PERDA)" value={stats.borra.toLocaleString('pt-BR')} sublabel="Kg" borderColor="border-red-500" />
+          <StatsCard label="ECO B PROCESSO" value={stats.ecoBP.toLocaleString('pt-BR')} sublabel="Kg" borderColor="border-amber-500" />
+          <StatsCard label="ECO B MANUT." value={stats.ecoBM.toLocaleString('pt-BR')} sublabel="Kg" borderColor="border-orange-500" />
+          <StatsCard label="TOTAL PARADAS" value={stats.paradas} sublabel="Minutos" borderColor="border-slate-400" />
+        </div>
+
+        {/* Recent Reasons (New Feature) */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+            <Clock size={18} className="text-slate-400" />
+            Passagem de Turno / Motivos Recentes
+          </h3>
+          <div className="space-y-3">
+             {filteredData.slice(-3).reverse().map((e) => (
+               <div key={e.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-1">
+                 <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-slate-500">{e.date} • {e.operator}</span>
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${e.shift === 'Diurno' ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                      {e.shift}
+                    </span>
+                 </div>
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+                    {e.manutencaoMin > 0 && <ReasonTag type="Manut" min={e.manutencaoMin} text={e.manutencaoMotivo} color="orange" />}
+                    {e.processoMin > 0 && <ReasonTag type="Proc" min={e.processoMin} text={e.processoMotivo} color="amber" />}
+                    {e.outrosMin > 0 && <ReasonTag type="Outros" min={e.outrosMin} text={e.outrosMotivo} color="slate" />}
+                 </div>
+               </div>
+             ))}
+          </div>
+        </div>
+      </main>
+
+      <LaunchModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSave={handleSaveEntry} 
+      />
+    </div>
+  );
+};
+
+const NoDataView = () => (
+  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 opacity-30">
+    <BarChart2 size={40} />
+    <span className="text-xs font-bold uppercase tracking-widest">Sem dados no período</span>
+  </div>
+);
+
+const ReasonTag = ({ type, min, text, color }: any) => {
+  const colors: any = {
+    orange: 'text-orange-600 bg-orange-50 border-orange-100',
+    amber: 'text-amber-600 bg-amber-50 border-amber-100',
+    slate: 'text-slate-600 bg-slate-50 border-slate-100'
+  };
+  return (
+    <div className={`text-[10px] p-2 rounded-lg border ${colors[color]}`}>
+      <span className="font-black uppercase">{type}: {min}m</span>
+      <p className="mt-0.5 italic line-clamp-1">{text || 'Sem descrição'}</p>
+    </div>
+  );
+};
+
+export default App;

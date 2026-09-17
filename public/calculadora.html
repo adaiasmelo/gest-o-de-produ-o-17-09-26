@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Calculadora CAST 1">
+  <meta name="description" content="Calculadora de Porcentagens e Balanceamento de Roscas da Linha CAST 1 - Manupackaging">
+
+  <!-- PWA Manifest & Icons -->
+  <link rel="manifest" href="/calculadora-manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/calculadora-192.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon-calculadora.png">
+  <link rel="shortcut icon" href="/calculadora-192.png">
+
+  <title>Calculadora % CAST 1 - Manupackaging</title>
+  
+  <script>
+    (function() {
+      try {
+        var isInstalled = localStorage.getItem('calculadora_cast1_installed') === 'true' ||
+          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          (window.navigator && window.navigator.standalone === true) ||
+          (document.referrer && document.referrer.indexOf('android-app://') !== -1) ||
+          (window.location.search && (window.location.search.indexOf('source=pwa') !== -1 || window.location.search.indexOf('source=installed') !== -1));
+        if (isInstalled) {
+          document.documentElement.classList.add('calc-installed');
+          localStorage.setItem('calculadora_cast1_installed', 'true');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    .calc-installed #installBanner,
+    .calc-installed #btnInstallAppTop,
+    .calc-installed #btnInstallAppBottom {
+      display: none !important;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+      -webkit-appearance: none; 
+      margin: 0; 
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+    @keyframes pulseSoft {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+    .animate-pulse-soft {
+      animation: pulseSoft 2.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 flex flex-col items-center justify-start p-3 sm:p-6 md:p-8">
+
+  <!-- Banner Promocional de Instalação do Aplicativo (PWA) -->
+  <div id="installBanner" class="w-full max-w-2xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 text-white rounded-2xl p-3.5 sm:p-4 mb-3 shadow-xl border border-blue-400/30 flex items-center justify-between gap-3 transition-all">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-white/10 text-yellow-300 border border-white/20 flex items-center justify-center flex-shrink-0 shadow-inner">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </div>
+      <div>
+        <div class="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 flex-wrap">
+          <span>Instalar Aplicativo da Calculadora</span>
+          <span class="bg-emerald-500 text-[10px] font-black uppercase px-1.5 py-0.5 rounded text-white tracking-wider">PWA</span>
+        </div>
+        <p class="text-[11px] text-blue-200 line-clamp-1 sm:line-clamp-none">
+          Baixe no seu celular e abra direto na Calculadora, mesmo sem internet!
+        </p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <button id="btnDismissBanner" class="text-xs text-blue-200 hover:text-white px-2 py-1.5 rounded-lg transition-all">
+        Depois
+      </button>
+      <button id="btnBannerInstall" class="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 font-black text-xs px-3.5 py-2 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer animate-pulse-soft">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        <span>Baixar App</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Top Banner Branding & Ações -->
+  <div class="w-full max-w-2xl flex items-center justify-between mb-3 px-1">
+    <div class="flex items-center gap-2">
+      <img src="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png" alt="Manupackaging" class="h-7 w-auto object-contain" />
+      <span class="text-xs font-black tracking-wider text-slate-500 uppercase">
+        Manupackaging &bull; Linha CAST 1
+      </span>
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Botão de Acessar Sistema -->
+      <a
+        href="/"
+        class="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm transition-all active:scale-95"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+        </svg>
+        <span>Acessar Sistema</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Card da Calculadora (Exato mesmo layout do sistema) -->
+  <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl flex flex-col overflow-hidden">
+    
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-blue-50/40">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="4" y="2" width="16" height="20" rx="2" />
+            <line x1="8" y1="6" x2="16" y2="6" />
+            <line x1="16" y1="14" x2="16" y2="14" />
+            <line x1="16" y1="18" x2="16" y2="18" />
+            <line x1="12" y1="14" x2="12" y2="14" />
+            <line x1="12" y1="18" x2="12" y2="18" />
+            <line x1="8" y1="14" x2="8" y2="14" />
+            <line x1="8" y1="18" x2="8" y2="18" />
+            <line x1="8" y1="10" x2="8" y2="10" />
+            <line x1="12" y1="10" x2="12" y2="10" />
+            <line x1="16" y1="10" x2="16" y2="10" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-base sm:text-lg font-black text-slate-800 tracking-tight uppercase">
+            Calculadora % CAST 1
+          </h2>
+          <p class="text-[11px] font-bold text-slate-500">
+            Produção Integrada &amp; Balanceamento de Roscas
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          id="btnShareWhatsAppTop"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+          title="Compartilhar no WhatsApp"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+          <span class="hidden sm:inline">WhatsApp</span>
+        </button>
+
+        <button
+          id="btnCopyLinkTop"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+          title="Copiar link público da calculadora"
+        >
+          <svg id="copyIconTop" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span id="copyTextTop" class="hidden sm:inline">Copiar Link</span>
+        </button>
+
+        <button
+          id="btnResetTop"
+          class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+          title="Resetar parâmetros da espessura atual"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="p-4 sm:p-6 space-y-5 bg-slate-50/50">
+      
+      <!-- Header Selects: Tipo de Material & Espessura -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8">
+        <div class="flex flex-col items-center w-full sm:w-auto">
+          <label for="tipoMaterial" class="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+            <svg class="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+            Tipo de Material
+          </label>
+          <select
+            id="tipoMaterial"
+            class="w-full sm:w-40 py-2 px-3 text-sm font-black border border-slate-300 rounded-xl bg-slate-50 text-slate-800 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-center"
+          >
+            <option value="LC3" selected>LC3</option>
+            <option value="LC2">LC2</option>
+            <option value="ATX">ATX</option>
+          </select>
+        </div>
+
+        <div class="flex flex-col items-center w-full sm:w-auto">
+          <label for="espessura" class="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+            <svg class="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M12 2v4"/>
+              <path d="M12 18v4"/>
+              <path d="M4.93 4.93l2.83 2.83"/>
+              <path d="M16.24 16.24l2.83 2.83"/>
+              <path d="M2 12h4"/>
+              <path d="M18 12h4"/>
+              <path d="M4.93 19.07l2.83-2.83"/>
+              <path d="M16.24 7.76l2.83-2.83"/>
+            </svg>
+            Espessura (µm)
+          </label>
+          <select
+            id="espessura"
+            class="w-full sm:w-40 py-2 px-3 text-sm font-black border border-slate-300 rounded-xl bg-slate-50 text-slate-800 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-center"
+          >
+            <!-- Injetado via JS -->
+          </select>
+        </div>
+      </div>
+
+      <!-- Dados de Produção da Linha -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+        <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider text-center flex items-center justify-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Dados de Produção da Linha
+        </h3>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="flex flex-col items-center">
+            <label for="calcGramatura" class="text-[11px] font-bold text-slate-600 mb-1">
+              Gramatura (g):
+            </label>
+            <input
+              type="number"
+              id="calcGramatura"
+              step="any"
+              class="w-full py-2 px-3 text-sm font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-blue-600 focus:bg-white transition-all bg-slate-50"
+            />
+          </div>
+
+          <div class="flex flex-col items-center">
+            <label for="calcVelocidade" class="text-[11px] font-bold text-slate-600 mb-1">
+              Velocidade (m/min):
+            </label>
+            <input
+              type="number"
+              id="calcVelocidade"
+              step="any"
+              class="w-full py-2 px-3 text-sm font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-blue-600 focus:bg-white transition-all bg-slate-50"
+            />
+          </div>
+
+          <div class="flex flex-col items-center">
+            <label for="calcMetragem" class="text-[11px] font-bold text-slate-600 mb-1">
+              Metragem (m):
+            </label>
+            <input
+              type="number"
+              id="calcMetragem"
+              step="any"
+              class="w-full py-2 px-3 text-sm font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-blue-600 focus:bg-white transition-all bg-slate-50"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Cards das 4 Roscas (A, B, C, D) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <!-- Rosca A -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 border-t-4 border-t-blue-600 shadow-sm flex flex-col justify-between">
+          <div>
+            <label for="rpmA" class="block font-black text-sm text-slate-800">
+              Rosca A
+            </label>
+            <span class="block text-[11px] font-semibold text-slate-400 mb-2">
+              Estrutural Grande
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-500">RPM:</span>
+              <input
+                type="number"
+                id="rpmA"
+                step="any"
+                class="w-full py-2 px-3 text-base font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-blue-600 bg-slate-50"
+              />
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-dashed border-slate-200 text-center">
+            <div id="pctA" class="text-xl font-black text-blue-700">0,00%</div>
+            <div id="vazaoA" class="text-xs font-bold text-slate-500 mt-0.5">0,0 kg/h</div>
+          </div>
+        </div>
+
+        <!-- Rosca B -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 border-t-4 border-t-amber-600 shadow-sm flex flex-col justify-between">
+          <div>
+            <label for="rpmB" class="block font-black text-sm text-slate-800">
+              Rosca B
+            </label>
+            <span class="block text-[11px] font-semibold text-slate-400 mb-2">
+              Pega / Interna
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-500">RPM:</span>
+              <input
+                type="number"
+                id="rpmB"
+                step="any"
+                class="w-full py-2 px-3 text-base font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-amber-600 bg-slate-50"
+              />
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-dashed border-slate-200 text-center">
+            <div id="pctB" class="text-xl font-black text-amber-600">0,00%</div>
+            <div id="vazaoB" class="text-xs font-bold text-slate-500 mt-0.5">0,0 kg/h</div>
+          </div>
+        </div>
+
+        <!-- Rosca C -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 border-t-4 border-t-emerald-600 shadow-sm flex flex-col justify-between">
+          <div>
+            <label for="rpmC" class="block font-black text-sm text-slate-800">
+              Rosca C
+            </label>
+            <span class="block text-[11px] font-semibold text-slate-400 mb-2">
+              Metalloceno / Externa
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-500">RPM:</span>
+              <input
+                type="number"
+                id="rpmC"
+                step="any"
+                class="w-full py-2 px-3 text-base font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-emerald-600 bg-slate-50"
+              />
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-dashed border-slate-200 text-center">
+            <div id="pctC" class="text-xl font-black text-emerald-600">0,00%</div>
+            <div id="vazaoC" class="text-xs font-bold text-slate-500 mt-0.5">0,0 kg/h</div>
+          </div>
+        </div>
+
+        <!-- Rosca D -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 border-t-4 border-t-blue-600 shadow-sm flex flex-col justify-between">
+          <div>
+            <label for="rpmD" class="block font-black text-sm text-slate-800">
+              Rosca D
+            </label>
+            <span class="block text-[11px] font-semibold text-slate-400 mb-2">
+              Estrutural Grande
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-500">RPM:</span>
+              <input
+                type="number"
+                id="rpmD"
+                step="any"
+                class="w-full py-2 px-3 text-base font-black border-2 border-slate-200 rounded-xl outline-none text-center text-slate-800 focus:border-blue-600 bg-slate-50"
+              />
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-dashed border-slate-200 text-center">
+            <div id="pctD" class="text-xl font-black text-blue-700">0,00%</div>
+            <div id="vazaoD" class="text-xs font-bold text-slate-500 mt-0.5">0,0 kg/h</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total das Camadas -->
+      <div id="totalCamadasBox" class="text-center font-black text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 py-2.5 px-4 rounded-xl shadow-sm">
+        Total das Camadas: 100,00%
+      </div>
+
+      <!-- Indicadores da Linha (Card Azul) -->
+      <div class="bg-gradient-to-br from-blue-700 to-indigo-900 text-white p-5 rounded-2xl shadow-lg border border-blue-500/30">
+        <h3 class="text-sm font-black uppercase tracking-wider text-center text-white/90 mb-4 pb-2 border-b border-white/15 flex items-center justify-center gap-2">
+          <svg class="w-4 h-4 text-yellow-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+            <rect x="9" y="9" width="6" height="6"/>
+            <line x1="9" y1="1" x2="9" y2="4"/>
+            <line x1="15" y1="1" x2="15" y2="4"/>
+            <line x1="9" y1="20" x2="9" y2="23"/>
+            <line x1="15" y1="20" x2="15" y2="23"/>
+            <line x1="20" y1="9" x2="23" y2="9"/>
+            <line x1="20" y1="15" x2="23" y2="15"/>
+            <line x1="1" y1="9" x2="4" y2="9"/>
+            <line x1="1" y1="15" x2="4" y2="15"/>
+          </svg>
+          Indicadores da Linha
+        </h3>
+
+        <div class="space-y-2.5 text-xs font-bold">
+          <div class="flex items-center justify-between py-1.5 border-b border-white/10">
+            <span class="text-white/80">Taxa de Produção Total:</span>
+            <span id="taxaProducaoDisplay" class="text-yellow-300 font-black text-base sm:text-lg">
+              0,00 Kg/h
+            </span>
+          </div>
+
+          <div class="flex items-center justify-between py-1.5 border-b border-white/10">
+            <span class="text-white/80 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-blue-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+              </svg>
+              Paletes / Turno (12h):
+            </span>
+            <span id="paletesDisplay" class="font-black text-white text-sm">
+              0
+            </span>
+          </div>
+
+          <div class="flex items-center justify-between py-1.5 border-b border-white/10">
+            <span class="text-white/80 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-blue-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Tempo para 1 Palete:
+            </span>
+            <span id="tempoPaleteDisplay" class="font-black text-white text-sm">
+              00:00 h/min
+            </span>
+          </div>
+
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-white/80 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-emerald-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M12 2v4"/>
+                <path d="M12 18v4"/>
+                <path d="M4.93 4.93l2.83 2.83"/>
+                <path d="M16.24 16.24l2.83 2.83"/>
+                <path d="M2 12h4"/>
+                <path d="M18 12h4"/>
+              </svg>
+              Tempo por Queda:
+            </span>
+            <span id="tempoQuedaDisplay" class="font-black text-emerald-300 text-sm">
+              0,00 min
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Assinatura -->
+      <div class="text-center text-[11px] font-bold text-slate-400 pt-1">
+        Manupackaging Fitasa e Amazônia &bull; Desenvolvido por Adaias Melo
+      </div>
+
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="px-6 py-3.5 border-t border-slate-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+        <button
+          type="button"
+          id="btnCopyLinkBottom"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-slate-100 hover:bg-slate-200 text-slate-700 active:scale-95"
+        >
+          <svg id="copyIconBottom" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span id="copyTextBottom">Copiar Link</span>
+        </button>
+      </div>
+
+      <button
+        type="button"
+        id="btnShareWhatsAppBottom"
+        class="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <circle cx="18" cy="5" r="3"/>
+          <circle cx="6" cy="12" r="3"/>
+          <circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        <span>Enviar no WhatsApp</span>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Modal da Experiência de Instalação (Idêntico ao Gestão de Produção) -->
+  <div id="calculatorInstallModal" class="fixed inset-0 z-[300] bg-slate-950 flex items-center justify-center overflow-hidden font-sans select-none" style="display: none;">
+    <!-- Background Decor -->
+    <div class="absolute top-0 left-0 w-full h-full overflow-hidden opacity-20 pointer-events-none">
+      <div class="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-blue-600/25 blur-[120px] rounded-full"></div>
+      <div class="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-amber-500/20 blur-[120px] rounded-full"></div>
+    </div>
+
+    <!-- Botão Fechar -->
+    <button id="btnModalClose" class="absolute top-6 right-6 z-20 w-10 h-10 rounded-full bg-slate-900/80 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-all cursor-pointer shadow-lg" title="Fechar">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+
+    <!-- Etapa 1: Intro -->
+    <div id="modalStepIntro" class="relative z-10 w-full max-w-2xl px-6 text-center">
+      <div class="flex justify-center mb-8">
+        <div class="w-24 h-24 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2rem] flex items-center justify-center shadow-2xl shadow-blue-500/25 rotate-3 border border-blue-400/30">
+          <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><path d="M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01"/></svg>
+        </div>
+      </div>
+      <h1 class="text-3xl md:text-5xl font-black text-white tracking-tighter mb-4 leading-[1.05]">
+        PREPARANDO SETUP LOCAL <br/>
+        <span class="text-yellow-400 italic">CALCULADORA CAST 1</span>
+      </h1>
+      <p class="text-slate-400 text-base md:text-lg font-medium max-w-lg mx-auto mb-10 leading-relaxed">
+        O sistema irá configurar os módulos de formulação da CAST 1 e preparar a instalação nativa no seu celular ou computador.
+      </p>
+      <button id="btnStartExperience" class="group relative inline-flex items-center gap-4 bg-white text-slate-950 px-9 py-5 rounded-3xl font-black uppercase tracking-widest text-sm hover:bg-yellow-400 hover:text-slate-950 transition-all duration-300 shadow-2xl shadow-white/5 active:scale-95 cursor-pointer">
+        Iniciar Instalação 
+        <div class="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-950 group-hover:bg-slate-950 group-hover:text-white transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+        </div>
+      </button>
+      <div class="mt-10 flex flex-wrap justify-center items-center gap-4 md:gap-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+        <span>Cálculo CAST 1</span>
+        <span class="w-1.5 h-1.5 bg-slate-800 rounded-full"></span>
+        <span>Offline Ready</span>
+        <span class="w-1.5 h-1.5 bg-slate-800 rounded-full"></span>
+        <span>PWA Nativo</span>
+      </div>
+    </div>
+
+    <!-- Etapa 2: Installing Progress -->
+    <div id="modalStepInstalling" class="relative z-10 w-full max-w-xl px-10 text-center" style="display: none;">
+      <div class="mb-14">
+        <div class="w-16 h-16 bg-yellow-400/10 rounded-2xl flex items-center justify-center mx-auto mb-6 text-yellow-400 border border-yellow-400/20">
+          <svg class="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        </div>
+        <h2 class="text-sm font-black text-white uppercase tracking-[0.3em] mb-2">Instalando Módulos</h2>
+        <p class="text-slate-500 font-bold text-xs">Aguarde enquanto preparamos a Calculadora CAST 1 no seu dispositivo.</p>
+      </div>
+      <div class="relative mb-16">
+        <div class="h-4 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5 p-1">
+          <div id="modalProgressBar" class="h-full bg-gradient-to-r from-blue-600 via-yellow-400 to-emerald-400 rounded-full shadow-[0_0_20px_rgba(250,204,21,0.35)]" style="width: 0%; transition: width 0.08s linear;"></div>
+        </div>
+        <div class="absolute -top-10 right-0">
+          <span id="modalProgressText" class="text-4xl font-black text-white/15 italic"># 0%</span>
+        </div>
+      </div>
+      <div class="h-24 flex flex-col items-center justify-center">
+        <p id="modalTipTitle" class="text-xs font-black uppercase tracking-widest text-yellow-400 mb-1">Configurando Motor de Formulação CAST 1</p>
+        <p id="modalTipDesc" class="text-slate-400 text-sm font-medium">Otimizando proporções das extrusoras A, B, C e D...</p>
+      </div>
+    </div>
+
+    <!-- Etapa 3: Complete -->
+    <div id="modalStepComplete" class="relative z-10 w-full max-w-lg px-8 text-center" style="display: none;">
+      <div class="w-20 h-20 bg-emerald-500 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-emerald-500/25">
+        <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <h2 class="text-3xl font-black text-white uppercase tracking-tight mb-3">Configuração Concluída</h2>
+      <p id="modalCompleteDesc" class="text-slate-400 text-sm font-medium mb-8">
+        Os módulos foram configurados. Clique abaixo para confirmar a instalação nativa da Calculadora CAST 1 no seu dispositivo.
+      </p>
+      <button id="btnModalFinalizeInstall" class="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-500 transition-all shadow-xl shadow-blue-500/20 active:scale-95 flex items-center justify-center gap-3 cursor-pointer mb-4">
+        Finalizar e Instalar
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+      <div id="modalFallbackCards" class="text-left mb-6" style="display: none;"></div>
+      <button id="btnModalFinishClose" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 cursor-pointer">
+        Depois
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // --- SERVICE WORKER REGISTRATION (PWA) ---
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/calculadora-sw.js', { scope: '/' })
+        .then((reg) => console.log('PWA SW registrado com sucesso:', reg.scope))
+        .catch((err) => console.warn('Erro ao registrar PWA SW:', err));
+    }
+
+    // --- GERENCIAMENTO DE INSTALAÇÃO DO APP (PWA) ---
+    let deferredInstallPrompt = null;
+    let installTimer = null;
+    let infoTimer = null;
+
+    const installationTips = [
+      { title: "Configurando Motor de Formulação CAST 1", desc: "Otimizando proporções das extrusoras A, B, C e D..." },
+      { title: "Sincronizando Parâmetros de Produção", desc: "Ajustando gramatura, velocidade e micrômetros..." },
+      { title: "Ativando Módulos de Cálculo em Tempo Real", desc: "Garantindo respostas instantâneas em chão de fábrica..." },
+      { title: "Otimizando Cache Local e Offline", desc: "Garantindo funcionamento 100% sem internet na linha..." },
+      { title: "Preparando Instalação PWA Nativa", desc: "Integrando atalho rápido na tela de início do seu dispositivo..." }
+    ];
+
+    function isAppInstalled() {
+      try {
+        if (localStorage.getItem('calculadora_cast1_installed') === 'true') return true;
+        if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+        if (window.navigator && window.navigator.standalone === true) return true;
+        if (document.referrer && document.referrer.indexOf('android-app://') !== -1) return true;
+        if (window.location.search && (window.location.search.indexOf('source=pwa') !== -1 || window.location.search.indexOf('source=installed') !== -1)) return true;
+      } catch (e) {}
+      return false;
+    }
+
+    const elInstallBanner = document.getElementById('installBanner');
+    const elBtnBannerInstall = document.getElementById('btnBannerInstall');
+    const elBtnDismissBanner = document.getElementById('btnDismissBanner');
+
+    const elModal = document.getElementById('calculatorInstallModal');
+    const elModalClose = document.getElementById('btnModalClose');
+    const elModalStepIntro = document.getElementById('modalStepIntro');
+    const elModalStepInstalling = document.getElementById('modalStepInstalling');
+    const elModalStepComplete = document.getElementById('modalStepComplete');
+    const elBtnStartExperience = document.getElementById('btnStartExperience');
+    const elProgressBar = document.getElementById('modalProgressBar');
+    const elProgressText = document.getElementById('modalProgressText');
+    const elTipTitle = document.getElementById('modalTipTitle');
+    const elTipDesc = document.getElementById('modalTipDesc');
+    const elBtnFinalize = document.getElementById('btnModalFinalizeInstall');
+    const elFallbackCards = document.getElementById('modalFallbackCards');
+    const elBtnFinishClose = document.getElementById('btnModalFinishClose');
+
+    function hideAllInstallElements() {
+      document.documentElement.classList.add('calc-installed');
+      if (elInstallBanner) elInstallBanner.style.display = 'none';
+    }
+
+    if (isAppInstalled()) {
+      try {
+        localStorage.setItem('calculadora_cast1_installed', 'true');
+      } catch (e) {}
+      hideAllInstallElements();
+    } else {
+      if (sessionStorage.getItem('calc_banner_dismissed') === 'true') {
+        if (elInstallBanner) elInstallBanner.style.display = 'none';
+      }
+    }
+
+    // Captura o evento nativo de instalação do navegador
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      window.__CALCULATOR_DEFERRED_PROMPT__ = e;
+      console.log('Evento beforeinstallprompt capturado com sucesso.');
+      
+      if (!isAppInstalled()) {
+        if (elInstallBanner && sessionStorage.getItem('calc_banner_dismissed') !== 'true') {
+          elInstallBanner.style.display = 'flex';
+        }
+        if (window.location.search.indexOf('source=install') !== -1) {
+          openInstallExperience();
+        }
+      } else {
+        hideAllInstallElements();
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      console.log('Calculadora CAST 1 instalada com sucesso como aplicativo!');
+      deferredInstallPrompt = null;
+      try {
+        localStorage.setItem('calculadora_cast1_installed', 'true');
+      } catch (e) {}
+      hideAllInstallElements();
+      closeInstallExperience();
+    });
+
+    function openInstallExperience() {
+      if (isAppInstalled()) {
+        hideAllInstallElements();
+        return;
+      }
+      if (!elModal) return;
+
+      elModal.style.display = 'flex';
+      elModalStepIntro.style.display = 'block';
+      elModalStepInstalling.style.display = 'none';
+      elModalStepComplete.style.display = 'none';
+    }
+
+    function closeInstallExperience() {
+      if (installTimer) clearInterval(installTimer);
+      if (infoTimer) clearInterval(infoTimer);
+      if (elModal) elModal.style.display = 'none';
+    }
+
+    function startInstallingStep() {
+      elModalStepIntro.style.display = 'none';
+      elModalStepInstalling.style.display = 'block';
+      elModalStepComplete.style.display = 'none';
+
+      let progress = 0;
+      elProgressBar.style.width = '0%';
+      elProgressText.textContent = '# 0%';
+
+      let tipIndex = 0;
+      infoTimer = setInterval(() => {
+        tipIndex = (tipIndex + 1) % installationTips.length;
+        if (elTipTitle) elTipTitle.textContent = installationTips[tipIndex].title;
+        if (elTipDesc) elTipDesc.textContent = installationTips[tipIndex].desc;
+      }, 1800);
+
+      installTimer = setInterval(() => {
+        progress += 1;
+        if (progress > 100) progress = 100;
+        if (elProgressBar) elProgressBar.style.width = progress + '%';
+        if (elProgressText) elProgressText.textContent = '# ' + progress + '%';
+
+        if (progress >= 100) {
+          clearInterval(installTimer);
+          clearInterval(infoTimer);
+          setTimeout(showCompleteStep, 800);
+        }
+      }, 85);
+    }
+
+    function showCompleteStep() {
+      elModalStepInstalling.style.display = 'none';
+      elModalStepComplete.style.display = 'block';
+
+      const ua = navigator.userAgent || '';
+      const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const isInIframe = window.self !== window.top;
+
+      if (deferredInstallPrompt) {
+        if (elBtnFinalize) elBtnFinalize.style.display = 'flex';
+        if (elFallbackCards) elFallbackCards.style.display = 'none';
+        if (elBtnFinishClose) elBtnFinishClose.textContent = 'Depois';
+      } else {
+        if (elBtnFinalize) elBtnFinalize.style.display = 'none';
+        if (elBtnFinishClose) elBtnFinishClose.textContent = 'Concluir e Usar Calculadora';
+        if (elFallbackCards) {
+          elFallbackCards.style.display = 'block';
+          if (isInIframe) {
+            elFallbackCards.innerHTML = `
+              <div class="bg-blue-950/60 border border-blue-500/30 rounded-2xl p-5 mb-3 text-left">
+                <p class="text-xs font-black text-white uppercase mb-1">Abrir em Nova Aba</p>
+                <p class="text-[11px] text-slate-300 font-medium leading-relaxed mb-3">
+                  Como você está no modo de visualização interna, abra a Calculadora diretamente no navegador para que a instalação nativa do Android/Windows seja ativada.
+                </p>
+                <button onclick="window.open(window.location.origin + '/calculadora.html', '_blank'); closeInstallExperience();" class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black px-4 py-2 rounded-xl transition-all shadow-md cursor-pointer">
+                  <span>Abrir na Aba Real</span>
+                </button>
+              </div>
+            `;
+          } else if (isIOS) {
+            elFallbackCards.innerHTML = `
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-3 text-left">
+                <p class="text-xs font-black text-white uppercase mb-1">Instruções para iPhone / iPad</p>
+                <p class="text-[11px] text-slate-300 font-medium leading-relaxed">
+                  1. Toque no botão <strong class="text-blue-400 font-extrabold">Compartilhar</strong> (ícone ⎋ na barra do Safari).<br/>
+                  2. Role para baixo e selecione <strong class="text-blue-400 font-extrabold">"Adicionar à Tela de Início"</strong> ➕.
+                </p>
+              </div>
+            `;
+          } else {
+            elFallbackCards.innerHTML = `
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-3 text-left">
+                <p class="text-xs font-black text-white uppercase mb-1">Instruções para Celular / Computador</p>
+                <p class="text-[11px] text-slate-300 font-medium leading-relaxed">
+                  1. Toque no menu do Chrome/Edge (<strong class="text-amber-400 font-extrabold">3 pontos ⋮</strong> no canto superior).<br/>
+                  2. Selecione <strong class="text-amber-400 font-extrabold">"Instalar aplicativo"</strong> ou <strong class="text-amber-400 font-extrabold">"Adicionar à tela inicial"</strong>.
+                </p>
+              </div>
+            `;
+          }
+        }
+      }
+    }
+
+    if (elBtnStartExperience) {
+      elBtnStartExperience.addEventListener('click', startInstallingStep);
+    }
+
+    if (elBtnFinalize) {
+      elBtnFinalize.addEventListener('click', async () => {
+        if (deferredInstallPrompt) {
+          try {
+            await deferredInstallPrompt.prompt();
+            const choiceResult = await deferredInstallPrompt.userChoice;
+            if (choiceResult && choiceResult.outcome === 'accepted') {
+              try {
+                localStorage.setItem('calculadora_cast1_installed', 'true');
+              } catch (e) {}
+              deferredInstallPrompt = null;
+              hideAllInstallElements();
+              closeInstallExperience();
+            } else {
+              closeInstallExperience();
+            }
+          } catch (err) {
+            console.warn('Erro prompt de instalação:', err);
+            closeInstallExperience();
+          }
+        } else {
+          closeInstallExperience();
+        }
+      });
+    }
+
+    if (elModalClose) elModalClose.addEventListener('click', closeInstallExperience);
+    if (elBtnFinishClose) elBtnFinishClose.addEventListener('click', closeInstallExperience);
+
+    if (elBtnBannerInstall) {
+      elBtnBannerInstall.addEventListener('click', openInstallExperience);
+    }
+    
+    if (elBtnDismissBanner) {
+      elBtnDismissBanner.addEventListener('click', () => {
+        if (elInstallBanner) elInstallBanner.style.display = 'none';
+        sessionStorage.setItem('calc_banner_dismissed', 'true');
+      });
+    }
+
+    // --- DADOS E CONSTANTES (EXATAMENTE IGUAIS AO SISTEMA) ---
+    const TABELA_GRAMATURA_500 = {
+      10: 4.60, 11: 5.06, 12: 5.52, 13: 5.98, 14: 6.44, 15: 6.90,
+      16: 7.36, 17: 7.82, 18: 8.28, 19: 8.74, 20: 9.20, 21: 9.66,
+      22: 10.12, 23: 10.58, 24: 11.04, 25: 11.50, 26: 11.96, 27: 12.42,
+      28: 12.88, 29: 13.34, 30: 13.80, 31: 14.26, 32: 14.72, 33: 15.18,
+      34: 15.64, 35: 16.10, 36: 16.56, 37: 17.02, 38: 17.48, 39: 17.94,
+      40: 18.40, 41: 18.86, 42: 19.32, 43: 19.78, 44: 20.24, 45: 20.70,
+      46: 21.16, 47: 21.62, 48: 22.08, 49: 22.54, 50: 23.00, 70: 32.20,
+      71: 32.66
+    };
+
+    const ESPESSURAS = [
+      10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+      30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+      50, 70, 71
+    ];
+
+    const FATOR_A = 500 / 58;    // ~8.6207 kg/h por RPM
+    const FATOR_B = 63.83 / 130; // ~0.4910 kg/h por RPM
+    const FATOR_C = 125 / 160;   // ~0.78125 kg/h por RPM
+    const FATOR_D = 500 / 58;    // ~8.6207 kg/h por RPM
+
+    // Estado Atual
+    let state = {
+      tipoMaterial: 'LC3',
+      espessura: 30,
+      gramatura: 13.80,
+      velocidade: 230,
+      metragem: 3623,
+      rpmA: 56,
+      rpmB: 116,
+      rpmC: 146,
+      rpmD: 56
+    };
+
+    // Elementos DOM
+    const elTipoMaterial = document.getElementById('tipoMaterial');
+    const elEspessura = document.getElementById('espessura');
+    const elGramatura = document.getElementById('calcGramatura');
+    const elVelocidade = document.getElementById('calcVelocidade');
+    const elMetragem = document.getElementById('calcMetragem');
+
+    const elRpmA = document.getElementById('rpmA');
+    const elRpmB = document.getElementById('rpmB');
+    const elRpmC = document.getElementById('rpmC');
+    const elRpmD = document.getElementById('rpmD');
+
+    const elPctA = document.getElementById('pctA');
+    const elPctB = document.getElementById('pctB');
+    const elPctC = document.getElementById('pctC');
+    const elPctD = document.getElementById('pctD');
+
+    const elVazaoA = document.getElementById('vazaoA');
+    const elVazaoB = document.getElementById('vazaoB');
+    const elVazaoC = document.getElementById('vazaoC');
+    const elVazaoD = document.getElementById('vazaoD');
+
+    const elTotalCamadas = document.getElementById('totalCamadasBox');
+    const elTaxaProducao = document.getElementById('taxaProducaoDisplay');
+    const elPaletes = document.getElementById('paletesDisplay');
+    const elTempoPalete = document.getElementById('tempoPaleteDisplay');
+    const elTempoQueda = document.getElementById('tempoQuedaDisplay');
+
+    // Popular opções de Espessura
+    ESPESSURAS.forEach(esp => {
+      const opt = document.createElement('option');
+      opt.value = esp;
+      opt.textContent = esp + ' µm';
+      if (esp === 30) opt.selected = true;
+      elEspessura.appendChild(opt);
+    });
+
+    // Função de Metragem Automática Integrada
+    function calcularMetragemAutomatica(espessuraMicras) {
+      const pesoFixadoKg = 50;
+      const densidade = 0.092;
+      const larguraMetros = 500 / 100;
+
+      if (espessuraMicras <= 0 || isNaN(espessuraMicras)) return 0;
+
+      const espessuraMm = espessuraMicras / 1000;
+      const metragemArea = (pesoFixadoKg * 1000) / (densidade * larguraMetros * espessuraMm);
+      const metragemAjustada = metragemArea / 1000;
+
+      return Math.round(metragemAjustada);
+    }
+
+    // Recalcula velocidades e sugestões de RPM
+    function recalcularVelocidadesSugestoes(tipoMat, gram, vel) {
+      const pctB_alvo = 0.05;
+      const pctC_alvo = tipoMat === 'LC2' ? 0.05 : 0.10;
+      const pctAD_alvo = (1.0 - (pctB_alvo + pctC_alvo)) / 2.0;
+
+      const quantidadeBobinas = 6;
+      const tempoMinutos = 60;
+      const taxaProducaoQuilos = (gram * quantidadeBobinas * vel * tempoMinutos) / 1000;
+
+      if (taxaProducaoQuilos > 0) {
+        const vazaoAlvoA = taxaProducaoQuilos * pctAD_alvo;
+        const vazaoAlvoB = taxaProducaoQuilos * pctB_alvo;
+        const vazaoAlvoC = taxaProducaoQuilos * pctC_alvo;
+        const vazaoAlvoD = taxaProducaoQuilos * pctAD_alvo;
+
+        state.rpmA = Math.round(vazaoAlvoA / FATOR_A);
+        state.rpmB = Math.round(vazaoAlvoB / FATOR_B);
+        state.rpmC = Math.round(vazaoAlvoC / FATOR_C);
+        state.rpmD = Math.round(vazaoAlvoD / FATOR_D);
+      }
+    }
+
+    // Alteração de Espessura
+    function handleEspessuraChange(novaEspessura) {
+      state.espessura = novaEspessura;
+      const novaGramatura = TABELA_GRAMATURA_500[novaEspessura] !== undefined 
+        ? TABELA_GRAMATURA_500[novaEspessura] 
+        : state.gramatura;
+      state.gramatura = novaGramatura;
+
+      state.metragem = calcularMetragemAutomatica(novaEspessura);
+      recalcularVelocidadesSugestoes(state.tipoMaterial, novaGramatura, state.velocidade);
+      updateUI();
+    }
+
+    // Alteração Manual de Rosca A ou D
+    function handleRpmAouDChange(newRpmA, newRpmD) {
+      state.rpmA = newRpmA;
+      state.rpmD = newRpmD;
+
+      const pctB_alvo = 0.05;
+      const pctC_alvo = state.tipoMaterial === 'LC2' ? 0.05 : 0.10;
+      const pctAD_alvo_total = 1.0 - (pctB_alvo + pctC_alvo);
+
+      const vazaoAD = (newRpmA * FATOR_A) + (newRpmD * FATOR_D);
+
+      if (vazaoAD > 0) {
+        const vazaoTotalEstimada = vazaoAD / pctAD_alvo_total;
+        const vazaoAlvoB = vazaoTotalEstimada * pctB_alvo;
+        const vazaoAlvoC = vazaoTotalEstimada * pctC_alvo;
+
+        state.rpmB = Math.round(vazaoAlvoB / FATOR_B);
+        state.rpmC = Math.round(vazaoAlvoC / FATOR_C);
+      }
+      updateUI();
+    }
+
+    function formatarPorcentagem(valor) {
+      return valor.toFixed(2).replace('.', ',') + "%";
+    }
+
+    function formatarTempo(t) {
+      if (t <= 0 || isNaN(t)) return "00:00 h/min";
+      const h = Math.floor(t);
+      const m = Math.round((t - h) * 60);
+      return `${h}:${m < 10 ? '0' : ''}${m} h/min`;
+    }
+
+    // Atualiza a tela com base nos estados
+    function updateUI() {
+      // Inputs
+      elTipoMaterial.value = state.tipoMaterial;
+      elEspessura.value = state.espessura;
+      elGramatura.value = state.gramatura;
+      elVelocidade.value = state.velocidade;
+      elMetragem.value = state.metragem;
+
+      elRpmA.value = state.rpmA;
+      elRpmB.value = state.rpmB;
+      elRpmC.value = state.rpmC;
+      elRpmD.value = state.rpmD;
+
+      // Cálculos Derivados
+      const vazaoA = state.rpmA * FATOR_A;
+      const vazaoB = state.rpmB * FATOR_B;
+      const vazaoC = state.rpmC * FATOR_C;
+      const vazaoD = state.rpmD * FATOR_D;
+      const vazaoCalculadaTotal = vazaoA + vazaoB + vazaoC + vazaoD;
+
+      let pctA = 0, pctB = 0, pctC = 0, pctD = 0;
+      if (vazaoCalculadaTotal > 0) {
+        pctA = (vazaoA / vazaoCalculadaTotal) * 100;
+        pctB = (vazaoB / vazaoCalculadaTotal) * 100;
+        pctC = (vazaoC / vazaoCalculadaTotal) * 100;
+        pctD = (vazaoD / vazaoCalculadaTotal) * 100;
+      }
+      const totalCamadas = pctA + pctB + pctC + pctD;
+
+      elPctA.textContent = formatarPorcentagem(pctA);
+      elPctB.textContent = formatarPorcentagem(pctB);
+      elPctC.textContent = formatarPorcentagem(pctC);
+      elPctD.textContent = formatarPorcentagem(pctD);
+
+      elVazaoA.textContent = vazaoA.toFixed(1).replace('.', ',') + " kg/h";
+      elVazaoB.textContent = vazaoB.toFixed(1).replace('.', ',') + " kg/h";
+      elVazaoC.textContent = vazaoC.toFixed(1).replace('.', ',') + " kg/h";
+      elVazaoD.textContent = vazaoD.toFixed(1).replace('.', ',') + " kg/h";
+
+      elTotalCamadas.textContent = "Total das Camadas: " + formatarPorcentagem(totalCamadas);
+
+      // Indicadores de Produção da Linha
+      const quantidadeBobinas = 6;
+      const tempoMinutos = 60;
+      const horasProducao = 12;
+      const pesoPalete = 800;
+
+      const gramaturaTotal = state.gramatura * quantidadeBobinas;
+      const taxaProducaoGramas = gramaturaTotal * state.velocidade * tempoMinutos;
+      const taxaProducaoQuilos = taxaProducaoGramas / 1000;
+
+      const resultadoPalete = Math.floor((taxaProducaoQuilos * horasProducao) / pesoPalete);
+      const tempoPalete = taxaProducaoQuilos > 0 ? (pesoPalete / taxaProducaoQuilos) : 0;
+      const tempoQuedaMinutos = state.velocidade > 0 ? (state.metragem / state.velocidade).toFixed(2) : "0.00";
+
+      elTaxaProducao.textContent = taxaProducaoQuilos.toFixed(2).replace('.', ',') + " Kg/h";
+      elPaletes.textContent = resultadoPalete;
+      elTempoPalete.textContent = formatarTempo(tempoPalete);
+      elTempoQueda.textContent = tempoQuedaMinutos.replace('.', ',') + " min";
+    }
+
+    // Event Listeners
+    elTipoMaterial.addEventListener('change', (e) => {
+      state.tipoMaterial = e.target.value;
+      recalcularVelocidadesSugestoes(state.tipoMaterial, state.gramatura, state.velocidade);
+      updateUI();
+    });
+
+    elEspessura.addEventListener('change', (e) => {
+      handleEspessuraChange(parseFloat(e.target.value));
+    });
+
+    elGramatura.addEventListener('input', (e) => {
+      state.gramatura = parseFloat(e.target.value) || 0;
+      recalcularVelocidadesSugestoes(state.tipoMaterial, state.gramatura, state.velocidade);
+      updateUI();
+    });
+
+    elVelocidade.addEventListener('input', (e) => {
+      state.velocidade = parseFloat(e.target.value) || 0;
+      recalcularVelocidadesSugestoes(state.tipoMaterial, state.gramatura, state.velocidade);
+      updateUI();
+    });
+
+    elMetragem.addEventListener('input', (e) => {
+      state.metragem = parseFloat(e.target.value) || 0;
+      updateUI();
+    });
+
+    elRpmA.addEventListener('input', (e) => {
+      handleRpmAouDChange(parseFloat(e.target.value) || 0, state.rpmD);
+    });
+
+    elRpmB.addEventListener('input', (e) => {
+      state.rpmB = parseFloat(e.target.value) || 0;
+      updateUI();
+    });
+
+    elRpmC.addEventListener('input', (e) => {
+      state.rpmC = parseFloat(e.target.value) || 0;
+      updateUI();
+    });
+
+    elRpmD.addEventListener('input', (e) => {
+      handleRpmAouDChange(state.rpmA, parseFloat(e.target.value) || 0);
+    });
+
+    document.getElementById('btnResetTop').addEventListener('click', () => {
+      handleEspessuraChange(state.espessura);
+    });
+
+    // Compartilhamento e Cópia
+    function copyLink() {
+      const url = window.location.href;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+
+      const copyTextTop = document.getElementById('copyTextTop');
+      const copyTextBottom = document.getElementById('copyTextBottom');
+      if (copyTextTop) copyTextTop.textContent = 'Link Copiado!';
+      if (copyTextBottom) copyTextBottom.textContent = 'Link Copiado!';
+      setTimeout(() => {
+        if (copyTextTop) copyTextTop.textContent = 'Copiar Link';
+        if (copyTextBottom) copyTextBottom.textContent = 'Copiar Link';
+      }, 3000);
+    }
+
+    function shareWhatsApp() {
+      const url = window.location.href;
+      const text = `📊 *Calculadora % CAST 1 (Manupackaging)*\nPredefinição de Roscas e Produção:\n${url}`;
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    }
+
+    document.getElementById('btnCopyLinkTop').addEventListener('click', copyLink);
+    document.getElementById('btnCopyLinkBottom').addEventListener('click', copyLink);
+    document.getElementById('btnShareWhatsAppTop').addEventListener('click', shareWhatsApp);
+    document.getElementById('btnShareWhatsAppBottom').addEventListener('click', shareWhatsApp);
+
+    // Inicialização
+    handleEspessuraChange(30);
+  </script>
+</body>
+</html>

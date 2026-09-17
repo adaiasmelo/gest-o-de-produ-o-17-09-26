@@ -1,0 +1,692 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Menu, Plus, Download, Trash2, Cpu, CheckCircle2, AlertTriangle, X, Settings, RefreshCw, Printer, BarChart3, FileText, Search, MessageSquare, Send, Palmtree, ChevronDown, ShieldCheck, LogOut, Save, Upload, Users2, Edit2, Calendar, Clock, Sun, Moon, Briefcase, Info, CheckSquare, Square, RotateCcw, Ghost } from 'lucide-react';
+import { Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import { ProductionEntry, Shift } from './types';
+import { INITIAL_DATA, GOAL_VALUE as DEFAULT_GOAL, DEFAULT_OPERATORS } from './constants';
+import LaunchModal from './components/LaunchModal';
+import ShiftModal from './components/ShiftModal';
+import EmployeeModal from './components/EmployeeModal';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
+
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  const radius = outerRadius * 1.15;
+  const x = cx + radius * Math.cos(-midAngle * Math.PI / 180);
+  const y = cy + radius * Math.sin(-midAngle * Math.PI / 180);
+  return (
+    <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black">
+      {`${(percent * 100).toFixed(1)}%`}
+    </text>
+  );
+};
+
+interface OperatorStat {
+  name: string;
+  prod: number;
+  ecoA: number;
+  ecoBP: number;
+  ecoBM: number;
+  borra: number;
+  p_manut: number;
+  p_proc: number;
+  p_outros: number;
+}
+
+const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('manupackaging_session'));
+  const [authData] = useState({ user: 'adaiasmelo', pass: '123456' }); 
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'personnel'>('dashboard');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<'year' | 'day' | 'week' | 'all'>('all');
+
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
+    const saved = localStorage.getItem('manupackaging_data');
+    return saved ? JSON.parse(saved) : INITIAL_DATA;
+  });
+
+  const [goalValue, setGoalValue] = useState<number>(() => {
+    const saved = localStorage.getItem('manupackaging_goal');
+    return saved ? parseFloat(saved) : DEFAULT_GOAL;
+  });
+
+  const [operators, setOperators] = useState<string[]>(() => {
+    const saved = localStorage.getItem('manupackaging_operators');
+    return saved ? JSON.parse(saved) : DEFAULT_OPERATORS;
+  });
+
+  const [machines, setMachines] = useState<string[]>(() => {
+    const saved = localStorage.getItem('manupackaging_machines');
+    return saved ? JSON.parse(saved) : ['Cast 1', 'Cast 2', 'Erema 1', 'Ghezzi', 'Lintech', 'Wutec'];
+  });
+
+  const [employees, setEmployees] = useState<any[]>(() => {
+    const saved = localStorage.getItem('manupackaging_employees');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [vacancies, setVacancies] = useState<any[]>(() => {
+    const saved = localStorage.getItem('manupackaging_vacancies');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [shifts, setShifts] = useState<Shift[]>(() => {
+    const saved = localStorage.getItem('manupackaging_shifts');
+    return saved ? JSON.parse(saved) : [
+      { id: '1', name: 'Diurno 1', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+      { id: '2', name: 'Noturno 1', startTime: '19:00', endTime: '07:00', type: 'Noturno' },
+      { id: '3', name: 'Diurno 2', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+      { id: '4', name: 'Noturno 2', startTime: '19:00', endTime: '07:00', type: 'Noturno' },
+      { id: '5', name: 'Comercial', startTime: '08:00', endTime: '18:00', type: 'Diurno' }
+    ];
+  });
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ProductionEntry | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<any>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [teamViewMode, setTeamViewMode] = useState<'active' | 'vacancies' | 'shifts'>('active');
+  
+  const [newOpName, setNewOpName] = useState('');
+  const [newMachineName, setNewMachineName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { localStorage.setItem('manupackaging_data', JSON.stringify(productionData)); }, [productionData]);
+  useEffect(() => { localStorage.setItem('manupackaging_employees', JSON.stringify(employees)); }, [employees]);
+  useEffect(() => { localStorage.setItem('manupackaging_vacancies', JSON.stringify(vacancies)); }, [vacancies]);
+  useEffect(() => { localStorage.setItem('manupackaging_shifts', JSON.stringify(shifts)); }, [shifts]);
+  useEffect(() => { localStorage.setItem('manupackaging_goal', goalValue.toString()); }, [goalValue]);
+  useEffect(() => { localStorage.setItem('manupackaging_operators', JSON.stringify(operators)); }, [operators]);
+  useEffect(() => { localStorage.setItem('manupackaging_machines', JSON.stringify(machines)); }, [machines]);
+
+  const handleSaveEntry = (newEntry: Omit<ProductionEntry, 'id'> & { id?: string }) => {
+    if (newEntry.id) {
+      setProductionData(prev => prev.map(e => e.id === newEntry.id ? (newEntry as ProductionEntry) : e));
+    } else {
+      setProductionData(prev => [{ ...newEntry, id: Math.random().toString(36).substr(2, 9) } as ProductionEntry, ...prev]);
+    }
+    setEditingEntry(null);
+  };
+
+  const handleSaveShift = (newShift: Omit<Shift, 'id'>) => {
+    const shift: Shift = { ...newShift, id: Math.random().toString(36).substr(2, 9) };
+    setShifts(prev => [...prev, shift]);
+  };
+
+  const handleSaveEmployee = (newEmp: any) => {
+    const id = newEmp.id || Math.random().toString(36).substr(2, 9);
+    if (newEmp.status === 'Vaga Aberta') {
+      const vacancy = {
+        id,
+        name: newEmp.name || `Vaga ${newEmp.role}`,
+        role: newEmp.role,
+        group: newEmp.shift,
+        sector: newEmp.sector,
+        machine: newEmp.machine,
+        openSince: new Date().toLocaleDateString('sv-SE')
+      };
+      setVacancies(prev => [...prev.filter(v => v.id !== id), vacancy]);
+      setEmployees(prev => prev.filter(e => e.id !== id));
+    } else {
+      const employee = {
+        id,
+        name: newEmp.name,
+        role: newEmp.role,
+        sector: newEmp.sector,
+        machine: newEmp.machine,
+        group: newEmp.shift,
+        status: newEmp.status,
+        startDate: newEmp.startDate || new Date().toLocaleDateString('sv-SE')
+      };
+      setEmployees(prev => [...prev.filter(e => e.id !== id), employee]);
+      setVacancies(prev => prev.filter(v => v.id !== id));
+    }
+    setEditingEmployee(null);
+  };
+
+  const handleDeleteEntry = (id: string) => {
+    if (window.confirm('Excluir este lançamento permanentemente?')) {
+      setProductionData(prev => prev.filter(e => e.id !== id));
+    }
+  };
+
+  const handleExportData = () => {
+    const data = { production: productionData, employees, shifts, goal: goalValue, operators, machines, vacancies };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `manupackaging_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.production) setProductionData(data.production);
+        if (data.employees) setEmployees(data.employees);
+        if (data.vacancies) setVacancies(data.vacancies);
+        if (data.shifts) setShifts(data.shifts);
+        if (data.goal) setGoalValue(data.goal);
+        if (data.operators) setOperators(data.operators);
+        if (data.machines) setMachines(data.machines);
+        alert('Dados importados com sucesso!');
+        setIsMenuOpen(false);
+      } catch { alert('Erro na leitura do arquivo.'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const formatWeight = (val: number) => val >= 1000 ? (val / 1000).toFixed(1) + ' T' : val.toLocaleString() + ' KG';
+  const formatMinutes = (val: number) => val >= 60 ? `${Math.floor(val / 60)}h ${val % 60}m` : `${val} min`;
+
+  const filteredDataForTable = useMemo<ProductionEntry[]>(() => {
+    return productionData.filter(e => {
+      const s = searchTerm.toLowerCase();
+      return !searchTerm || e.operator.toLowerCase().includes(s) || e.machine.toLowerCase().includes(s) || e.date.includes(s);
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [productionData, searchTerm]);
+
+  const { currentMonthStats, currentYearStats, currentWeekStats, currentDayStats } = useMemo(() => {
+    const now = new Date();
+    const yearStr = now.getFullYear().toString();
+    const monthPrefix = `${yearStr}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const dayStr = now.toLocaleDateString('sv-SE');
+    const d = new Date(now);
+    const diff = d.getDate() - d.getDay() + (d.getDay() === 0 ? -6 : 1);
+    const mondayStr = new Date(d.setDate(diff)).toISOString().split('T')[0];
+
+    return productionData.reduce((acc, e) => {
+      if (e.date.startsWith(yearStr)) acc.currentYearStats += (e.netWeight || 0);
+      if (e.date.startsWith(monthPrefix)) acc.currentMonthStats += (e.netWeight || 0);
+      if (e.date >= mondayStr) acc.currentWeekStats += (e.netWeight || 0);
+      if (e.date === dayStr) acc.currentDayStats += (e.netWeight || 0);
+      return acc;
+    }, { currentMonthStats: 0, currentYearStats: 0, currentWeekStats: 0, currentDayStats: 0 });
+  }, [productionData]);
+
+  // Lógica de filtragem para os gráficos baseada no card selecionado
+  const filteredDataForCharts = useMemo(() => {
+    if (selectedTimeframe === 'all') return productionData;
+    
+    const now = new Date();
+    const yearStr = now.getFullYear().toString();
+    const dayStr = now.toLocaleDateString('sv-SE');
+    const d = new Date(now);
+    const diff = d.getDate() - d.getDay() + (d.getDay() === 0 ? -6 : 1);
+    const mondayStr = new Date(d.setDate(diff)).toISOString().split('T')[0];
+
+    return productionData.filter(e => {
+      if (selectedTimeframe === 'year') return e.date.startsWith(yearStr);
+      if (selectedTimeframe === 'day') return e.date === dayStr;
+      if (selectedTimeframe === 'week') return e.date >= mondayStr;
+      return true;
+    });
+  }, [productionData, selectedTimeframe]);
+
+  const operatorStats = useMemo<OperatorStat[]>(() => {
+    const stats: Record<string, OperatorStat> = {};
+    
+    // Inicializa com operadores registrados
+    operators.forEach(op => { 
+      stats[op] = { name: op, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, p_manut: 0, p_proc: 0, p_outros: 0 }; 
+    });
+    
+    // Usa os dados filtrados para preencher as estatísticas
+    filteredDataForCharts.forEach(e => {
+      const opName = e.operator || 'Sem Operador';
+      if (!stats[opName]) {
+        stats[opName] = { name: opName, prod: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borra: 0, p_manut: 0, p_proc: 0, p_outros: 0 };
+      }
+      stats[opName].prod += (e.netWeight || 0);
+      stats[opName].ecoA += (e.ecoA || 0);
+      stats[opName].ecoBP += (e.ecoBP || 0);
+      stats[opName].ecoBM += (e.ecoBM || 0);
+      stats[opName].borra += (e.borraTotal || 0);
+      stats[opName].p_manut += (e.manutencaoMin || 0);
+      stats[opName].p_proc += (e.processoMin || 0);
+      stats[opName].p_outros += (e.outrosMin || 0);
+    });
+    
+    return Object.values(stats);
+  }, [filteredDataForCharts, operators]);
+
+  const prodChartData = useMemo(() => [...operatorStats].filter(s => s.prod > 0).sort((a, b) => b.prod - a.prod), [operatorStats]);
+  const ecoAChartData = useMemo(() => [...operatorStats].filter(s => s.ecoA > 0).sort((a, b) => b.ecoA - a.ecoA), [operatorStats]);
+  const ecoBPChartData = useMemo(() => [...operatorStats].filter(s => s.ecoBP > 0).sort((a, b) => b.ecoBP - a.ecoBP), [operatorStats]);
+  const borraChartData = useMemo(() => [...operatorStats].filter(s => s.borra > 0).sort((a, b) => b.borra - a.borra), [operatorStats]);
+  
+  const ecoBOverviewData = useMemo(() => {
+    const totalP = operatorStats.reduce((sum, s) => sum + s.ecoBP, 0);
+    const totalM = operatorStats.reduce((sum, s) => sum + s.ecoBM, 0);
+    return [{ name: 'Eco B (Prod)', value: totalP }, { name: 'Eco B (Manut)', value: totalM }].filter(item => item.value > 0);
+  }, [operatorStats]);
+
+  const stopsOverviewData = useMemo(() => {
+    const totalManut = operatorStats.reduce((sum, s) => sum + s.p_manut, 0);
+    const totalProc = operatorStats.reduce((sum, s) => sum + s.p_proc, 0);
+    const totalOutros = operatorStats.reduce((sum, s) => sum + s.p_outros, 0);
+    return [
+      { name: 'Manutenção', value: totalManut },
+      { name: 'Processo', value: totalProc },
+      { name: 'Outros', value: totalOutros }
+    ].filter(item => item.value > 0);
+  }, [operatorStats]);
+
+  const groupedPersonnel = useMemo(() => {
+    const g: Record<string, any[]> = {};
+    employees.forEach(e => {
+      const key = `${e.sector} - ${e.group}`;
+      if (!g[key]) g[key] = [];
+      g[key].push(e);
+    });
+    return g;
+  }, [employees]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 w-full max-w-md space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg mb-4"><ShieldCheck size={32} /></div>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">Manupackaging <span className="text-blue-600">Pro</span></h1>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Controle de Acesso</p>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); localStorage.setItem('manupackaging_session', 'true'); setIsAuthenticated(true); }} className="space-y-6">
+            <input type="text" value={authData.user} readOnly className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" />
+            <input type="password" value={authData.pass} readOnly className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold" />
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all">Entrar</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white"><Cpu size={18} /></div>
+           <span className="tracking-tight uppercase">Controle de Produção</span>
+        </h1>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setEditingEntry(null); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 shadow-sm uppercase transition-all"><Plus size={16} /> Lançar</button>
+          <button onClick={() => setIsMenuOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-all"><Settings size={22} /></button>
+        </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto px-4 mt-6 no-print">
+        <div className="bg-slate-200/50 p-1 rounded-2xl inline-flex gap-1 overflow-x-auto no-scrollbar max-w-full">
+          {['dashboard', 'reports', 'personnel'].map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              {tab === 'dashboard' ? <BarChart3 size={14} /> : tab === 'reports' ? <FileText size={14} /> : <Users2 size={14} />}
+              {tab === 'dashboard' ? 'Dashboard' : tab === 'reports' ? 'Relatórios' : 'Pessoal'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <main className="max-w-6xl mx-auto p-4 space-y-6">
+        {activeTab === 'dashboard' ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <button 
+                onClick={() => setSelectedTimeframe('year')}
+                className={`text-left bg-white rounded-3xl p-6 shadow-sm border transition-all ${selectedTimeframe === 'year' ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-slate-100 hover:border-slate-300'}`}
+              >
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400">Ano</span>
+                <div className="text-2xl font-black text-slate-800 mt-1">{formatWeight(currentYearStats)}</div>
+              </button>
+              <button 
+                onClick={() => setSelectedTimeframe('day')}
+                className={`text-left bg-white rounded-3xl p-6 shadow-sm border transition-all ${selectedTimeframe === 'day' ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-slate-100 hover:border-slate-300'}`}
+              >
+                <span className="text-[10px] uppercase font-black tracking-widest text-blue-600">Dia</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">{formatWeight(currentDayStats)}</div>
+              </button>
+              <button 
+                onClick={() => setSelectedTimeframe('week')}
+                className={`text-left bg-white rounded-3xl p-6 shadow-sm border transition-all ${selectedTimeframe === 'week' ? 'border-emerald-600 ring-4 ring-emerald-500/10' : 'border-slate-100 hover:border-slate-300'}`}
+              >
+                <span className="text-[10px] uppercase font-black tracking-widest text-emerald-600">Semana</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">{formatWeight(currentWeekStats)}</div>
+              </button>
+            </div>
+
+            <button 
+              onClick={() => setSelectedTimeframe('all')}
+              className={`w-full text-left bg-white rounded-3xl p-6 shadow-sm border transition-all space-y-4 ${selectedTimeframe === 'all' ? 'border-blue-600 ring-4 ring-blue-500/10 bg-blue-50/10' : 'border-slate-100 hover:border-slate-300'}`}
+            >
+              <div className="flex items-center justify-between font-black">
+                <div>
+                  <span className="text-[10px] uppercase font-black tracking-widest text-slate-400">Meta Mensal (Status Geral)</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl text-slate-800 tracking-tighter">{(currentMonthStats/1000).toFixed(1)} T</span>
+                    <span className="text-slate-400 font-medium text-xs">/ {(goalValue/1000).toFixed(1)} T</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                   <span className="text-3xl text-blue-600">{goalValue > 0 ? Math.round((currentMonthStats / goalValue) * 100) : 0}%</span>
+                   <p className="text-[8px] uppercase text-slate-400 font-bold mt-1 tracking-tighter">Clique para ver Tudo</p>
+                </div>
+              </div>
+              <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-600 rounded-full transition-all duration-1000" style={{ width: `${Math.min((currentMonthStats / (goalValue || 1)) * 100, 100)}%` }}></div>
+              </div>
+            </button>
+
+            <div className="flex items-center justify-between mb-2">
+               <h2 className="text-[11px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
+                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                 Dados filtrados: <span className="text-slate-800">{selectedTimeframe === 'all' ? 'Tudo' : selectedTimeframe === 'year' ? 'Este Ano' : selectedTimeframe === 'week' ? 'Esta Semana' : 'Hoje'}</span>
+               </h2>
+               {selectedTimeframe !== 'all' && (
+                 <button onClick={() => setSelectedTimeframe('all')} className="text-[10px] font-black text-blue-600 uppercase hover:underline">Limpar Filtro</button>
+               )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4">🏆 Produção Líquida (KG)</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={prodChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="prod" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {prodChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => formatWeight(val)} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4">♻️ Eco A (KG)</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={ecoAChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="ecoA" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {ecoAChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => formatWeight(val)} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4">♻️ Eco B Produção (KG)</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={ecoBPChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="ecoBP" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {ecoBPChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => formatWeight(val)} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4">📊 Eco B: Prod vs Manut</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={ecoBOverviewData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="value" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        <Cell fill="#3b82f6" stroke="none" />
+                        <Cell fill="#f43f5e" stroke="none" />
+                      </Pie>
+                      <Tooltip formatter={(val: number) => formatWeight(val)} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4">🗑️ Borra Total por Operador (KG)</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={borraChartData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="borra" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        {borraChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(val: number) => formatWeight(val)} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col h-[520px]">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-800 mb-4">⏱️ Tempo de Parada por Categoria</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={stopsOverviewData} cx="50%" cy="50%" outerRadius={100} innerRadius={60} dataKey="value" nameKey="name" label={renderCustomizedLabel} paddingAngle={2}>
+                        <Cell fill="#ef4444" stroke="none" />
+                        <Cell fill="#f59e0b" stroke="none" />
+                        <Cell fill="#64748b" stroke="none" />
+                      </Pie>
+                      <Tooltip formatter={(val: number) => formatMinutes(val)} />
+                      <Legend verticalAlign="bottom" height={120} align="center" iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+               </div>
+            </div>
+          </div>
+        ) : activeTab === 'reports' ? (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-4 bg-slate-50/50">
+               <div className="relative flex-1 max-w-md">
+                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                 <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Pesquisar registros..." className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none" />
+               </div>
+               <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold uppercase no-print"><Printer size={16} /> Imprimir</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[900px]">
+                <thead>
+                  <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-4 py-3">Data</th>
+                    <th className="px-4 py-3">Operador</th>
+                    <th className="px-4 py-3">Máquina</th>
+                    <th className="px-4 py-3 font-black text-blue-700">Líquido (KG)</th>
+                    <th className="px-4 py-3 text-emerald-600">Eco A</th>
+                    <th className="px-4 py-3 text-red-500">Borra</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[10px] font-bold">
+                  {filteredDataForTable.map((e) => (
+                    <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">{e.date}</td>
+                      <td className="px-4 py-3">{e.operator}</td>
+                      <td className="px-4 py-3">{e.machine}</td>
+                      <td className="px-4 py-3 font-black">{e.netWeight}</td>
+                      <td className="px-4 py-3 text-emerald-600">{e.ecoA}</td>
+                      <td className="px-4 py-3 text-red-500">{e.borraTotal}</td>
+                      <td className="px-4 py-3 text-right space-x-2">
+                        <button onClick={() => { setEditingEntry(e); setIsModalOpen(true); }} className="text-blue-500 p-1.5 hover:bg-blue-50 rounded-lg transition-all"><FileText size={14} /></button>
+                        <button onClick={() => handleDeleteEntry(e.id)} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-3xl shadow-sm border border-slate-100 gap-4">
+               <div className="flex gap-4 overflow-x-auto no-scrollbar w-full md:w-auto">
+                  <button onClick={() => setTeamViewMode('active')} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 whitespace-nowrap transition-all ${teamViewMode === 'active' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Equipe Ativa</button>
+                  <button onClick={() => setTeamViewMode('shifts')} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 whitespace-nowrap transition-all ${teamViewMode === 'shifts' ? 'border-orange-600 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Turnos</button>
+                  <button onClick={() => setTeamViewMode('vacancies')} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 whitespace-nowrap transition-all ${teamViewMode === 'vacancies' ? 'border-red-600 text-red-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Vagas</button>
+               </div>
+               <div className="flex items-center gap-2 w-full md:w-auto">
+                 <button onClick={() => setIsShiftModalOpen(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 border border-orange-100 rounded-xl text-[10px] font-black uppercase hover:bg-orange-100 transition-all">
+                   <Clock size={16} /> Adicionar Turno
+                 </button>
+                 <button onClick={() => { setEditingEmployee(null); setIsEmployeeModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl text-[10px] font-black uppercase hover:bg-slate-100 transition-all">
+                   <Plus size={16} /> Nova Vaga / Colaborador
+                 </button>
+               </div>
+            </div>
+            
+            {teamViewMode === 'active' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.keys(groupedPersonnel).map((key) => {
+                  const emps = groupedPersonnel[key];
+                  return (
+                    <div key={key} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="bg-slate-50 px-4 py-2 font-black text-[9px] text-slate-500 uppercase border-b">{key}</div>
+                      <div className="divide-y divide-slate-100">
+                        {emps.map(emp => (
+                          <div key={emp.id} className="p-4 hover:bg-slate-50 transition-all group">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-white ${emp.group && emp.group.includes('Noturno') ? 'bg-indigo-600' : 'bg-orange-500'}`}>{emp.name[0]}</div>
+                                 <div>
+                                   <h4 className="font-bold text-slate-800 text-sm">{emp.name}</h4>
+                                   <p className="text-[10px] text-slate-400 font-bold uppercase">{emp.role} {emp.status === 'Férias' && <span className="text-orange-500">(Férias)</span>}</p>
+                                 </div>
+                              </div>
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => { setEditingEmployee(emp); setIsEmployeeModalOpen(true); }} className="text-blue-500 p-1.5 hover:bg-blue-50 rounded-lg transition-all"><Edit2 size={14} /></button>
+                                <button onClick={() => setEmployees(prev => prev.filter(x => x.id !== emp.id))} className="text-slate-300 hover:text-red-500 transition-colors p-1.5"><Trash2 size={14} /></button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : teamViewMode === 'shifts' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {shifts.map(s => (
+                  <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3 relative group">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${s.type === 'Diurno' ? 'bg-orange-400' : 'bg-indigo-400'}`}></span>
+                      <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">{s.name}</h4>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div><p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Horário</p><p className="text-xs font-black text-slate-700">{s.startTime} - {s.endTime}</p></div>
+                      <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${s.type === 'Diurno' ? 'bg-orange-50 text-orange-600' : 'bg-indigo-50 text-indigo-600'}`}>{s.type}</div>
+                    </div>
+                    <button onClick={() => setShifts(prev => prev.filter(x => x.id !== s.id))} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {vacancies.length === 0 ? (
+                  <div className="bg-white p-12 text-center rounded-3xl border border-slate-100"><AlertTriangle size={32} className="mx-auto text-slate-300 mb-2" /><p className="text-slate-400 font-bold text-sm">Nenhuma vaga aberta no momento.</p></div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {vacancies.map(v => (
+                      <div key={v.id} className="bg-white p-5 rounded-3xl border border-slate-200 flex items-center justify-between hover:border-blue-200 transition-all group">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center font-black">?</div>
+                          <div>
+                            <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">{v.name}</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">Setor: {v.sector} | {v.group} | Aberta desde: {v.openSince}</p>
+                            <div className="mt-1 inline-flex px-2 py-0.5 bg-red-50 text-red-600 rounded-lg text-[8px] font-black uppercase">{v.role}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                           <button onClick={() => { setEditingEmployee({...v, status: 'Vaga Aberta'}); setIsEmployeeModalOpen(true); }} className="text-blue-500 p-2 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={18} /></button>
+                           <button onClick={() => setVacancies(prev => prev.filter(x => x.id !== v.id))} className="text-slate-200 hover:text-red-500 transition-colors p-2"><Trash2 size={18} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* MENU DE OPÇÕES (SIDEBAR) */}
+      <div className={`fixed inset-0 z-50 transition-all duration-300 ${isMenuOpen ? 'visible' : 'invisible'}`}>
+        <div className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 ${isMenuOpen ? 'opacity-100' : 'opacity-0'}`} onClick={() => setIsMenuOpen(false)} />
+        <div className={`absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl transition-transform duration-300 transform p-6 flex flex-col gap-6 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} overflow-y-auto custom-scrollbar`}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+              <Settings size={20} className="text-blue-600" /> MENU DE OPÇÕES
+            </h2>
+            <button onClick={() => setIsMenuOpen(false)} className="p-2 text-slate-400"><X size={24} /></button>
+          </div>
+          
+          <div className="space-y-8 divide-y divide-slate-100">
+             <div className="pt-4 space-y-4">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Users2 size={14} /> Operadores</h3>
+                <div className="flex gap-2">
+                  <input type="text" value={newOpName} onChange={e => setNewOpName(e.target.value)} placeholder="Novo operador..." className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-500" />
+                  <button onClick={() => { if (newOpName.trim()) { setOperators(prev => [...prev, newOpName.trim()].sort()); setNewOpName(''); } }} className="bg-blue-600 text-white p-2 rounded-xl"><Plus size={16} /></button>
+                </div>
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                  {operators.map(op => (
+                    <div key={op} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group">
+                      <span className="text-[11px] font-bold text-slate-700">{op}</span>
+                      <button onClick={() => setOperators(prev => prev.filter(x => x !== op))} className="text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+             </div>
+
+             <div className="pt-6 space-y-4">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Cpu size={14} /> Máquinas</h3>
+                <div className="flex gap-2">
+                  <input type="text" value={newMachineName} onChange={e => setNewMachineName(e.target.value)} placeholder="Nova máquina..." className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-500" />
+                  <button onClick={() => { if (newMachineName.trim()) { setMachines(prev => [...prev, newMachineName.trim()].sort()); setNewMachineName(''); } }} className="bg-emerald-600 text-white p-2 rounded-xl"><Plus size={16} /></button>
+                </div>
+                <div className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+                  {machines.map(m => (
+                    <div key={m} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group">
+                      <span className="text-[11px] font-bold text-slate-700">{m}</span>
+                      <button onClick={() => setMachines(prev => prev.filter(x => x !== m))} className="text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+             </div>
+
+             <div className="pt-6 space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><BarChart3 size={14} /> Meta Mensal (KG)</label>
+                <input type="number" value={goalValue} onChange={(e) => setGoalValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-black text-blue-600 outline-none focus:border-blue-500" />
+             </div>
+
+             <div className="pt-6 space-y-4">
+               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><RefreshCw size={14} /> Sincronização de Dados</h3>
+               <div className="grid grid-cols-2 gap-2">
+                 <button onClick={handleExportData} className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-600 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border border-slate-200"><Download size={14} /> Exportar</button>
+                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-600 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border border-slate-200"><Upload size={14} /> Importar</button>
+               </div>
+               <input type="file" ref={fileInputRef} onChange={handleImportData} className="hidden" accept=".json" />
+             </div>
+
+             <div className="pt-6">
+                <button onClick={() => { localStorage.removeItem('manupackaging_session'); setIsAuthenticated(false); }} className="w-full flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl text-xs font-black uppercase hover:bg-red-100 transition-all"><LogOut size={16} /> Sair do Sistema</button>
+             </div>
+          </div>
+        </div>
+      </div>
+
+      <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={handleSaveShift} />
+      <EmployeeModal 
+        isOpen={isEmployeeModalOpen} 
+        onClose={() => setIsEmployeeModalOpen(false)} 
+        onSave={handleSaveEmployee} 
+        availableShifts={shifts} 
+        availableMachines={machines} 
+        editingEmployee={editingEmployee}
+      />
+      <LaunchModal 
+        isOpen={isModalOpen} 
+        onClose={() => { setIsModalOpen(false); setEditingEntry(null); }} 
+        onSave={handleSaveEntry} 
+        operators={operators} 
+        activeMachines={machines} 
+        availableShifts={shifts}
+        initialData={editingEntry} 
+      />
+    </div>
+  );
+};
+
+export default App;

@@ -1,0 +1,140 @@
+const allCharts = [
+    { title: 'Produção Líquida', key: 'prod', description: 'Total produzido por operador (KG)', color: COLORS, formatter: formatWeight },
+    { title: 'Eficiência Eco A', key: 'ecoA', description: 'Material nobre recuperado (KG)', color: COLORS, formatter: formatWeight },
+    { title: 'Resíduo Borra', key: 'borra', description: 'Perda total de material (KG)', color: COLORS, formatter: formatWeight },
+    { title: 'Eco B (Produção)', key: 'ecoBP', description: 'Recuperado Eco B Produção (KG)', color: COLORS, formatter: formatWeight },
+    { title: 'Eco B (Manutenção)', key: 'ecoBM', description: 'Recuperado Eco B Manutenção (KG)', color: COLORS, formatter: formatWeight },
+    { title: 'Tempo Manutenção', key: 'p_manut', description: 'Paradas para ajuste mecânico (Min)', color: COLORS, formatter: formatMinutes },
+    { title: 'Tempo Processo', key: 'p_proc', description: 'Paradas operacionais/ajustes (Min)', color: COLORS, formatter: formatMinutes },
+    { title: 'Tempo Outros', key: 'p_outros', description: 'Paradas diversas (Min)', color: COLORS, formatter: formatMinutes },
+    { title: 'Produção vs Eco B', key: 'comparison_prod_ecob', description: 'Comparativo Geral (KG)', color: ['#3b82f6', '#f59e0b'], formatter: formatWeight },
+    { title: 'Produção vs Borra', key: 'comparison_prod_borra', description: 'Eficiência de Material (KG)', color: ['#3b82f6', '#ef4444'], formatter: formatWeight },
+    { title: 'Eco B vs Reciclado', key: 'comparison_ecob_recycled', description: 'Comparativo de Recuperação (KG)', color: ['#f59e0b', '#10b981'], formatter: formatWeight },
+    { title: 'Operação vs Parada', key: 'comparison_time', description: 'Eficiência de Tempo (Min)', color: ['#10b981', '#ef4444'], formatter: formatMinutes },
+  ];
+
+  const getRoleBadge = (role: string) => {
+    if (role.includes('Líder')) return 'LÍDER';
+    if (role.includes('Operador 1')) return 'OPE1';
+    if (role.includes('Operador 2')) return 'OPE2';
+    if (role.includes('Operador 3')) return 'OPE3';
+    if (role.includes('Auxiliar 1')) return 'AUX1';
+    if (role.includes('Auxiliar 2')) return 'AUX2';
+    if (role.includes('Auxiliar')) return 'AUXILIAR';
+    return role.toUpperCase().substring(0, 4);
+  };
+
+  const renderPersonnelSlot = (
+    sector: 'leadership' | 'extrusao' | 'erema' | 'fitaAdesiva', 
+    machine: string, 
+    shift: string, 
+    role: string, 
+    isNight: boolean, 
+    slotIndex: number,
+    siblingsRoles: string[]
+  ) => {
+    const fullSectorName = sector === 'leadership' ? 'Liderança' : sector === 'extrusao' ? 'Extrusão' : sector === 'erema' ? 'Reciclagem' : 'Fita Adesiva';
+    const roleBadge = getRoleBadge(role);
+    
+    const potentialEmployees = employees.filter(e => 
+        e.sector === fullSectorName && 
+        e.machine === machine && 
+        e.shift === shift && 
+        e.role === role &&
+        e.status !== 'Desligado'
+    );
+
+    const roleOccurrenceIndex = siblingsRoles.slice(0, slotIndex).filter(r => r === role).length;
+    const employee = potentialEmployees[roleOccurrenceIndex];
+    
+    let containerClass = isNight ? 'bg-[#2a3441] border-[#374151]' : 'bg-white border-slate-100';
+    let textClass = isNight ? 'text-slate-200' : 'text-slate-700';
+    
+    if (role === 'Vaga' || !employee) {
+        return (
+            <button 
+                onClick={() => {
+                    setNewEmployeeSlot({ sector: fullSectorName, machine, shift, role: role === 'Vaga' ? (sector === 'leadership' ? 'Líder de Turno' : 'Auxiliar 1') : role });
+                    setSelectedEmployee(null);
+                    setIsEmployeeModalOpen(true);
+                }}
+                className={`flex items-center justify-between px-3 py-1.5 rounded border border-dashed w-full transition-all hover:opacity-80 group ${isNight ? 'bg-red-900/10 border-red-800/50' : 'bg-red-50 border-red-200'}`}
+            >
+                <span className={`text-[10px] font-bold ${isNight ? 'text-red-400' : 'text-red-500'}`}>(Adicionar)</span>
+                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                    isNight ? 'bg-red-900/30 text-red-400' : 'bg-red-100 text-red-600'
+                }`}>{role === 'Vaga' ? 'VAGO' : roleBadge}</span>
+            </button>
+        );
+    }
+
+    let badgeClass = 'bg-slate-200 text-slate-600';
+    if (roleBadge === 'LÍDER') badgeClass = 'bg-purple-100 text-purple-700';
+    else if (roleBadge.startsWith('OPE')) badgeClass = 'bg-blue-100 text-blue-700';
+    else if (roleBadge.startsWith('AUX')) badgeClass = 'bg-orange-100 text-orange-700';
+
+    if (employee.status === 'Férias') {
+        containerClass = isNight ? 'bg-orange-900/10 border-orange-800/30' : 'bg-orange-50 border-orange-100';
+        textClass = 'text-orange-600';
+    } else if (employee.status === 'Atestado') {
+        containerClass = isNight ? 'bg-purple-900/10 border-purple-800/30' : 'bg-purple-50 border-purple-100';
+        textClass = 'text-purple-600';
+    }
+
+    return (
+        <button 
+            onClick={() => {
+                setSelectedEmployee(employee);
+                setNewEmployeeSlot(undefined);
+                setIsEmployeeModalOpen(true);
+            }}
+            className={`flex items-center justify-between px-3 py-1.5 rounded w-full transition-all hover:brightness-95 ${containerClass}`}
+        >
+            <span className={`text-[10px] font-bold truncate ${textClass}`}>
+                {employee.name}
+            </span>
+            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${badgeClass}`}>
+                {roleBadge}
+            </span>
+        </button>
+    );
+  };
+
+  const isRangeFiltered = dashStartDate || dashEndDate;
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg mb-4">
+              <ShieldCheck size={32} />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">Manupackaging</h1>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Painel de Acesso</p>
+          </div>
+          <button onClick={() => { localStorage.setItem('manupackaging_session', 'true'); setIsAuthenticated(true); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-blue-200 uppercase text-xs">Entrar no Sistema</button>
+        </div>
+      </div>
+    );
+  }
+
+  const isGoalReached = totals.month >= goalValue;
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24">
+      {/* ... (Header and Nav) */}
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Cpu size={20} /></div>
+          <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase">Controle de Produção</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setEditingEntry(null); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-lg shadow-blue-100 transition-all flex items-center justify-center"><Plus size={24} /></button>
+          <button onClick={() => setIsMenuOpen(true)} className="p-2.5 text-slate-400 hover:bg-slate-100 rounded-xl transition-all relative"><Settings size={20} /></button>
+        </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto px-4 mt-6 no-print">
+        <div className="flex items-center p-1 bg-white border border-slate-100 rounded-2xl w-fit shadow-sm">
+     

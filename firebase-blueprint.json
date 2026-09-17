@@ -1,0 +1,323 @@
+{
+  "entities": {
+    "ProductionEntry": {
+      "title": "Production Entry",
+      "description": "Represents a single production record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "machine": { "type": "string" },
+        "shift": { "type": "string" },
+        "operator": { "type": "string" },
+        "product": { "type": "string" },
+        "netWeight": { "type": "number" },
+        "borraWeight": { "type": "number" },
+        "ecoAWeight": { "type": "number" },
+        "ecoBProdWeight": { "type": "number" },
+        "ecoBMaintWeight": { "type": "number" },
+        "stopMaint": { "type": "number" },
+        "stopProcess": { "type": "number" },
+        "stopOther": { "type": "number" },
+        "notes": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "date", "machine", "shift", "operator", "product", "netWeight", "userId"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Represents an employee in the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "registration": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "shift": { "type": "string" },
+        "machine": { "type": "string" },
+        "sector": { "type": "string" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      }
+    },
+    "PersonnelLog": {
+      "title": "Personnel Log",
+      "description": "Logs changes in personnel.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "user": { "type": "string" },
+        "userId": { "type": "string" }
+      }
+    },
+    "SystemUser": {
+      "title": "System User",
+      "description": "User with access to the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "registration": { "type": "string" },
+        "role": { "type": "string" },
+        "password": { "type": "string" },
+        "isFirstAccess": { "type": "boolean" },
+        "permissions": { "type": "object" }
+      }
+    },
+    "Settings": {
+      "title": "Global Settings",
+      "description": "Configuration for the system.",
+      "type": "object",
+      "properties": {
+        "operators": { "type": "array" },
+        "availableRoles": { "type": "array" },
+        "goals": { "type": "object" },
+        "systemName": { "type": "string" },
+        "loginSystemName": { "type": "string" },
+        "loginSystemSubtitle": { "type": "string" },
+        "systemLogo": { "type": "string" },
+        "systemCoverImage": { "type": "string" },
+        "lastUpdated": { "type": "string" }
+      }
+    },
+    "TrainingTemplate": {
+      "title": "Training Template",
+      "description": "Layout configuration for training PDF.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyName": { "type": "string" },
+        "subCompanyName": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "formCode": { "type": "string" },
+        "baseFontSize": { "type": "number" },
+        "titleFontSize": { "type": "number" },
+        "footerText": { "type": "string" },
+        "logoBase64": { "type": "string" }
+      }
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "Work shift definition.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "type": { "type": "string", "enum": ["Diurno", "Noturno"] }
+      }
+    },
+    "Collaborator": {
+      "title": "Collaborator",
+      "description": "Represents a collaborator in the central database.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "registration": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "TrainingRecord": {
+      "title": "Training Record",
+      "description": "Represents a completed training form.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "training": { "type": "string" },
+        "date": { "type": "string" },
+        "duration": { "type": "string" },
+        "location": { "type": "string" },
+        "instructor": { "type": "string" },
+        "content": { "type": "string" },
+        "participants": { "type": "array" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "FcmToken": {
+      "title": "FCM Token",
+      "description": "Token for push notifications.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "token": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "StockEntry": {
+      "title": "Stock Entry",
+      "description": "Represents a single daily stock inventory record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "items": { "type": "array" },
+        "totalWeight": { "type": "number" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "date", "items", "totalWeight", "userId"]
+    },
+    "RibbonCuttingEntry": {
+      "title": "Ribbon Cutting Entry",
+      "description": "Represents a daily ribbon cutting production record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "operator": { "type": "string" },
+        "shift": { "type": "string" },
+        "producedM2": { "type": "number" },
+        "rejectedM2": { "type": "number" },
+        "wasteWeight": { "type": "number" },
+        "jumboM2": { "type": "number" },
+        "jumboType": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "date", "operator", "shift", "producedM2", "rejectedM2", "wasteWeight", "jumboM2", "jumboType", "userId"]
+    },
+    "MaintenanceIssue": {
+      "title": "Maintenance Issue",
+      "description": "Represents an issue or cause that maintenance needs to resolve, sorted by execution priority.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cause": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Baixa", "Média", "Alta", "Crítica"] },
+        "sector": { "type": "string" },
+        "machine": { "type": "string" },
+        "reporter": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pendente", "Em Andamento", "Resolvido"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "resolvedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "cause", "priority", "sector", "machine", "reporter", "status", "createdAt", "userId"]
+    },
+    "Vacation": {
+      "title": "Vacation Planning",
+      "description": "Represents a planned vacation for an employee.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "registration": { "type": "string" },
+        "sector": { "type": "string" },
+        "role": { "type": "string" },
+        "machine": { "type": "string" },
+        "shift": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "LunchSchedule": {
+      "title": "Lunch Schedule",
+      "description": "Represents the lunch scheduling allocation for a specific day, sector, machine, shift, and time slot.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dayOfWeek": { "type": "string" },
+        "sector": { "type": "string" },
+        "machine": { "type": "string" },
+        "shift": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "employeeIds": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "dayOfWeek", "sector", "machine", "shift", "timeSlot", "employeeIds"]
+    },
+    "OvertimeRequest": {
+      "title": "Overtime Request",
+      "description": "Represents an overtime request and authorization according to procedure DOC 076.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "registration": { "type": "string" },
+        "role": { "type": "string" },
+        "sector": { "type": "string" },
+        "machine": { "type": "string" },
+        "shift": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "estimatedHours": { "type": "number" },
+        "reasonCategory": { "type": "string" },
+        "reasonDetails": { "type": "string" },
+        "requesterName": { "type": "string" },
+        "managerName": { "type": "string" },
+        "approvalStatus": { "type": "string", "enum": ["Pendente", "Aprovado", "Reprovado"] },
+        "isEmergency": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "employeeName", "sector", "date", "startTime", "endTime", "estimatedHours", "reasonDetails"]
+    },
+    "MaintenanceRequest": {
+      "title": "Maintenance Request",
+      "description": "Represents a formal maintenance request following the new directive with email/outlook dispatch.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "requestNumber": { "type": "string" },
+        "sector": { "type": "string" },
+        "equipmentOrLocation": { "type": "string" },
+        "problemDescription": { "type": "string" },
+        "equipmentCondition": { "type": "string", "enum": ["Operando Normalmente", "Operando com Restrições / Ruído", "Parado / Inoperante"] },
+        "productionImpact": { "type": "string", "enum": ["Nenhum", "Baixo (Não afeta meta)", "Médio (Risco de parada/redução)", "Crítico (Linha/Máquina Parada)"] },
+        "additionalInfo": { "type": "string" },
+        "photos": { "type": "array" },
+        "requesterName": { "type": "string" },
+        "requesterRole": { "type": "string" },
+        "requesterEmail": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Baixa", "Média", "Alta", "Urgente"] },
+        "status": { "type": "string", "enum": ["Pendente", "Em Análise", "Programado", "Em Execução", "Concluído", "Cancelado"] },
+        "scheduledDate": { "type": "string" },
+        "maintenanceNotes": { "type": "string" },
+        "technicianAssigned": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "sector", "equipmentOrLocation", "problemDescription", "equipmentCondition", "productionImpact", "requesterName", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "productionEntries": { "schema": "ProductionEntry", "description": "Production records" },
+    "employees": { "schema": "Employee", "description": "Employee records" },
+    "personnelLogs": { "schema": "PersonnelLog", "description": "Personnel change logs" },
+    "system_users": { "schema": "SystemUser", "description": "System access users" },
+    "settings": { "schema": "Settings", "description": "Global settings" },
+    "shifts": { "schema": "Shift", "description": "Available shifts" },
+    "collaborators": { "schema": "Collaborator", "description": "Central database of collaborators" },
+    "training_records": { "schema": "TrainingRecord", "description": "Saved training forms" },
+    "training_template": { "schema": "TrainingTemplate", "description": "Layout configuration for training PDF" },
+    "fcm_tokens": { "schema": "FcmToken", "description": "Push notification tokens" },
+    "stock_entries": { "schema": "StockEntry", "description": "Daily physical stock inventory entries" },
+    "ribbon_cutting_entries": { "schema": "RibbonCuttingEntry", "description": "Daily ribbon cutting records" },
+    "maintenance_issues": { "schema": "MaintenanceIssue", "description": "Maintenance causes and issues by priority" },
+    "vacations": { "schema": "Vacation", "description": "Vacation planning entries" },
+    "lunch_schedules": { "schema": "LunchSchedule", "description": "Weekly lunch scheduling data" },
+    "overtime_requests": { "schema": "OvertimeRequest", "description": "Overtime authorization requests (DOC 076)" },
+    "maintenance_requests": { "schema": "MaintenanceRequest", "description": "Formal maintenance requests and work scheduling" }
+  }
+}

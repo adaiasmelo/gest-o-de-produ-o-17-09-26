@@ -1,0 +1,913 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { 
+  Plus, Settings, Cpu, ShieldCheck, Target, TrendingUp, Clock, FileDown, 
+  Users, HardHat, Factory, Briefcase, History, RotateCcw, X, Edit2, Trash2, 
+  LogOut, Search, Activity, Package, ChevronRight, TrendingDown, Upload, Info,
+  UserPlus, Download
+} from 'lucide-react';
+import { 
+  Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid
+} from 'recharts';
+import html2canvas from 'html2canvas';
+import { ProductionEntry, Shift, Employee, PersonnelLog } from './types';
+import { INITIAL_DATA, GOAL_VALUE, DEFAULT_OPERATORS, INITIAL_EMPLOYEES, INITIAL_LOGS } from './constants';
+import LaunchModal from './components/LaunchModal';
+import EmployeeModal from './components/EmployeeModal';
+import HistoryModal from './components/HistoryModal';
+import OperatorModal from './components/OperatorModal';
+import RoleModal from './components/RoleModal';
+import ShiftModal from './components/ShiftModal';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b', '#1e293b', '#64748b', '#475569', '#94a3b8'];
+
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  if (percent < 0.05) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius * 1.15;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="#1e293b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black">
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
+};
+
+export const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('manupackaging_session'));
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'personnel'>(() => 
+    (localStorage.getItem('manupackaging_active_tab') as any) || 'dashboard'
+  );
+
+  const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
+    const saved = localStorage.getItem('manupackaging_data');
+    return saved ? JSON.parse(saved) : INITIAL_DATA;
+  });
+
+  const [dashboardMonth, setDashboardMonth] = useState(() => {
+    const saved = localStorage.getItem('manupackaging_dashboard_month');
+    if (saved) return saved;
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const [goals, setGoals] = useState<Record<string, number>>(() => {
+    const saved = localStorage.getItem('manupackaging_goals');
+    if (saved) return JSON.parse(saved);
+    const oldGoal = localStorage.getItem('manupackaging_goal');
+    return oldGoal ? { [dashboardMonth]: Number(oldGoal) } : {};
+  });
+
+  const [operators, setOperators] = useState<string[]>(() => JSON.parse(localStorage.getItem('manupackaging_operators') || JSON.stringify(DEFAULT_OPERATORS)));
+  const [availableRoles, setAvailableRoles] = useState<string[]>(() => JSON.parse(localStorage.getItem('manupackaging_roles') || JSON.stringify(['Operador 1', 'Operador 2', 'Auxiliar 1', 'Auxiliar 2', 'Líder', 'Supervisor'])));
+  const [employees, setEmployees] = useState<Employee[]>(() => JSON.parse(localStorage.getItem('manupackaging_employees') || JSON.stringify(INITIAL_EMPLOYEES)));
+  const [personnelLogs, setPersonnelLogs] = useState<PersonnelLog[]>(() => JSON.parse(localStorage.getItem('manupackaging_personnel_logs') || JSON.stringify(INITIAL_LOGS)));
+  const [availableShifts, setAvailableShifts] = useState<Shift[]>(() => JSON.parse(localStorage.getItem('manupackaging_shifts') || JSON.stringify([
+    { id: '1', name: 'Diurno 1', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+    { id: '2', name: 'Noturno 1', startTime: '19:00', endTime: '07:00', type: 'Noturno' },
+    { id: '3', name: 'Diurno 2', startTime: '07:00', endTime: '19:00', type: 'Diurno' },
+    { id: '4', name: 'Noturno 2', startTime: '19:00', endTime: '07:00', type: 'Noturno' },
+    { id: '5', name: 'Comercial', startTime: '08:00', endTime: '18:00', type: 'Diurno' },
+  ])));
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [showEremaChart, setShowEremaChart] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ProductionEntry | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<any>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const activeMachines = useMemo(() => ["Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"], []);
+
+  useEffect(() => { localStorage.setItem('manupackaging_data', JSON.stringify(productionData)); }, [productionData]);
+  useEffect(() => { localStorage.setItem('manupackaging_employees', JSON.stringify(employees)); }, [employees]);
+  useEffect(() => { localStorage.setItem('manupackaging_operators', JSON.stringify(operators)); }, [operators]);
+  useEffect(() => { localStorage.setItem('manupackaging_roles', JSON.stringify(availableRoles)); }, [availableRoles]);
+  useEffect(() => { localStorage.setItem('manupackaging_shifts', JSON.stringify(availableShifts)); }, [availableShifts]);
+  useEffect(() => { localStorage.setItem('manupackaging_personnel_logs', JSON.stringify(personnelLogs)); }, [personnelLogs]);
+  useEffect(() => { localStorage.setItem('manupackaging_active_tab', activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem('manupackaging_dashboard_month', dashboardMonth); }, [dashboardMonth]);
+  useEffect(() => { localStorage.setItem('manupackaging_goals', JSON.stringify(goals)); }, [goals]);
+
+  const formatWeight = (val: number) => (val / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3 }) + ' T';
+  const formatMinutes = (val: number) => val >= 60 ? `${Math.floor(val / 60)}h ${val % 60}m` : `${val} min`;
+
+  const dashboardStats = useMemo(() => {
+    const currentGoal = goals[dashboardMonth] || GOAL_VALUE;
+    const res = { month: 0, eremaMonth: 0, yesterday: 0, goal: currentGoal, projection: 0, avgReq: 0, prevMonthTotal: 0, prevMonthGoal: 0 };
+    const monthEntries = productionData.filter(e => e.date.startsWith(dashboardMonth));
+    
+    const [year, month] = dashboardMonth.split('-').map(Number);
+    const prevDate = new Date(year, month - 2, 1);
+    // Fix: Using prevDate.getMonth() + 1 instead of self-referencing prevMonthStr
+    const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+    const prevMonthEntries = productionData.filter(e => e.date.startsWith(prevMonthStr));
+    prevMonthEntries.forEach(e => { if (!e.machine.toLowerCase().includes('erema')) res.prevMonthTotal += (e.netWeight || 0); });
+    res.prevMonthGoal = goals[prevMonthStr] || GOAL_VALUE;
+
+    const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayStr = yesterdayDate.toLocaleDateString('sv-SE');
+    productionData.filter(e => e.date === yesterdayStr).forEach(e => { if (!e.machine.toLowerCase().includes('erema')) res.yesterday += (e.netWeight || 0); });
+    monthEntries.forEach(e => { if (e.machine.toLowerCase().includes('erema')) res.eremaMonth += (e.netWeight || 0); else res.month += (e.netWeight || 0); });
+    const today = new Date();
+    const currentDay = dashboardMonth === today.toISOString().slice(0, 7) ? today.getDate() : 30;
+    res.projection = (res.month / Math.max(1, currentDay)) * 30;
+    res.avgReq = Math.max(0, (res.goal - res.month) / Math.max(1, 30 - currentDay));
+    return res;
+  }, [productionData, dashboardMonth, goals]);
+
+  const dashboardChartsData = useMemo(() => {
+    const ops: any = {};
+    const machines: any = {};
+    const shifts: any = {};
+    
+    productionData.filter(e => e.date.startsWith(dashboardMonth)).forEach(e => {
+      if (!ops[e.operator]) ops[e.operator] = { name: e.operator, net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, ecoTotal: 0, manut: 0, proc: 0, outros: 0, stops: 0 };
+      if (!machines[e.machine]) machines[e.machine] = { name: e.machine, net: 0, borra: 0, stops: 0 };
+      if (!shifts[e.shift]) shifts[e.shift] = { name: e.shift, net: 0 };
+
+      if (!e.machine.toLowerCase().includes('erema')) {
+        ops[e.operator].net += (e.netWeight || 0);
+        machines[e.machine].net += (e.netWeight || 0);
+        shifts[e.shift].net += (e.netWeight || 0);
+      }
+      ops[e.operator].borra += (e.borraTotal || 0);
+      ops[e.operator].ecoA += (e.ecoA || 0);
+      ops[e.operator].ecoBP += (e.ecoBP || 0);
+      ops[e.operator].ecoBM += (e.ecoBM || 0);
+      ops[e.operator].ecoTotal += (e.ecoA || 0) + (e.ecoBP || 0) + (e.ecoBM || 0);
+      ops[e.operator].manut += (e.manutencaoMin || 0);
+      ops[e.operator].proc += (e.processoMin || 0);
+      ops[e.operator].outros += (e.outrosMin || 0);
+      ops[e.operator].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
+
+      machines[e.machine].borra += (e.borraTotal || 0);
+      machines[e.machine].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
+    });
+
+    return {
+      ops: Object.values(ops).sort((a: any, b: any) => b.net - a.net),
+      machines: Object.values(machines).sort((a: any, b: any) => b.net - a.net),
+      shifts: Object.values(shifts).sort((a: any, b: any) => b.net - a.net)
+    };
+  }, [productionData, dashboardMonth]);
+
+  const eremaOperatorStats = useMemo(() => {
+    const stats: any = {};
+    productionData
+      .filter(e => e.date.startsWith(dashboardMonth) && e.machine.toLowerCase().includes('erema'))
+      .forEach(e => {
+        if (!stats[e.operator]) stats[e.operator] = 0;
+        stats[e.operator] += (e.netWeight || 0);
+      });
+    return Object.entries(stats)
+      .map(([name, value]) => ({ name, value: value as number }))
+      .sort((a, b) => b.value - a.value);
+  }, [productionData, dashboardMonth]);
+
+  const filteredReportData = useMemo(() => {
+    return productionData.filter(e => {
+      const matchMonth = e.date.startsWith(dashboardMonth);
+      const matchSearch = e.operator.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          e.machine.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchMonth && matchSearch;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [productionData, dashboardMonth, searchTerm]);
+
+  const reportTotals = useMemo(() => {
+    return filteredReportData.reduce((acc, curr) => ({
+      grossWeight: acc.grossWeight + (curr.grossWeight || 0),
+      tara: acc.tara + (curr.tara || 0),
+      netWeight: acc.netWeight + (curr.netWeight || 0),
+      ecoA: acc.ecoA + (curr.ecoA || 0),
+      ecoBP: acc.ecoBP + (curr.ecoBP || 0),
+      ecoBM: acc.ecoBM + (curr.ecoBM || 0),
+      borraTotal: acc.borraTotal + (curr.borraTotal || 0),
+      manutencaoMin: acc.manutencaoMin + (curr.manutencaoMin || 0),
+      processoMin: acc.processoMin + (curr.processoMin || 0),
+      outrosMin: acc.outrosMin + (curr.outrosMin || 0),
+    }), { grossWeight: 0, tara: 0, netWeight: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, borraTotal: 0, manutencaoMin: 0, processoMin: 0, outrosMin: 0 });
+  }, [filteredReportData]);
+
+  const exportToCSV = () => {
+    const csvRows = [];
+    const BOM = "\uFEFF";
+    
+    csvRows.push('RELATÓRIO DE PRODUÇÃO - ' + dashboardMonth);
+    csvRows.push('');
+    csvRows.push([
+      'Data', 'Operador', 'Máquina', 'Turno', 
+      'Peso Bruto (kg)', 'Tara (kg)', 'Peso Líquido (kg)', 
+      'Eco A (kg)', 'Eco B(P) (kg)', 'Eco B(M) (kg)', 
+      'Borra (kg)', 'Manutenção (min)', 'Processo (min)', 'Outros (min)'
+    ].join(';'));
+
+    filteredReportData.forEach(e => {
+      csvRows.push([
+        e.date.split('-').reverse().join('/'),
+        e.operator,
+        e.machine,
+        e.shift,
+        e.grossWeight,
+        e.tara,
+        e.netWeight,
+        e.ecoA,
+        e.ecoBP,
+        e.ecoBM,
+        e.borraTotal,
+        e.manutencaoMin,
+        e.processoMin,
+        e.outrosMin
+      ].join(';'));
+    });
+
+    csvRows.push([
+      'SOMATÓRIA TOTAL', '', '', '',
+      reportTotals.grossWeight,
+      reportTotals.tara,
+      reportTotals.netWeight,
+      reportTotals.ecoA,
+      reportTotals.ecoBP,
+      reportTotals.ecoBM,
+      reportTotals.borraTotal,
+      reportTotals.manutencaoMin,
+      reportTotals.processoMin,
+      reportTotals.outrosMin
+    ].join(';'));
+
+    csvRows.push('');
+    csvRows.push('');
+    csvRows.push('RESUMO PARA INDICADORES (DADOS DOS GRÁFICOS)');
+    csvRows.push('');
+    
+    csvRows.push('PRODUÇÃO POR OPERADOR');
+    csvRows.push('Nome;Produção Líquida (kg);Borra Total (kg);Perda Eco Total (kg);Tempo Parado (min)');
+    dashboardChartsData.ops.forEach(op => {
+      csvRows.push(`${op.name};${op.net};${op.borra};${op.ecoTotal};${op.stops}`);
+    });
+
+    csvRows.push('');
+    csvRows.push('PRODUÇÃO POR MÁQUINA');
+    csvRows.push('Nome;Produção Líquida (kg);Borra (kg);Tempo Parado (min)');
+    dashboardChartsData.machines.forEach(m => {
+      csvRows.push(`${m.name};${m.net};${m.borra};${m.stops}`);
+    });
+
+    csvRows.push('');
+    csvRows.push('PRODUÇÃO POR TURNO');
+    csvRows.push('Turno;Produção Líquida (kg)');
+    dashboardChartsData.shifts.forEach(s => {
+      csvRows.push(`${s.name};${s.net}`);
+    });
+
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([BOM + csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Manupackaging_Export_${dashboardMonth}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadBackup = () => {
+    const backupData = {
+      productionData,
+      employees,
+      operators,
+      availableRoles,
+      availableShifts,
+      goals,
+      dashboardMonth,
+      personnelLogs
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `manupackaging_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadChartAsPNG = async (id: string, title: string) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    
+    const btn = element.querySelector('.chart-download-btn') as HTMLElement;
+    if (btn) btn.style.display = 'none';
+    
+    try {
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        onclone: (clonedDoc) => {
+          const clonedEl = clonedDoc.getElementById(id);
+          if (clonedEl) {
+            // Garante que o card expanda para mostrar todo o conteúdo sem cortes
+            clonedEl.style.height = 'auto';
+            clonedEl.style.minHeight = 'auto';
+            clonedEl.style.maxHeight = 'none';
+            clonedEl.style.overflow = 'visible';
+            
+            // Remove o truncamento de texto na versão clonada para exportar nomes completos
+            const truncates = clonedEl.querySelectorAll('.truncate');
+            truncates.forEach((node: any) => {
+              node.style.whiteSpace = 'normal';
+              node.style.overflow = 'visible';
+              node.style.textOverflow = 'clip';
+              node.classList.remove('truncate');
+            });
+          }
+        }
+      });
+      
+      const link = document.createElement('a');
+      link.download = `Indicador_${title.replace(/\s+/g, '_')}_${dashboardMonth}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      console.error('Erro ao exportar gráfico:', error);
+      alert('Ocorreu um erro ao gerar a imagem do gráfico.');
+    } finally {
+      if (btn) btn.style.display = 'flex';
+    }
+  };
+
+  const findEmployee = (s: string, m: string, sh: string, r: string) => 
+    employees.find(e => e.sector === s && e.machine === m && e.shift === sh && e.role === r && e.status === 'Ativo');
+
+  const renderSlot = (sector: string, machine: string, shift: string, role: string, label: string) => {
+    const emp = findEmployee(sector, machine, shift, role);
+    const isVacant = !emp;
+    const isOpe = label.includes('OPE');
+    return (
+      <div onClick={() => { 
+          if (emp) setSelectedEmployee(emp); 
+          else setSelectedSlot({ sector, machine, shift, role });
+          setIsEmployeeModalOpen(true); 
+      }} className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${isVacant ? 'bg-red-50/20 border-dashed border-red-200 hover:border-red-400' : 'bg-white border-slate-100 hover:border-blue-400 shadow-sm'}`}>
+        <span className={`text-[10px] font-bold truncate max-w-[120px] ${isVacant ? 'text-red-400 italic' : 'text-slate-800'}`}>
+          {isVacant ? `(Adicionar) ${label.split(' ')[0]}` : emp.name}
+        </span>
+        {!isVacant && (
+          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter shrink-0 ${isOpe ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
+            {label}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const renderPersonnelStat = (label: string, value: number, sub: string, icon: React.ReactNode, color: string) => (
+    <div className="bg-white p-5 rounded-[1.8rem] border border-slate-100 shadow-sm flex items-center justify-between group">
+      <div>
+        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${color}`}>{label}</p>
+        <p className="text-3xl font-black text-slate-800">{value}</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{sub}</p>
+      </div>
+      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${color.replace('text', 'bg').replace('-400', '-50')}`}>
+        {icon}
+      </div>
+    </div>
+  );
+
+  const renderTwoColumnLegend = (props: any, chartType?: string) => {
+    const { payload } = props;
+    return (
+      <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-6 px-2">
+        {payload.map((entry: any, i: number) => (
+          <li key={i} className="flex items-center gap-2 text-[9px] font-black text-slate-700 uppercase">
+            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+            <span className="truncate">
+              {entry.value} — {chartType === 'time' ? formatMinutes(entry.payload.value) : (entry.payload.value < 1000 ? `${entry.payload.value} kg` : formatWeight(entry.payload.value))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
+  if (!isAuthenticated) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md text-center shadow-2xl">
+        <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center text-white mx-auto mb-8 shadow-xl"><ShieldCheck size={40} /></div>
+        <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter mb-10">Manupackaging</h1>
+        <button onClick={() => { localStorage.setItem('manupackaging_session', 'true'); setIsAuthenticated(true); }} className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-blue-700 transition-all">Acessar Sistema</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] pb-24">
+      <header className="bg-white px-6 py-5 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print">
+        <div className="flex items-center gap-4">
+          <div className="w-11 h-11 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Cpu size={24} /></div>
+          <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">CONTROLE DE PRODUÇÃO</h1>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setEditingEntry(null); setIsModalOpen(true); }} className="bg-blue-600 text-white p-3.5 rounded-2xl shadow-xl hover:bg-blue-700 active:scale-95 transition-all"><Plus size={22} /></button>
+          <button onClick={() => setIsMenuOpen(true)} className="p-3.5 text-slate-400 hover:bg-slate-100 rounded-2xl transition-all"><Settings size={22} /></button>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-6 mt-8 no-print">
+        <div className="flex p-1.5 bg-slate-200/50 rounded-[1.8rem] w-full max-w-2xl mx-auto shadow-sm">
+          <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-[1.4rem] text-[11px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500'}`}><Activity size={18}/> Indicadores</button>
+          <button onClick={() => setActiveTab('reports')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-[1.4rem] text-[11px] font-black uppercase transition-all ${activeTab === 'reports' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500'}`}><FileDown size={18}/> Relatórios</button>
+          <button onClick={() => setActiveTab('personnel')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-[1.4rem] text-[11px] font-black uppercase transition-all ${activeTab === 'personnel' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500'}`}><Users size={18}/> Gestão de Pessoal</button>
+        </div>
+      </div>
+
+      <main className="max-w-7xl mx-auto p-6 space-y-8">
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="bg-[#2563eb] text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col">
+              <div className="flex justify-between items-start mb-2">
+                <div><p className="text-[10px] font-bold opacity-80 uppercase tracking-widest">DESEMPENHO</p><h2 className="text-2xl font-black uppercase tracking-tight">META MENSAL</h2></div>
+                <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/20"><Activity size={24} /></div>
+              </div>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-4xl md:text-5xl font-black">{formatWeight(dashboardStats.month)}</span>
+                <span className="text-lg font-bold opacity-80">/ {((dashboardStats.month/dashboardStats.goal)*100).toFixed(1)}%</span>
+              </div>
+              
+              <div className="mb-8"></div>
+
+              <div className="space-y-4 mb-8">
+                {/* Linha do Tempo Mês Atual */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[8px] font-black uppercase tracking-widest opacity-60">
+                    <span>Mês Atual — {formatWeight(dashboardStats.month)}</span>
+                    <span>Meta: {formatWeight(dashboardStats.goal)}</span>
+                  </div>
+                  <div className="w-full bg-white/20 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-white h-full rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(255,255,255,0.5)]" style={{ width: `${Math.min((dashboardStats.month/dashboardStats.goal)*100, 100)}%` }}></div>
+                  </div>
+                </div>
+
+                {/* Linha do Tempo Mês Anterior */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[8px] font-black uppercase tracking-widest opacity-60">
+                    <span>Resultado Mês Anterior — {formatWeight(dashboardStats.prevMonthTotal)}</span>
+                    <span>{((dashboardStats.prevMonthTotal/dashboardStats.prevMonthGoal)*100).toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-400/60 h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min((dashboardStats.prevMonthTotal/dashboardStats.prevMonthGoal)*100, 100)}%` }}></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-sm"><p className="text-[9px] font-black opacity-60 uppercase mb-1">OBJETIVO</p><p className="text-base font-bold">{formatWeight(dashboardStats.goal)}</p></div>
+                <div className="bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-sm"><p className="text-[9px] font-black opacity-60 uppercase mb-1">FALTA</p><p className="text-base font-bold">{formatWeight(Math.max(0, dashboardStats.goal - dashboardStats.month))}</p></div>
+                <div className="bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-sm"><p className="text-[9px] font-black opacity-60 uppercase mb-1">MÉDIA NEC.</p><p className="text-base font-bold">{formatWeight(dashboardStats.avgReq)}/dia</p></div>
+                <div className="bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-sm"><p className="text-[9px] font-black opacity-60 uppercase mb-1">PROJEÇÃO</p><p className="text-base font-bold">{formatWeight(dashboardStats.projection)}</p></div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex justify-between items-center group transition-all hover:shadow-md">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DIÁRIO</p>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">PRODUÇÃO ONTEM</h3>
+                    <p className="text-5xl font-black text-slate-800 mt-3">{formatWeight(dashboardStats.yesterday)}</p>
+                  </div>
+                  <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-[1.8rem] flex items-center justify-center border border-slate-100"><TrendingUp size={32}/></div>
+                </div>
+
+                <div 
+                  onClick={() => setShowEremaChart(true)} 
+                  className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex justify-between items-center group transition-all hover:shadow-md cursor-pointer active:scale-[0.98]"
+                >
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1">RECICLAGEM <Info size={10} /></p>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">PRODUÇÃO EREMA (MÊS)</h3>
+                    <p className="text-5xl font-black text-slate-800 mt-3">{formatWeight(dashboardStats.eremaMonth)}</p>
+                  </div>
+                  <div className="w-16 h-16 bg-emerald-50 text-emerald-300 rounded-[1.8rem] flex items-center justify-center border border-emerald-100"><RotateCcw size={32}/></div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[
+                { title: 'PRODUÇÃO LÍQUIDA (OPERADOR)', key: 'net', data: dashboardChartsData.ops, description: 'Distribuição da produção total líquida (descontando taras e perdas) por operador no mês selecionado.' },
+                { title: 'BORRA TOTAL (OPERADOR)', key: 'borra', data: dashboardChartsData.ops, description: 'Volume total de resíduos (borra) gerado por cada operador durante o processo produtivo.' },
+                { title: 'PERDA ECO A (OPERADOR)', key: 'ecoA', data: dashboardChartsData.ops, description: 'Quantidade de material segregado como Eco A (reciclável de alta qualidade) por operador.' },
+                { title: 'Eco B Produção', key: 'ecoBP', data: dashboardChartsData.ops, description: 'Material de transição or qualidade inferior gerado durante o início ou ajuste da produção.' },
+                { title: 'Eco B Manutenção', key: 'ecoBM', data: dashboardChartsData.ops, description: 'Material gerado especificamente durante intervenções de manutenção nas máquinas.' },
+                { title: 'PARADA MANUTENÇÃO (OPERADOR)', key: 'manut', data: dashboardChartsData.ops, type: 'time', description: 'Tempo total em que as máquinas ficaram paradas para manutenções preventivas ou corretivas.' },
+                { title: 'PARADA PROCESSO (OPERADOR)', key: 'proc', data: dashboardChartsData.ops, type: 'time', description: 'Tempo de paradas causadas por ajustes técnicos, trocas de bobinas ou problemas de processo.' },
+                { title: 'OUTRAS PARADAS (OPERADOR)', key: 'outros', data: dashboardChartsData.ops, type: 'time', description: 'Paradas diversas não classificadas como manutenção ou processo (ex: falta de pessoal ou energia).' },
+                { title: 'PRODUÇÃO LÍQUIDA (TURNO)', key: 'net', data: dashboardChartsData.shifts, description: 'Comparativo de desempenho produtivo entre os diferentes turnos de trabalho ativos.' },
+                { title: 'BORRA POR MÁQUINA', key: 'borra', data: dashboardChartsData.machines, description: 'Desempenho de cada equipamento em relação à geração de resíduos sólidos (borra).' },
+                { title: 'PRODUÇÃO LÍQUIDA (MÁQUINA)', key: 'net', data: dashboardChartsData.machines, description: 'Volume total de produto acabado processado por cada máquina do parque fabril.' },
+                { title: 'TEMPO PARADO TOTAL (MÁQUINA)', key: 'stops', data: dashboardChartsData.machines, type: 'time', description: 'Acúmulo de todas as paradas registradas por equipamento, indicando a disponibilidade da máquina.' }
+              ].map((conf: any, i) => {
+                const data = conf.data.map((s: any) => ({ name: s.name, value: s[conf.key] }))
+                  .filter((d: any) => d.value > 0)
+                  .sort((a: any, b: any) => b.value - a.value);
+                
+                if (data.length === 0) return null;
+                
+                return (
+                  <div key={i} id={`chart-card-${i}`} className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[550px] flex flex-col relative group">
+                    <div className="flex items-center justify-between mb-8">
+                      <div className="w-8"></div>
+                      <h3 className="text-[10px] font-black text-center uppercase text-slate-800 tracking-widest flex-1">{conf.title}</h3>
+                      <button 
+                        onClick={() => downloadChartAsPNG(`chart-card-${i}`, conf.title)} 
+                        className="chart-download-btn p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 no-print"
+                        title="Baixar PNG"
+                      >
+                        <Download size={14} />
+                      </button>
+                    </div>
+                    <div className="flex-1">
+                      <ResponsiveContainer width="100%" height="100%">
+                        {conf.bar ? (
+                          <BarChart data={data}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 700}} />
+                            <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 700}} />
+                            <RechartsTooltip formatter={(v: any) => conf.type === 'time' ? formatMinutes(v) : v.toLocaleString('pt-BR') + ' kg'} />
+                            <Bar dataKey="value" fill={COLORS[i % COLORS.length]} radius={[6, 6, 0, 0]} barSize={35} />
+                          </BarChart>
+                        ) : (
+                          <PieChart>
+                            <Pie data={data} cx="50%" cy="32%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value" label={renderCustomizedLabel}>
+                              {data.map((_, idx: number) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} />)}
+                            </Pie>
+                            <RechartsTooltip formatter={(v: any) => conf.type === 'time' ? formatMinutes(v) : v.toLocaleString('pt-BR') + ' kg'} />
+                            <Legend content={(props) => renderTwoColumnLegend(props, conf.type)} />
+                          </PieChart>
+                        )}
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-slate-50">
+                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic">
+                        {conf.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 outline-none" />
+              </div>
+              <button onClick={exportToCSV} className="px-8 py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95">
+                <FileDown size={18}/> Exportar Excel
+              </button>
+            </div>
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-100 whitespace-nowrap">
+                            <tr>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest">Data</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest">Operador</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest">Máquina</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest">Turno</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Peso Bruto</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Tara</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-blue-500 uppercase tracking-widest text-right">P. Líquido</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-orange-400 uppercase tracking-widest text-right">Eco A</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-orange-400 uppercase tracking-widest text-right">Eco B(P)</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-orange-400 uppercase tracking-widest text-right">Eco B(M)</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-red-500 uppercase tracking-widest text-right">Borra</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Manut(m)</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Proc(m)</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Outros(m)</th>
+                              <th className="px-4 py-5 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 text-[10px] whitespace-nowrap">
+                            {filteredReportData.map(entry => (
+                                <tr key={entry.id} className="hover:bg-slate-50/50 transition-colors group">
+                                    <td className="px-4 py-3 font-bold text-slate-700">{entry.date.split('-').reverse().join('/')}</td>
+                                    <td className="px-4 py-3 font-medium text-slate-600 uppercase">{entry.operator}</td>
+                                    <td className="px-4 py-3 font-bold text-slate-400">{entry.machine}</td>
+                                    <td className="px-4 py-3 text-slate-500 uppercase">{entry.shift}</td>
+                                    <td className="px-4 py-3 text-right font-medium text-slate-500">{entry.grossWeight.toLocaleString('pt-BR')}</td>
+                                    <td className="px-4 py-3 text-right font-medium text-slate-500">{entry.tara.toLocaleString('pt-BR')}</td>
+                                    <td className="px-4 py-3 text-right font-black text-blue-600 bg-blue-50/20">{entry.netWeight.toLocaleString('pt-BR')} kg</td>
+                                    <td className="px-4 py-3 text-right font-bold text-orange-600">{entry.ecoA.toLocaleString('pt-BR')}</td>
+                                    <td className="px-4 py-3 text-right font-bold text-orange-600">{entry.ecoBP.toLocaleString('pt-BR')}</td>
+                                    <td className="px-4 py-3 text-right font-bold text-orange-600">{entry.ecoBM.toLocaleString('pt-BR')}</td>
+                                    <td className="px-4 py-3 text-right font-black text-red-600 bg-red-50/20">{entry.borraTotal.toLocaleString('pt-BR')} kg</td>
+                                    <td className="px-4 py-3 text-right text-slate-600">{entry.manutencaoMin}</td>
+                                    <td className="px-4 py-3 text-right text-slate-600">{entry.processoMin}</td>
+                                    <td className="px-4 py-3 text-right text-slate-600">{entry.outrosMin}</td>
+                                    <td className="px-4 py-3 text-center">
+                                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => { setEditingEntry(entry); setIsModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={13}/></button>
+                                        <button onClick={() => { if(confirm('Excluir este lançamento?')) setProductionData(p => p.filter(x => x.id !== entry.id)) }} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={13}/></button>
+                                      </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot className="bg-slate-800 text-white font-black text-[10px] whitespace-nowrap sticky bottom-0 border-t border-slate-700">
+                            <tr>
+                              <td colSpan={4} className="px-4 py-4 text-center uppercase tracking-widest bg-slate-900 border-r border-slate-700">Somatória Total</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.grossWeight.toLocaleString('pt-BR')}</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.tara.toLocaleString('pt-BR')}</td>
+                              <td className="px-4 py-4 text-right text-blue-400 bg-slate-900/50">{reportTotals.netWeight.toLocaleString('pt-BR')} kg</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.ecoA.toLocaleString('pt-BR')}</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.ecoBP.toLocaleString('pt-BR')}</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.ecoBM.toLocaleString('pt-BR')}</td>
+                              <td className="px-4 py-4 text-right text-red-400 bg-slate-900/50">{reportTotals.borraTotal.toLocaleString('pt-BR')} kg</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.manutencaoMin}</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.processoMin}</td>
+                              <td className="px-4 py-4 text-right">{reportTotals.outrosMin}</td>
+                              <td className="px-4 py-4 bg-slate-900"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'personnel' && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="flex justify-end no-print">
+              <button onClick={() => setIsHistoryModalOpen(true)} className="bg-white border border-slate-200 text-slate-700 px-6 py-3.5 rounded-2xl text-[11px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50">
+                <History size={18} className="text-blue-500"/> Histórico de Movimentação
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              {renderPersonnelStat('Colaboradores', 31, 'Ativos', <Users size={24}/>, 'text-blue-400')}
+              {renderPersonnelStat('Operadores', 14, 'Líderes', <HardHat size={24}/>, 'text-emerald-400')}
+              {renderPersonnelStat('Auxiliares', 17, 'Suporte', <Briefcase size={24}/>, 'text-orange-400')}
+              {renderPersonnelStat('Vagas', 3, 'Aberto', <UserPlus size={24}/>, 'text-red-400')}
+            </div>
+
+            <div className="bg-[#242d3c] rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-700">
+                <div className="px-8 py-6 flex items-center gap-5 bg-[#1e293b]">
+                    <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-blue-400 border border-blue-500/30"><Factory size={24}/></div>
+                    <div>
+                      <h2 className="text-xl font-black text-white uppercase tracking-tight">Setor: Extrusão</h2>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Escala de Turnos</p>
+                    </div>
+                </div>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-100/10">
+                    {['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].map(sh => (
+                        <div key={sh} className={`p-6 rounded-[2rem] border shadow-sm ${sh.includes('Noturno') ? 'bg-[#1e293b] border-slate-700' : 'bg-white border-slate-200'}`}>
+                            <div className="flex items-center gap-3 mb-6">
+                              <Clock size={16} className={sh.includes('Noturno') ? 'text-indigo-400' : 'text-blue-400'}/>
+                              <h3 className={`text-[12px] font-black uppercase tracking-widest ${sh.includes('Noturno') ? 'text-slate-300' : 'text-slate-500'}`}>{sh}</h3>
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {['Cast 1', 'Cast 2'].map(ma => (
+                                    <div key={ma} className="space-y-3">
+                                        <div className="flex justify-between items-center px-1 mb-2">
+                                          <p className={`text-[10px] font-black uppercase tracking-widest ${sh.includes('Noturno') ? 'text-slate-400' : 'text-slate-300'}`}>{ma}</p>
+                                          <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Extrusão', machine: ma, shift: sh, role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                                        </div>
+                                        {renderSlot('Extrusão', ma, sh, 'Operador 1', 'OPE1')}
+                                        {renderSlot('Extrusão', ma, sh, 'Auxiliar 1', 'AUX1')}
+                                        {renderSlot('Extrusão', ma, sh, 'Auxiliar 2', 'AUX2')}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="bg-[#064e3b] rounded-[2.5rem] overflow-hidden shadow-2xl border border-emerald-900">
+                <div className="px-8 py-6 flex items-center gap-5 bg-emerald-900/80">
+                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-emerald-400 border border-emerald-500/30"><RotateCcw size={24}/></div>
+                    <div>
+                      <h2 className="text-xl font-black text-white uppercase tracking-tight">Setor: Reciclagem</h2>
+                      <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-[0.2em]">Erema</p>
+                    </div>
+                </div>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-emerald-50/30">
+                    {['Diurno 1', 'Diurno 2'].map(sh => (
+                        <div key={sh} className="bg-white p-6 rounded-[2rem] border border-emerald-100 shadow-sm">
+                            <p className="text-[11px] font-black text-emerald-800 uppercase text-center mb-4 tracking-widest">{sh}</p>
+                            {renderSlot('Reciclagem', 'Erema 1', sh, 'Operador 1', 'OPE1')}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="bg-[#78350f] rounded-[2.5rem] overflow-hidden shadow-2xl border border-orange-900">
+                <div className="px-8 py-6 flex items-center justify-between bg-orange-950/80">
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-orange-500/20 rounded-2xl flex items-center justify-center text-orange-400 border border-orange-500/30"><Briefcase size={24}/></div>
+                      <div>
+                        <h2 className="text-xl font-black text-white uppercase tracking-tight">Setor: Fita Adesiva</h2>
+                        <p className="text-[10px] text-orange-400 font-bold uppercase tracking-[0.2em]">Ghezzi / Lintech / Wutec</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Diurno 1', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }} className="bg-orange-500 text-white p-2.5 rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-900/20">
+                      <Plus size={20} />
+                    </button>
+                </div>
+                <div className="p-6 space-y-6 bg-orange-50/30">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
+                            <div className="flex items-center justify-between mb-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500"/>
+                                <h3 className="text-[12px] font-black uppercase text-orange-900 tracking-widest">Ghezzi</h3>
+                              </div>
+                              <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Diurno 1', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                {['Diurno 1', 'Diurno 2'].map(sh => (
+                                    <div key={sh} className="space-y-3">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <p className="text-[10px] font-bold text-slate-400 uppercase">{sh}</p>
+                                          <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: sh, role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
+                                        </div>
+                                        {renderSlot('Fita', 'Ghezzi', sh, 'Operador 1', 'OPE1')}
+                                        {renderSlot('Fita', 'Ghezzi', sh, 'Auxiliar 1', 'AUX1')}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
+                            <div className="flex items-center justify-between mb-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500"/>
+                                <h3 className="text-[12px] font-black uppercase text-orange-900 tracking-widest">Lintech</h3>
+                              </div>
+                              <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Lintech', shift: 'Diurno 1', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                {['Diurno 1', 'Diurno 2'].map(sh => (
+                                    <div key={sh} className="space-y-3">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <p className="text-[10px] font-bold text-slate-400 uppercase">{sh}</p>
+                                          <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Lintech', shift: sh, role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
+                                        </div>
+                                        {renderSlot('Fita', 'Lintech', sh, 'Operador 1', 'OPE1')}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
+                          <div className="flex items-center gap-3">
+                            <div className="w-2.5 h-2.5 rounded-full bg-orange-500"/>
+                            <h3 className="text-[12px] font-black uppercase text-orange-900 tracking-widest">Wutec</h3>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Wutec', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Comercial</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderSlot('Fita', 'Wutec', 'Comercial', 'Auxiliar 1', 'AUX1')}
+                            {employees.filter(e => e.sector === 'Fita' && e.machine === 'Wutec' && e.status === 'Ativo' && e.role !== 'Auxiliar 1').map(e => (
+                              <div key={e.id} onClick={() => { setSelectedEmployee(e); setIsEmployeeModalOpen(true); }} className="flex items-center justify-between p-3 rounded-xl cursor-pointer bg-slate-50 border border-slate-100 hover:border-blue-400 shadow-sm">
+                                <span className="text-[11px] font-bold text-slate-800">{e.name}</span>
+                                <span className="text-[8px] font-black px-2 py-0.5 rounded-md bg-orange-100 text-orange-600 uppercase shrink-0">{e.role}</span>
+                              </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {showEremaChart && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEremaChart(false)}>
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowEremaChart(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-800 transition-colors"><X size={28} /></button>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center border border-emerald-100"><RotateCcw size={24}/></div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Produção Erema por Operador</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mês Referência: {dashboardMonth}</p>
+              </div>
+            </div>
+            <div className="h-[400px]">
+              {eremaOperatorStats.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={eremaOperatorStats} cx="50%" cy="32%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value" label={renderCustomizedLabel}>
+                      {eremaOperatorStats.map((_, idx: number) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} />)}
+                    </Pie>
+                    <RechartsTooltip formatter={(v: any) => v.toLocaleString('pt-BR') + ' kg'} />
+                    <Legend verticalAlign="bottom" content={(props) => renderTwoColumnLegend(props)} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+                  <Activity size={48} className="opacity-20" />
+                  <p className="font-bold uppercase text-[11px] tracking-widest">Nenhum dado para este mês</p>
+                </div>
+              )}
+            </div>
+            <button onClick={() => setShowEremaChart(false)} className="w-full mt-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-black transition-all">Fechar Análise</button>
+          </div>
+        </div>
+      )}
+
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)}>
+            <div className="w-[85%] sm:w-80 bg-white h-full shadow-2xl p-8 animate-in slide-in-from-right duration-300 flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-10"><h2 className="text-xl font-black uppercase text-slate-800 tracking-tight">Definições</h2><button onClick={() => setIsMenuOpen(false)}><X size={28} className="text-slate-400 hover:text-slate-800" /></button></div>
+                <div className="space-y-8 flex-1 overflow-y-auto no-scrollbar pb-10">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 mb-2.5 block uppercase tracking-widest">Meta Produção ({dashboardMonth})</label>
+                      <input 
+                        type="number" 
+                        value={goals[dashboardMonth] || GOAL_VALUE} 
+                        onChange={e => setGoals(prev => ({...prev, [dashboardMonth]: Number(e.target.value)}))} 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500" 
+                      />
+                    </div>
+                    <div><label className="text-[10px] font-black text-slate-400 mb-2.5 block uppercase tracking-widest">Mês Referência</label><input type="month" value={dashboardMonth} onChange={e => setDashboardMonth(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500" /></div>
+                    
+                    <div className="space-y-3 pt-6 border-t border-slate-100">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Cadastros de Produção</p>
+                        <button onClick={() => setIsOperatorModalOpen(true)} className="w-full px-5 py-3.5 bg-slate-50 text-slate-700 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 border border-slate-100 hover:bg-slate-100 transition-all"><Users size={18} className="text-blue-500"/> Gerenciar Operadores</button>
+                        <button onClick={() => setIsRoleModalOpen(true)} className="w-full px-5 py-3.5 bg-slate-50 text-slate-700 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 border border-slate-100 hover:bg-slate-100 transition-all"><Briefcase size={18} className="text-indigo-500"/> Gerenciar Funções</button>
+                        <button onClick={() => setIsShiftModalOpen(true)} className="w-full px-5 py-3.5 bg-slate-50 text-slate-700 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 border border-slate-100 hover:bg-slate-100 transition-all"><Clock size={18} className="text-orange-500"/> Gerenciar Turnos</button>
+                    </div>
+
+                    <div className="pt-8 border-t border-slate-100 space-y-4">
+                        <button onClick={downloadBackup} className="w-full py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 border border-emerald-100 hover:bg-emerald-100 transition-all"><FileDown size={18}/> Baixar Backup</button>
+                        <button onClick={() => fileInputRef.current?.click()} className="w-full py-4 bg-blue-50 text-blue-600 rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 border border-blue-100 hover:bg-blue-100 transition-all"><Upload size={18}/> Restaurar Backup</button>
+                        <button onClick={() => { localStorage.removeItem('manupackaging_session'); setIsAuthenticated(false); }} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-xl hover:bg-slate-900 transition-all"><LogOut size={18}/> Sair</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      <input type="file" ref={fileInputRef} onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target?.result as string);
+                    if (data.productionData) setProductionData(data.productionData);
+                    if (data.employees) setEmployees(data.employees);
+                    if (data.operators) setOperators(data.operators);
+                    if (data.availableRoles) setAvailableRoles(data.availableRoles);
+                    if (data.availableShifts) setAvailableShifts(data.availableShifts);
+                    if (data.goals) setGoals(data.goals);
+                    if (data.dashboardMonth) setDashboardMonth(data.dashboardMonth);
+                    if (data.personnelLogs) setPersonnelLogs(data.personnelLogs);
+                    alert('Backup restaurado com sucesso!');
+                } catch (err) {
+                    alert('Erro ao processar arquivo de backup.');
+                }
+            };
+            reader.readAsText(file);
+        }
+      }} accept=".json" className="hidden" />
+
+      <LaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={(e) => {
+        if(editingEntry) setProductionData(p => p.map(x => x.id === editingEntry.id ? {...e, id: editingEntry.id} as any : x));
+        else setProductionData(p => [{...e, id: Math.random().toString(36).substr(2, 9)} as any, ...p]);
+        setEditingEntry(null);
+      }} operators={operators} activeMachines={activeMachines} availableShifts={availableShifts} initialData={editingEntry} />
+      
+      <EmployeeModal isOpen={isEmployeeModalOpen} onClose={() => { setIsEmployeeModalOpen(false); setSelectedEmployee(null); setSelectedSlot(null); }} onSave={(data, action, details) => {
+          const now = new Date().toISOString();
+          if (action === 'Contratação') setEmployees(prev => [...prev, {...data, id: Math.random().toString(36).substr(2, 9), updatedAt: now} as Employee]);
+          else if (action === 'Exclusão') setEmployees(prev => prev.filter(e => e.id !== data.id));
+          else setEmployees(prev => prev.map(e => e.id === data.id ? {...e, ...data, updatedAt: now} : e));
+          setPersonnelLogs(prev => [{id: Math.random().toString(36).substr(2, 9), date: now, employeeName: data.name || 'Vaga', action: action as any, details: details || '', user: 'Admin'}, ...prev]);
+      }} availableShifts={availableShifts} availableMachines={activeMachines} availableRoles={availableRoles} initialData={selectedEmployee} slotInfo={selectedSlot} />
+      
+      <OperatorModal isOpen={isOperatorModalOpen} onClose={() => setIsOperatorModalOpen(false)} operators={operators} onUpdate={setOperators} />
+      <RoleModal isOpen={isRoleModalOpen} onClose={() => setIsRoleModalOpen(false)} roles={availableRoles} onUpdate={setAvailableRoles} />
+      <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={(s) => setAvailableShifts(prev => [...prev, {...s, id: Math.random().toString(36).substr(2, 9)}])} />
+      <HistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} logs={personnelLogs} />
+    </div>
+  );
+};
