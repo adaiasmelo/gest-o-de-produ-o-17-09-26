@@ -674,14 +674,64 @@ const isExternalCalculatorRoute = () => {
   }
 };
 
+// Helper para detectar acesso externo à Projeção TV (Smart TVs / Telões industriais sem necessidade de login)
+const isExternalTvRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if ((window as any).__IS_TV_PROJECTION_DIRECT__) return true;
+
+    const rawPath = (window.location.pathname || '').toLowerCase();
+    let decodedPath = '';
+    try {
+      decodedPath = decodeURIComponent(rawPath);
+    } catch {
+      decodedPath = rawPath;
+    }
+    const search = (window.location.search || '').toLowerCase();
+    const hash = (window.location.hash || '').toLowerCase();
+    const href = (window.location.href || '').toLowerCase();
+
+    const matchesTv = (str: string) => {
+      return (
+        str.includes('projeção-tv') ||
+        str.includes('projecao-tv') ||
+        str.includes('projeção_tv') ||
+        str.includes('projecao_tv') ||
+        str.includes('projecaotv') ||
+        str.includes('projeçaotv') ||
+        str.includes('/tv') ||
+        str.includes('tv-mode') ||
+        str.includes('tv=true') ||
+        str.includes('tv=1') ||
+        str.includes('mode=tv') ||
+        str.includes('mode=projecao') ||
+        str.includes('/projeção') ||
+        str.includes('/projecao')
+      );
+    };
+
+    return (
+      matchesTv(rawPath) ||
+      matchesTv(decodedPath) ||
+      matchesTv(search) ||
+      matchesTv(hash) ||
+      matchesTv(href)
+    );
+  } catch (e) {
+    return false;
+  }
+};
+
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExternalCalculatorView, setIsExternalCalculatorView] = useState(() => isExternalCalculatorRoute());
+  const [isExternalTvView, setIsExternalTvView] = useState(() => isExternalTvRoute());
 
   useEffect(() => {
     const handleLocationChange = () => {
       setIsExternalCalculatorView(isExternalCalculatorRoute());
+      setIsExternalTvView(isExternalTvRoute());
     };
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);
@@ -782,6 +832,7 @@ export const App: React.FC = () => {
   const [maintenanceInitialCreateOpen, setMaintenanceInitialCreateOpen] = useState<boolean>(false);
   // Protetor de Tela (Projeção TV após 2 minutos de inatividade no computador)
   const [isScreensaverActive, setIsScreensaverActive] = useState<boolean>(false);
+  const [isTvProjectionActive, setIsTvProjectionActive] = useState<boolean>(false);
   const [screensaverSettings, setScreensaverSettings] = useState<ScreensaverSettings>(() => getScreensaverSettings());
   const lastUserActivityRef = useRef<number>(Date.now());
 
@@ -1353,6 +1404,7 @@ export const App: React.FC = () => {
   }, [unreadCount, systemLogo]);
 
   const addNotification = (message: string) => {
+    if (isExternalTvRoute()) return;
     const id = Math.random().toString(36).substring(2, 9);
     setNotifications(prev => [...prev as any, { id, message, type: 'success', operator: 'Sistema' }]);
     setUnreadCount(prev => prev + 1);
@@ -1702,7 +1754,7 @@ export const App: React.FC = () => {
           const entryTime = newEntry.updatedAt || '';
           
           // Only trigger if added/updated after sessionStartTime
-          if (entryTime >= sessionStartTime) {
+          if (entryTime >= sessionStartTime && !isExternalTvRoute()) {
             const id = Math.random().toString(36).substring(7);
             
             // Play sound
@@ -9911,6 +9963,29 @@ Atenciosamente,
     );
   }
 
+  // Acesso Externo Direto à Projeção TV (Smart TVs / Telões industriais sem login, sem popups, sem botões de controle)
+  if (isExternalTvView) {
+    return (
+      <div className="fixed inset-0 w-screen h-screen bg-slate-100 overflow-hidden select-none z-[99999]">
+        <ProjectionDashboard
+          productionData={productionData}
+          ribbonEntries={ribbonEntries}
+          goals={goals}
+          dashboardMonth={dashboardMonth}
+          collaborators={collaborators}
+          systemName={systemName}
+          systemLogo={systemLogo}
+          onClose={() => {}}
+          operatorPenalties={operatorPenalties}
+          employees={employees}
+          companyNotices={companyNotices}
+          isTvMode={true}
+          isStandaloneTv={true}
+        />
+      </div>
+    );
+  }
+
   if (showInstallExperience) {
     return (
       <InstallExperience onComplete={async () => {
@@ -10163,6 +10238,20 @@ Atenciosamente,
                 className="w-full py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 border border-blue-400/30"
               >
                 <Calculator size={16} /> Calculadora Cast 1
+              </button>
+
+              <button 
+                type="button"
+                id="btn-login-projecao-tv"
+                onClick={() => {
+                  try {
+                    window.history.pushState({}, '', '/projeção-tv');
+                  } catch {}
+                  setIsExternalTvView(true);
+                }}
+                className="w-full py-3.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 hover:from-slate-800 hover:to-indigo-900 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-indigo-500/30 active:scale-95 shadow-md cursor-pointer"
+              >
+                <Tv size={16} className="text-indigo-400" /> Projeção TV (Smart TV / Telão)
               </button>
 
               <button 
@@ -10565,7 +10654,7 @@ Atenciosamente,
           )}
           <button 
             onClick={() => {
-              setActiveTab('projection');
+              setIsTvProjectionActive(true);
               if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen().catch(() => {});
               }
@@ -10705,7 +10794,7 @@ Atenciosamente,
             )}
 
             <button onClick={() => setActiveTab('maintenance')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'maintenance' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Wrench className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Manutenção</span></button>
-            <button id="tab-projecao" onClick={() => setActiveTab('projection')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'projection' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Tv className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Projeção</span></button>
+            <button id="tab-projecao" onClick={() => { setActiveTab('projection'); setIsTvProjectionActive(false); }} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'projection' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Tv className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Projeção</span></button>
           </div>
         </div>
 
@@ -11074,6 +11163,43 @@ Atenciosamente,
                      title="Copiar link público para enviar aos operadores"
                    >
                      <Copy size={11} /> Copiar Link Externo
+                   </button>
+                </div>
+
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-950/30 border border-indigo-500/30 group">
+                   <div 
+                     onClick={() => {
+                       setIsTvProjectionActive(true);
+                       if (!document.fullscreenElement) {
+                         document.documentElement.requestFullscreen().catch(() => {});
+                       }
+                     }}
+                     className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
+                     title="Abrir Projeção TV com transmissão contínua"
+                   >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Tv className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 animate-pulse" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Projeção TV (Smart TV)</span>
+                   </div>
+                   <button
+                     type="button"
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       let link = "https://gest-o-de-produ-o-2026.pages.dev/projeção-tv";
+                       if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
+                         link = `${window.location.origin}/projeção-tv`;
+                       }
+                       if (navigator.clipboard && window.isSecureContext) {
+                         navigator.clipboard.writeText(link).then(() => {
+                           alert('Link Externo da Projeção TV copiado com sucesso!\n\n' + link + '\n\nAbra diretamente no navegador da Smart TV para reprodução contínua automática em tela cheia.');
+                         });
+                       } else {
+                         window.prompt('Copie o link externo da Projeção TV abaixo para a Smart TV:', link);
+                       }
+                     }}
+                     className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
+                     title="Copiar link externo para abrir em Smart TV ou telão industrial"
+                   >
+                     <Copy size={11} /> Copiar Link Smart TV
                    </button>
                 </div>
              </div>
@@ -18941,7 +19067,7 @@ Atenciosamente,
           />
         )}
 
-        {(activeTab === 'projection' || isScreensaverActive) && (
+        {(activeTab === 'projection' || isScreensaverActive || isTvProjectionActive) && (
           <ProjectionDashboard
             productionData={productionData}
             ribbonEntries={ribbonEntries}
@@ -18954,6 +19080,8 @@ Atenciosamente,
               if (isScreensaverActive) {
                 setIsScreensaverActive(false);
                 lastUserActivityRef.current = Date.now();
+              } else if (isTvProjectionActive) {
+                setIsTvProjectionActive(false);
               } else {
                 setActiveTab('home');
               }
@@ -18963,6 +19091,7 @@ Atenciosamente,
               setIsScreensaverActive(false);
               lastUserActivityRef.current = Date.now();
             }}
+            isTvMode={isTvProjectionActive || isScreensaverActive}
             operatorPenalties={operatorPenalties}
             onAddPenalty={handleAddPenalty}
             onDeletePenalty={handleDeletePenalty}

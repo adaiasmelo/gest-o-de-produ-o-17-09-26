@@ -17,8 +17,30 @@
           var path = (window.location.pathname || '').toLowerCase();
           var search = (window.location.search || '').toLowerCase();
           var hash = (window.location.hash || '').toLowerCase();
+          var href = (window.location.href || '').toLowerCase();
+          var decodedPath = '';
+          try { decodedPath = decodeURIComponent(path); } catch(e) { decodedPath = path; }
+
           if (path.indexOf('calculadora.html') !== -1 || path.indexOf('/calculadora') !== -1 || search.indexOf('calculadora') !== -1 || search.indexOf('cast1') !== -1 || hash.indexOf('calculadora') !== -1 || hash.indexOf('cast1') !== -1) {
             window.__IS_CALCULATOR_DIRECT__ = true;
+          }
+
+          if (
+            path.indexOf('projeção-tv') !== -1 ||
+            path.indexOf('projecao-tv') !== -1 ||
+            decodedPath.indexOf('projeção-tv') !== -1 ||
+            decodedPath.indexOf('projecao-tv') !== -1 ||
+            path.indexOf('projecao') !== -1 ||
+            decodedPath.indexOf('projeção') !== -1 ||
+            path.indexOf('/tv') !== -1 ||
+            search.indexOf('tv') !== -1 ||
+            search.indexOf('projecao') !== -1 ||
+            search.indexOf('projeção') !== -1 ||
+            hash.indexOf('tv') !== -1 ||
+            hash.indexOf('projecao') !== -1 ||
+            hash.indexOf('projeção') !== -1
+          ) {
+            window.__IS_TV_PROJECTION_DIRECT__ = true;
           }
         } catch(e) {}
       })();
