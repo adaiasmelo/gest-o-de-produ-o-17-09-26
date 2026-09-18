@@ -283,22 +283,38 @@ const getStoppageReason = (entry: ProductionEntry): string => {
   if (entry.isNoWorkDay) {
     return entry.noWorkReason || "Sem Produção / Parada de Máquina";
   }
-  if (entry.isMaintenanceEntry) {
-    if (entry.manutencaoMotivo) {
-      try {
-        const text = entry.manutencaoMotivo.trim();
-        if (text.startsWith('[') && text.endsWith(']')) {
-          const parsed = JSON.parse(text);
-          if (Array.isArray(parsed)) {
-            const reasons = parsed.map((p: any) => p.motivo).filter((m: any) => m && m.trim() !== '');
-            if (reasons.length > 0) return reasons.join('; ');
-          }
+
+  const reasonsList: string[] = [];
+
+  const extractFromMotivo = (motivoStr?: string) => {
+    if (!motivoStr || !motivoStr.trim()) return;
+    try {
+      const text = motivoStr.trim();
+      if (text.startsWith('[') && text.endsWith(']')) {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((p: any) => {
+            const written = (p.explicacao || p.justification || p.observacao || p.observacoes || p.descricao || p.justificativa || p.motivoDigitado || '').trim();
+            const tag = (p.motivo || p.keyword || p.tag || '').trim();
+            const reason = written || tag;
+            if (reason) reasonsList.push(reason);
+          });
+          return;
         }
-      } catch (err) {
-        // Ignora erro e continua para tratar como texto bruto
       }
-      return entry.manutencaoMotivo;
-    }
+    } catch (_) {}
+    if (motivoStr.trim()) reasonsList.push(motivoStr.trim());
+  };
+
+  extractFromMotivo(entry.manutencaoMotivo);
+  extractFromMotivo(entry.processoMotivo);
+  extractFromMotivo(entry.outrosMotivo);
+
+  if (reasonsList.length > 0) {
+    return reasonsList.join('; ');
+  }
+
+  if (entry.isMaintenanceEntry) {
     return "Manutenção Corretiva";
   }
   return "";
@@ -3114,20 +3130,27 @@ export const App: React.FC = () => {
       if (motivo.startsWith('[') && motivo.endsWith(']')) {
         const parsed = JSON.parse(motivo);
         if (Array.isArray(parsed)) {
-          return parsed.map((item, idx) => ({
-            id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
-            de: item.de || '',
-            ate: item.ate || '',
-            motivo: item.motivo || '',
-            explicacao: item.explicacao || item.observacao || ''
-          }));
+          return parsed.map((item, idx) => {
+            const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.justificativa || item.motivoDigitado || '').trim();
+            const tag = (item.motivo || item.keyword || item.tag || '').trim();
+            const reason = written || tag;
+            return {
+              id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
+              de: item.de || '',
+              ate: item.ate || '',
+              motivo: reason,
+              keyword: item.keyword || item.tag || tag,
+              explicacao: reason,
+              justification: reason
+            };
+          });
         }
       }
     } catch (e) {
       // continua no fallback
     }
     if (min > 0 || motivo) {
-      return [{ id: `stop-legacy-${Date.now()}-${Math.random()}`, de: '', ate: '', motivo: motivo || '', explicacao: '' }];
+      return [{ id: `stop-legacy-${Date.now()}-${Math.random()}`, de: '', ate: '', motivo: motivo || '', explicacao: motivo || '' }];
     }
     return [];
   };
@@ -5894,19 +5917,23 @@ Atenciosamente,
     };
 
     const addMotif = (machine: string, type: string, minInput: number, reasonInput: string | undefined, operator: string, date: string) => {
-      if (!reasonInput) {
-        results[machine].motifs.push({ type, min: minInput, reason: 'Não informado', operator, date });
+      if (!reasonInput || !reasonInput.trim()) {
+        results[machine].motifs.push({ type, min: minInput, reason: `${type} (Justificativa não informada)`, operator, date });
         return;
       }
       
       try {
-        if (reasonInput.startsWith('[') && reasonInput.endsWith(']')) {
-          const parsed = JSON.parse(reasonInput);
+        const trimmed = reasonInput.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          const parsed = JSON.parse(trimmed);
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed.forEach((item: any) => {
               const de = item.de || '';
               const ate = item.ate || '';
-              const motivo = item.motivo || 'Não informado';
+              // Prioriza expressamente a justificativa por escrito digitada pelo usuário
+              const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.justificativa || item.motivoDigitado || '').trim();
+              const tag = (item.motivo || item.keyword || item.tag || '').trim();
+              const motivo = written || tag || `${type} (Justificativa não informada)`;
               const itemMin = de && ate ? getDiffMinutes(de, ate) : 0;
               
               const reasonStr = de && ate ? `${de} às ${ate} - ${motivo}` : motivo;
@@ -5926,7 +5953,7 @@ Atenciosamente,
         // Fallback
       }
       
-      results[machine].motifs.push({ type, min: minInput, reason: reasonInput, operator, date });
+      results[machine].motifs.push({ type, min: minInput, reason: reasonInput.trim() || `${type} (Justificativa não informada)`, operator, date });
     };
 
     filteredDashboardData.forEach(e => {

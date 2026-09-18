@@ -33,7 +33,6 @@ export const GlobalSpellchecker: React.FC = () => {
   const [corrections, setCorrections] = useState<SpellcheckCorrection[]>([]);
   const [lastAutoCorrection, setLastAutoCorrection] = useState<{ original: string; corrected: string } | null>(null);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
-  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
@@ -45,13 +44,14 @@ export const GlobalSpellchecker: React.FC = () => {
   // Histórico para permitir desfazer última alteração
   const undoHistoryRef = useRef<{ element: HTMLInputElement | HTMLTextAreaElement; text: string } | null>(null);
   const lastToastTimeoutRef = useRef<any>(null);
+  const lastHandledInputValRef = useRef<string>('');
 
   const showToast = (msg: string) => {
     if (lastToastTimeoutRef.current) clearTimeout(lastToastTimeoutRef.current);
     setFeedbackToast(msg);
     lastToastTimeoutRef.current = setTimeout(() => {
       setFeedbackToast(null);
-    }, 3500);
+    }, 2000);
   };
 
   // Sincroniza configurações globais
@@ -117,8 +117,6 @@ export const GlobalSpellchecker: React.FC = () => {
 
   // Manipulador de digitação em tempo real (input) com suporte a autocorreção imediata
   useEffect(() => {
-    let lastHandledInputVal = '';
-
     const handleInput = (e: Event) => {
       const target = e.target as Element;
       if (!isTypingElement(target)) return;
@@ -131,33 +129,38 @@ export const GlobalSpellchecker: React.FC = () => {
       analyzeFieldText(val);
 
       if (!settings.enabled || !settings.autoCorrectOnSpace) return;
-      if (val === lastHandledInputVal) return;
+      if (val === lastHandledInputValRef.current) return;
 
-      // Se o usuário acabou de digitar um espaço (caractere imediatamente anterior ao cursor é espaço)
-      if (cursorPos > 1 && val[cursorPos - 1] === ' ') {
-        const textBeforeSpace = val.slice(0, cursorPos - 1);
-        const match = textBeforeSpace.match(/([a-zA-ZáéíóúâêôãõàüçÁÉÍÓÚÂÊÔÃÕÀÜÇ0-9\-]+)$/);
-        if (match) {
-          const lastWord = match[1];
-          const wordStartIndex = match.index || 0;
+      // Suporte para espaço ou pontuações digitadas (mobile e desktop)
+      if (cursorPos >= 1) {
+        const lastChar = val[cursorPos - 1];
+        const isDelimiter = [' ', ',', '.', ';', ':', '!', '?', '\n'].includes(lastChar);
+        
+        if (isDelimiter) {
+          const textBeforeDelimiter = val.slice(0, cursorPos - 1);
+          const match = textBeforeDelimiter.match(/([a-zA-ZáéíóúâêôãõàüçÁÉÍÓÚÂÊÔÃÕÀÜÇ0-9\-]+)$/);
+          if (match) {
+            const lastWord = match[1];
+            const wordStartIndex = match.index || 0;
 
-          if (!/^\d+$/.test(lastWord)) {
-            const correctedWord = correctSingleWord(lastWord);
-            if (correctedWord && correctedWord !== lastWord) {
-              const newText = 
-                val.slice(0, wordStartIndex) + 
-                correctedWord + 
-                ' ' + 
-                val.slice(cursorPos);
+            if (!/^\d+$/.test(lastWord)) {
+              const correctedWord = correctSingleWord(lastWord);
+              if (correctedWord && correctedWord !== lastWord) {
+                const newText = 
+                  val.slice(0, wordStartIndex) + 
+                  correctedWord + 
+                  lastChar + 
+                  val.slice(cursorPos);
 
-              const newCursorPos = wordStartIndex + correctedWord.length + 1;
-              lastHandledInputVal = newText;
+                const newCursorPos = wordStartIndex + correctedWord.length + 1;
+                lastHandledInputValRef.current = newText;
 
-              undoHistoryRef.current = { element, text: val };
-              const success = applyCorrectionToElement(element, newText, newCursorPos);
-              if (success) {
-                setLastAutoCorrection({ original: lastWord, corrected: correctedWord });
-                showToast(`Norma culta: "${lastWord}" ➔ "${correctedWord}"`);
+                undoHistoryRef.current = { element, text: val };
+                const success = applyCorrectionToElement(element, newText, newCursorPos);
+                if (success) {
+                  setLastAutoCorrection({ original: lastWord, corrected: correctedWord });
+                  showToast(`Corrigido: "${lastWord}" ➔ "${correctedWord}"`);
+                }
               }
             }
           }
@@ -180,7 +183,7 @@ export const GlobalSpellchecker: React.FC = () => {
       if (!isTypingElement(target)) return;
 
       // Dispara ao pressionar Espaço, Enter, ou pontuações
-      const triggerKeys = [' ', 'Enter', ',', '.', '!', '?'];
+      const triggerKeys = [' ', 'Enter', ',', '.', '!', '?', ';', ':'];
       if (!triggerKeys.includes(e.key)) return;
 
       const element = target as HTMLInputElement | HTMLTextAreaElement;
@@ -200,42 +203,26 @@ export const GlobalSpellchecker: React.FC = () => {
       // Se for apenas números, não altera
       if (/^\d+$/.test(lastWord)) return;
 
-      // Verifica se há correção da norma culta ou dicionário personalizado para essa palavra
+      // Verifica se há correção da norma culta
       const correctedWord = correctSingleWord(lastWord);
       if (correctedWord && correctedWord !== lastWord) {
-        // Ao pressionar ESPAÇO: previne a inserção padrão do espaço para aplicar
-        // atomicamente a palavra corrigida + espaço de uma única vez com posição exata de cursor!
-        if (e.key === ' ') {
-          e.preventDefault();
-          const newText = 
-            val.slice(0, wordStartIndex) + 
-            correctedWord + 
-            ' ' + 
-            val.slice(cursorPos);
+        const charToInsert = e.key === 'Enter' ? '\n' : e.key;
+        e.preventDefault();
+        
+        const newText = 
+          val.slice(0, wordStartIndex) + 
+          correctedWord + 
+          charToInsert + 
+          val.slice(cursorPos);
 
-          const newCursorPos = wordStartIndex + correctedWord.length + 1;
+        const newCursorPos = wordStartIndex + correctedWord.length + charToInsert.length;
+        lastHandledInputValRef.current = newText;
 
-          undoHistoryRef.current = { element, text: val };
-          const success = applyCorrectionToElement(element, newText, newCursorPos);
-          if (success) {
-            setLastAutoCorrection({ original: lastWord, corrected: correctedWord });
-            showToast(`Norma culta: "${lastWord}" ➔ "${correctedWord}"`);
-          }
-        } else {
-          // Outras teclas como Enter, vírgula, ponto
-          const newText = 
-            val.slice(0, wordStartIndex) + 
-            correctedWord + 
-            val.slice(cursorPos);
-
-          const newCursorPos = wordStartIndex + correctedWord.length;
-
-          undoHistoryRef.current = { element, text: val };
-          const success = applyCorrectionToElement(element, newText, newCursorPos);
-          if (success) {
-            setLastAutoCorrection({ original: lastWord, corrected: correctedWord });
-            showToast(`Norma culta: "${lastWord}" ➔ "${correctedWord}"`);
-          }
+        undoHistoryRef.current = { element, text: val };
+        const success = applyCorrectionToElement(element, newText, newCursorPos);
+        if (success) {
+          setLastAutoCorrection({ original: lastWord, corrected: correctedWord });
+          showToast(`Corrigido: "${lastWord}" ➔ "${correctedWord}"`);
         }
       }
     };
@@ -261,8 +248,8 @@ export const GlobalSpellchecker: React.FC = () => {
       const result = correctTextOffline(currentVal, settings);
       if (result.correctedText !== currentVal) {
         undoHistoryRef.current = { element, text: currentVal };
+        lastHandledInputValRef.current = result.correctedText;
         applyCorrectionToElement(element, result.correctedText);
-        showToast('Texto aprimorado de acordo com as normas cultas da língua portuguesa.');
       }
     };
 
@@ -377,9 +364,8 @@ export const GlobalSpellchecker: React.FC = () => {
           <div className="px-3.5 py-2 flex items-center gap-2 text-xs">
             {/* Status Indicator & Title */}
             <div 
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="flex items-center gap-2 cursor-pointer hover:opacity-90 py-0.5"
-              title="Corretor Ortográfico Norma Culta PT-BR"
+              className="flex items-center gap-2 py-0.5"
+              title="Corretor Ortográfico Automático Norma Culta PT-BR"
             >
               <div className="relative">
                 <span className="flex h-2.5 w-2.5">
@@ -393,76 +379,36 @@ export const GlobalSpellchecker: React.FC = () => {
               </div>
             </div>
 
-            {/* Badges contextuais de erro / status */}
-            {activeElement ? (
-              corrections.length > 0 ? (
-                <span 
-                  onClick={handleApplyOfflineCorrection}
-                  className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-[10px] font-black uppercase tracking-tight flex items-center gap-1 cursor-pointer transition-colors"
-                  title="Clique para corrigir todos os desvios da norma culta"
-                >
-                  <Zap className="w-3 h-3 text-amber-400" />
-                  {corrections.length} {corrections.length === 1 ? 'sugestão' : 'sugestões'}
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-lg text-[10px] font-black uppercase tracking-tight flex items-center gap-1">
-                  <CheckCheck className="w-3 h-3 text-emerald-400" />
-                  Correto
-                </span>
-              )
-            ) : (
-              <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
-                Monitorando Digitação
-              </span>
-            )}
-
-            {/* Botão de Ação Rápida no Campo Ativo */}
-            {activeElement && corrections.length > 0 && (
-              <button
-                onClick={handleApplyOfflineCorrection}
-                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer ml-1"
-                title="Corrigir este campo agora"
-              >
-                <Check className="w-3 h-3" />
-                <span>Corrigir</span>
-              </button>
-            )}
-
-            {/* Botão de Revisão com IA */}
-            {activeElement && currentText.trim().length > 3 && (
-              <button
-                onClick={handleApplyAiCorrection}
-                disabled={isAiLoading}
-                className="px-2 py-1 bg-purple-600/80 hover:bg-purple-600 text-purple-100 border border-purple-400/30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
-                title="Revisar com Inteligência Artificial (Gemini 3.8 Flash)"
-              >
-                <Sparkles className={`w-3 h-3 text-purple-300 ${isAiLoading ? 'animate-spin' : ''}`} />
-                <span className="hidden md:inline">{isAiLoading ? 'Revisando...' : 'Revisar IA'}</span>
-              </button>
-            )}
+            {/* Status de Autocorreção */}
+            <div className="flex items-center gap-1.5 font-bold text-[11px] text-emerald-400">
+              <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Autocorreção Ativa</span>
+            </div>
 
             {/* Desfazer */}
             {undoHistoryRef.current && (
               <button
                 onClick={handleUndo}
-                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
-                title="Desfazer última correção"
+                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                title="Desfazer última correção automática"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-[10px] text-amber-300 font-semibold hidden sm:inline">Desfazer</span>
               </button>
             )}
 
-            {/* Dicionário Personalizado (Minhas Palavras) */}
-            <button
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('open-spellcheck-modal', { detail: { tab: 'dicionario' } }));
-              }}
-              className="px-1.5 py-1 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 rounded-lg transition-all cursor-pointer flex items-center gap-1"
-              title="Abrir Dicionário Personalizado (Cadastrar palavras que o sistema deve corrigir)"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline text-[9px] font-bold text-emerald-300">Dicionário</span>
-            </button>
+            {/* Revisão Avançada com IA */}
+            {activeElement && currentText.trim().length > 3 && (
+              <button
+                onClick={handleApplyAiCorrection}
+                disabled={isAiLoading}
+                className="px-2 py-1 bg-purple-600/80 hover:bg-purple-600 text-purple-100 border border-purple-400/30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                title="Revisar texto completo com Inteligência Artificial"
+              >
+                <Sparkles className={`w-3 h-3 text-purple-300 ${isAiLoading ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">{isAiLoading ? 'Revisando...' : 'Revisar IA'}</span>
+              </button>
+            )}
 
             {/* Configurações */}
             <button
@@ -470,93 +416,11 @@ export const GlobalSpellchecker: React.FC = () => {
               className={`p-1 hover:bg-slate-800 rounded-lg transition-all cursor-pointer ${
                 isSettingsOpen ? 'text-blue-400 bg-slate-800' : 'text-slate-400 hover:text-white'
               }`}
-              title="Configurações do Corretor"
+              title="Preferências de autocorreção"
             >
               <Settings2 className="w-3.5 h-3.5" />
             </button>
-
-            {/* Toggle Expandir/Recolher */}
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
-              title={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-            >
-              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-            </button>
           </div>
-
-          {/* Painel Expandido com Lista de Sugestões de Correção */}
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="border-t border-slate-800 p-3 max-w-sm sm:max-w-md text-xs space-y-2.5 max-h-64 overflow-y-auto custom-scrollbar"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-300 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-blue-400" />
-                    Regras e Sugestões da Norma Culta
-                  </span>
-                  {activeElement && corrections.length > 0 && (
-                    <button
-                      onClick={handleApplyOfflineCorrection}
-                      className="text-[10px] text-blue-400 hover:text-blue-300 font-black uppercase tracking-wider cursor-pointer underline"
-                    >
-                      Aplicar Todas
-                    </button>
-                  )}
-                </div>
-
-                {corrections.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {corrections.map((corr, idx) => (
-                      <div 
-                        key={idx} 
-                        className="p-2 bg-slate-800/80 border border-slate-700/60 rounded-xl flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                            <span className="text-red-400 line-through truncate max-w-[100px]">{corr.original}</span>
-                            <span className="text-slate-500">➔</span>
-                            <span className="text-emerald-400 font-bold">{corr.corrected}</span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 leading-tight mt-0.5 line-clamp-1">{corr.reason}</p>
-                        </div>
-                        {activeElement && (
-                          <button
-                            onClick={() => {
-                              const newVal = activeElement.value.replace(new RegExp(`\\b${corr.original}\\b`, 'g'), corr.corrected);
-                              applyCorrectionToElement(activeElement, newVal);
-                              setCurrentText(newVal);
-                              setCorrections(prev => prev.filter((_, i) => i !== idx));
-                              showToast(`Substituído: "${corr.original}" por "${corr.corrected}"`);
-                            }}
-                            className="px-2 py-1 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg text-[10px] font-bold shrink-0 transition-colors cursor-pointer"
-                          >
-                            Corrigir
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-3 text-slate-400 text-xs">
-                    {activeElement ? (
-                      <div className="flex flex-col items-center gap-1 text-emerald-400">
-                        <CheckCheck className="w-5 h-5" />
-                        <span className="font-bold">Texto 100% de acordo com as normas cultas!</span>
-                        <span className="text-[10px] text-slate-400">Acentuação, concordância e ortografia verificadas.</span>
-                      </div>
-                    ) : (
-                      <span>Clique ou digite em qualquer campo do sistema para ver a correção ativa em tempo real.</span>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Modal / Popover de Configurações */}
           <AnimatePresence>

@@ -415,7 +415,7 @@ INFORMAÇÕES OBRIGATÓRIAS:
 • Descrição do problema: ${req.problemDescription}
 • Condição atual do equipamento: ${req.equipmentCondition}
 • Impacto na produção ou operação: ${req.productionImpact}
-${req.additionalInfo ? `• Informações adicionais: ${req.additionalInfo}\n` : ''}
+${req.additionalInfo ? `• Informações adicionais: ${req.additionalInfo}\n` : ''}${req.photos && req.photos.length > 0 ? `• Fotos anexadas: ${req.photos.length} imagem(ns) incluída(s) no corpo do e-mail.\n` : ''}
 DADOS DO SOLICITANTE:
 • Solicitante: ${req.requesterName}${req.requesterRole ? ` (${req.requesterRole})` : ''}
 ${req.contactPhone ? `• Ramal / Telefone: ${req.contactPhone}\n` : ''}${req.requesterEmail ? `• E-mail: ${req.requesterEmail}\n` : ''}
@@ -423,20 +423,20 @@ ${req.contactPhone ? `• Ramal / Telefone: ${req.contactPhone}\n` : ''}${req.re
 Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
 
     const htmlBody = `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="width: 560px; max-width: 560px; font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 14px; color: #1e293b; line-height: 1.5; background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; border-collapse: separate; mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="410" style="width: 410px; max-width: 410px; font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 13px; color: #1e293b; line-height: 1.45; background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; border-collapse: separate; mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
   <!-- Cabeçalho Claro e Elegante -->
   <tr>
-    <td style="background-color: #f0f9ff; border-bottom: 2px solid #38bdf8; padding: 14px 18px; border-radius: 8px 8px 0 0;">
+    <td style="background-color: #f0f9ff; border-bottom: 2px solid #38bdf8; padding: 10px 14px; border-radius: 8px 8px 0 0;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
         <tr>
           <td style="vertical-align: middle;">
-            <h2 style="margin: 0; font-size: 17px; color: #0c4a6e; font-weight: bold; letter-spacing: -0.2px;">
+            <h2 style="margin: 0; font-size: 15px; color: #0369a1; font-weight: 800; letter-spacing: -0.2px; text-transform: uppercase;">
               SOLICITAÇÃO DE MANUTENÇÃO
             </h2>
           </td>
           ${req.requestNumber ? `
           <td align="right" style="vertical-align: middle;">
-            <span style="display: inline-block; font-size: 13px; color: #0369a1; font-weight: bold; background-color: #ffffff; padding: 4px 12px; border-radius: 6px; border: 1px solid #7dd3fc; white-space: nowrap;">
+            <span style="display: inline-block; font-size: 12px; color: #0284c7; font-weight: 800; background-color: #ffffff; padding: 3px 8px; border-radius: 4px; border: 1px solid #7dd3fc; white-space: nowrap;">
               ${req.requestNumber}
             </span>
           </td>` : ''}
@@ -445,40 +445,40 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
     </td>
   </tr>
 
-  <!-- Corpo Principal / Tabela com as 6 Diretrizes -->
+  <!-- Corpo Principal / Tabela com Colunas Compactas para Enquadrar no Outlook -->
   <tr>
-    <td style="padding: 16px 18px; background-color: #ffffff;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; font-size: 13.5px;">
+    <td style="padding: 12px 14px; background-color: #ffffff;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; font-size: 13px;">
         <tr>
-          <td width="165" style="width: 165px; padding: 9px 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #334155; vertical-align: top;">
-            • Setor solicitante:
+          <td width="105" style="width: 105px; min-width: 95px; max-width: 110px; padding: 7px 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 12px; white-space: nowrap; vertical-align: top;">
+            • Setor:
           </td>
-          <td style="padding: 9px 14px; background-color: #ffffff; border: 1px solid #e2e8f0; font-weight: bold; color: #0f172a; font-size: 14px;">
+          <td style="padding: 7px 10px; background-color: #ffffff; border: 1px solid #e2e8f0; font-weight: bold; color: #0f172a; font-size: 13.5px;">
             ${req.sector}
           </td>
         </tr>
         <tr>
-          <td width="165" style="width: 165px; padding: 9px 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #334155; vertical-align: top;">
-            • Equipamento / Local:
+          <td width="105" style="width: 105px; min-width: 95px; max-width: 110px; padding: 7px 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 12px; white-space: nowrap; vertical-align: top;">
+            • Equipamento:
           </td>
-          <td style="padding: 9px 14px; background-color: #f0fdf4; border: 1px solid #e2e8f0; font-weight: bold; color: #15803d; font-size: 15px;">
+          <td style="padding: 7px 10px; background-color: #f0fdf4; border: 1px solid #e2e8f0; font-weight: bold; color: #15803d; font-size: 14px;">
             ${req.equipmentOrLocation}
           </td>
         </tr>
         <tr>
-          <td width="165" style="width: 165px; padding: 9px 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #334155; vertical-align: top;">
-            • Descrição do problema:
+          <td width="105" style="width: 105px; min-width: 95px; max-width: 110px; padding: 7px 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 12px; white-space: nowrap; vertical-align: top;">
+            • Descrição:
           </td>
-          <td style="padding: 10px 14px; background-color: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; font-size: 14px; line-height: 1.5; white-space: pre-wrap;">
+          <td style="padding: 8px 10px; background-color: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; line-height: 1.45; white-space: pre-wrap;">
             ${req.problemDescription}
           </td>
         </tr>
         <tr>
-          <td width="165" style="width: 165px; padding: 9px 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #334155; vertical-align: middle;">
-            • Condição atual:
+          <td width="105" style="width: 105px; min-width: 95px; max-width: 110px; padding: 7px 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 12px; white-space: nowrap; vertical-align: middle;">
+            • Condição:
           </td>
-          <td style="padding: 9px 14px; background-color: #ffffff; border: 1px solid #e2e8f0;">
-            <span style="display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; ${
+          <td style="padding: 7px 10px; background-color: #ffffff; border: 1px solid #e2e8f0;">
+            <span style="display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; ${
               req.equipmentCondition.includes('Parado') 
                 ? 'background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca;' 
                 : req.equipmentCondition.includes('Restrições') 
@@ -490,11 +490,11 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
           </td>
         </tr>
         <tr>
-          <td width="165" style="width: 165px; padding: 9px 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #334155; vertical-align: middle;">
-            • Impacto na produção:
+          <td width="105" style="width: 105px; min-width: 95px; max-width: 110px; padding: 7px 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 12px; white-space: nowrap; vertical-align: middle;">
+            • Impacto:
           </td>
-          <td style="padding: 9px 14px; background-color: #ffffff; border: 1px solid #e2e8f0;">
-            <span style="display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; ${
+          <td style="padding: 7px 10px; background-color: #ffffff; border: 1px solid #e2e8f0;">
+            <span style="display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; ${
               req.productionImpact.includes('Crítico')
                 ? 'background-color: #fef2f2; color: #991b1b; border: 1px solid #fca5a5;'
                 : req.productionImpact.includes('Médio')
@@ -508,25 +508,39 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
           </td>
         </tr>
         <tr>
-          <td width="165" style="width: 165px; padding: 9px 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #334155; vertical-align: top;">
-            • Fotos / Informações:
+          <td width="105" style="width: 105px; min-width: 95px; max-width: 110px; padding: 7px 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 12px; white-space: nowrap; vertical-align: top;">
+            • Fotos / Info:
           </td>
-          <td style="padding: 9px 14px; background-color: #ffffff; border: 1px solid #e2e8f0; color: #334155; font-size: 13.5px; line-height: 1.45;">
-            ${req.additionalInfo ? req.additionalInfo : '<span style="color: #64748b; font-style: italic;">Nenhuma informação adicional além da descrição acima.</span>'}
-            ${req.photos && req.photos.length > 0 ? `<div style="margin-top: 6px; font-weight: bold; color: #2563eb; font-size: 13px;">📷 Fotos anexadas no sistema: ${req.photos.length} imagem(ns) disponível(is).</div>` : ''}
+          <td style="padding: 8px 10px; background-color: #ffffff; border: 1px solid #e2e8f0; color: #334155; font-size: 13px; line-height: 1.4;">
+            ${req.additionalInfo ? `<div style="margin-bottom: 6px;">${req.additionalInfo}</div>` : '<div style="color: #64748b; font-style: italic; margin-bottom: 4px;">Nenhuma observação adicional.</div>'}
+            ${req.photos && req.photos.length > 0 ? `
+              <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+                <div style="font-size: 11.5px; font-weight: bold; color: #0284c7; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px;">
+                  📷 ${req.photos.length === 1 ? 'Foto Anexada da Ocorrência:' : `Fotos Anexadas (${req.photos.length}):`}
+                </div>
+                ${req.photos.map((photo, idx) => `
+                  <div style="margin-bottom: 8px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px;">
+                    <div style="font-size: 10.5px; font-weight: bold; color: #475569; margin-bottom: 4px;">
+                      Evidência #${idx + 1}:
+                    </div>
+                    <img src="${photo}" alt="Evidência #${idx + 1} - ${req.equipmentOrLocation}" width="360" style="max-width: 100%; width: 100%; height: auto; display: block; border-radius: 4px; border: 1px solid #cbd5e1;" />
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
           </td>
         </tr>
       </table>
 
-      <!-- Bloco de Responsável e Contatos -->
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12.5px; color: #334155;">
+      <!-- Bloco de Responsável e Contatos Lado a Lado -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 10px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; color: #334155;">
         <tr>
-          <td style="padding: 10px 14px;">
-            <div style="font-size: 13px; color: #0f172a;">
-              <strong>Solicitado por:</strong> ${req.requesterName} ${req.requesterRole ? `(${req.requesterRole})` : ''} &nbsp;•&nbsp; <span style="font-size: 12px; color: #64748b;"><strong>Data/Hora:</strong> ${dateFormatted}</span>
+          <td style="padding: 8px 10px;">
+            <div style="font-size: 12.5px; color: #0f172a;">
+              <strong>Solicitado por:</strong> ${req.requesterName}${req.requesterRole ? ` (${req.requesterRole})` : ''} &nbsp;•&nbsp; <span style="font-size: 11.5px; color: #64748b;"><strong>Data/Hora:</strong> ${dateFormatted}</span>
             </div>
             ${(req.contactPhone || req.requesterEmail) ? `
-            <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+            <div style="font-size: 11.5px; color: #64748b; margin-top: 3px;">
               ${req.contactPhone ? `<span><strong>Contato:</strong> ${req.contactPhone}</span>` : ''}
               ${req.contactPhone && req.requesterEmail ? ' &nbsp;•&nbsp; ' : ''}
               ${req.requesterEmail ? `<span><strong>E-mail:</strong> ${req.requesterEmail}</span>` : ''}
@@ -535,10 +549,10 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
         </tr>
       </table>
 
-      <div style="margin-top: 10px; font-size: 11px; color: #64748b; text-align: center;">
+      <div style="margin-top: 8px; font-size: 11px; color: #64748b; text-align: center; line-height: 1.35;">
         Fluxo oficial para organização de demandas, priorização e rastreabilidade da manutenção.
-        <div style="margin-top: 3px; font-size: 10.5px; font-weight: bold; color: #0369a1; letter-spacing: 0.3px;">
-          Sistema de Gestão de Produção
+        <div style="margin-top: 2px; font-size: 11px; font-weight: bold; color: #0369a1; letter-spacing: 0.2px;">
+          Sistema de gestão de produção
         </div>
       </div>
     </td>
@@ -1250,7 +1264,7 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
                   E-mail estruturado com as 6 diretrizes do novo fluxo (Cores Claras)
                 </p>
                 <p className="text-slate-600 text-[11px] leading-relaxed">
-                  Você pode abrir diretamente o aplicativo/web do Outlook, baixar o arquivo de rascunho (.eml) ou copiar a tabela com formatação rica para colar no corpo do e-mail.
+                  Você pode baixar o arquivo de rascunho (.eml) com as fotos e evidências já incorporadas no corpo da mensagem, copiar a tabela ou abrir diretamente no Outlook.
                 </p>
               </div>
 
@@ -1279,7 +1293,7 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
                 >
                   <Download size={20} className="text-blue-600" />
                   <span className="text-xs font-black uppercase text-blue-900">Baixar Arquivo (.EML)</span>
-                  <span className="text-[10px] text-blue-600/80 font-medium">Abre rascunho no Outlook</span>
+                  <span className="text-[10px] text-blue-600/80 font-medium">Abre rascunho com fotos</span>
                 </button>
 
                 <button

@@ -266,6 +266,8 @@ interface StopItem {
   ate: string;
   motivo: string;
   explicacao?: string;
+  keyword?: string;
+  justification?: string;
 }
 
 const getYesterdayStr = () => {
@@ -568,22 +570,27 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       if (motivo.startsWith('[') && motivo.endsWith(']')) {
         const parsed = JSON.parse(motivo);
         if (Array.isArray(parsed)) {
-          return parsed.map((item, idx) => ({
-            id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
-            de: item.de || '',
-            ate: item.ate || '',
-            motivo: item.motivo || item.keyword || '',
-            keyword: item.keyword || item.motivo || '',
-            explicacao: item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '',
-            justification: item.justification || item.explicacao || item.observacao || item.observacoes || item.descricao || ''
-          }));
+          return parsed.map((item, idx) => {
+            const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '').trim();
+            const tag = (item.motivo || item.keyword || '').trim();
+            const reason = written || tag;
+            return {
+              id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
+              de: item.de || '',
+              ate: item.ate || '',
+              motivo: reason,
+              keyword: item.keyword || tag,
+              explicacao: reason,
+              justification: reason
+            };
+          });
         }
       }
     } catch (e) {
       // continua no fallback
     }
     if (min > 0 || motivo) {
-      return [{ id: `stop-legacy-${Date.now()}-${Math.random()}`, de: '', ate: '', motivo: motivo || '', explicacao: '' }];
+      return [{ id: `stop-legacy-${Date.now()}-${Math.random()}`, de: '', ate: '', motivo: motivo || '', keyword: '', explicacao: motivo || '', justification: motivo || '' }];
     }
     return [];
   };
@@ -856,9 +863,24 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const finalProcessoMin = isCurrent ? processoMinCalculado : data.processoMin;
       const finalOutrosMin = isCurrent ? outrosMinCalculado : data.outrosMin;
 
-      const finalManutencaoMotivo = isCurrent ? (manutencaoStops.length > 0 ? JSON.stringify(manutencaoStops) : '') : data.manutencaoMotivo;
-      const finalProcessoMotivo = isCurrent ? (processoStops.length > 0 ? JSON.stringify(processoStops) : '') : data.processoMotivo;
-      const finalOutrosMotivo = isCurrent ? (outrosStops.length > 0 ? JSON.stringify(outrosStops) : '') : data.outrosMotivo;
+      const sanitizeStops = (stops: StopItem[]) => {
+        return stops.map(s => {
+          const written = (s.explicacao || s.justification || s.motivo || '').trim();
+          const tag = (s.keyword || s.motivo || '').trim();
+          const reason = written || tag;
+          return {
+            ...s,
+            motivo: reason,
+            explicacao: reason,
+            justification: reason,
+            keyword: s.keyword || tag
+          };
+        });
+      };
+
+      const finalManutencaoMotivo = isCurrent ? (manutencaoStops.length > 0 ? JSON.stringify(sanitizeStops(manutencaoStops)) : '') : data.manutencaoMotivo;
+      const finalProcessoMotivo = isCurrent ? (processoStops.length > 0 ? JSON.stringify(sanitizeStops(processoStops)) : '') : data.processoMotivo;
+      const finalOutrosMotivo = isCurrent ? (outrosStops.length > 0 ? JSON.stringify(sanitizeStops(outrosStops)) : '') : data.outrosMotivo;
 
       const baseWithStops = {
         ...data,

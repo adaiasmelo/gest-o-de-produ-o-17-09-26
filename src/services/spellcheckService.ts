@@ -197,353 +197,570 @@ export function saveSpellcheckSettings(settings: Partial<SpellcheckSettings>): S
  * mapeados para a forma canônica da NORMA CULTA (Novo Acordo Ortográfico).
  */
 const EXACT_WORD_REPLACEMENTS: Record<string, string> = {
-  // Termos industriais e operacionais
-  'producao': 'produção',
-  'producoes': 'produções',
-  'operacao': 'operação',
-  'operacoes': 'operações',
-  'operador': 'operador',
-  'manutencao': 'manutenção',
-  'manutencoes': 'manutenções',
-  'maquina': 'máquina',
-  'maquinas': 'máquinas',
-  'horario': 'horário',
-  'horarios': 'horários',
-  'periodo': 'período',
-  'periodos': 'períodos',
-  'relatorio': 'relatório',
-  'relatorios': 'relatórios',
-  'observacao': 'observação',
-  'observacoes': 'observações',
-  'analise': 'análise',
-  'analises': 'análises',
-  'descricao': 'descrição',
-  'descricoes': 'descrições',
-  'fabrica': 'fábrica',
-  'fabricas': 'fábricas',
-  'tecnico': 'técnico',
-  'tecnicos': 'técnicos',
-  'tecnica': 'técnica',
-  'tecnicas': 'técnicas',
-  'mecanico': 'mecânico',
-  'mecanicos': 'mecânicos',
-  'mecanica': 'mecânica',
-  'eletrico': 'elétrico',
-  'eletricos': 'elétricos',
-  'eletrica': 'elétrica',
-  'eletricista': 'eletricista',
-  'hidraulico': 'hidráulico',
-  'hidraulicos': 'hidráulicos',
-  'hidraulica': 'hidráulica',
-  'pneumatico': 'pneumático',
-  'pneumaticos': 'pneumáticos',
-  'pneumatica': 'pneumática',
-  'parametro': 'parâmetro',
-  'parametros': 'parâmetros',
-  'modulo': 'módulo',
-  'modulos': 'módulos',
-  'padrao': 'padrão',
-  'padroes': 'padrões',
-  'prevencao': 'prevenção',
-  'lubrificacao': 'lubrificação',
-  'calibracao': 'calibração',
-  'inspecao': 'inspeção',
-  'revisao': 'revisão',
-  'revisoes': 'revisões',
-  'tensao': 'tensão',
-  'tensoes': 'tensões',
-  'pressao': 'pressão',
-  'pressoes': 'pressões',
-  'dimensao': 'dimensão',
-  'dimensoes': 'dimensões',
-  'extrusao': 'extrusão',
-  'reciclagem': 'reciclagem',
-  'paralisacao': 'paralisação',
-  'paralizacao': 'paralisação',
-  'paralizar': 'paralisar',
-  'paralizado': 'paralisado',
-  'paralizada': 'paralisada',
-  'paralizou': 'paralisou',
-  'analizar': 'analisar',
-  'analizado': 'analisado',
-  'analizou': 'analisou',
-  'pesquizar': 'pesquisar',
-  'pesquiza': 'pesquisa',
-  'funcao': 'função',
-  'funcoes': 'funções',
-  'condicao': 'condição',
-  'condicoes': 'condições',
-  'situacao': 'situação',
-  'situacoes': 'situações',
-  'conclusao': 'conclusão',
-  'conclusoes': 'conclusões',
-  'informacao': 'informação',
-  'informacoes': 'informações',
-  'avaliacao': 'avaliação',
-  'avaliacoes': 'avaliações',
-  'infracao': 'infração',
-  'infracoes': 'infrações',
-  'advertencia': 'advertência',
-  'advertencias': 'advertências',
-  'suspensao': 'suspensão',
-  'suspensoes': 'suspensões',
-  'justificativa': 'justificativa',
-  'autorizacao': 'autorização',
-  'autorizacoes': 'autorizações',
-  'solicitacao': 'solicitação',
-  'solicitacoes': 'solicitações',
-  'comunicacao': 'comunicação',
-  'comunicado': 'comunicado',
-  'ferias': 'férias',
-  'licenca': 'licença',
-  'atestado': 'atestado',
-  'medico': 'médico',
-  'medicos': 'médicos',
-  'saude': 'saúde',
-  'sabado': 'sábado',
-  'sabados': 'sábados',
-  'terca': 'terça',
-  'inicio': 'início',
-  'termino': 'término',
-  'ultimo': 'último',
-  'ultimos': 'últimos',
-  'ultima': 'última',
-  'ultimas': 'últimas',
-  'proximo': 'próximo',
-  'proximos': 'próximos',
-  'proxima': 'próxima',
-  'proximas': 'próximas',
-  'responsavel': 'responsável',
-  'responsaveis': 'responsáveis',
-  'disponivel': 'disponível',
-  'disponiveis': 'disponíveis',
-  'possivel': 'possível',
-  'possiveis': 'possíveis',
-  'impossivel': 'impossível',
-  'impossiveis': 'impossíveis',
-  'facil': 'fácil',
-  'faceis': 'fáceis',
-  'dificil': 'difícil',
-  'dificeis': 'difíceis',
-  'util': 'útil',
-  'uteis': 'úteis',
-  'urgencia': 'urgência',
-  'urgencias': 'urgências',
-  'ocorrencia': 'ocorrência',
-  'ocorrencias': 'ocorrências',
-  'experiencia': 'experiência',
-  'experiencias': 'experiências',
-  'exigencia': 'exigência',
-  'exigencias': 'exigências',
-  'eficiencia': 'eficiência',
-  'frequencia': 'frequência',
-  'ausencia': 'ausência',
-  'importancia': 'importância',
-  'distancia': 'distância',
-  'tolerancia': 'tolerância',
-  'referencia': 'referência',
-  'sequencia': 'sequência',
-  'consequencia': 'consequência',
-  'consequencias': 'consequências',
-  'industria': 'indústria',
-  'industrias': 'indústrias',
-  'criterio': 'critério',
-  'criterios': 'critérios',
-  'numero': 'número',
-  'numeros': 'números',
-  'indice': 'índice',
-  'indices': 'índices',
-  'grafico': 'gráfico',
-  'graficos': 'gráficos',
-  'estatistica': 'estatística',
-  'estatisticas': 'estatísticas',
-  'nivel': 'nível',
-  'niveis': 'níveis',
-  'falha': 'falha',
-  'falhas': 'falhas',
-  'parada': 'parada',
-  'paradas': 'paradas',
-  'motivo': 'motivo',
-  'motivos': 'motivos',
-  'troca': 'troca',
-  'ajuste': 'ajuste',
-  'limpeza': 'limpeza',
-  'velocidade': 'velocidade',
-  'espessura': 'espessura',
-  'largura': 'largura',
-  'diametro': 'diâmetro',
-  'bobinamento': 'bobinamento',
-  'tubete': 'tubete',
-  'tubetes': 'tubetes',
-  'borra': 'borra',
-  'refugo': 'refugo',
-  'apara': 'apara',
-  'aparas': 'aparas',
-  'bobina': 'bobina',
-  'bobinas': 'bobinas',
-  'jumbo': 'jumbo',
-  'jumbos': 'jumbos',
-  'pallet': 'palete',
-  'pallets': 'paletes',
-
-  // Palavras funcionais, gramaticais e monossílabos da língua portuguesa
-  'nao': 'não',
-  'sao': 'são',
-  'estao': 'estão',
-  'sera': 'será',
-  'serao': 'serão',
-  'esta': 'está',
-  'estas': 'estás',
-  'ja': 'já',
-  'ate': 'até',
-  'tambem': 'também',
-  'voce': 'você',
-  'voces': 'vocês',
-  'so': 'só',
-  'tres': 'três',
-  'mes': 'mês',
-  'meses': 'meses',
-  'apos': 'após',
-  'alem': 'além',
-  'porem': 'porém',
-  'ninguem': 'ninguém',
-  'alguem': 'alguém',
-  'armazem': 'armazém',
-  'parabens': 'parabéns',
-  'entao': 'então',
-  'razao': 'razão',
-  'visao': 'visão',
-  'sessao': 'sessão',
-  'secao': 'seção',
-  'cessao': 'cessão',
-  'opcao': 'opção',
-  'opcoes': 'opções',
   'acao': 'ação',
   'acoes': 'ações',
-  'solucao': 'solução',
-  'solucoes': 'soluções',
-  'atencao': 'atenção',
-  'orientacao': 'orientação',
-  'orientacoes': 'orientações',
-  'geracao': 'geração',
+  'advertencia': 'advertência',
+  'advertencias': 'advertências',
+  'agua': 'água',
+  'aguas': 'águas',
+  'ajuste': 'ajuste',
+  'alem': 'além',
+  'alguem': 'alguém',
+  'alimentacao': 'alimentação',
+  'almoco': 'almoço',
+  'almocos': 'almoços',
   'alteracao': 'alteração',
   'alteracoes': 'alterações',
-  'confirmacao': 'confirmação',
-  'substituicao': 'substituição',
-  'substituicoes': 'substituições',
-  'verificacao': 'verificação',
-  'verificacoes': 'verificações',
-  'reclamacao': 'reclamação',
-  'reclamacoes': 'reclamações',
-  'execucao': 'execução',
-  'distribuicao': 'distribuição',
-  'organizacao': 'organização',
+  'analise': 'análise',
+  'analises': 'análises',
+  'analizado': 'analisado',
+  'analizar': 'analisar',
+  'analizou': 'analisou',
+  'anciedade': 'ansiedade',
+  'anciosa': 'ansiosa',
+  'anciosas': 'ansiosas',
+  'ancioso': 'ansioso',
+  'anciosos': 'ansiosos',
+  'apara': 'apara',
+  'aparas': 'aparas',
+  'aplicavel': 'aplicável',
+  'apoia': 'apoia',
+  'apos': 'após',
+  'apóia': 'apoia',
+  'armazem': 'armazém',
+  'ate': 'até',
+  'atencao': 'atenção',
+  'atestado': 'atestado',
   'atualizacao': 'atualização',
   'atualizacoes': 'atualizações',
-  'padronizacao': 'padronização',
-  'otimizacao': 'otimização',
-
-  // Erros ortográficos e confusões comuns em pt-BR
-  'concerteza': 'com certeza',
-  'excessao': 'exceção',
-  'excessão': 'exceção',
-  'exceçao': 'exceção',
-  'escessão': 'exceção',
-  'esceção': 'exceção',
-  'ancioso': 'ansioso',
-  'anciosa': 'ansiosa',
-  'anciosos': 'ansiosos',
-  'anciosas': 'ansiosas',
-  'anciedade': 'ansiedade',
-  'enchergar': 'enxergar',
-  'enchergando': 'enxergando',
-  'enchergou': 'enxergou',
-  'reinvidicar': 'reivindicar',
-  'reinvidicacao': 'reivindicação',
-  'previlegio': 'privilégio',
-  'previlégio': 'privilégio',
+  'ausencia': 'ausência',
+  'automatica': 'automática',
+  'automaticamente': 'automaticamente',
+  'automatico': 'automático',
+  'autorizacao': 'autorização',
+  'autorizacoes': 'autorizações',
+  'avaliacao': 'avaliação',
+  'avaliacoes': 'avaliações',
+  'basica': 'básica',
+  'basico': 'básico',
   'beneficiente': 'beneficente',
   'beneficientes': 'beneficentes',
-  'menas': 'menos',
-  'seje': 'seja',
-  'esteje': 'esteja',
-  'porisso': 'por isso',
-  'derrepente': 'de repente',
+  'beneficio': 'benefício',
+  'beneficios': 'benefícios',
+  'blz': 'beleza',
+  'bobina': 'bobina',
+  'bobinadera': 'bobinadeira',
+  'bobinamento': 'bobinamento',
+  'bobinas': 'bobinas',
+  'borra': 'borra',
+  'ca': 'cá',
+  'cafe': 'café',
+  'cafes': 'cafés',
+  'calibracao': 'calibração',
+  'cast1': 'Cast 1',
+  'cast2': 'Cast 2',
+  'cessao': 'cessão',
+  'codigo': 'código',
+  'codigos': 'códigos',
+  'combustiveis': 'combustíveis',
+  'combustivel': 'combustível',
+  'companhia': 'companhia',
+  'companhias': 'companhias',
+  'comunicacao': 'comunicação',
+  'comunicado': 'comunicado',
+  'concerteza': 'com certeza',
+  'concluida': 'concluída',
+  'concluidas': 'concluídas',
+  'concluido': 'concluído',
+  'concluidos': 'concluídos',
+  'conclusao': 'conclusão',
+  'conclusoes': 'conclusões',
+  'condicao': 'condição',
+  'condicoes': 'condições',
+  'confiavel': 'confiável',
+  'confirmacao': 'confirmação',
+  'consequencia': 'consequência',
+  'consequencias': 'consequências',
   'conserteza': 'com certeza',
-  'prazerosamente': 'prazerosamente',
-  'sujeito': 'sujeito',
-  'expontaneo': 'espontâneo',
+  'conserto': 'conserto',
+  'construido': 'construído',
+  'conteudo': 'conteúdo',
+  'conteudos': 'conteúdos',
+  'creem': 'creem',
+  'criterio': 'critério',
+  'criterios': 'critérios',
+  'critica': 'crítica',
+  'critico': 'crítico',
+  'crêem': 'creem',
+  'deem': 'deem',
+  'derrepente': 'de repente',
+  'descricao': 'descrição',
+  'descricoes': 'descrições',
+  'desperdicio': 'desperdício',
+  'desperdicios': 'desperdícios',
+  'destruido': 'destruído',
+  'diagnostico': 'diagnóstico',
+  'diametro': 'diâmetro',
+  'diametros': 'diâmetros',
+  'diaria': 'diária',
+  'diarias': 'diárias',
+  'diario': 'diário',
+  'diarios': 'diários',
+  'dificeis': 'difíceis',
+  'dificil': 'difícil',
+  'dimensao': 'dimensão',
+  'dimensoes': 'dimensões',
+  'dinamico': 'dinâmico',
+  'disponiveis': 'disponíveis',
+  'disponivel': 'disponível',
+  'distancia': 'distância',
+  'distribuicao': 'distribuição',
+  'distribuido': 'distribuído',
+  'dps': 'depois',
+  'duracao': 'duração',
+  'duvida': 'dúvida',
+  'duvidas': 'dúvidas',
+  'dêem': 'deem',
+  'edificio': 'edifício',
+  'eficiencia': 'eficiência',
+  'eh': 'é',
+  'eletrica': 'elétrica',
+  'eletricas': 'elétricas',
+  'eletricista': 'eletricista',
+  'eletrico': 'elétrico',
+  'eletricos': 'elétricos',
+  'eletronica': 'eletrônica',
+  'eletronico': 'eletrônico',
+  'emergencia': 'emergência',
+  'emergencias': 'emergências',
+  'enchergando': 'enxergando',
+  'enchergar': 'enxergar',
+  'enchergou': 'enxergou',
+  'encomenda': 'encomenda',
+  'encomendas': 'encomendas',
+  'enjoo': 'enjoo',
+  'enjôo': 'enjoo',
+  'entao': 'então',
+  'equilibrio': 'equilíbrio',
+  'erema1': 'Erema 1',
+  'escessão': 'exceção',
+  'esceção': 'exceção',
+  'especifica': 'específica',
+  'especifico': 'específico',
+  'espessura': 'espessura',
   'espontaneo': 'espontâneo',
+  'esta': 'está',
+  'estah': 'está',
+  'estao': 'estão',
+  'estara': 'estará',
+  'estarao': 'estarão',
+  'estas': 'estás',
+  'estatico': 'estático',
+  'estatistica': 'estatística',
+  'estatisticas': 'estatísticas',
+  'estavel': 'estável',
+  'esteje': 'esteja',
   'estranho': 'estranho',
   'estranhos': 'estranhos',
+  'estreia': 'estreia',
+  'estréia': 'estreia',
+  'excessao': 'exceção',
   'excessivo': 'excessivo',
   'excesso': 'excesso',
   'excessos': 'excessos',
-  'encomenda': 'encomenda',
-  'encomendas': 'encomendas',
-  'companhia': 'companhia',
-  'companhias': 'companhias',
-  'imediato': 'imediato',
-  'imediatamente': 'imediatamente',
-  'urgentemente': 'urgentemente',
-  'prioritario': 'prioritário',
-  'prioritaria': 'prioritária',
-  'prioritarios': 'prioritários',
-  'prioritarias': 'prioritárias',
-  'formulario': 'formulário',
-  'formularios': 'formulários',
-  'salario': 'salário',
-  'salarios': 'salários',
-  'funcionario': 'funcionário',
-  'funcionarios': 'funcionários',
-  'funcionaria': 'funcionária',
-  'funcionarias': 'funcionárias',
-  'voluntario': 'voluntário',
-  'voluntarios': 'voluntários',
-  'itinerario': 'itinerário',
-  'itinerarios': 'itinerários',
+  'excessão': 'exceção',
+  'exceçao': 'exceção',
+  'execucao': 'execução',
+  'exercicio': 'exercício',
+  'exercicios': 'exercícios',
+  'exigencia': 'exigência',
+  'exigencias': 'exigências',
+  'experiencia': 'experiência',
+  'experiencias': 'experiências',
+  'expontaneo': 'espontâneo',
   'extraordinario': 'extraordinário',
   'extraordinarios': 'extraordinários',
-  'necessario': 'necessário',
-  'necessarios': 'necessários',
-  'necessaria': 'necessária',
-  'necessarias': 'necessárias',
-  'temporario': 'temporário',
-  'temporarios': 'temporários',
-  'temporaria': 'temporária',
-  'temporarias': 'temporárias',
-  'proprietario': 'proprietário',
-  'proprietarios': 'proprietários',
-  'diario': 'diário',
-  'diarios': 'diários',
-  'diaria': 'diária',
-  'diarias': 'diárias',
-
-  // Novo Acordo Ortográfico (palavras que perderam o acento ou mudaram)
-  'ideia': 'ideia',
-  'idéia': 'ideia',
-  'plateia': 'plateia',
-  'platéia': 'plateia',
+  'extrucao': 'extrusão',
+  'extrusao': 'extrusão',
+  'extrusor': 'extrusor',
+  'extrusora': 'extrusora',
+  'fabrica': 'fábrica',
+  'fabricas': 'fábricas',
+  'faceis': 'fáceis',
+  'facil': 'fácil',
+  'falha': 'falha',
+  'falhas': 'falhas',
+  'fara': 'fará',
+  'farao': 'farão',
+  'ferias': 'férias',
+  'fisica': 'física',
+  'fisico': 'físico',
+  'flexivel': 'flexível',
+  'formulario': 'formulário',
+  'formularios': 'formulários',
+  'frequencia': 'frequência',
+  'funcao': 'função',
+  'funcionaria': 'funcionária',
+  'funcionarias': 'funcionárias',
+  'funcionario': 'funcionário',
+  'funcionarios': 'funcionários',
+  'funcoes': 'funções',
+  'fusiveis': 'fusíveis',
+  'fusivel': 'fusível',
+  'gas': 'gás',
+  'gases': 'gases',
+  'geracao': 'geração',
+  'gezi': 'Ghezzi',
+  'ghezze': 'Ghezzi',
+  'grafico': 'gráfico',
+  'graficos': 'gráficos',
   'heroico': 'heroico',
   'heróico': 'heroico',
+  'hidraulica': 'hidráulica',
+  'hidraulicas': 'hidráulicas',
+  'hidraulico': 'hidráulico',
+  'hidraulicos': 'hidráulicos',
+  'hipotese': 'hipótese',
+  'historica': 'histórica',
+  'historico': 'histórico',
+  'hj': 'hoje',
+  'horario': 'horário',
+  'horarios': 'horários',
+  'ideia': 'ideia',
+  'idéia': 'ideia',
+  'imediatamente': 'imediatamente',
+  'imediato': 'imediato',
+  'importancia': 'importância',
+  'impossiveis': 'impossíveis',
+  'impossivel': 'impossível',
+  'imprevisivel': 'imprevisível',
+  'indice': 'índice',
+  'indices': 'índices',
+  'industria': 'indústria',
+  'industrias': 'indústrias',
+  'inflamavel': 'inflamável',
+  'informacao': 'informação',
+  'informacoes': 'informações',
+  'infracao': 'infração',
+  'infracoes': 'infrações',
+  'inicio': 'início',
+  'inicios': 'inícios',
+  'inspecao': 'inspeção',
+  'inspecoes': 'inspeções',
+  'instalacao': 'instalação',
+  'instavel': 'instável',
+  'interrupcao': 'interrupção',
+  'interrupcoes': 'interrupções',
+  'inuteis': 'inúteis',
+  'inutil': 'inútil',
+  'invisivel': 'invisível',
+  'itinerario': 'itinerário',
+  'itinerarios': 'itinerários',
+  'ja': 'já',
   'jiboia': 'jiboia',
   'jibóia': 'jiboia',
-  'apoia': 'apoia',
-  'apóia': 'apoia',
-  'estreia': 'estreia',
-  'estréia': 'estreia',
-  'voo': 'voo',
-  'vôo': 'voo',
-  'enjoo': 'enjoo',
-  'enjôo': 'enjoo',
+  'juizo': 'juízo',
+  'juizos': 'juízos',
+  'jumbo': 'jumbo',
+  'jumbos': 'jumbos',
+  'justificativa': 'justificativa',
+  'la': 'lá',
+  'largura': 'largura',
   'leem': 'leem',
+  'licenca': 'licença',
+  'lider': 'líder',
+  'lideres': 'líderes',
+  'limpeza': 'limpeza',
+  'lintec': 'Lintech',
+  'liquido': 'líquido',
+  'liquidos': 'líquidos',
+  'logica': 'lógica',
+  'logico': 'lógico',
+  'lubrificacao': 'lubrificação',
   'lêem': 'leem',
+  'manutencao': 'manutenção',
+  'manutencoes': 'manutenções',
+  'manutensao': 'manutenção',
+  'manutençao': 'manutenção',
+  'maquina': 'máquina',
+  'maquinas': 'máquinas',
+  'maxima': 'máxima',
+  'maximo': 'máximo',
+  'mecanica': 'mecânica',
+  'mecanicas': 'mecânicas',
+  'mecanico': 'mecânico',
+  'mecanicos': 'mecânicos',
+  'medico': 'médico',
+  'medicos': 'médicos',
+  'menas': 'menos',
+  'mes': 'mês',
+  'meses': 'meses',
+  'metodo': 'método',
+  'metodos': 'métodos',
+  'minima': 'mínima',
+  'minimo': 'mínimo',
+  'modulo': 'módulo',
+  'modulos': 'módulos',
+  'motivo': 'motivo',
+  'motivos': 'motivos',
+  'msg': 'mensagem',
+  'nao': 'não',
+  'necessaria': 'necessária',
+  'necessarias': 'necessárias',
+  'necessario': 'necessário',
+  'necessarios': 'necessários',
+  'ninguem': 'ninguém',
+  'niveis': 'níveis',
+  'nivel': 'nível',
+  'numero': 'número',
+  'numeros': 'números',
+  'obg': 'obrigado',
+  'observacao': 'observação',
+  'observacoes': 'observações',
+  'obstrucao': 'obstrução',
+  'ocorrencia': 'ocorrência',
+  'ocorrencias': 'ocorrências',
+  'oleo': 'óleo',
+  'oleos': 'óleos',
+  'opcao': 'opção',
+  'opcoes': 'opções',
+  'operacao': 'operação',
+  'operacoes': 'operações',
+  'operador': 'operador',
+  'oq': 'o que',
+  'organizacao': 'organização',
+  'orientacao': 'orientação',
+  'orientacoes': 'orientações',
+  'otima': 'ótima',
+  'otimizacao': 'otimização',
+  'otimo': 'ótimo',
+  'padrao': 'padrão',
+  'padroes': 'padrões',
+  'padronizacao': 'padronização',
+  'pais': 'país',
+  'paises': 'países',
+  'pallet': 'palete',
+  'pallets': 'paletes',
+  'parabens': 'parabéns',
+  'parada': 'parada',
+  'paradas': 'paradas',
+  'paralisacao': 'paralisação',
+  'paralisar': 'paralisar',
+  'paralizacao': 'paralisação',
+  'paralizada': 'paralisada',
+  'paralizado': 'paralisado',
+  'paralizar': 'paralisar',
+  'paralizou': 'paralisou',
+  'parametro': 'parâmetro',
+  'parametros': 'parâmetros',
+  'pe': 'pé',
+  'periodo': 'período',
+  'periodos': 'períodos',
+  'pesquisar': 'pesquisar',
+  'pesquiza': 'pesquisa',
+  'pesquizar': 'pesquisar',
+  'pessima': 'péssima',
+  'pessimo': 'péssimo',
+  'petroleo': 'petróleo',
+  'plastico': 'plástico',
+  'plasticos': 'plásticos',
+  'plateia': 'plateia',
+  'platéia': 'plateia',
+  'pneumatica': 'pneumática',
+  'pneumaticas': 'pneumáticas',
+  'pneumatico': 'pneumático',
+  'pneumaticos': 'pneumáticos',
+  'po': 'pó',
+  'porem': 'porém',
+  'porisso': 'por isso',
+  'possiveis': 'possíveis',
+  'possivel': 'possível',
+  'potencia': 'potência',
+  'pq': 'porque',
+  'pra': 'para',
+  'pras': 'para as',
+  'pratica': 'prática',
+  'pratico': 'prático',
+  'prazerosamente': 'prazerosamente',
+  'prejuizo': 'prejuízo',
+  'prejuizos': 'prejuízos',
+  'presenca': 'presença',
+  'presencas': 'presenças',
+  'pressao': 'pressão',
+  'pressoes': 'pressões',
+  'prevencao': 'prevenção',
+  'previlegio': 'privilégio',
+  'previlégio': 'privilégio',
+  'previsao': 'previsão',
+  'previsivel': 'previsível',
+  'prioritaria': 'prioritária',
+  'prioritarias': 'prioritárias',
+  'prioritario': 'prioritário',
+  'prioritarios': 'prioritários',
+  'pro': 'para o',
+  'producao': 'produção',
+  'producoes': 'produções',
+  'produçao': 'produção',
+  'propria': 'própria',
+  'proprias': 'próprias',
+  'proprietario': 'proprietário',
+  'proprietarios': 'proprietários',
+  'proprio': 'próprio',
+  'proprios': 'próprios',
+  'pros': 'para os',
+  'proxima': 'próxima',
+  'proximas': 'próximas',
+  'proximo': 'próximo',
+  'proximos': 'próximos',
+  'publica': 'pública',
+  'publico': 'público',
+  'qdo': 'quando',
+  'qto': 'quanto',
+  'quimica': 'química',
+  'quimico': 'químico',
+  'rapida': 'rápida',
+  'rapidas': 'rápidas',
+  'rapido': 'rápido',
+  'rapidos': 'rápidos',
+  'razao': 'razão',
+  'reciclagem': 'reciclagem',
+  'reclamacao': 'reclamação',
+  'reclamacoes': 'reclamações',
+  'refeicao': 'refeição',
+  'refeicoes': 'refeições',
+  'refeisao': 'refeição',
+  'referencia': 'referência',
+  'referencias': 'referências',
+  'refugo': 'refugo',
+  'reinvidicacao': 'reivindicação',
+  'reinvidicar': 'reivindicar',
+  'relatorio': 'relatório',
+  'relatorios': 'relatórios',
+  'rele': 'relé',
+  'reles': 'relés',
+  'relogio': 'relógio',
+  'relogios': 'relógios',
+  'residuo': 'resíduo',
+  'residuos': 'resíduos',
+  'resistencia': 'resistência',
+  'resistencias': 'resistências',
+  'responsaveis': 'responsáveis',
+  'responsavel': 'responsável',
+  'revisao': 'revisão',
+  'revisoes': 'revisões',
+  'ruido': 'ruído',
+  'ruidos': 'ruídos',
+  'sabado': 'sábado',
+  'sabados': 'sábados',
+  'saida': 'saída',
+  'saidas': 'saídas',
+  'salario': 'salário',
+  'salarios': 'salários',
+  'sao': 'são',
+  'saude': 'saúde',
+  'secao': 'seção',
+  'seje': 'seja',
+  'sequencia': 'sequência',
+  'sera': 'será',
+  'serao': 'serão',
+  'seria': 'séria',
+  'serio': 'sério',
+  'sessao': 'sessão',
+  'simbolo': 'símbolo',
+  'simbolos': 'símbolos',
+  'sintese': 'síntese',
+  'situacao': 'situação',
+  'situacoes': 'situações',
+  'so': 'só',
+  'solicitacao': 'solicitação',
+  'solicitacoes': 'solicitações',
+  'solucao': 'solução',
+  'solucoes': 'soluções',
+  'subestacao': 'subestação',
+  'subestacoes': 'subestações',
+  'subsidio': 'subsídio',
+  'substancia': 'substância',
+  'substancias': 'substâncias',
+  'substituicao': 'substituição',
+  'substituicoes': 'substituições',
+  'substituida': 'substituída',
+  'substituidas': 'substituídas',
+  'substituido': 'substituído',
+  'substituidos': 'substituídos',
+  'sujeito': 'sujeito',
+  'suspensao': 'suspensão',
+  'suspensoes': 'suspensões',
+  'sustentavel': 'sustentável',
+  'ta': 'está',
+  'tambem': 'também',
+  'tb': 'também',
+  'tbm': 'também',
+  'td': 'tudo',
+  'tdo': 'tudo',
+  'tecnica': 'técnica',
+  'tecnicas': 'técnicas',
+  'tecnico': 'técnico',
+  'tecnicos': 'técnicos',
+  'temporaria': 'temporária',
+  'temporarias': 'temporárias',
+  'temporario': 'temporário',
+  'temporarios': 'temporários',
+  'tensao': 'tensão',
+  'tensoes': 'tensões',
+  'tera': 'terá',
+  'terao': 'terão',
+  'terca': 'terça',
+  'termino': 'término',
+  'terminos': 'términos',
+  'titulo': 'título',
+  'titulos': 'títulos',
+  'to': 'estou',
+  'tolerancia': 'tolerância',
+  'tres': 'três',
+  'troca': 'troca',
+  'tubete': 'tubete',
+  'tubetes': 'tubetes',
+  'tubeti': 'tubete',
+  'ultech': 'Wultec',
+  'ultima': 'última',
+  'ultimas': 'últimas',
+  'ultimo': 'último',
+  'ultimos': 'últimos',
+  'urgencia': 'urgência',
+  'urgencias': 'urgências',
+  'urgentemente': 'urgentemente',
+  'uteck': 'Wultec',
+  'uteis': 'úteis',
+  'util': 'útil',
+  'valvula': 'válvula',
+  'valvulas': 'válvulas',
+  'varia': 'vária',
+  'varias': 'várias',
+  'variaveis': 'variáveis',
+  'variavel': 'variável',
+  'vario': 'vário',
+  'varios': 'vários',
+  'vc': 'você',
+  'vcs': 'vocês',
+  've': 'vê',
   'veem': 'veem',
+  'velocidade': 'velocidade',
+  'verificacao': 'verificação',
+  'verificacoes': 'verificações',
+  'vira': 'virá',
+  'virao': 'virão',
+  'visao': 'visão',
+  'visivel': 'visível',
+  'vistamax': 'Vistamaxx',
+  'vistamx': 'Vistamaxx',
+  'voce': 'você',
+  'voces': 'vocês',
+  'voluntario': 'voluntário',
+  'voluntarios': 'voluntários',
+  'voo': 'voo',
   'vêem': 'veem',
-  'creem': 'creem',
-  'crêem': 'creem',
-  'deem': 'deem',
-  'dêem': 'deem',
+  'vôo': 'voo',
+  'wutec': 'Wultec',
 };
 
 /**
@@ -637,87 +854,181 @@ function preserveCasing(original: string, replacement: string): string {
   return replacement.toLowerCase();
 }
 
+// Tabela normalizada sem acentos para busca rápida O(1)
+const NORMALIZED_WORD_MAP: Map<string, string> = new Map();
+for (const [key, val] of Object.entries(EXACT_WORD_REPLACEMENTS)) {
+  const norm = key.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!NORMALIZED_WORD_MAP.has(norm)) {
+    NORMALIZED_WORD_MAP.set(norm, val);
+  }
+}
+
 /**
- * Verifica se uma palavra termina com sufixos comuns que exigem acento e regras ortográficas
+ * Calcula distância de Levenshtein simplificada (limite de 1 caractere)
+ */
+function isEditDistanceOne(a: string, b: string): boolean {
+  const lenA = a.length;
+  const lenB = b.length;
+  if (Math.abs(lenA - lenB) > 1) return false;
+
+  let diffCount = 0;
+  let i = 0;
+  let j = 0;
+
+  while (i < lenA && j < lenB) {
+    if (a[i] !== b[j]) {
+      diffCount++;
+      if (diffCount > 1) return false;
+
+      if (lenA > lenB) {
+        i++;
+      } else if (lenB > lenA) {
+        j++;
+      } else {
+        i++;
+        j++;
+      }
+    } else {
+      i++;
+      j++;
+    }
+  }
+
+  if (i < lenA || j < lenB) diffCount++;
+  return diffCount === 1;
+}
+
+/**
+ * Verifica se uma palavra termina com sufixos comuns que exigem acento e regras ortográficas da Norma Culta
  */
 function correctWordByRules(rawWord: string): string | null {
   const lower = rawWord.toLowerCase();
 
-  // 1. Dicionário exato
+  // 1. Dicionário exato direto
   if (EXACT_WORD_REPLACEMENTS[lower]) {
-    return preserveCasing(rawWord, EXACT_WORD_REPLACEMENTS[lower]);
+    const correct = EXACT_WORD_REPLACEMENTS[lower];
+    return rawWord === correct ? null : preserveCasing(rawWord, correct);
   }
 
-  // Se já tiver acento ou for muito curta, preserva
+  // 2. Busca pela forma normalizada (remove acentos errados ou parciais)
+  const norm = lower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (NORMALIZED_WORD_MAP.has(norm)) {
+    const target = NORMALIZED_WORD_MAP.get(norm)!;
+    if (rawWord !== target) {
+      return preserveCasing(rawWord, target);
+    }
+    return null;
+  }
+
+  // Se a palavra for muito curta e não constou no dicionário, não alterar
   if (lower.length < 4) return null;
 
-  // 2. Regra para sufixo -cao / -coes (oxítona terminada em ditongo nasal)
-  if (lower.endsWith('cao') && !lower.endsWith('acao') && !lower.endsWith('icao')) {
-    // Ex: acao -> ação
-    const corrected = lower.slice(0, -3) + 'ção';
+  // 3. Regra para sufixo -cao / -coes / -çao (ditongo nasal com til)
+  if (norm.endsWith('cao') && norm.length >= 4) {
+    const stem = lower.slice(0, -3);
+    const corrected = stem + 'ção';
+    if (lower === corrected) return null;
     return preserveCasing(rawWord, corrected);
   }
-  if (lower.endsWith('acao')) {
-    const corrected = lower.slice(0, -4) + 'ação';
+  if (norm.endsWith('coes') && norm.length >= 5) {
+    const stem = lower.slice(0, -4);
+    const corrected = stem + 'ções';
+    if (lower === corrected) return null;
     return preserveCasing(rawWord, corrected);
   }
-  if (lower.endsWith('icao')) {
-    const corrected = lower.slice(0, -4) + 'ição';
+
+  // 4. Regra para sufixo -sao / -soes (ex: pressao, tensao, transmissao, divisao, revisao, extensao)
+  if (norm.endsWith('sao') && norm.length >= 4) {
+    const stem = lower.slice(0, -3);
+    const corrected = stem + 'são';
+    if (lower === corrected) return null;
     return preserveCasing(rawWord, corrected);
   }
-  if (lower.endsWith('coes') || lower.endsWith('acoes') || lower.endsWith('icoes')) {
-    if (lower.endsWith('acoes')) {
-      return preserveCasing(rawWord, lower.slice(0, -5) + 'ações');
-    }
-    if (lower.endsWith('icoes')) {
-      return preserveCasing(rawWord, lower.slice(0, -5) + 'ições');
-    }
-    return preserveCasing(rawWord, lower.slice(0, -4) + 'ções');
+  if (norm.endsWith('soes') && norm.length >= 5) {
+    const stem = lower.slice(0, -4);
+    const corrected = stem + 'sões';
+    if (lower === corrected) return null;
+    return preserveCasing(rawWord, corrected);
   }
 
-  // 3. Regra para sufixo paroxítono -vel / -veis
-  if (lower.endsWith('vel') && lower.length > 5 && !/[áéíóúâêôãõ]/.test(lower)) {
-    // ex: responsavel -> responsável, disponivel -> disponível, sustentavel -> sustentável
-    // Coloca acento na antepenúltima ou penúltima vogal tônica
-    if (lower.includes('avel')) {
-      return preserveCasing(rawWord, lower.replace(/avel$/, 'ável'));
+  // 5. Regra para sufixo -zao / -zoes (ex: razao -> razão)
+  if (norm.endsWith('zao') && norm.length >= 4) {
+    const stem = lower.slice(0, -3);
+    const corrected = stem + 'zão';
+    if (lower === corrected) return null;
+    return preserveCasing(rawWord, corrected);
+  }
+  if (norm.endsWith('zoes') && norm.length >= 5) {
+    const stem = lower.slice(0, -4);
+    const corrected = stem + 'zões';
+    if (lower === corrected) return null;
+    return preserveCasing(rawWord, corrected);
+  }
+
+  // 6. Regra para paroxítonas em -vel / -veis
+  if (norm.endsWith('vel') && norm.length >= 5 && !/[áéíóúâêôãõ]/.test(lower)) {
+    if (norm.endsWith('avel')) {
+      const res = lower.replace(/avel$/, 'ável');
+      return lower === res ? null : preserveCasing(rawWord, res);
     }
-    if (lower.includes('ivel')) {
-      return preserveCasing(rawWord, lower.replace(/ivel$/, 'ível'));
+    if (norm.endsWith('ivel')) {
+      const res = lower.replace(/ivel$/, 'ível');
+      return lower === res ? null : preserveCasing(rawWord, res);
     }
-    if (lower.includes('uvel')) {
-      return preserveCasing(rawWord, lower.replace(/uvel$/, 'úvel'));
+    if (norm.endsWith('uvel')) {
+      const res = lower.replace(/uvel$/, 'úvel');
+      return lower === res ? null : preserveCasing(rawWord, res);
     }
   }
-  if (lower.endsWith('veis') && lower.length > 6 && !/[áéíóúâêôãõ]/.test(lower)) {
-    if (lower.includes('aveis')) {
-      return preserveCasing(rawWord, lower.replace(/aveis$/, 'áveis'));
+  if (norm.endsWith('veis') && norm.length >= 6 && !/[áéíóúâêôãõ]/.test(lower)) {
+    if (norm.endsWith('aveis')) {
+      const res = lower.replace(/aveis$/, 'áveis');
+      return lower === res ? null : preserveCasing(rawWord, res);
     }
-    if (lower.includes('iveis')) {
-      return preserveCasing(rawWord, lower.replace(/iveis$/, 'íveis'));
+    if (norm.endsWith('iveis')) {
+      const res = lower.replace(/iveis$/, 'íveis');
+      return lower === res ? null : preserveCasing(rawWord, res);
     }
   }
 
-  // 4. Regra para paroxítonas terminadas em ditongo crescente: -encia / -ancia
-  if (lower.endsWith('encia') && !/[áéíóúâêôãõ]/.test(lower)) {
-    return preserveCasing(rawWord, lower.replace(/encia$/, 'ência'));
+  // 7. Regra para paroxítonas terminadas em ditongo crescente: -encia / -encias / -ancia / -ancias
+  if (norm.endsWith('encia') && !/[áéíóúâêôãõ]/.test(lower)) {
+    const res = lower.replace(/encia$/, 'ência');
+    return lower === res ? null : preserveCasing(rawWord, res);
   }
-  if (lower.endsWith('encias') && !/[áéíóúâêôãõ]/.test(lower)) {
-    return preserveCasing(rawWord, lower.replace(/encias$/, 'ências'));
+  if (norm.endsWith('encias') && !/[áéíóúâêôãõ]/.test(lower)) {
+    const res = lower.replace(/encias$/, 'ências');
+    return lower === res ? null : preserveCasing(rawWord, res);
   }
-  if (lower.endsWith('ancia') && !/[áéíóúâêôãõ]/.test(lower)) {
-    return preserveCasing(rawWord, lower.replace(/ancia$/, 'ância'));
+  if (norm.endsWith('ancia') && !/[áéíóúâêôãõ]/.test(lower)) {
+    const res = lower.replace(/ancia$/, 'ância');
+    return lower === res ? null : preserveCasing(rawWord, res);
   }
-  if (lower.endsWith('ancias') && !/[áéíóúâêôãõ]/.test(lower)) {
-    return preserveCasing(rawWord, lower.replace(/ancias$/, 'âncias'));
+  if (norm.endsWith('ancias') && !/[áéíóúâêôãõ]/.test(lower)) {
+    const res = lower.replace(/ancias$/, 'âncias');
+    return lower === res ? null : preserveCasing(rawWord, res);
   }
 
-  // 5. Regra para paroxítonas terminadas em -ario / -aria / -arios / -arias
-  if (lower.endsWith('ario') && lower.length > 5 && !/[áéíóúâêôãõ]/.test(lower)) {
-    return preserveCasing(rawWord, lower.replace(/ario$/, 'ário'));
+  // 8. Regra para paroxítonas terminadas em -ario / -aria / -arios / -arias
+  if (norm.endsWith('ario') && norm.length >= 5 && !/[áéíóúâêôãõ]/.test(lower)) {
+    const res = lower.replace(/ario$/, 'ário');
+    return lower === res ? null : preserveCasing(rawWord, res);
   }
-  if (lower.endsWith('arios') && lower.length > 6 && !/[áéíóúâêôãõ]/.test(lower)) {
-    return preserveCasing(rawWord, lower.replace(/arios$/, 'ários'));
+  if (norm.endsWith('arios') && norm.length >= 6 && !/[áéíóúâêôãõ]/.test(lower)) {
+    const res = lower.replace(/arios$/, 'ários');
+    return lower === res ? null : preserveCasing(rawWord, res);
+  }
+
+  // 9. Correção de erro de digitação por proximidade (distância de edição = 1)
+  if (norm.length >= 4 && !/[0-9]/.test(norm)) {
+    for (const [dictNorm, dictCorrect] of NORMALIZED_WORD_MAP.entries()) {
+      if (Math.abs(dictNorm.length - norm.length) <= 1) {
+        if (isEditDistanceOne(norm, dictNorm)) {
+          if (rawWord.toLowerCase() === dictCorrect.toLowerCase()) return null;
+          return preserveCasing(rawWord, dictCorrect);
+        }
+      }
+    }
   }
 
   return null;
@@ -950,7 +1261,15 @@ export function applyCorrectionToElement(
 
     if (typeof targetCursorPos === 'number') {
       const pos = Math.min(Math.max(0, targetCursorPos), newText.length);
-      element.setSelectionRange(pos, pos);
+      const setPos = () => {
+        try {
+          element.setSelectionRange(pos, pos);
+        } catch (_) {}
+      };
+      setPos();
+      requestAnimationFrame(setPos);
+      setTimeout(setPos, 0);
+      setTimeout(setPos, 20);
     }
 
     return true;

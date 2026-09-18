@@ -129,25 +129,50 @@ export const StopItemCard: React.FC<StopItemCardProps> = ({
         </div>
       </div>
 
-      {/* Seletor Pesquisável de Palavras-Chave (Combobox/Autocomplete) */}
-      <div className="space-y-1.5 relative" ref={dropdownRef}>
+      {/* Motivo / Justificativa por Escrito (Principal) */}
+      <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
-            <Tag size={12} className="text-orange-500" /> Palavra-Chave / Tag da Parada:
+          <label className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+            <span>Motivo / Justificativa por Escrito da Parada:</span>
+          </label>
+          <span className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+            Digitado pelo usuário
+          </span>
+        </div>
+        <textarea
+          rows={2}
+          value={stop.explicacao || stop.justification || stop.motivo || ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            onUpdate(stop.id, 'explicacao', val);
+            onUpdate(stop.id, 'justification', val);
+            onUpdate(stop.id, 'motivo', val);
+          }}
+          placeholder="Digite o motivo por escrito da parada (ex: Troca de faca, manutenção no motor, ajuste de temperatura, limpeza)..."
+          className="w-full bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none shadow-2xs resize-none"
+        />
+      </div>
+
+      {/* Palavra-Chave / Tag Opcional de Agrupamento */}
+      <div className="space-y-1.5 relative pt-1 border-t border-slate-200/60" ref={dropdownRef}>
+        <div className="flex items-center justify-between">
+          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+            <Tag size={11} className="text-slate-400" /> Tag / Categoria Opcional:
           </label>
         </div>
 
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-            <Search size={14} />
+            <Search size={13} />
           </div>
           <input
             type="text"
             value={keywordQuery}
             onChange={handleKeywordInputChange}
             onFocus={() => setIsDropdownOpen(true)}
-            placeholder="Digite a palavra-chave... ex: eixo, biela, mangueira de ar, refile"
-            className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl text-xs font-black text-slate-800 outline-none shadow-2xs"
+            placeholder="Opcional: selecione uma tag rápida (ex: eixo, biela, refile)..."
+            className="w-full pl-8 pr-7 py-1.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 rounded-xl text-xs font-medium text-slate-700 outline-none shadow-2xs transition-colors"
           />
           {keywordQuery && (
             <button
@@ -155,7 +180,6 @@ export const StopItemCard: React.FC<StopItemCardProps> = ({
               onClick={() => {
                 setKeywordQuery('');
                 onUpdate(stop.id, 'keyword', '');
-                onUpdate(stop.id, 'motivo', '');
                 setIsDropdownOpen(true);
               }}
               className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
@@ -177,7 +201,7 @@ export const StopItemCard: React.FC<StopItemCardProps> = ({
                 className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
                   isSelected
                     ? 'bg-blue-600 text-white border-blue-600 font-black'
-                    : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
                 }`}
               >
                 <span>{item.keyword}</span>
@@ -211,28 +235,11 @@ export const StopItemCard: React.FC<StopItemCardProps> = ({
               ))
             ) : (
               <div className="p-2 text-center text-[10px] text-slate-500">
-                Palavra-chave customizada: <strong>{keywordQuery}</strong>
+                Tag personalizada: <strong>{keywordQuery}</strong>
               </div>
             )}
           </div>
         )}
-      </div>
-
-      {/* Justificativa Livre */}
-      <div className="space-y-1">
-        <label className="text-[9px] font-black text-slate-600 uppercase tracking-wider block">
-          Justificativa Livre / Observações:
-        </label>
-        <input
-          type="text"
-          value={stop.explicacao || stop.justification || ''}
-          onChange={(e) => {
-            onUpdate(stop.id, 'explicacao', e.target.value);
-            onUpdate(stop.id, 'justification', e.target.value);
-          }}
-          placeholder="Descreva os detalhes complementares da ocorrência..."
-          className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-        />
       </div>
     </div>
   );
