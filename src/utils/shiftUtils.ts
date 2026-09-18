@@ -3,13 +3,14 @@
  * 
  * Regras Oficiais:
  * - Turno Comercial: Padronizado das 07:30 às 17:18 (duração de 9h48m = 588 minutos).
- * - Turno Comercial Flexível: Colaborador entra em horário customizado e cumpre 9h48m. O excedente é hora extra.
+ * - Turno Comercial Flexível: Sem horário fixo de entrada. Cumpre 10 horas de permanência bruta (8h de trabalho + intervalo de almoço já contabilizado = 600 minutos). O excedente após as 10h é computado como hora extra.
  * - Turno Diurno (Diurno 1, Diurno 2, Diurno): Das 06:00 às 18:00 (duração de 12h = 720 minutos).
  * - Turno Noturno (Noturno 1, Noturno 2, Noturno): Das 18:00 às 06:00 (duração de 12h = 720 minutos).
  * - Liderança: Obrigatoriamente no Turno Comercial.
  */
 
 export const COMMERCIAL_DURATION_MINUTES = 588; // 9h e 48min (07:30 às 17:18)
+export const COMMERCIAL_FLEXIBLE_DURATION_MINUTES = 600; // 10h de permanência para Comercial Flexível (8h de trabalho + intervalo de almoço incluso)
 export const TWELVE_HOURS_MINUTES = 720; // 12h (06:00 às 18:00 ou 18:00 às 06:00)
 
 export interface ShiftRuleDefinition {
@@ -91,11 +92,11 @@ export function getCanonicalShiftCategory(shiftName?: string, sector?: string): 
 
 /**
  * Calcula o horário de término para o Turno Comercial Flexível
- * a partir do horário de entrada + 9 horas e 48 minutos (588 min).
+ * a partir do horário de entrada + 10 horas de permanência (600 min, almoço incluso).
  */
 export function calculateCommercialFlexibleEnd(startTimeStr: string): string {
   const startMin = timeStringToMinutes(startTimeStr);
-  const endMin = startMin + COMMERCIAL_DURATION_MINUTES;
+  const endMin = startMin + COMMERCIAL_FLEXIBLE_DURATION_MINUTES;
   return minutesToTimeString(endMin);
 }
 
@@ -126,12 +127,49 @@ export interface OvertimeCalcParams {
 }
 
 export interface OvertimeCalcResult {
-  estimatedHours: number;      // Número em formato decimal (ex: 2.0, 2.5)
-  normalStartTime: string;     // Ex: "07:30"
-  normalEndTime: string;       // Ex: "17:18" ou calculado para flexível
-  overtimeMinutes: number;     // Minutos de hora extra
-  formattedOvertime: string;   // Ex: "2h 00min"
+  estimatedHours: number;      // Número em formato decimal (ex: 2.0, 0.75, 0.5)
+  normalStartTime: string;     // Ex: "07:30" ou flexível
+  normalEndTime: string;       // Ex: "17:18" ou calculado para flexível (8h de serviço)
+  overtimeMinutes: number;     // Minutos totais de hora extra
+  formattedOvertime: string;   // Ex: "45min" ou "1h 30min"
+  displayValue: string;        // "0,45", "0,30", "1,00", "1,30", "2,00"
+  unit: 'minutos' | 'horas';   // "minutos" se overtimeMinutes < 60 e > 0, senão "horas"
   explanation: string;         // Descrição detalhada do cálculo
+}
+
+/**
+ * Formata minutos de hora extra para exibição visual
+ * Conforme regra: se não fechou 60 minutos, exibe '0,XX' com unidade 'minutos' (ex: 0,45 minutos, 0,30 minutos).
+ * Se fechou 60 minutos ou mais, exibe com unidade 'horas' (ex: 1,00 horas, 1,30 horas).
+ */
+export function formatOvertimeDisplay(totalOvertimeMinutes: number): {
+  displayValue: string;
+  unit: 'minutos' | 'horas';
+  formattedOvertime: string;
+} {
+  if (totalOvertimeMinutes <= 0) {
+    return {
+      displayValue: '0,00',
+      unit: 'horas',
+      formattedOvertime: '0h 00min'
+    };
+  }
+
+  if (totalOvertimeMinutes < 60) {
+    return {
+      displayValue: `0,${String(totalOvertimeMinutes).padStart(2, '0')}`,
+      unit: 'minutos',
+      formattedOvertime: `${totalOvertimeMinutes}min`
+    };
+  }
+
+  const h = Math.floor(totalOvertimeMinutes / 60);
+  const m = totalOvertimeMinutes % 60;
+  return {
+    displayValue: `${h},${String(m).padStart(2, '0')}`,
+    unit: 'horas',
+    formattedOvertime: `${h}h ${String(m).padStart(2, '0')}min`
+  };
 }
 
 /**
@@ -153,7 +191,8 @@ export function calculateOvertimeHoursDetailed(params: OvertimeCalcParams): Over
 
   if (shiftCategory === 'Comercial') {
     if (isCommercialFlexible) {
-      normalStart = customNormalStartTime || actualStartTime || '07:30';
+      // Comercial Flexível: Sem horário fixo. Cumpre 10 horas de permanência bruta (600 min, almoço incluso) a partir da entrada
+      normalStart = customNormalStartTime || actualStartTime || '06:00';
       normalEnd = calculateCommercialFlexibleEnd(normalStart);
     } else {
       normalStart = '07:30';
@@ -173,80 +212,99 @@ export function calculateOvertimeHoursDetailed(params: OvertimeCalcParams): Over
     // Turno Extra Integral (100% das horas trabalhadas no dia são extras)
     const totalMinutes = getDurationMinutesBetween(actualStartTime, actualEndTime);
     const hours = Number((totalMinutes / 60).toFixed(2));
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
+    const displayInfo = formatOvertimeDisplay(totalMinutes);
 
     return {
       estimatedHours: hours,
       normalStartTime: normalStart,
       normalEndTime: normalEnd,
       overtimeMinutes: totalMinutes,
-      formattedOvertime: `${h}h ${String(m).padStart(2, '0')}min`,
+      formattedOvertime: displayInfo.formattedOvertime,
+      displayValue: displayInfo.displayValue,
+      unit: displayInfo.unit,
       explanation: `Turno Extra Integral: 100% do período (${actualStartTime} às ${actualEndTime}) contabilizado como hora extra.`
     };
   }
 
   // Modo 'pos_turno' (Extensão de Jornada / Passando do Horário Normal)
-  // O colaborador cumpre a jornada normal e o que passar do encerramento conta como extra.
-  // Também computa se o colaborador entrou antes do início normal.
-  let extraMinutesAfter = 0;
+  let totalOvertimeMinutes = 0;
   let extraMinutesBefore = 0;
 
-  // Verifica excedente após o encerramento da jornada normal
-  const normalEndMin = timeStringToMinutes(normalEnd);
-  let actualEndMin = timeStringToMinutes(actualEndTime);
-
-  // Tratamento da linha temporal para o turno Noturno (18:00 às 06:00)
-  if (shiftCategory === 'Noturno') {
-    // Turno noturno termina às 06:00 da manhã.
-    // Se a saída for por exemplo às 08:00, excedeu das 06:00 às 08:00 (120 min).
-    // Se a saída for entre 06:01 e 17:59, excedeu:
-    if (actualEndMin > normalEndMin && actualEndMin <= 12 * 60) {
-      extraMinutesAfter = actualEndMin - normalEndMin;
-    } else if (actualEndMin <= normalEndMin) {
-      extraMinutesAfter = 0;
-    } else {
-      // Caso fora da curva
-      extraMinutesAfter = Math.max(0, actualEndMin - normalEndMin);
+  if (shiftCategory === 'Comercial' && isCommercialFlexible) {
+    // REGRA DO COMERCIAL FLEXÍVEL:
+    // O colaborador não tem horário fixo de entrada, mas cumpre 10 horas de permanência bruta
+    // (8 horas de trabalho efetivo + intervalo de almoço já contabilizado = 600 minutos).
+    // O usuário coloca o horário de entrada e o horário de saída.
+    // O tempo que ultrapassar essas 10 horas é computado automaticamente como hora extra.
+    const startMin = timeStringToMinutes(actualStartTime);
+    let endMin = timeStringToMinutes(actualEndTime);
+    if (endMin < startMin) {
+      endMin += 1440; // Virada de meia-noite
     }
+    const totalWorkedMinutes = endMin - startMin;
+    totalOvertimeMinutes = Math.max(0, totalWorkedMinutes - COMMERCIAL_FLEXIBLE_DURATION_MINUTES);
   } else {
-    // Diurno ou Comercial (encerra no mesmo dia civil)
-    // Se virar a meia noite (ex: saiu 01:00 do outro dia)
-    if (actualEndMin < timeStringToMinutes(actualStartTime)) {
-      actualEndMin += 1440;
+    let extraMinutesAfter = 0;
+
+    // Verifica excedente após o encerramento da jornada normal
+    const normalEndMin = timeStringToMinutes(normalEnd);
+    let actualEndMin = timeStringToMinutes(actualEndTime);
+
+    // Tratamento da linha temporal para o turno Noturno (18:00 às 06:00)
+    if (shiftCategory === 'Noturno') {
+      if (actualEndMin > normalEndMin && actualEndMin <= 12 * 60) {
+        extraMinutesAfter = actualEndMin - normalEndMin;
+      } else if (actualEndMin <= normalEndMin) {
+        extraMinutesAfter = 0;
+      } else {
+        extraMinutesAfter = Math.max(0, actualEndMin - normalEndMin);
+      }
+    } else {
+      // Diurno ou Comercial Padrão (encerra no mesmo dia civil)
+      if (actualEndMin < timeStringToMinutes(actualStartTime)) {
+        actualEndMin += 1440;
+      }
+
+      if (actualEndMin > normalEndMin) {
+        extraMinutesAfter = actualEndMin - normalEndMin;
+      }
     }
 
-    if (actualEndMin > normalEndMin) {
-      extraMinutesAfter = actualEndMin - normalEndMin;
+    // Verifica se o colaborador iniciou antes do horário normal (antecipação)
+    const normalStartMin = timeStringToMinutes(normalStart);
+    const actualStartMin = timeStringToMinutes(actualStartTime);
+    if (actualStartMin < normalStartMin) {
+      extraMinutesBefore = normalStartMin - actualStartMin;
     }
+
+    totalOvertimeMinutes = Math.max(0, extraMinutesAfter + extraMinutesBefore);
   }
 
-  // Verifica se o colaborador iniciou antes do horário normal (antecipação)
-  const normalStartMin = timeStringToMinutes(normalStart);
-  const actualStartMin = timeStringToMinutes(actualStartTime);
-  if (actualStartMin < normalStartMin && !isCommercialFlexible) {
-    extraMinutesBefore = normalStartMin - actualStartMin;
-  }
-
-  const totalOvertimeMinutes = Math.max(0, extraMinutesAfter + extraMinutesBefore);
   const hours = Number((totalOvertimeMinutes / 60).toFixed(2));
+  const displayInfo = formatOvertimeDisplay(totalOvertimeMinutes);
   const h = Math.floor(totalOvertimeMinutes / 60);
   const m = totalOvertimeMinutes % 60;
 
   let explanation = '';
   if (shiftCategory === 'Comercial') {
     if (isCommercialFlexible) {
-      explanation = `Comercial Flexível: Entrada às ${normalStart}, jornada padrão de 9h48m encerrou às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${h}h ${String(m).padStart(2, '0')}min de hora extra.`;
+      if (totalOvertimeMinutes === 0) {
+        explanation = `Comercial Flexível: Entrada às ${normalStart}. Jornada padrão de 10h (com almoço) cumprida às ${normalEnd}. Sem horas extras (saída efetiva às ${actualEndTime}).`;
+      } else if (totalOvertimeMinutes < 60) {
+        explanation = `Comercial Flexível: Entrada às ${normalStart}. Jornada padrão de 10h (com almoço) concluída às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${totalOvertimeMinutes} minutos de hora extra.`;
+      } else {
+        explanation = `Comercial Flexível: Entrada às ${normalStart}. Jornada padrão de 10h (com almoço) concluída às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${h}h ${String(m).padStart(2, '0')}min de hora extra.`;
+      }
     } else {
-      explanation = `Comercial Padrão: Horário normal das ${normalStart} às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${h}h ${String(m).padStart(2, '0')}min de hora extra após o turno.`;
+      explanation = `Comercial Padrão: Horário normal das ${normalStart} às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${totalOvertimeMinutes < 60 ? `${totalOvertimeMinutes}min` : `${h}h ${String(m).padStart(2, '0')}min`} de hora extra após o turno.`;
     }
   } else if (shiftCategory === 'Noturno') {
-    explanation = `Turno Noturno: Horário normal das ${normalStart} às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${h}h ${String(m).padStart(2, '0')}min de hora extra após às ${normalEnd}.`;
+    explanation = `Turno Noturno: Horário normal das ${normalStart} às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${totalOvertimeMinutes < 60 ? `${totalOvertimeMinutes}min` : `${h}h ${String(m).padStart(2, '0')}min`} de hora extra após às ${normalEnd}.`;
   } else {
-    explanation = `Turno Diurno: Horário normal das ${normalStart} às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${h}h ${String(m).padStart(2, '0')}min de hora extra após às ${normalEnd}.`;
+    explanation = `Turno Diurno: Horário normal das ${normalStart} às ${normalEnd}. Saída efetiva às ${actualEndTime} = ${totalOvertimeMinutes < 60 ? `${totalOvertimeMinutes}min` : `${h}h ${String(m).padStart(2, '0')}min`} de hora extra após às ${normalEnd}.`;
   }
 
-  if (extraMinutesBefore > 0) {
+  if (extraMinutesBefore > 0 && !isCommercialFlexible) {
     explanation += ` (Inclui ${Math.floor(extraMinutesBefore / 60)}h ${extraMinutesBefore % 60}min de entrada antecipada).`;
   }
 
@@ -255,7 +313,9 @@ export function calculateOvertimeHoursDetailed(params: OvertimeCalcParams): Over
     normalStartTime: normalStart,
     normalEndTime: normalEnd,
     overtimeMinutes: totalOvertimeMinutes,
-    formattedOvertime: `${h}h ${String(m).padStart(2, '0')}min`,
+    formattedOvertime: displayInfo.formattedOvertime,
+    displayValue: displayInfo.displayValue,
+    unit: displayInfo.unit,
     explanation
   };
 }

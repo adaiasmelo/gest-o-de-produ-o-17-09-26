@@ -14,10 +14,12 @@ import { Employee, OvertimeRequest, SystemUser } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import {
   COMMERCIAL_DURATION_MINUTES,
+  COMMERCIAL_FLEXIBLE_DURATION_MINUTES,
   SHIFT_RULES,
   getCanonicalShiftCategory,
   calculateCommercialFlexibleEnd,
-  calculateOvertimeHoursDetailed
+  calculateOvertimeHoursDetailed,
+  formatOvertimeDisplay
 } from '../utils/shiftUtils';
 
 interface OvertimeRequestsProps {
@@ -90,6 +92,9 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
   const [startTime, setStartTime] = useState<string>('07:30');
   const [endTime, setEndTime] = useState<string>('19:18');
   const [estimatedHours, setEstimatedHours] = useState<number>(2);
+  const [overtimeMinutes, setOvertimeMinutes] = useState<number>(120);
+  const [displayOvertimeValue, setDisplayOvertimeValue] = useState<string>('2,00');
+  const [overtimeUnit, setOvertimeUnit] = useState<'minutos' | 'horas'>('horas');
   const [autoCalculateHours, setAutoCalculateHours] = useState<boolean>(true);
 
   // Modalidade de Horas Extras e Regras de Turno (Comercial, Diurno e Noturno)
@@ -210,10 +215,13 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
         isCommercialFlexible: shiftTypeChoice === 'Comercial' && isCommercialFlexible,
         actualStartTime: startTime,
         actualEndTime: endTime,
-        customNormalStartTime: isCommercialFlexible ? customFlexibleStart : undefined
+        customNormalStartTime: isCommercialFlexible ? (customFlexibleStart || startTime) : undefined
       });
 
       setEstimatedHours(result.estimatedHours);
+      setOvertimeMinutes(result.overtimeMinutes);
+      setDisplayOvertimeValue(result.displayValue);
+      setOvertimeUnit(result.unit);
       setCalculatedNormalEnd(result.normalEndTime);
       setOvertimeExplanation(result.explanation);
     } catch {
@@ -545,9 +553,19 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
 
     if (overtimeMode === 'pos_turno') {
       if (cat === 'Comercial') {
-        const start = isFlex ? customFlexibleStart : '07:30';
+        const start = isFlex ? (customFlexibleStart || '06:00') : '07:30';
         setStartTime(start);
-        setEndTime('19:18');
+        if (isFlex) {
+          // Em Comercial Flexível, a jornada regular é de 10h (8h de trabalho + almoço incluso). Ex: 06:00 às 16:00.
+          // Inicializa a saída sugerida com 45 minutos de hora extra (16:45 para 06:00)
+          const [sh, sm] = start.split(':').map(Number);
+          const endTotalM = sh * 60 + sm + 600 + 45;
+          const endH = Math.floor(endTotalM / 60) % 24;
+          const endMin = endTotalM % 60;
+          setEndTime(`${String(endH).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`);
+        } else {
+          setEndTime('19:18');
+        }
       } else if (cat === 'Noturno') {
         setStartTime('18:00');
         setEndTime('08:00');
@@ -593,6 +611,9 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     setStartTime('07:30');
     setEndTime('19:18');
     setEstimatedHours(2);
+    setOvertimeMinutes(120);
+    setDisplayOvertimeValue('2,00');
+    setOvertimeUnit('horas');
     setAutoCalculateHours(true);
     setReasonCategory(DOC076_REASON_CATEGORIES[0]);
     setReasonDetails('');
@@ -645,6 +666,21 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     setStartTime(req.startTime);
     setEndTime(req.endTime);
     setEstimatedHours(req.estimatedHours);
+
+    const mins = req.overtimeMinutes !== undefined
+      ? req.overtimeMinutes
+      : Math.round((Number(req.estimatedHours) || 0) * 60);
+    setOvertimeMinutes(mins);
+    if (mins > 0 && mins < 60) {
+      setOvertimeUnit('minutos');
+      setDisplayOvertimeValue(`0,${String(mins).padStart(2, '0')}`);
+    } else {
+      setOvertimeUnit('horas');
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      setDisplayOvertimeValue(mins === 0 ? '0,00' : `${h},${String(m).padStart(2, '0')}`);
+    }
+
     setAutoCalculateHours(false);
     setReasonCategory(req.reasonCategory || DOC076_REASON_CATEGORIES[0]);
     setReasonDetails(req.reasonDetails || '');
@@ -815,7 +851,15 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     // ==========================================
     // 4. QUADRO 2: PROGRAMAÇÃO E PREVISÃO DA HORA EXTRA
     // ==========================================
-    const hoursFormatted = `${Number(req.estimatedHours).toFixed(2)}h (${Math.floor(req.estimatedHours)}h ${Math.round((req.estimatedHours % 1) * 60)}min)`;
+    const hoursFormatted = req.overtimeMinutes !== undefined ? (
+      req.overtimeMinutes < 60 ? (
+        `0,${String(req.overtimeMinutes).padStart(2, '0')} min (${req.overtimeMinutes} minutos)`
+      ) : (
+        `${Math.floor(req.overtimeMinutes / 60)}h ${String(req.overtimeMinutes % 60).padStart(2, '0')}min (${Number(req.estimatedHours).toFixed(2)} horas)`
+      )
+    ) : (
+      `${Number(req.estimatedHours).toFixed(2)}h (${Math.floor(req.estimatedHours)}h ${Math.round((req.estimatedHours % 1) * 60)}min)`
+    );
 
     const table2Body: any[] = [
       [
@@ -1080,7 +1124,9 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
       r.registration || '-',
       r.sector || '-',
       `${r.startTime} às ${r.endTime}`,
-      `${Number(r.estimatedHours).toFixed(2)}h`,
+      r.overtimeMinutes !== undefined ? (
+        r.overtimeMinutes < 60 ? `0,${String(r.overtimeMinutes).padStart(2, '0')} min` : `${Math.floor(r.overtimeMinutes / 60)}h ${r.overtimeMinutes % 60 > 0 ? `${String(r.overtimeMinutes % 60).padStart(2, '0')}m` : ''}`
+      ) : `${Number(r.estimatedHours).toFixed(2)}h`,
       formatReasonJustification(r),
       r.requesterName || '-',
       r.approvalStatus || 'Aprovado'
@@ -1342,6 +1388,9 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
         startTime: startTime || '07:30',
         endTime: endTime || '19:18',
         estimatedHours: Number(estimatedHours) || 0,
+        overtimeMinutes: overtimeMinutes,
+        displayOvertime: displayOvertimeValue,
+        overtimeUnit: overtimeUnit,
         reasonCategory: reasonCategory || DOC076_REASON_CATEGORIES[0],
         reasonDetails: reasonDetails.trim(),
         requesterName: requesterName.trim() || loggedUser?.name || 'Líder de Produção',
@@ -1493,7 +1542,17 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
 *2. PROGRAMAÇÃO E HORÁRIOS*
 • *Data da Realização:* ${dateBR}
 • *Horário:* ${req.startTime} às ${req.endTime}
-• *Total Estimado:* ${Number(req.estimatedHours).toFixed(2)} horas
+• *Total Estimado:* ${
+  req.overtimeMinutes !== undefined ? (
+    req.overtimeMinutes < 60 ? (
+      `0,${String(req.overtimeMinutes).padStart(2, '0')} minutos (${req.overtimeMinutes} min de horas extras)`
+    ) : (
+      `${Math.floor(req.overtimeMinutes / 60)}h ${String(req.overtimeMinutes % 60).padStart(2, '0')}min (${Number(req.estimatedHours).toFixed(2)} horas)`
+    )
+  ) : (
+    `${Number(req.estimatedHours).toFixed(2)} horas`
+  )
+}
 ${req.isEmergency ? '🚨 *Caráter da Solicitação:* SITUAÇÃO EMERGENCIAL (DOC 076 Etapa 3)\n' : ''}
 *3. MOTIVO E JUSTIFICATIVA OPERACIONAL*
 • *Categoria Operacional:* ${req.reasonCategory || '-'}
@@ -1527,7 +1586,17 @@ Status: [ ${statusLabel} ]
 2. PROGRAMAÇÃO E HORÁRIOS
 • Data da Realização: ${dateBR}
 • Horário: ${req.startTime} às ${req.endTime}
-• Total Estimado: ${Number(req.estimatedHours).toFixed(2)} horas
+• Total Estimado: ${
+  req.overtimeMinutes !== undefined ? (
+    req.overtimeMinutes < 60 ? (
+      `0,${String(req.overtimeMinutes).padStart(2, '0')} minutos (${req.overtimeMinutes} min de horas extras)`
+    ) : (
+      `${Math.floor(req.overtimeMinutes / 60)}h ${String(req.overtimeMinutes % 60).padStart(2, '0')}min (${Number(req.estimatedHours).toFixed(2)} horas)`
+    )
+  ) : (
+    `${Number(req.estimatedHours).toFixed(2)} horas`
+  )
+}
 ${req.isEmergency ? '• Caráter da Solicitação: SITUAÇÃO EMERGENCIAL (DOC 076 Etapa 3)\n' : ''}
 3. MOTIVO E JUSTIFICATIVA OPERACIONAL
 • Categoria Operacional: ${req.reasonCategory || '-'}
@@ -1563,7 +1632,17 @@ Gestão e Controle de Produção • ${supervisorSignature}`;
   <div style="margin-bottom: 6px;"><strong>2. PROGRAMAÇÃO E HORÁRIOS</strong></div>
   <div style="margin-bottom: 2px;"><strong>&bull; Data da Realização:</strong> ${dateBR}</div>
   <div style="margin-bottom: 2px;"><strong>&bull; Horário:</strong> ${req.startTime} às ${req.endTime}</div>
-  <div style="margin-bottom: ${req.isEmergency ? '2px' : '14px'};"><strong>&bull; Total Estimado:</strong> ${Number(req.estimatedHours).toFixed(2)} horas</div>
+  <div style="margin-bottom: ${req.isEmergency ? '2px' : '14px'};"><strong>&bull; Total Estimado:</strong> ${
+    req.overtimeMinutes !== undefined ? (
+      req.overtimeMinutes < 60 ? (
+        `0,${String(req.overtimeMinutes).padStart(2, '0')} minutos (${req.overtimeMinutes} min)`
+      ) : (
+        `${Math.floor(req.overtimeMinutes / 60)}h ${String(req.overtimeMinutes % 60).padStart(2, '0')}min (${Number(req.estimatedHours).toFixed(2)} horas)`
+      )
+    ) : (
+      `${Number(req.estimatedHours).toFixed(2)} horas`
+    )
+  }</div>
   ${req.isEmergency ? '<div style="margin-bottom: 14px; color: #c00000;"><strong>&bull; Caráter da Solicitação:</strong> SITUAÇÃO EMERGENCIAL (DOC 076 Etapa 3)</div>' : ''}
 
   <div style="margin-bottom: 6px;"><strong>3. MOTIVO E JUSTIFICATIVA OPERACIONAL</strong></div>
@@ -2027,7 +2106,15 @@ ${htmlBody}
                           {req.startTime} às {req.endTime}
                         </span>
                         <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-black">
-                          {Number(req.estimatedHours).toFixed(2)}h
+                          {req.overtimeMinutes !== undefined ? (
+                            req.overtimeMinutes < 60 ? (
+                              `0,${String(req.overtimeMinutes).padStart(2, '0')} min`
+                            ) : (
+                              `${Math.floor(req.overtimeMinutes / 60)}h ${req.overtimeMinutes % 60 > 0 ? `${String(req.overtimeMinutes % 60).padStart(2, '0')}min` : '00min'}`
+                            )
+                          ) : (
+                            `${Number(req.estimatedHours).toFixed(2)}h`
+                          )}
                         </span>
                         {req.isEmergency && (
                           <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-[9px] font-black uppercase">
@@ -2606,7 +2693,7 @@ ${htmlBody}
                         <span>🏢</span> Comercial Flexível
                       </div>
                       <div className="text-[9.5px] font-bold text-slate-500 mt-0.5">
-                        Carga 9h48m a partir da entrada
+                        Jornada de 10h de permanência (Entrada livre + 10h)
                       </div>
                     </button>
 
@@ -2647,31 +2734,20 @@ ${htmlBody}
 
                   {/* CONFIGURAÇÃO ADICIONAL PARA COMERCIAL FLEXÍVEL */}
                   {shiftTypeChoice === 'Comercial' && isCommercialFlexible && (
-                    <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2">
+                    <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <label className="text-[10px] font-black text-blue-900 uppercase tracking-wider block">
-                            Horário de Entrada Flexível do Colaborador:
+                            Regra do Comercial Flexível: 10 Horas de Permanência (com Almoço)
                           </label>
                           <p className="text-[10px] text-blue-700 font-medium">
-                            O colaborador cumpre a mesma carga horária padrão de 7:30 às 17:18 (9h48m).
+                            O colaborador não tem horário fixo de entrada, mas deve cumprir <strong>10 horas de permanência</strong> (8 horas de trabalho + intervalo de almoço já contabilizado). O excedente após as 10 horas é automaticamente hora extra (em horas ou minutos).
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={customFlexibleStart}
-                            onChange={(e) => {
-                              setCustomFlexibleStart(e.target.value);
-                              if (overtimeMode === 'pos_turno') {
-                                setStartTime(e.target.value);
-                              }
-                            }}
-                            className="px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-bold text-blue-900 shadow-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                          />
-                          <div className="text-right">
-                            <span className="text-[9px] font-black text-blue-600 uppercase block">Término Normal:</span>
-                            <span className="text-xs font-black text-blue-950 bg-white px-2 py-0.5 rounded-md border border-blue-200">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-xs">
+                            <span className="text-[8.5px] font-black text-blue-600 uppercase block">Término das 10h:</span>
+                            <span className="text-xs font-black text-blue-950">
                               {calculatedNormalEnd}
                             </span>
                           </div>
@@ -2740,12 +2816,17 @@ ${htmlBody}
                     <input
                       type="time"
                       value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
+                      onChange={(e) => {
+                        setStartTime(e.target.value);
+                        if (isCommercialFlexible) {
+                          setCustomFlexibleStart(e.target.value);
+                        }
+                      }}
                       required
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white shadow-sm"
                     />
                     <p className="text-[9px] text-slate-400 font-medium mt-1">
-                      {overtimeMode === 'pos_turno' ? 'Entrada do turno normal' : 'Início das horas extras'}
+                      {overtimeMode === 'pos_turno' ? (isCommercialFlexible ? 'Entrada flexível (cumpre 10h com almoço a partir deste horário)' : 'Entrada do turno normal') : 'Início das horas extras'}
                     </p>
                   </div>
 
@@ -2763,6 +2844,52 @@ ${htmlBody}
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                       {overtimeMode === 'pos_turno' && (
                         <>
+                          {isCommercialFlexible && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const [eh, em] = calculatedNormalEnd.split(':').map(Number);
+                                  const totalM = eh * 60 + em + 15;
+                                  const newH = Math.floor(totalM / 60) % 24;
+                                  const newM = totalM % 60;
+                                  setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
+                                }}
+                                className="text-[9px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                                title="Adicionar 15 minutos de hora extra após 10 horas"
+                              >
+                                +15m
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const [eh, em] = calculatedNormalEnd.split(':').map(Number);
+                                  const totalM = eh * 60 + em + 30;
+                                  const newH = Math.floor(totalM / 60) % 24;
+                                  const newM = totalM % 60;
+                                  setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
+                                }}
+                                className="text-[9px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                                title="Adicionar 30 minutos de hora extra após 10 horas"
+                              >
+                                +30m
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const [eh, em] = calculatedNormalEnd.split(':').map(Number);
+                                  const totalM = eh * 60 + em + 45;
+                                  const newH = Math.floor(totalM / 60) % 24;
+                                  const newM = totalM % 60;
+                                  setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
+                                }}
+                                className="text-[9px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                                title="Adicionar 45 minutos de hora extra após 10 horas"
+                              >
+                                +45m
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -2848,28 +2975,65 @@ ${htmlBody}
 
                   <div>
                     <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider min-h-[20px] flex items-center mb-1.5">
-                      Horas Extras (Total) *
+                      {overtimeUnit === 'minutos' ? 'Horas Extras (Minutos) *' : 'Horas Extras (Total) *'}
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0.1"
-                        max="24"
-                        value={estimatedHours}
+                        type="text"
+                        value={displayOvertimeValue}
                         onChange={(e) => {
                           setAutoCalculateHours(false);
-                          setEstimatedHours(parseFloat(e.target.value) || 0);
+                          const raw = e.target.value;
+                          setDisplayOvertimeValue(raw);
+                          const clean = raw.replace(',', '.').trim();
+                          const num = parseFloat(clean);
+                          if (!isNaN(num)) {
+                            if (clean.startsWith('0.') || (num < 1 && num > 0)) {
+                              const parts = clean.split('.');
+                              const m = parts[1] ? parseInt(parts[1].slice(0, 2).padEnd(2, '0'), 10) : Math.round(num * 100);
+                              setOvertimeMinutes(m);
+                              setEstimatedHours(Number((m / 60).toFixed(2)));
+                              setOvertimeUnit('minutos');
+                            } else {
+                              if (clean.includes('.')) {
+                                const [hStr, mStr] = clean.split('.');
+                                const h = parseInt(hStr, 10) || 0;
+                                const m = parseInt((mStr || '0').slice(0, 2).padEnd(2, '0'), 10) || 0;
+                                const totalM = h * 60 + m;
+                                setOvertimeMinutes(totalM);
+                                setEstimatedHours(Number((totalM / 60).toFixed(2)));
+                                setOvertimeUnit(totalM < 60 && totalM > 0 ? 'minutos' : 'horas');
+                              } else {
+                                const h = num;
+                                const totalM = Math.round(h * 60);
+                                setOvertimeMinutes(totalM);
+                                setEstimatedHours(h);
+                                setOvertimeUnit(totalM < 60 && totalM > 0 ? 'minutos' : 'horas');
+                              }
+                            }
+                          }
                         }}
                         required
                         className="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-black text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-sm"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-amber-600">
-                        horas
+                      <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black transition-all ${
+                        overtimeUnit === 'minutos' 
+                          ? 'text-blue-700 bg-blue-100/90 border border-blue-200 px-2 py-0.5 rounded-md text-[11px]' 
+                          : 'text-amber-600'
+                      }`}>
+                        {overtimeUnit}
                       </span>
                     </div>
                     <p className="text-[9px] text-amber-700 font-bold mt-1">
-                      {Math.floor(estimatedHours)}h {Math.round((estimatedHours % 1) * 60)}min de hora extra
+                      {overtimeMinutes > 0 ? (
+                        overtimeMinutes < 60 ? (
+                          `${overtimeMinutes} minutos de hora extra`
+                        ) : (
+                          `${Math.floor(overtimeMinutes / 60)}h ${overtimeMinutes % 60}min de hora extra`
+                        )
+                      ) : (
+                        '0h 00min de hora extra'
+                      )}
                     </p>
                   </div>
                 </div>

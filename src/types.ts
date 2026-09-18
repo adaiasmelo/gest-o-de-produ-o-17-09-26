@@ -443,6 +443,9 @@ export interface OvertimeRequest {
   commercialShiftType?: CommercialShiftType;
   normalShiftStartTime?: string;
   normalShiftEndTime?: string;
+  overtimeMinutes?: number;
+  displayOvertime?: string;
+  overtimeUnit?: 'minutos' | 'horas';
 }
 
 export type MaintenanceEquipmentCondition = 'Operando Normalmente' | 'Operando com Restrições / Ruído' | 'Parado / Inoperante';
