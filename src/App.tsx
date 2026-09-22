@@ -680,6 +680,30 @@ const isExternalTvRoute = (): boolean => {
   try {
     if ((window as any).__IS_TV_PROJECTION_DIRECT__) return true;
 
+    // Detecção por armazenamento local/sessão
+    try {
+      if (localStorage.getItem('manupackaging_tv_mode') === 'true') return true;
+      if (sessionStorage.getItem('manupackaging_tv_mode') === 'true') return true;
+    } catch (e) {}
+
+    // Detecção por Smart TV User Agent
+    const ua = (navigator.userAgent || '').toLowerCase();
+    const isSmartTvDevice =
+      ua.includes('smart-tv') ||
+      ua.includes('smarttv') ||
+      ua.includes('tizen') ||
+      ua.includes('webos') ||
+      ua.includes('web0s') ||
+      ua.includes('viera') ||
+      ua.includes('appletv') ||
+      ua.includes('googletv') ||
+      ua.includes('hbbtv') ||
+      ua.includes('netcast') ||
+      ua.includes('philipstv') ||
+      ua.includes('bravia') ||
+      ua.includes('crkey') ||
+      ua.includes('roku');
+
     const rawPath = (window.location.pathname || '').toLowerCase();
     let decodedPath = '';
     try {
@@ -691,32 +715,47 @@ const isExternalTvRoute = (): boolean => {
     const hash = (window.location.hash || '').toLowerCase();
     const href = (window.location.href || '').toLowerCase();
 
+    // Se estiver em uma Smart TV, abre automaticamente a Projeção Direta
+    if (isSmartTvDevice) {
+      try {
+        localStorage.setItem('manupackaging_tv_mode', 'true');
+      } catch (e) {}
+      return true;
+    }
+
     const matchesTv = (str: string) => {
+      if (!str) return false;
       return (
-        str.includes('projeção-tv') ||
-        str.includes('projecao-tv') ||
-        str.includes('projeção_tv') ||
-        str.includes('projecao_tv') ||
-        str.includes('projecaotv') ||
-        str.includes('projeçaotv') ||
-        str.includes('/tv') ||
-        str.includes('tv-mode') ||
-        str.includes('tv=true') ||
-        str.includes('tv=1') ||
-        str.includes('mode=tv') ||
-        str.includes('mode=projecao') ||
-        str.includes('/projeção') ||
-        str.includes('/projecao')
+        str.includes('tv') ||
+        str.includes('projecao') ||
+        str.includes('projeção') ||
+        str.includes('telao') ||
+        str.includes('telão')
       );
     };
 
-    return (
-      matchesTv(rawPath) ||
-      matchesTv(decodedPath) ||
-      matchesTv(search) ||
-      matchesTv(hash) ||
-      matchesTv(href)
-    );
+    if (rawPath !== '/' && rawPath !== '' && (matchesTv(rawPath) || matchesTv(decodedPath))) {
+      try {
+        localStorage.setItem('manupackaging_tv_mode', 'true');
+      } catch (e) {}
+      return true;
+    }
+
+    if (matchesTv(search) || matchesTv(hash)) {
+      try {
+        localStorage.setItem('manupackaging_tv_mode', 'true');
+      } catch (e) {}
+      return true;
+    }
+
+    if (matchesTv(href) && href !== window.location.origin + '/' && href !== window.location.origin) {
+      try {
+        localStorage.setItem('manupackaging_tv_mode', 'true');
+      } catch (e) {}
+      return true;
+    }
+
+    return false;
   } catch (e) {
     return false;
   }
@@ -2952,7 +2991,19 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (user.password === pass) {
+    const normalizeStr = (s: string) =>
+      (s || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+    const isPasswordMatch =
+      user.password === pass ||
+      (user.password || '').trim() === (pass || '').trim() ||
+      normalizeStr(user.password) === normalizeStr(pass);
+
+    if (isPasswordMatch) {
       recordAccessLog(user, 'login');
       setLoggedUser(user);
       localStorage.setItem('manupackaging_user', JSON.stringify(user));
@@ -3173,7 +3224,14 @@ export const App: React.FC = () => {
   };
 
   const calcTotalMinutes = (stops: StopItem[]): number => {
-    return stops.reduce((sum, item) => sum + getDiffMinutes(item.de, item.ate), 0);
+    return stops.reduce((sum, item) => {
+      const manual = Number(item.durationMinutes);
+      if (item.isAvulso || (!item.de && !item.ate)) {
+        return sum + (isNaN(manual) ? 0 : manual);
+      }
+      const diff = getDiffMinutes(item.de, item.ate);
+      return sum + (diff > 0 ? diff : (isNaN(manual) ? 0 : manual));
+    }, 0);
   };
 
   const parseMotivo = (motivo: string | undefined, min: number): StopItem[] => {
@@ -3186,6 +3244,7 @@ export const App: React.FC = () => {
             const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.justificativa || item.motivoDigitado || '').trim();
             const tag = (item.motivo || item.keyword || item.tag || '').trim();
             const reason = written || tag;
+            const duration = Number(item.durationMinutes || item.minutos || item.minutes || 0);
             return {
               id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
               de: item.de || '',
@@ -3193,7 +3252,9 @@ export const App: React.FC = () => {
               motivo: reason,
               keyword: item.keyword || item.tag || tag,
               explicacao: reason,
-              justification: reason
+              justification: reason,
+              isAvulso: Boolean(item.isAvulso || (!item.de && !item.ate && (duration > 0 || min > 0))),
+              durationMinutes: duration > 0 ? duration : (min > 0 && !item.de && !item.ate ? min : 0)
             };
           });
         }
@@ -3202,7 +3263,17 @@ export const App: React.FC = () => {
       // continua no fallback
     }
     if (min > 0 || motivo) {
-      return [{ id: `stop-legacy-${Date.now()}-${Math.random()}`, de: '', ate: '', motivo: motivo || '', explicacao: motivo || '' }];
+      return [{
+        id: `stop-legacy-${Date.now()}-${Math.random()}`,
+        de: '',
+        ate: '',
+        motivo: motivo || '',
+        keyword: '',
+        explicacao: motivo || '',
+        justification: motivo || '',
+        isAvulso: true,
+        durationMinutes: min
+      }];
     }
     return [];
   };
@@ -10245,7 +10316,8 @@ Atenciosamente,
                 id="btn-login-projecao-tv"
                 onClick={() => {
                   try {
-                    window.history.pushState({}, '', '/projeção-tv');
+                    localStorage.setItem('manupackaging_tv_mode', 'true');
+                    window.history.pushState({}, '', '/tv');
                   } catch {}
                   setIsExternalTvView(true);
                 }}
@@ -11184,9 +11256,9 @@ Atenciosamente,
                      type="button"
                      onClick={(e) => {
                        e.stopPropagation();
-                       let link = "https://gest-o-de-produ-o-2026.pages.dev/projeção-tv";
+                       let link = "https://gest-o-de-produ-o-2026.pages.dev/tv";
                        if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
-                         link = `${window.location.origin}/projeção-tv`;
+                         link = `${window.location.origin}/tv`;
                        }
                        if (navigator.clipboard && window.isSecureContext) {
                          navigator.clipboard.writeText(link).then(() => {

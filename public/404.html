@@ -1,177 +1,56 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0f3a44">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Manupackaging">
-    <link rel="apple-touch-icon" href="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png">
-    <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="icon" id="favicon-link" href="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png">
-    <title>Manupackaging - Controle de Produção</title>
-    <script>
-      (function() {
-        try {
-          var path = (window.location.pathname || '').toLowerCase();
-          var search = (window.location.search || '').toLowerCase();
-          var hash = (window.location.hash || '').toLowerCase();
-          var decodedPath = '';
-          try { decodedPath = decodeURIComponent(path); } catch(e) { decodedPath = path; }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Redirecionando - Manupackaging</title>
+  <script>
+    (function() {
+      try {
+        var path = (window.location.pathname || '').toLowerCase();
+        var search = window.location.search || '';
+        var hash = window.location.hash || '';
+        var href = (window.location.href || '').toLowerCase();
+        var decodedPath = '';
+        try { decodedPath = decodeURIComponent(path); } catch(e) { decodedPath = path; }
 
-          if (path.indexOf('calculadora.html') !== -1 || path.indexOf('/calculadora') !== -1 || search.indexOf('calculadora') !== -1 || search.indexOf('cast1') !== -1 || hash.indexOf('calculadora') !== -1 || hash.indexOf('cast1') !== -1) {
-            window.__IS_CALCULATOR_DIRECT__ = true;
-          }
-
-          if (
-            path.indexOf('projeção-tv') !== -1 ||
-            path.indexOf('projecao-tv') !== -1 ||
-            decodedPath.indexOf('projeção-tv') !== -1 ||
-            decodedPath.indexOf('projecao-tv') !== -1 ||
-            path.indexOf('projecao') !== -1 ||
-            decodedPath.indexOf('projeção') !== -1 ||
-            path.indexOf('/tv') !== -1 ||
-            search.indexOf('tv') !== -1 ||
-            search.indexOf('projecao') !== -1 ||
-            search.indexOf('projeção') !== -1 ||
-            hash.indexOf('tv') !== -1 ||
-            hash.indexOf('projecao') !== -1 ||
-            hash.indexOf('projeção') !== -1
-          ) {
-            window.__IS_TV_PROJECTION_DIRECT__ = true;
-          }
-        } catch(e) {}
-      })();
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc;
-            color: #1e293b;
-            -webkit-tap-highlight-color: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
+        // Redirecionamento da TV sem acento
+        if (
+          path.indexOf('tv') !== -1 ||
+          path.indexOf('projecao') !== -1 ||
+          decodedPath.indexOf('projeção') !== -1 ||
+          search.indexOf('tv') !== -1 ||
+          search.indexOf('projecao') !== -1 ||
+          hash.indexOf('tv') !== -1 ||
+          hash.indexOf('projecao') !== -1
+        ) {
+          try {
+            localStorage.setItem('manupackaging_tv_mode', 'true');
+          } catch(err) {}
+          window.location.replace('/tv.html');
+          return;
         }
 
-        @keyframes goal-bounce {
-          0%, 100% { transform: translateY(0) scale(1); }
-          50% { transform: translateY(-5px) scale(1.01); }
+        // Redirecionamento da Calculadora Cast 1
+        if (
+          path.indexOf('calculadora') !== -1 ||
+          path.indexOf('cast1') !== -1 ||
+          search.indexOf('calculadora') !== -1 ||
+          search.indexOf('cast1') !== -1
+        ) {
+          window.location.replace('/calculadora.html');
+          return;
         }
 
-        .animate-goal-reached {
-          animation: goal-bounce 3s infinite ease-in-out;
-          box-shadow: 0 15px 30px -10px rgba(59, 130, 246, 0.4) !important;
-        }
-
-        @media print {
-            .no-print { display: none !important; }
-            .bg-white { border: 1px solid #e2e8f0 !important; box-shadow: none !important; }
-        }
-
-        /* PDF Export Styles */
-        .pdf-light-mode {
-            background-color: #ffffff !important;
-            padding: 40px !important;
-            min-width: 1400px !important;
-        }
-        .pdf-light-mode * {
-            text-shadow: none !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            font-family: 'Inter', sans-serif !important;
-        }
-        .pdf-light-mode .grid {
-            gap: 20px !important;
-        }
-        /* Increase global font sizes for PDF */
-        .pdf-light-mode .slot-name {
-            font-size: 15px !important; /* Larger name */
-            font-weight: 900 !important;
-            max-width: none !important;
-            line-height: 1 !important;
-            display: block !important;
-        }
-        .pdf-light-mode .slot-role {
-            font-size: 11px !important;
-            margin-top: -2px !important; /* Move role closer to name */
-            color: #475569 !important;
-            font-weight: 700 !important;
-            display: block !important;
-            }
-        .pdf-light-mode .slot-tag {
-            font-size: 12px !important;
-            padding: 4px 10px !important;
-            font-weight: 900 !important;
-            border: 1px solid rgba(0,0,0,0.1) !important;
-        }
-        /* Stats cards font increase */
-        .pdf-light-mode .text-3xl {
-            font-size: 48px !important;
-            line-height: 1 !important;
-        }
-        .pdf-light-mode .text-\[10px\], 
-        .pdf-light-mode .text-\[11px\],
-        .pdf-light-mode .text-\[12px\],
-        .pdf-light-mode .text-[9px] {
-            font-size: 13px !important;
-            font-weight: 800 !important;
-        }
-        /* Section titles */
-        .pdf-light-mode h1, 
-        .pdf-light-mode h2, 
-        .pdf-light-mode h3 {
-            color: #0f172a !important;
-            font-size: 32px !important;
-            margin-bottom: 12px !important;
-        }
-        /* Small headers in cards */
-        .pdf-light-mode .mb-4.px-1 {
-            margin-bottom: 6px !important; /* Reduce gap in Liderança cards */
-        }
-        .pdf-light-mode .mb-6 {
-            margin-bottom: 12px !important; /* Reduce gap after shift titles */
-        }
-        /* Ensure dark text on white for better contrast */
-        .pdf-light-mode .text-slate-800 { color: #000000 !important; }
-        .pdf-light-mode .text-slate-500 { color: #0f172a !important; }
-        .pdf-light-mode .text-slate-400 { color: #334155 !important; }
-        /* Keep specific accent colors but ensure readability */
-        .pdf-light-mode .bg-blue-600 { background-color: #1d4ed8 !important; }
-        .pdf-light-mode .text-blue-400, .pdf-light-mode .text-blue-600 { color: #1d4ed8 !important; }
-        /* Ensure borders are visible but subtle */
-        .pdf-light-mode .border {
-            border: 1px solid #94a3b8 !important;
-        }
-        .pdf-light-mode .p-6 {
-            padding: 24px !important;
-        }
-        .pdf-light-mode .p-2\.5 {
-            padding: 12px 16px !important;
-            margin-bottom: 4px !important;
-        }
-        .pdf-light-mode .bg-slate-900\/40, 
-        .pdf-light-mode .bg-slate-900, 
-        .pdf-light-mode .bg-slate-800 {
-            background-color: #f8fafc !important;
-        }
-    </style>
+        // Se for qualquer outra página do sistema, redireciona para a raiz
+        window.location.replace('/' + (search ? search : '') + (hash ? hash : ''));
+      } catch(e) {
+        window.location.replace('/');
+      }
+    })();
+  </script>
 </head>
-<body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+<body style="background-color: #0f172a; color: #ffffff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0;">
+  <p style="font-size: 16px; font-weight: bold; letter-spacing: 0.5px;">Carregando sistema...</p>
 </body>
 </html>

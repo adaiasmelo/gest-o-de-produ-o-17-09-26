@@ -25,14 +25,21 @@
             window.__IS_CALCULATOR_DIRECT__ = true;
           }
 
+          var ua = (navigator.userAgent || '').toLowerCase();
+          var isSmartTv = ua.indexOf('smart-tv') !== -1 || ua.indexOf('smarttv') !== -1 || ua.indexOf('tizen') !== -1 || ua.indexOf('webos') !== -1 || ua.indexOf('web0s') !== -1 || ua.indexOf('viera') !== -1 || ua.indexOf('appletv') !== -1 || ua.indexOf('googletv') !== -1 || ua.indexOf('hbbtv') !== -1 || ua.indexOf('netcast') !== -1 || ua.indexOf('philipstv') !== -1 || ua.indexOf('bravia') !== -1 || ua.indexOf('crkey') !== -1 || ua.indexOf('roku') !== -1;
+
+          var hasTvStored = false;
+          try {
+            hasTvStored = localStorage.getItem('manupackaging_tv_mode') === 'true';
+          } catch(e) {}
+
           if (
-            path.indexOf('projeção-tv') !== -1 ||
-            path.indexOf('projecao-tv') !== -1 ||
-            decodedPath.indexOf('projeção-tv') !== -1 ||
-            decodedPath.indexOf('projecao-tv') !== -1 ||
+            isSmartTv ||
+            hasTvStored ||
+            path.indexOf('/tv') !== -1 ||
+            path.indexOf('tv.html') !== -1 ||
             path.indexOf('projecao') !== -1 ||
             decodedPath.indexOf('projeção') !== -1 ||
-            path.indexOf('/tv') !== -1 ||
             search.indexOf('tv') !== -1 ||
             search.indexOf('projecao') !== -1 ||
             search.indexOf('projeção') !== -1 ||
@@ -41,6 +48,9 @@
             hash.indexOf('projeção') !== -1
           ) {
             window.__IS_TV_PROJECTION_DIRECT__ = true;
+            try {
+              localStorage.setItem('manupackaging_tv_mode', 'true');
+            } catch(e) {}
           }
         } catch(e) {}
       })();

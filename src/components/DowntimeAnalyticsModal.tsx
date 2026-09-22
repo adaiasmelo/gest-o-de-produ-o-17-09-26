@@ -74,7 +74,7 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
   const rawOccurrences = useMemo(() => {
     const list: StoppageOccurrence[] = [];
 
-    const parseStopsJSON = (raw: string | undefined): { de: string; ate: string; motivo: string }[] => {
+    const parseStopsJSON = (raw: string | undefined): { de: string; ate: string; motivo: string; durationMinutes?: number }[] => {
       if (!raw) return [];
       const trimmed = raw.trim();
       try {
@@ -94,9 +94,10 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
             return {
               de,
               ate,
-              motivo: desc
+              motivo: desc,
+              durationMinutes: Number(item.durationMinutes || item.minutos || item.minutes || 0)
             };
-          }).filter(item => item.de || item.ate || item.motivo);
+          }).filter(item => item.de || item.ate || item.motivo || (item.durationMinutes && item.durationMinutes > 0));
         }
       } catch (e) {
         if (trimmed) {
@@ -129,7 +130,9 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
       const mList = parseStopsJSON(e.manutencaoMotivo);
       if (mList.length > 0) {
         mList.forEach((item, idx) => {
-          const min = getDiffMin(item.de, item.ate) || Number(e.manutencaoMin || 0) / mList.length;
+          const min = (item.durationMinutes && item.durationMinutes > 0)
+            ? item.durationMinutes
+            : (getDiffMin(item.de, item.ate) || Number(e.manutencaoMin || 0) / mList.length);
           list.push({
             id: `${e.id}-manut-${idx}`,
             reason: item.motivo || 'Manutenção Corretiva / Ajustes',
@@ -164,7 +167,9 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
       const pList = parseStopsJSON(e.processoMotivo);
       if (pList.length > 0) {
         pList.forEach((item, idx) => {
-          const min = getDiffMin(item.de, item.ate) || Number(e.processoMin || 0) / pList.length;
+          const min = (item.durationMinutes && item.durationMinutes > 0)
+            ? item.durationMinutes
+            : (getDiffMin(item.de, item.ate) || Number(e.processoMin || 0) / pList.length);
           list.push({
             id: `${e.id}-proc-${idx}`,
             reason: item.motivo || 'Regulagem de Processo',
@@ -199,7 +204,9 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
       const oList = parseStopsJSON(e.outrosMotivo);
       if (oList.length > 0) {
         oList.forEach((item, idx) => {
-          const min = getDiffMin(item.de, item.ate) || Number(e.outrosMin || 0) / oList.length;
+          const min = (item.durationMinutes && item.durationMinutes > 0)
+            ? item.durationMinutes
+            : (getDiffMin(item.de, item.ate) || Number(e.outrosMin || 0) / oList.length);
           list.push({
             id: `${e.id}-outr-${idx}`,
             reason: item.motivo || 'Outras Ocorrências Operacionais',

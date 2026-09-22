@@ -22,6 +22,8 @@ export interface ProductionEntry {
   outrosMin: number;
   outrosMotivo?: string;
   isMaintenanceEntry?: boolean;
+  isStandaloneDowntime?: boolean;
+  downtimeCategory?: 'manutencao' | 'processo' | 'outros';
   isNoWorkDay?: boolean;
   noWorkReason?: string;
   updatedAt: string;
@@ -360,6 +362,7 @@ export interface StopItem {
   keyword?: string;
   justification?: string;
   durationMinutes?: number;
+  isAvulso?: boolean;
   category?: string;
   component?: string;
   defect?: string;

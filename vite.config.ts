@@ -92,4 +92,13 @@ export default defineConfig({
   optimizeDeps: {
     include: ['react', 'react-dom', 'motion/react', 'recharts', 'lucide-react'],
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        tv: path.resolve(__dirname, 'tv.html'),
+        projecao: path.resolve(__dirname, 'projecao.html'),
+      },
+    },
+  },
 });

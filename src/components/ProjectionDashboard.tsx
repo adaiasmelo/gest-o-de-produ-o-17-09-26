@@ -284,6 +284,43 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
     return (companyNotices || []).filter((n) => n.category === 'safety');
   }, [companyNotices]);
 
+  // Notice rotation states for full-screen display without scrollbars
+  const [activeRhIndex, setActiveRhIndex] = useState<number>(0);
+  const [activeSafetyIndex, setActiveSafetyIndex] = useState<number>(0);
+
+  // Auto-rotate RH notices within Slide 5 if multiple notices exist
+  useEffect(() => {
+    if (currentSlide !== 5 || rhNotices.length <= 1) return;
+    const intervalSeconds = Math.max(8, Math.floor(slideDuration / rhNotices.length));
+    const timer = setInterval(() => {
+      setActiveRhIndex((prev) => (prev + 1) % rhNotices.length);
+    }, intervalSeconds * 1000);
+    return () => clearInterval(timer);
+  }, [currentSlide, rhNotices.length, slideDuration]);
+
+  // Auto-rotate Safety notices within Slide 6 if multiple notices exist
+  useEffect(() => {
+    if (currentSlide !== 6 || safetyNotices.length <= 1) return;
+    const intervalSeconds = Math.max(8, Math.floor(slideDuration / safetyNotices.length));
+    const timer = setInterval(() => {
+      setActiveSafetyIndex((prev) => (prev + 1) % safetyNotices.length);
+    }, intervalSeconds * 1000);
+    return () => clearInterval(timer);
+  }, [currentSlide, safetyNotices.length, slideDuration]);
+
+  // Keep notice indices within valid bounds
+  useEffect(() => {
+    if (activeRhIndex >= rhNotices.length && rhNotices.length > 0) {
+      setActiveRhIndex(0);
+    }
+  }, [rhNotices.length, activeRhIndex]);
+
+  useEffect(() => {
+    if (activeSafetyIndex >= safetyNotices.length && safetyNotices.length > 0) {
+      setActiveSafetyIndex(0);
+    }
+  }, [safetyNotices.length, activeSafetyIndex]);
+
   // List of all operators for penalties modal
   const allOperatorsList = useMemo(() => {
     const set = new Set<string>();
@@ -355,7 +392,12 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          setCurrentSlide((slide) => (slide + 1) % 7);
+          setCurrentSlide((slide) => {
+            const next = (slide + 1) % 7;
+            if (next === 5) setActiveRhIndex(0);
+            if (next === 6) setActiveSafetyIndex(0);
+            return next;
+          });
           return slideDuration;
         }
         return prev - 1;
@@ -369,6 +411,8 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
   const handleSlideChange = (newSlide: number) => {
     setCurrentSlide(newSlide);
     setTimeRemaining(slideDuration);
+    if (newSlide === 5) setActiveRhIndex(0);
+    if (newSlide === 6) setActiveSafetyIndex(0);
   };
 
   const handleDurationChange = (newDuration: number) => {
@@ -1289,10 +1333,10 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
               {/* Botão de Copiar Link da Smart TV */}
               <button
                 onClick={() => {
-                  let link = "https://gest-o-de-produ-o-2026.pages.dev/projeção-tv";
+                  let link = "https://gest-o-de-produ-o-2026.pages.dev/tv";
                   try {
                     if (typeof window !== 'undefined' && window.location.origin && (window.location.origin.includes('pages.dev') || window.location.origin.includes('gest-o-de-produ-o-2026'))) {
-                      link = `${window.location.origin}/projeção-tv`;
+                      link = `${window.location.origin}/tv`;
                     }
                   } catch {}
                   if (navigator.clipboard && window.isSecureContext) {
@@ -1412,7 +1456,7 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
       )}
 
       {/* Main Viewport */}
-      <main className="flex-1 p-2 md:p-4 lg:p-5 overflow-y-auto lg:overflow-hidden relative bg-slate-100 flex flex-col justify-between h-full min-h-0 custom-scrollbar">
+      <main className={`flex-1 p-2 md:p-4 lg:p-5 relative bg-slate-100 flex flex-col justify-between h-full min-h-0 ${viewMode === 'slides' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
         {viewMode === 'slides' ? (
           <AnimatePresence mode="wait">
             <motion.div
@@ -1421,7 +1465,7 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: -10 }}
               transition={{ duration: 0.4 }}
-              className="w-full flex-1 flex flex-col justify-between gap-3 md:gap-4 min-h-0 overflow-y-auto lg:overflow-hidden"
+              className="w-full flex-1 flex flex-col justify-between gap-2 md:gap-3 h-full min-h-0 overflow-hidden"
             >
               {/* SLIDE 0: VISÃO GERAL DE PRODUÇÃO & METAS */}
               {currentSlide === 0 && (
@@ -2210,42 +2254,67 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
 
               {/* SLIDE 5: AVISOS DE RECURSOS HUMANOS (RH) */}
               {currentSlide === 5 && (
-                <div className="w-full flex-1 flex flex-col justify-between gap-3 md:gap-4 min-h-0 overflow-y-auto lg:overflow-hidden">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-3 sm:px-5 sm:py-3 rounded-2xl border-2 border-blue-200 shadow-sm shrink-0 gap-2 sm:gap-0">
+                <div className="w-full flex-1 flex flex-col justify-between gap-2 md:gap-3 h-full min-h-0 overflow-hidden">
+                  {/* Slide Header */}
+                  <div className="flex items-center justify-between bg-white px-4 py-2 sm:py-2.5 rounded-2xl border-2 border-blue-200 shadow-xs shrink-0">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-md shrink-0">
-                        <Users className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-md shrink-0">
+                        <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                       </div>
                       <div>
-                        <h2 className="text-base sm:text-xl md:text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                        <h2 className="text-sm sm:text-base md:text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
                           Recursos Humanos • Avisos & Comunicados
                         </h2>
-                        <p className="hidden sm:block text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <p className="hidden sm:block text-[10px] md:text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                           Informações Institucionais e Gestão de Pessoas
                         </p>
                       </div>
                     </div>
-                    {!isTvMode && (
-                      <button
-                        onClick={() => setNoticeModalCategory('rh')}
-                        className="px-3.5 py-1.5 sm:px-4 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 shrink-0 cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Gerenciar Avisos</span>
-                      </button>
-                    )}
+
+                    <div className="flex items-center gap-2">
+                      {rhNotices.length > 1 && (
+                        <div className="flex items-center gap-1 bg-blue-50 border border-blue-200 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl">
+                          <span className="text-[10px] sm:text-xs font-mono font-black text-blue-700">
+                            Aviso {activeRhIndex + 1} de {rhNotices.length}
+                          </span>
+                          <button
+                            onClick={() => setActiveRhIndex((prev) => (prev - 1 + rhNotices.length) % rhNotices.length)}
+                            className="p-1 rounded-md hover:bg-blue-200/60 text-blue-700 transition cursor-pointer"
+                            title="Aviso anterior"
+                          >
+                            <ChevronLeft size={13} />
+                          </button>
+                          <button
+                            onClick={() => setActiveRhIndex((prev) => (prev + 1) % rhNotices.length)}
+                            className="p-1 rounded-md hover:bg-blue-200/60 text-blue-700 transition cursor-pointer"
+                            title="Próximo aviso"
+                          >
+                            <ChevronRight size={13} />
+                          </button>
+                        </div>
+                      )}
+                      {!isTvMode && (
+                        <button
+                          onClick={() => setNoticeModalCategory('rh')}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 shrink-0 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Gerenciar Avisos</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* RH Notices Display Container */}
-                  <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+                  {/* RH Notice Display Container (TELA COMPLETA - SEM ROLAGEM) */}
+                  <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                     {rhNotices.length === 0 ? (
-                      <div className="h-full bg-white rounded-3xl border-2 border-dashed border-blue-200 p-6 sm:p-8 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center shadow-inner">
-                          <Users className="w-7 h-7 sm:w-8 sm:h-8" />
+                      <div className="h-full bg-white rounded-3xl border-2 border-dashed border-blue-200 p-6 flex flex-col items-center justify-center text-center space-y-3">
+                        <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center shadow-inner">
+                          <Users className="w-7 h-7" />
                         </div>
                         <div>
-                          <h3 className="text-lg sm:text-xl font-black text-slate-800 uppercase tracking-tight">Nenhum aviso de RH no momento</h3>
-                          <p className="text-xs sm:text-sm font-medium text-slate-500 max-w-md mx-auto mt-1">
+                          <h3 className="text-base sm:text-lg font-black text-slate-800 uppercase tracking-tight">Nenhum aviso de RH no momento</h3>
+                          <p className="text-xs font-medium text-slate-500 max-w-md mx-auto mt-1">
                             {!isTvMode ? 'Clique no botão acima "Gerenciar Avisos" para publicar novos comunicados para a equipe.' : 'Nenhum comunicado institucional cadastrado.'}
                           </p>
                         </div>
@@ -2260,23 +2329,31 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
                         )}
                       </div>
                     ) : (
-                      <div className="min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
-                        {rhNotices.map((notice, idx) => (
+                      (() => {
+                        const notice = rhNotices[activeRhIndex % rhNotices.length];
+                        return (
                           <div
-                            key={notice.id || idx}
-                            className="bg-white rounded-3xl border-2 border-slate-200 shadow-md p-4 sm:p-5 lg:p-6 flex flex-col justify-between min-h-0 overflow-hidden relative group hover:border-blue-300 transition-all"
+                            key={notice.id || activeRhIndex}
+                            className="h-full min-h-0 bg-white rounded-3xl border-2 border-slate-200 shadow-md p-4 sm:p-5 lg:p-6 flex flex-col justify-between overflow-hidden relative"
                           >
-                            {/* Notice Header Badge & Date */}
-                            <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
-                              <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest border shadow-xs ${
-                                notice.priority === 'high'
-                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                  : notice.priority === 'medium'
-                                  ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                  : 'bg-blue-100 text-blue-800 border-blue-300'
-                              }`}>
-                                {notice.badgeText || 'COMUNICADO RH'}
-                              </span>
+                            {/* Top Badge & Date & Actions */}
+                            <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3 shrink-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest border shadow-2xs ${
+                                  notice.priority === 'high'
+                                    ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                    : notice.priority === 'medium'
+                                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                    : 'bg-blue-100 text-blue-800 border-blue-300'
+                                }`}>
+                                  {notice.badgeText || 'COMUNICADO RH'}
+                                </span>
+                                {notice.priority === 'high' && (
+                                  <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-2xs">
+                                    Prioridade Alta
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-2">
                                 {notice.date && (
                                   <span className="text-[10px] sm:text-xs font-mono font-black text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
@@ -2303,43 +2380,81 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
                               </div>
                             </div>
 
-                            {/* Title & Subtitle */}
-                            <div className="shrink-0 mb-3">
-                              <h3 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight leading-tight">
-                                {notice.title}
-                              </h3>
-                              {notice.subtitle && (
-                                <p className="text-xs md:text-sm font-extrabold text-blue-600 uppercase tracking-wider mt-1">
-                                  {notice.subtitle}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Image Banner */}
-                            {notice.imageUrl && (
-                              <div className="flex-1 min-h-[160px] lg:min-h-0 my-2 rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 relative group-hover:shadow-lg transition-all">
-                                <img
-                                  src={notice.imageUrl}
-                                  alt={notice.title}
-                                  className="w-full h-full object-cover rounded-2xl"
-                                />
-                                {notice.imageCaption && (
-                                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent p-3 text-white text-xs font-bold truncate">
-                                    {notice.imageCaption}
+                            {/* Main Content Area: Responsive Widescreen Split or Single-Column */}
+                            {notice.imageUrl ? (
+                              <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch overflow-hidden">
+                                {/* Left Text Column */}
+                                <div className="lg:col-span-7 flex flex-col justify-center min-h-0 overflow-hidden pr-0 lg:pr-2">
+                                  <div className="shrink-0 mb-2">
+                                    <h3 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl 2xl:text-5xl font-black text-slate-900 tracking-tight leading-snug line-clamp-3">
+                                      {notice.title}
+                                    </h3>
+                                    {notice.subtitle && (
+                                      <p className="text-xs sm:text-sm md:text-base font-extrabold text-blue-600 uppercase tracking-wider mt-1 line-clamp-2">
+                                        {notice.subtitle}
+                                      </p>
+                                    )}
                                   </div>
-                                )}
+                                  <div className="pt-2 sm:pt-3 border-t border-slate-100 overflow-hidden">
+                                    <p className="text-xs sm:text-sm md:text-base lg:text-lg 2xl:text-xl font-medium text-slate-700 leading-relaxed overflow-hidden">
+                                      {notice.description}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Right Image Column */}
+                                <div className="lg:col-span-5 h-full min-h-0 rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200 bg-slate-950 relative shadow-sm flex items-center justify-center">
+                                  <img
+                                    src={notice.imageUrl}
+                                    alt={notice.title}
+                                    className="w-full h-full object-cover object-center rounded-2xl lg:rounded-3xl"
+                                  />
+                                  {notice.imageCaption && (
+                                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent p-2.5 sm:p-3 text-white text-[10px] sm:text-xs font-bold truncate">
+                                      {notice.imageCaption}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              /* Full Width Text Card (No Image) */
+                              <div className="flex-1 min-h-0 flex flex-col justify-center max-w-4xl mx-auto w-full text-center lg:text-left overflow-hidden px-2 sm:px-6">
+                                <div className="shrink-0 mb-3">
+                                  <h3 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl 2xl:text-6xl font-black text-slate-900 tracking-tight leading-tight">
+                                    {notice.title}
+                                  </h3>
+                                  {notice.subtitle && (
+                                    <p className="text-xs sm:text-sm md:text-base lg:text-lg font-extrabold text-blue-600 uppercase tracking-widest mt-2">
+                                      {notice.subtitle}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="pt-3 sm:pt-4 border-t border-slate-100 overflow-hidden">
+                                  <p className="text-sm sm:text-base md:text-lg lg:text-xl 2xl:text-2xl font-medium text-slate-700 leading-relaxed overflow-hidden">
+                                    {notice.description}
+                                  </p>
+                                </div>
                               </div>
                             )}
 
-                            {/* Description Text */}
-                            <div className="shrink-0 pt-3 border-t border-slate-100">
-                              <p className="text-xs sm:text-sm md:text-base lg:text-lg font-medium text-slate-700 leading-relaxed line-clamp-4">
-                                {notice.description}
-                              </p>
-                            </div>
+                            {/* Bottom Pagination Dots (If multiple notices) */}
+                            {rhNotices.length > 1 && (
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 shrink-0 mt-2">
+                                {rhNotices.map((_, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => setActiveRhIndex(i)}
+                                    className={`h-2 transition-all rounded-full cursor-pointer ${
+                                      i === activeRhIndex ? 'w-8 bg-blue-600' : 'w-2 bg-slate-300 hover:bg-slate-400'
+                                    }`}
+                                    title={`Ver comunicado ${i + 1}`}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })()
                     )}
                   </div>
                 </div>
@@ -2347,42 +2462,67 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
 
               {/* SLIDE 6: AVISOS DE SEGURANÇA DO TRABALHO (SST & CIPA) */}
               {currentSlide === 6 && (
-                <div className="w-full flex-1 flex flex-col justify-between gap-3 md:gap-4 min-h-0 overflow-y-auto lg:overflow-hidden">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-3 sm:px-5 sm:py-3 rounded-2xl border-2 border-emerald-300 shadow-sm shrink-0 gap-2 sm:gap-0">
+                <div className="w-full flex-1 flex flex-col justify-between gap-2 md:gap-3 h-full min-h-0 overflow-hidden">
+                  {/* Slide Header */}
+                  <div className="flex items-center justify-between bg-white px-4 py-2 sm:py-2.5 rounded-2xl border-2 border-emerald-300 shadow-xs shrink-0">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-md shrink-0">
-                        <ShieldAlert className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-md shrink-0">
+                        <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                       </div>
                       <div>
-                        <h2 className="text-base sm:text-xl md:text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                        <h2 className="text-sm sm:text-base md:text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
                           Segurança do Trabalho • SST & CIPA
                         </h2>
-                        <p className="hidden sm:block text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <p className="hidden sm:block text-[10px] md:text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                           Prevenção de Acidentes, EPIs e Saúde Ocupacional
                         </p>
                       </div>
                     </div>
-                    {!isTvMode && (
-                      <button
-                        onClick={() => setNoticeModalCategory('safety')}
-                        className="px-3.5 py-1.5 sm:px-4 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 shrink-0 cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Gerenciar Avisos</span>
-                      </button>
-                    )}
+
+                    <div className="flex items-center gap-2">
+                      {safetyNotices.length > 1 && (
+                        <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl">
+                          <span className="text-[10px] sm:text-xs font-mono font-black text-emerald-800">
+                            Aviso {activeSafetyIndex + 1} de {safetyNotices.length}
+                          </span>
+                          <button
+                            onClick={() => setActiveSafetyIndex((prev) => (prev - 1 + safetyNotices.length) % safetyNotices.length)}
+                            className="p-1 rounded-md hover:bg-emerald-200/60 text-emerald-800 transition cursor-pointer"
+                            title="Aviso anterior"
+                          >
+                            <ChevronLeft size={13} />
+                          </button>
+                          <button
+                            onClick={() => setActiveSafetyIndex((prev) => (prev + 1) % safetyNotices.length)}
+                            className="p-1 rounded-md hover:bg-emerald-200/60 text-emerald-800 transition cursor-pointer"
+                            title="Próximo aviso"
+                          >
+                            <ChevronRight size={13} />
+                          </button>
+                        </div>
+                      )}
+                      {!isTvMode && (
+                        <button
+                          onClick={() => setNoticeModalCategory('safety')}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 shrink-0 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Gerenciar Avisos</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Safety Notices Display Container */}
-                  <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+                  {/* Safety Notice Display Container (TELA COMPLETA - SEM ROLAGEM) */}
+                  <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                     {safetyNotices.length === 0 ? (
-                      <div className="h-full bg-white rounded-3xl border-2 border-dashed border-emerald-200 p-6 sm:p-8 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-14 h-14 sm:w-16 sm:h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center shadow-inner">
-                          <ShieldAlert className="w-7 h-7 sm:w-8 sm:h-8" />
+                      <div className="h-full bg-white rounded-3xl border-2 border-dashed border-emerald-200 p-6 flex flex-col items-center justify-center text-center space-y-3">
+                        <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center shadow-inner">
+                          <ShieldAlert className="w-7 h-7" />
                         </div>
                         <div>
-                          <h3 className="text-lg sm:text-xl font-black text-slate-800 uppercase tracking-tight">Nenhum aviso de Segurança no momento</h3>
-                          <p className="text-xs sm:text-sm font-medium text-slate-500 max-w-md mx-auto mt-1">
+                          <h3 className="text-base sm:text-lg font-black text-slate-800 uppercase tracking-tight">Nenhum aviso de Segurança no momento</h3>
+                          <p className="text-xs font-medium text-slate-500 max-w-md mx-auto mt-1">
                             {!isTvMode ? 'Clique no botão acima "Gerenciar Avisos" para publicar alertas de segurança e SST.' : 'Nenhum alerta de segurança cadastrado.'}
                           </p>
                         </div>
@@ -2397,21 +2537,29 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
                         )}
                       </div>
                     ) : (
-                      <div className="min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
-                        {safetyNotices.map((notice, idx) => (
+                      (() => {
+                        const notice = safetyNotices[activeSafetyIndex % safetyNotices.length];
+                        return (
                           <div
-                            key={notice.id || idx}
-                            className="bg-white rounded-3xl border-2 border-emerald-200 shadow-md p-4 sm:p-5 lg:p-6 flex flex-col justify-between min-h-0 overflow-hidden relative group hover:border-emerald-400 transition-all"
+                            key={notice.id || activeSafetyIndex}
+                            className="h-full min-h-0 bg-white rounded-3xl border-2 border-emerald-200 shadow-md p-4 sm:p-5 lg:p-6 flex flex-col justify-between overflow-hidden relative"
                           >
-                            {/* Notice Header Badge & Date */}
-                            <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
-                              <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest border shadow-xs ${
-                                notice.priority === 'high'
-                                  ? 'bg-rose-600 text-white border-rose-700'
-                                  : 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                              }`}>
-                                {notice.badgeText || 'SEGURANÇA DO TRABALHO'}
-                              </span>
+                            {/* Top Badge & Date & Actions */}
+                            <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3 shrink-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest border shadow-2xs ${
+                                  notice.priority === 'high'
+                                    ? 'bg-rose-600 text-white border-rose-700'
+                                    : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                }`}>
+                                  {notice.badgeText || 'SEGURANÇA DO TRABALHO'}
+                                </span>
+                                {notice.priority === 'high' && (
+                                  <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-2xs">
+                                    Alerta Crítico SST
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-2">
                                 {notice.date && (
                                   <span className="text-[10px] sm:text-xs font-mono font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
@@ -2438,43 +2586,81 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
                               </div>
                             </div>
 
-                            {/* Title & Subtitle */}
-                            <div className="shrink-0 mb-3">
-                              <h3 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight leading-tight">
-                                {notice.title}
-                              </h3>
-                              {notice.subtitle && (
-                                <p className="text-xs md:text-sm font-black text-emerald-700 uppercase tracking-wider mt-1">
-                                  {notice.subtitle}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Image Banner */}
-                            {notice.imageUrl && (
-                              <div className="flex-1 min-h-[160px] lg:min-h-0 my-2 rounded-2xl overflow-hidden border border-emerald-200 bg-slate-950 relative group-hover:shadow-lg transition-all">
-                                <img
-                                  src={notice.imageUrl}
-                                  alt={notice.title}
-                                  className="w-full h-full object-cover rounded-2xl"
-                                />
-                                {notice.imageCaption && (
-                                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent p-3 text-white text-xs font-bold truncate">
-                                    {notice.imageCaption}
+                            {/* Main Content Area */}
+                            {notice.imageUrl ? (
+                              <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch overflow-hidden">
+                                {/* Left Text Column */}
+                                <div className="lg:col-span-7 flex flex-col justify-center min-h-0 overflow-hidden pr-0 lg:pr-2">
+                                  <div className="shrink-0 mb-2">
+                                    <h3 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl 2xl:text-5xl font-black text-slate-900 tracking-tight leading-snug line-clamp-3">
+                                      {notice.title}
+                                    </h3>
+                                    {notice.subtitle && (
+                                      <p className="text-xs sm:text-sm md:text-base font-black text-emerald-700 uppercase tracking-wider mt-1 line-clamp-2">
+                                        {notice.subtitle}
+                                      </p>
+                                    )}
                                   </div>
-                                )}
+                                  <div className="pt-2 sm:pt-3 border-t border-slate-100 overflow-hidden">
+                                    <p className="text-xs sm:text-sm md:text-base lg:text-lg 2xl:text-xl font-medium text-slate-800 leading-relaxed overflow-hidden">
+                                      {notice.description}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Right Image Column */}
+                                <div className="lg:col-span-5 h-full min-h-0 rounded-2xl lg:rounded-3xl overflow-hidden border border-emerald-200 bg-slate-950 relative shadow-sm flex items-center justify-center">
+                                  <img
+                                    src={notice.imageUrl}
+                                    alt={notice.title}
+                                    className="w-full h-full object-cover object-center rounded-2xl lg:rounded-3xl"
+                                  />
+                                  {notice.imageCaption && (
+                                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent p-2.5 sm:p-3 text-white text-[10px] sm:text-xs font-bold truncate">
+                                      {notice.imageCaption}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              /* Full Width Text Card (No Image) */
+                              <div className="flex-1 min-h-0 flex flex-col justify-center max-w-4xl mx-auto w-full text-center lg:text-left overflow-hidden px-2 sm:px-6">
+                                <div className="shrink-0 mb-3">
+                                  <h3 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl 2xl:text-6xl font-black text-slate-900 tracking-tight leading-tight">
+                                    {notice.title}
+                                  </h3>
+                                  {notice.subtitle && (
+                                    <p className="text-xs sm:text-sm md:text-base lg:text-lg font-black text-emerald-700 uppercase tracking-widest mt-2">
+                                      {notice.subtitle}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="pt-3 sm:pt-4 border-t border-slate-100 overflow-hidden">
+                                  <p className="text-sm sm:text-base md:text-lg lg:text-xl 2xl:text-2xl font-medium text-slate-800 leading-relaxed overflow-hidden">
+                                    {notice.description}
+                                  </p>
+                                </div>
                               </div>
                             )}
 
-                            {/* Description Text */}
-                            <div className="shrink-0 pt-3 border-t border-slate-100">
-                              <p className="text-xs sm:text-sm md:text-base lg:text-lg font-medium text-slate-800 leading-relaxed line-clamp-4">
-                                {notice.description}
-                              </p>
-                            </div>
+                            {/* Bottom Pagination Dots */}
+                            {safetyNotices.length > 1 && (
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 shrink-0 mt-2">
+                                {safetyNotices.map((_, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => setActiveSafetyIndex(i)}
+                                    className={`h-2 transition-all rounded-full cursor-pointer ${
+                                      i === activeSafetyIndex ? 'w-8 bg-emerald-600' : 'w-2 bg-slate-300 hover:bg-slate-400'
+                                    }`}
+                                    title={`Ver comunicado ${i + 1}`}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })()
                     )}
                   </div>
                 </div>

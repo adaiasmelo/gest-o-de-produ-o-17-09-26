@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap } from 'lucide-react';
 import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation } from '../types';
 import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives, ECO_B_REASONS_PRESETS } from '../constants/downtimeReasons';
@@ -258,6 +258,7 @@ interface LaunchModalProps {
   dashboardMonth?: string;
   productionEntries?: ProductionEntry[];
   ribbonEntries?: RibbonCuttingEntry[];
+  isStandaloneDowntimeInitial?: boolean;
 }
 
 interface StopItem {
@@ -268,6 +269,8 @@ interface StopItem {
   explicacao?: string;
   keyword?: string;
   justification?: string;
+  isAvulso?: boolean;
+  durationMinutes?: number;
 }
 
 const getYesterdayStr = () => {
@@ -314,7 +317,26 @@ const getDiffMinutes = (startTimeStr: string, endTimeStr: string): number => {
 };
 
 const calcTotalMinutes = (stops: StopItem[]): number => {
-  return stops.reduce((sum, item) => sum + getDiffMinutes(item.de, item.ate), 0);
+  return stops.reduce((sum, item) => {
+    const manual = Number(item.durationMinutes);
+    if (item.isAvulso || (!item.de && !item.ate)) {
+      return sum + (isNaN(manual) ? 0 : manual);
+    }
+    const diff = getDiffMinutes(item.de, item.ate);
+    return sum + (diff > 0 ? diff : (isNaN(manual) ? 0 : manual));
+  }, 0);
+};
+
+const formatDurationHuman = (mins: number) => {
+  if (!mins || mins <= 0) return '0 min';
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  if (hours < 24) {
+    return rem > 0 ? `${hours}h ${rem}min` : `${hours}h`;
+  }
+  const days = (mins / (24 * 60)).toFixed(1).replace('.0', '');
+  return `${hours}h ${rem > 0 ? `${rem}min ` : ''}(~${days} dias)`;
 };
 
 const PRESET_INFRACTIONS = [
@@ -329,7 +351,7 @@ const PRESET_INFRACTIONS = [
 
 const LaunchModal: React.FC<LaunchModalProps> = ({ 
   isOpen, onClose, onSave, collaborators, employees, vacations = [], activeMachines, availableShifts, initialData, dashboardMonth,
-  productionEntries = [], ribbonEntries = []
+  productionEntries = [], ribbonEntries = [], isStandaloneDowntimeInitial = false
 }) => {
   const [downtimeVersion, setDowntimeVersion] = useState(0);
 
@@ -385,6 +407,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     outrosMin: 0,
     outrosMotivo: '',
     isMaintenanceEntry: false,
+    isStandaloneDowntime: false,
+    downtimeCategory: 'manutencao' as 'manutencao' | 'processo' | 'outros',
     isNoWorkDay: false,
     noWorkReason: '',
     eremaWeight1: 0,
@@ -574,6 +598,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
             const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '').trim();
             const tag = (item.motivo || item.keyword || '').trim();
             const reason = written || tag;
+            const duration = Number(item.durationMinutes || item.minutos || item.minutes || 0);
             return {
               id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
               de: item.de || '',
@@ -581,7 +606,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
               motivo: reason,
               keyword: item.keyword || tag,
               explicacao: reason,
-              justification: reason
+              justification: reason,
+              isAvulso: Boolean(item.isAvulso || (!item.de && !item.ate && (duration > 0 || min > 0))),
+              durationMinutes: duration > 0 ? duration : (min > 0 && !item.de && !item.ate ? min : 0)
             };
           });
         }
@@ -590,18 +617,30 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       // continua no fallback
     }
     if (min > 0 || motivo) {
-      return [{ id: `stop-legacy-${Date.now()}-${Math.random()}`, de: '', ate: '', motivo: motivo || '', keyword: '', explicacao: motivo || '', justification: motivo || '' }];
+      return [{
+        id: `stop-legacy-${Date.now()}-${Math.random()}`,
+        de: '',
+        ate: '',
+        motivo: motivo || '',
+        keyword: '',
+        explicacao: motivo || '',
+        justification: motivo || '',
+        isAvulso: true,
+        durationMinutes: min
+      }];
     }
     return [];
   };
 
-  const handleAddStop = (type: 'manutencao' | 'processo' | 'outros') => {
+  const handleAddStop = (type: 'manutencao' | 'processo' | 'outros', isAvulso = false) => {
     const newItem: StopItem = {
       id: `stop-${Date.now()}-${Math.random()}`,
       de: '',
       ate: '',
       motivo: '',
-      explicacao: ''
+      explicacao: '',
+      isAvulso,
+      durationMinutes: 0
     };
     setSelectedStopCategory(type);
     if (type === 'manutencao') {
@@ -613,7 +652,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     }
   };
 
-  const handleUpdateStop = (type: 'manutencao' | 'processo' | 'outros', id: string, field: keyof StopItem, value: string) => {
+  const handleUpdateStop = (type: 'manutencao' | 'processo' | 'outros', id: string, field: keyof StopItem, value: any) => {
     const updateFn = (prev: StopItem[]) => prev.map(item => item.id === id ? { ...item, [field]: value } : item);
     if (type === 'manutencao') {
       setManutencaoStops(updateFn);
@@ -654,7 +693,19 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
             }];
         setMaterials(initMats);
       } else {
-        setManutencaoStops([]);
+        if (isStandaloneDowntimeInitial) {
+          setManutencaoStops([{
+            id: `stop-${Date.now()}`,
+            de: '',
+            ate: '',
+            motivo: '',
+            explicacao: '',
+            isAvulso: true,
+            durationMinutes: 0
+          }]);
+        } else {
+          setManutencaoStops([]);
+        }
         setProcessoStops([]);
         setOutrosStops([]);
         setMaterials([{
@@ -666,7 +717,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         }]);
       }
     }
-  }, [isOpen, currentIndex, initialData, pendingEntries]);
+  }, [isOpen, currentIndex, initialData, pendingEntries, isStandaloneDowntimeInitial]);
 
   useEffect(() => {
     if (isOpen) {
@@ -674,6 +725,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       setCurrentIndex(0);
       if (initialData) {
         setOpSearchTerm(initialData.operator);
+        const isInitStandalone = isStandaloneDowntimeInitial || Boolean(initialData.isStandaloneDowntime) || (Boolean(initialData.isMaintenanceEntry) && !initialData.grossWeight && !initialData.netWeight);
+        const initCategory: 'manutencao' | 'processo' | 'outros' = (initialData.downtimeCategory as any) || (initialData.processoMin && !initialData.manutencaoMin ? 'processo' : 'manutencao');
+
         setFormData({
           date: initialData.date,
           operator: initialData.operator,
@@ -700,6 +754,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           outrosMin: initialData.outrosMin,
           outrosMotivo: initialData.outrosMotivo || '',
           isMaintenanceEntry: initialData.isMaintenanceEntry || false,
+          isStandaloneDowntime: isInitStandalone,
+          downtimeCategory: initCategory,
           isNoWorkDay: initialData.isNoWorkDay || false,
           noWorkReason: initialData.noWorkReason || '',
           eremaWeight1: initialData.eremaWeight1 ?? 0,
@@ -757,6 +813,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           outrosMin: 0,
           outrosMotivo: '',
           isMaintenanceEntry: false,
+          isStandaloneDowntime: isStandaloneDowntimeInitial,
+          downtimeCategory: 'manutencao',
           isNoWorkDay: false,
           noWorkReason: '',
           eremaWeight1: 0,
@@ -774,7 +832,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         });
       }
     }
-  }, [isOpen, initialData, activeMachines, availableShifts, dashboardMonth]);
+  }, [isOpen, initialData, activeMachines, availableShifts, dashboardMonth, isStandaloneDowntimeInitial]);
 
   useEffect(() => {
     if (isErema) {
@@ -856,7 +914,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       return;
     }
     
-    const isSpecialEntry = formData.isMaintenanceEntry || formData.isNoWorkDay;
+    const isSpecialEntry = formData.isMaintenanceEntry || formData.isNoWorkDay || formData.isStandaloneDowntime;
     const compileEntry = (data: typeof formData) => {
       const isCurrent = data === formData;
       const finalManutencaoMin = isCurrent ? manutencaoMinCalculado : data.manutencaoMin;
@@ -893,7 +951,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         materials: isCurrent ? materials : (data as any).materials || [],
       };
 
-      return isSpecialEntry ? {
+      const isStandaloneOrMaintenance = data.isStandaloneDowntime || data.isMaintenanceEntry;
+
+      return data.isNoWorkDay ? {
         ...baseWithStops,
         grossWeight: 0,
         tara: 0,
@@ -911,9 +971,34 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         borraTotalMotivo: '',
         recycledUsed: 0,
         recycledBags: 0,
-        manutencaoMin: baseWithStops.isNoWorkDay ? 0 : baseWithStops.manutencaoMin,
-        processoMin: baseWithStops.isNoWorkDay ? 0 : (baseWithStops.isMaintenanceEntry ? 0 : baseWithStops.processoMin),
-        outrosMin: baseWithStops.isNoWorkDay ? 0 : (baseWithStops.isMaintenanceEntry ? 0 : baseWithStops.outrosMin),
+        manutencaoMin: 0,
+        processoMin: 0,
+        outrosMin: 0,
+        isMaintenanceEntry: false,
+        isStandaloneDowntime: false,
+      } : isStandaloneOrMaintenance ? {
+        ...baseWithStops,
+        grossWeight: 0,
+        tara: 0,
+        netWeight: 0,
+        volumes: 0,
+        tubetes: 0,
+        tubetesEcoB: 0,
+        ecoA: 0,
+        ecoBP: 0,
+        ecoBM: 0,
+        borraTotal: 0,
+        ecoAMotivo: '',
+        ecoBPMotivo: '',
+        ecoBMMotivo: '',
+        borraTotalMotivo: '',
+        recycledUsed: 0,
+        recycledBags: 0,
+        manutencaoMin: baseWithStops.manutencaoMin || 0,
+        processoMin: baseWithStops.processoMin || 0,
+        outrosMin: baseWithStops.outrosMin || 0,
+        isMaintenanceEntry: Boolean((baseWithStops.manutencaoMin || 0) > 0 && (baseWithStops.processoMin || 0) === 0),
+        isStandaloneDowntime: true,
       } : (isErema ? {
         ...baseWithStops,
         grossWeight: 0,
@@ -1207,8 +1292,84 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     setFormData(newPending[nextIndex]);
   };
 
-  const totalParadas = formData.manutencaoMin + formData.processoMin + formData.outrosMin;
-  const isHiddenProduction = formData.isMaintenanceEntry || formData.isNoWorkDay;
+  const totalParadas = manutencaoMinCalculado + processoMinCalculado + outrosMinCalculado;
+  const isHiddenProduction = formData.isMaintenanceEntry || formData.isNoWorkDay || formData.isStandaloneDowntime;
+
+  const activeStoppageCategory = formData.downtimeCategory || 'manutencao';
+  const targetStops = activeStoppageCategory === 'manutencao' 
+    ? manutencaoStops 
+    : activeStoppageCategory === 'processo' 
+    ? processoStops 
+    : outrosStops;
+  const setTargetStops = activeStoppageCategory === 'manutencao'
+    ? setManutencaoStops
+    : activeStoppageCategory === 'processo'
+    ? setProcessoStops
+    : setOutrosStops;
+
+  const firstAvulsoStop = targetStops.find(s => s.isAvulso) || targetStops[0];
+  const activeStoppageMinutes = firstAvulsoStop 
+    ? (Number(firstAvulsoStop.durationMinutes) || 0) 
+    : (activeStoppageCategory === 'manutencao' ? manutencaoMinCalculado : activeStoppageCategory === 'processo' ? processoMinCalculado : outrosMinCalculado);
+  const activeStoppageReason = firstAvulsoStop 
+    ? (firstAvulsoStop.explicacao || firstAvulsoStop.justification || firstAvulsoStop.motivo || '') 
+    : '';
+
+  const handleStandaloneMinutesChange = (newMinutes: number) => {
+    const mins = Math.max(0, newMinutes);
+    setTargetStops(prev => {
+      if (prev.length === 0) {
+        return [{
+          id: `stop-avulso-${Date.now()}`,
+          de: '',
+          ate: '',
+          motivo: activeStoppageReason || '',
+          explicacao: activeStoppageReason || '',
+          justification: activeStoppageReason || '',
+          isAvulso: true,
+          durationMinutes: mins,
+        }];
+      }
+      return prev.map((item, idx) => idx === 0 ? {
+        ...item,
+        isAvulso: true,
+        durationMinutes: mins,
+      } : item);
+    });
+  };
+
+  const handleStandaloneReasonChange = (newReason: string) => {
+    setTargetStops(prev => {
+      if (prev.length === 0) {
+        return [{
+          id: `stop-avulso-${Date.now()}`,
+          de: '',
+          ate: '',
+          motivo: newReason,
+          explicacao: newReason,
+          justification: newReason,
+          isAvulso: true,
+          durationMinutes: activeStoppageMinutes || 0,
+        }];
+      }
+      return prev.map((item, idx) => idx === 0 ? {
+        ...item,
+        motivo: newReason,
+        explicacao: newReason,
+        justification: newReason,
+      } : item);
+    });
+  };
+
+  const handleStandaloneAddMinutes = (increment: number) => {
+    const cur = activeStoppageMinutes || 0;
+    handleStandaloneMinutesChange(cur + increment);
+  };
+
+  const handleSelectStandaloneCategory = (cat: 'manutencao' | 'processo' | 'outros') => {
+    setFormData(prev => ({ ...prev, downtimeCategory: cat }));
+    setSelectedStopCategory(cat);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-100 flex flex-col w-full h-[100dvh] overflow-hidden animate-in fade-in duration-200">
@@ -1325,23 +1486,25 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
               {/* Toggles */}
               <div className="md:col-span-3 grid grid-cols-2 gap-1.5">
+                {/* Manutenção */}
                 <div className={`px-2 py-1 rounded-lg flex items-center justify-between transition-colors border ${formData.isMaintenanceEntry ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
-                  <div className="flex items-center gap-1">
-                    <Wrench size={12} className={formData.isMaintenanceEntry ? 'text-orange-600' : 'text-slate-400'} />
-                    <span className="text-[9px] font-black text-slate-800 uppercase">Manutenção</span>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Wrench size={12} className={formData.isMaintenanceEntry ? 'text-orange-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                    <span className="text-[9px] font-black text-slate-800 uppercase truncate">Manutenção</span>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
                     <input type="checkbox" name="isMaintenanceEntry" checked={formData.isMaintenanceEntry} onChange={handleChange} className="sr-only peer" />
                     <div className="w-6 h-3 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-orange-600"></div>
                   </label>
                 </div>
 
+                {/* Parado / Sem Expediente */}
                 <div className={`px-2 py-1 rounded-lg flex items-center justify-between transition-colors border ${formData.isNoWorkDay ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
-                  <div className="flex items-center gap-1">
-                    <CalendarX size={12} className={formData.isNoWorkDay ? 'text-red-600' : 'text-slate-400'} />
-                    <span className="text-[9px] font-black text-slate-800 uppercase">Parado</span>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <CalendarX size={12} className={formData.isNoWorkDay ? 'text-red-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                    <span className="text-[9px] font-black text-slate-800 uppercase truncate">Parado</span>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
                     <input type="checkbox" name="isNoWorkDay" checked={formData.isNoWorkDay} onChange={handleChange} className="sr-only peer" />
                     <div className="w-6 h-3 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-600"></div>
                   </label>
@@ -1430,7 +1593,165 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           )}
 
           {!formData.isNoWorkDay && (
-            <div className={`grid grid-cols-1 ${isErema ? 'md:grid-cols-2 gap-3' : 'md:grid-cols-2 xl:grid-cols-3 gap-2.5'} items-start`}>
+            <div className={`grid grid-cols-1 ${formData.isStandaloneDowntime ? 'lg:grid-cols-12 gap-3' : isErema ? 'md:grid-cols-2 gap-3' : 'md:grid-cols-2 xl:grid-cols-3 gap-2.5'} items-start`}>
+              {formData.isStandaloneDowntime ? (
+                /* PAINEL DEDICADO DE LANÇAMENTO AVULSO */
+                <div className="lg:col-span-7 space-y-2.5">
+                  <div className="p-3.5 bg-gradient-to-br from-amber-50 via-white to-amber-50/40 border-2 border-amber-300/80 rounded-2xl shadow-sm space-y-3">
+                    {/* Header do Card Avulso */}
+                    <div className="flex items-center justify-between pb-2 border-b border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                          <Zap size={16} />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-black uppercase text-amber-950 tracking-tight">Lançamento Avulso de Parada</h3>
+                          <p className="text-[9px] font-semibold text-amber-800">Lance qualquer quantidade de minutos diretamente sem fixar horários</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-black uppercase bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-md">
+                        Modo Avulso
+                      </span>
+                    </div>
+
+                    {/* Seleção de Categoria */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-amber-900 uppercase tracking-wider block">
+                        Classificação da Parada
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectStandaloneCategory('manutencao')}
+                          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer ${activeStoppageCategory === 'manutencao' ? 'bg-orange-600 text-white border-orange-700 shadow-xs' : 'bg-white text-slate-700 border-slate-200 hover:bg-orange-50'}`}
+                        >
+                          <Wrench size={13} />
+                          <span>Manutenção</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectStandaloneCategory('processo')}
+                          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer ${activeStoppageCategory === 'processo' ? 'bg-blue-600 text-white border-blue-700 shadow-xs' : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50'}`}
+                        >
+                          <Layers size={13} />
+                          <span>Processo / Prod.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectStandaloneCategory('outros')}
+                          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer ${activeStoppageCategory === 'outros' ? 'bg-slate-700 text-white border-slate-800 shadow-xs' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                        >
+                          <Package size={13} />
+                          <span>Outros</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Campo Principal de Minutos */}
+                    <div className="p-3 bg-white border border-amber-200 rounded-xl space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1">
+                          <Clock size={13} className="text-amber-600" />
+                          Quantidade Total de Minutos:
+                        </label>
+                        <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
+                          {formatDurationHuman(activeStoppageMinutes)}
+                        </span>
+                      </div>
+
+                      <div className="relative flex items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={activeStoppageMinutes || ''}
+                          onChange={(e) => handleStandaloneMinutesChange(parseInt(e.target.value) || 0)}
+                          placeholder="Digite os minutos (ex: 5240)..."
+                          className="w-full bg-amber-50/40 border-2 border-amber-400 focus:border-amber-600 rounded-xl px-3 py-2 text-xl font-black text-slate-900 tracking-tight outline-none"
+                        />
+                        <span className="absolute right-3 text-xs font-black text-amber-800 uppercase pointer-events-none">
+                          MINUTOS
+                        </span>
+                      </div>
+
+                      {/* Botões Rápidos de Acréscimo */}
+                      <div className="space-y-1">
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">
+                          Atalhos Rápidos (+ Minutos):
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { label: '+30 min', val: 30 },
+                            { label: '+60 min (1h)', val: 60 },
+                            { label: '+120 min (2h)', val: 120 },
+                            { label: '+480 min (8h/Turno)', val: 480 },
+                            { label: '+1.440 min (24h/Dia)', val: 1440 },
+                            { label: '+5.000 min', val: 5000 },
+                          ].map((btn, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleStandaloneAddMinutes(btn.val)}
+                              className="px-2 py-1 bg-amber-100/80 hover:bg-amber-200 border border-amber-300 text-amber-900 rounded-lg text-[10px] font-black transition-all cursor-pointer"
+                            >
+                              {btn.label}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => handleStandaloneMinutesChange(0)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-600 rounded-lg text-[10px] font-bold transition-all cursor-pointer ml-auto"
+                          >
+                            Zerar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Motivo e Justificativa */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-amber-950 uppercase tracking-wider block">
+                        Motivo / Justificativa por Escrito:
+                      </label>
+                      <textarea
+                        value={activeStoppageReason}
+                        onChange={(e) => handleStandaloneReasonChange(e.target.value)}
+                        rows={3}
+                        placeholder="Descreva detalhadamente a justificativa para este tempo de parada avulsa (ex: Manutenção corretiva de grande porte, troca de fuso e rosca, paralisação programada...)"
+                        className="w-full bg-white border border-amber-200 focus:border-amber-500 rounded-xl p-2 text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none resize-none shadow-2xs"
+                      />
+
+                      {/* Sugestões de motivos comuns */}
+                      <div className="space-y-1">
+                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">
+                          Sugestões Frequentes (Clique para aplicar):
+                        </span>
+                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1 bg-amber-50/50 rounded-lg border border-amber-100">
+                          {(activeStoppageCategory === 'manutencao'
+                            ? downtimeSuggestions.manutencao
+                            : activeStoppageCategory === 'processo'
+                            ? downtimeSuggestions.processo
+                            : downtimeSuggestions.outros
+                          ).slice(0, 8).map((suggestion, sIdx) => (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => {
+                                const current = activeStoppageReason ? `${activeStoppageReason} • ${suggestion}` : suggestion;
+                                handleStandaloneReasonChange(current);
+                              }}
+                              className="px-1.5 py-0.5 bg-white hover:bg-amber-100 border border-amber-200 text-slate-700 text-[9px] font-bold rounded cursor-pointer transition-colors text-left"
+                            >
+                              + {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {/* COLUNA 1: PRODUÇÃO & REUTILIZAÇÃO */}
               <div className="space-y-2">
                 {!isHiddenProduction && (
@@ -1723,7 +2044,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
               )}
 
               {/* COLUNA 3: TEMPOS DE PARADA & RANKING */}
-              <div className="space-y-2">
+              <div className={`${formData.isStandaloneDowntime ? 'lg:col-span-5' : ''} space-y-2`}>
                 <div className="p-2.5 bg-slate-100/70 border border-slate-200 rounded-xl space-y-2 shadow-2xs flex-1 flex flex-col justify-between">
                   <div className="flex items-center justify-between gap-1.5 text-slate-700 font-black text-[10px] uppercase tracking-widest border-b border-slate-200 pb-1">
                     <span className="flex items-center gap-1.5"><Clock size={13} /> Tempos de Parada</span>
@@ -1744,7 +2065,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       <option value="manutencao">
                         🔧 Manutenção {manutencaoStops.length > 0 ? `(${manutencaoMinCalculado} min)` : ''}
                       </option>
-                      {!formData.isMaintenanceEntry && (
+                      {(!formData.isMaintenanceEntry || formData.isStandaloneDowntime) && (
                         <>
                           <option value="processo">
                             ⚙️ Processo {processoStops.length > 0 ? `(${processoMinCalculado} min)` : ''}
@@ -1785,13 +2106,24 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           <div className="flex items-center gap-1 text-orange-600 font-black text-[9px] uppercase tracking-wider">
                             <Wrench size={11} /> Manutenção
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleAddStop('manutencao')}
-                            className="inline-flex items-center gap-0.5 text-[8px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded cursor-pointer"
-                          >
-                            <Plus size={9} /> Horário
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleAddStop('manutencao', true)}
+                              className="inline-flex items-center gap-0.5 text-[8px] font-black text-amber-800 hover:text-amber-900 uppercase bg-amber-100 hover:bg-amber-200 border border-amber-300 px-1.5 py-0.5 rounded cursor-pointer"
+                              title="Lançar parada avulsa digitando minutos livres"
+                            >
+                              <Zap size={9} /> + Minutos
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddStop('manutencao', false)}
+                              className="inline-flex items-center gap-0.5 text-[8px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                              title="Lançar parada por horário de início e fim"
+                            >
+                              <Clock size={9} /> + Horário
+                            </button>
+                          </div>
                         </div>
                         
                         {manutencaoStops.length === 0 ? (
@@ -1816,7 +2148,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </div>
                     )}
 
-                    {!formData.isMaintenanceEntry && (
+                    {(!formData.isMaintenanceEntry || formData.isStandaloneDowntime) && (
                       <>
                         {/* Seção Processo */}
                         {(selectedStopCategory === 'processo' || selectedStopCategory === 'todas') && (
@@ -1825,13 +2157,24 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                               <div className="flex items-center gap-1 text-blue-600 font-black text-[9px] uppercase tracking-wider">
                                 <Layers size={11} /> Processo
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleAddStop('processo')}
-                                className="inline-flex items-center gap-0.5 text-[8px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded cursor-pointer"
-                              >
-                                <Plus size={9} /> Horário
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddStop('processo', true)}
+                                  className="inline-flex items-center gap-0.5 text-[8px] font-black text-amber-800 hover:text-amber-900 uppercase bg-amber-100 hover:bg-amber-200 border border-amber-300 px-1.5 py-0.5 rounded cursor-pointer"
+                                  title="Lançar parada avulsa digitando minutos livres"
+                                >
+                                  <Zap size={9} /> + Minutos
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddStop('processo', false)}
+                                  className="inline-flex items-center gap-0.5 text-[8px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                                  title="Lançar parada por horário de início e fim"
+                                >
+                                  <Clock size={9} /> + Horário
+                                </button>
+                              </div>
                             </div>
                             
                             {processoStops.length === 0 ? (
@@ -1863,13 +2206,24 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                               <div className="flex items-center gap-1 text-slate-600 font-black text-[9px] uppercase tracking-wider">
                                 <Package size={11} /> Outros
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleAddStop('outros')}
-                                className="inline-flex items-center gap-0.5 text-[8px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded cursor-pointer"
-                              >
-                                <Plus size={9} /> Horário
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddStop('outros', true)}
+                                  className="inline-flex items-center gap-0.5 text-[8px] font-black text-amber-800 hover:text-amber-900 uppercase bg-amber-100 hover:bg-amber-200 border border-amber-300 px-1.5 py-0.5 rounded cursor-pointer"
+                                  title="Lançar parada avulsa digitando minutos livres"
+                                >
+                                  <Zap size={9} /> + Minutos
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddStop('outros', false)}
+                                  className="inline-flex items-center gap-0.5 text-[8px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                                  title="Lançar parada por horário de início e fim"
+                                >
+                                  <Clock size={9} /> + Horário
+                                </button>
+                              </div>
                             </div>
                             
                             {outrosStops.length === 0 ? (
