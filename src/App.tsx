@@ -12947,22 +12947,62 @@ Atenciosamente,
                     </div>
 
                     {/* KPI 2: Coeficiente de Rejeito (Eco B) */}
-                    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 flex flex-col justify-between transition-all duration-300 hover:shadow-md border-t-4 border-t-red-500">
+                    <div className={`bg-white rounded-[2rem] p-6 shadow-sm border flex flex-col justify-between transition-all duration-300 hover:shadow-md border-t-4 ${
+                      rejectCoef > 5 
+                        ? 'border-t-red-600 border-red-200 shadow-red-100/60 ring-1 ring-red-400/50' 
+                        : 'border-slate-100 border-t-red-500'
+                    }`}>
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Índice Rejeito Coef. Eco B</span>
-                          <span className="p-2 bg-rose-50 text-rose-500 rounded-xl"><TrendingDown size={16} /></span>
+                          <span className={`p-2 rounded-xl transition-all ${
+                            rejectCoef > 5 
+                              ? 'bg-red-100 text-red-600 ring-2 ring-red-300 animate-pulse' 
+                              : 'bg-rose-50 text-rose-500'
+                          }`}>
+                            <TrendingDown size={16} />
+                          </span>
                         </div>
-                        <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-none pt-2">{rejectCoef.toFixed(2)}%</h4>
+                        <div className="flex items-baseline justify-between gap-2 pt-2 flex-wrap">
+                          <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
+                            {formatWeight(totalEcoB)}
+                          </h4>
+                          <span className={`text-xs font-black px-2.5 py-1 rounded-lg transition-all ${
+                            rejectCoef > 5 
+                              ? 'bg-red-600 text-white font-mono animate-pulse shadow-xs' 
+                              : rejectCoef > 3.5 
+                              ? 'bg-amber-100 text-amber-800' 
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {rejectCoef.toFixed(2)}%
+                          </span>
+                        </div>
                       </div>
                       <div className="mt-4">
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div className={`w-full h-2.5 rounded-full overflow-hidden transition-all ${
+                          rejectCoef > 5 ? 'bg-red-100 ring-1 ring-red-400' : 'bg-slate-100'
+                        }`}>
                           <div 
-                            className={`h-full transition-all duration-500 ${rejectCoef < 5 ? 'bg-emerald-500' : rejectCoef < 10 ? 'bg-amber-500' : 'bg-red-500'}`}
-                            style={{ width: `${Math.min(100, rejectCoef * 5)}%` }}
+                            className={`h-full transition-all duration-500 rounded-full ${
+                              rejectCoef > 5 
+                                ? 'bg-red-600 animate-pulse shadow-md shadow-red-500/80' 
+                                : rejectCoef > 3.5 
+                                ? 'bg-amber-500' 
+                                : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${rejectCoef > 5 ? 100 : Math.min(100, Math.max(4, (rejectCoef / 5.0) * 100))}%` }}
                           />
                         </div>
-                        <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1 text-right">Meta Tolera: Max 5,0%</p>
+                        <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest mt-1.5">
+                          <span className={rejectCoef > 5 ? 'text-red-600 font-black flex items-center gap-1 animate-pulse' : 'text-slate-400'}>
+                            {rejectCoef > 5 ? '🔥 META ESTOURADA (MÁX 5,0%)' : 'Meta Tolera: Máx 5,0%'}
+                          </span>
+                          <span className={rejectCoef > 5 ? 'text-red-600 font-black font-mono' : 'text-slate-500 font-bold'}>
+                            {rejectCoef > 5 
+                              ? `Excedeu em +${(rejectCoef - 5).toFixed(2)}%` 
+                              : `${((rejectCoef / 5.0) * 100).toFixed(0)}% da tolerância`}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
