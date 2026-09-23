@@ -34,11 +34,10 @@ import { ReadOnlyBlockedModal } from './components/ReadOnlyBlockedModal';
 import { ActiveUsersModal } from './components/ActiveUsersModal';
 import { WeeklyProductionSummaryModal } from './components/WeeklyProductionSummaryModal';
 import { GlobalSpellchecker } from './components/GlobalSpellchecker';
-import { SpellcheckModal } from './components/SpellcheckModal';
 import { IMPORTED_COLLABORATORS } from './constants/importedCollaborators';
 import { INITIAL_DATA, GOAL_VALUE, DEFAULT_OPERATORS, INITIAL_EMPLOYEES, INITIAL_LOGS } from './constants';
 import { extractDowntimeMotives } from './constants/downtimeReasons';
-import { isBiometricAvailable, registerBiometrics, authenticateBiometrics } from './services/biometricService';
+import { isBiometricAvailable, registerBiometrics, authenticateBiometrics, isBiometricFeatureAllowed } from './services/biometricService';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet, isOperatorNameSilenced, normalizeText } from './utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from './utils/vacationUtils';
 import LaunchModal from './components/LaunchModal';
@@ -518,16 +517,11 @@ const formatStoppageMotiveClean = (motivoRaw: string | undefined): string => {
       return parsed.map((item: any) => {
         const de = (item.de || '').trim();
         const ate = (item.ate || '').trim();
-        const motivo = (item.motivo || '').trim();
-        const explicacao = (item.explicacao || item.observacao || '').trim();
-        let fullDesc = motivo;
-        if (explicacao) {
-          fullDesc = motivo ? `${motivo} (${explicacao})` : explicacao;
-        }
+        const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.motivo || '').trim();
         if (de && ate) {
-          return `${de} às ${ate}${fullDesc ? `: ${fullDesc}` : ''}`;
+          return `${de} às ${ate}${written ? `: ${written}` : ''}`;
         }
-        return fullDesc || '';
+        return written || '';
       }).filter(Boolean).join('; ');
     }
   } catch (e) {
@@ -1337,19 +1331,6 @@ export const App: React.FC = () => {
     title: string;
   }>({ isOpen: false, doc: null, filename: '', title: '' });
   const [isInternalPdfViewerOpen, setIsInternalPdfViewerOpen] = useState(false);
-  const [isSpellcheckModalOpen, setIsSpellcheckModalOpen] = useState(false);
-  const [spellcheckModalTab, setSpellcheckModalTab] = useState<'revisar' | 'dicionario'>('revisar');
-
-  useEffect(() => {
-    const handleOpenSpellcheck = (e: any) => {
-      if (e.detail?.tab) {
-        setSpellcheckModalTab(e.detail.tab);
-      }
-      setIsSpellcheckModalOpen(true);
-    };
-    window.addEventListener('open-spellcheck-modal', handleOpenSpellcheck);
-    return () => window.removeEventListener('open-spellcheck-modal', handleOpenSpellcheck);
-  }, []);
   const [confirmLoginPass, setConfirmLoginPass] = useState('');
   const [discoveredUser, setDiscoveredUser] = useState<SystemUser | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -2895,7 +2876,7 @@ export const App: React.FC = () => {
       if (user) {
         setDiscoveredUser(user);
         // Direct call within the event loop to satisfy user gesture requirement
-        if (user.biometricId && biometricSupported && !loggedUser && lastBiometricAttemptRef.current !== val) {
+        if (user.biometricId && biometricSupported && isBiometricFeatureAllowed() && !loggedUser && lastBiometricAttemptRef.current !== val) {
           lastBiometricAttemptRef.current = val;
           handleBiometricLogin(user);
         }
@@ -3025,10 +3006,15 @@ export const App: React.FC = () => {
     setBiometricScanStatus('idle');
     setBiometricScanError(null);
     
-    // Automatically trigger the biometric scan on open!
-    setTimeout(() => {
-      triggerBiometricProcess('login', user);
-    }, 400);
+    // Automatically trigger the biometric scan on open ONLY if WebAuthn is permitted in current document
+    if (isBiometricFeatureAllowed()) {
+      setTimeout(() => {
+        triggerBiometricProcess('login', user);
+      }, 400);
+    } else {
+      setBiometricScanStatus('error');
+      setBiometricScanError('Acesso biométrico bloqueado em painel incorporado (iframe). Abra o aplicativo em uma nova aba cheia do navegador para utilizar Face ID ou Digital.');
+    }
   };
 
   const handleOpenBiometricRegisterModal = (user: SystemUser) => {
@@ -3039,10 +3025,15 @@ export const App: React.FC = () => {
     setBiometricScanError(null);
     setShowBiometricPrompt(false);
     
-    // Automatically trigger the biometric scan on open!
-    setTimeout(() => {
-      triggerBiometricProcess('register', user);
-    }, 400);
+    // Automatically trigger the biometric scan on open ONLY if WebAuthn is permitted in current document
+    if (isBiometricFeatureAllowed()) {
+      setTimeout(() => {
+        triggerBiometricProcess('register', user);
+      }, 400);
+    } else {
+      setBiometricScanStatus('error');
+      setBiometricScanError('Cadastro biométrico bloqueado em painel incorporado (iframe). Abra o aplicativo em uma nova aba cheia do navegador para cadastrar Face ID ou Digital.');
+    }
   };
 
   const getWebAuthnErrorMessage = (err: any): string => {
@@ -3050,11 +3041,11 @@ export const App: React.FC = () => {
     const name = err.name;
     const message = err.message || '';
     
+    if (name === 'SecurityError' || message.includes('publickey-credentials') || message.includes('Permissions Policy')) {
+      return 'Erro de Segurança: Acesso biométrico bloqueado. Navegadores proíbem biometria (Touch ID / Face ID) dentro de painéis de visualização embutidos (iframes). Por favor, abra o aplicativo em uma ABA CHEIA do navegador para funcionar de verdade.';
+    }
     if (name === 'NotAllowedError') {
       return 'O escaneamento foi cancelado pelo usuário ou o acesso à biometria foi negado pelo sistema operacional/navegador.';
-    }
-    if (name === 'SecurityError') {
-      return 'Erro de Segurança: Acesso biométrico bloqueado. Navegadores proíbem biometria (Touch ID / Face ID) dentro de iframes (painéis de visualização). Por favor, abra o aplicativo em uma ABA CHEIA do navegador para funcionar de verdade.';
     }
     if (name === 'InvalidStateError') {
       return 'Chave inválida ou este dispositivo já possui este usuário biométrico registrado.';
@@ -3069,6 +3060,12 @@ export const App: React.FC = () => {
     setBiometricScanStatus('scanning');
     setBiometricScanError(null);
     
+    if (!isBiometricFeatureAllowed()) {
+      setBiometricScanStatus('error');
+      setBiometricScanError('Acesso biométrico bloqueado em painel incorporado (iframe). Abra o aplicativo em uma aba externa para acionar o leitor do aparelho.');
+      return;
+    }
+
     if (type === 'register') {
       try {
         const biometricId = await registerBiometrics(user);
@@ -3087,7 +3084,17 @@ export const App: React.FC = () => {
           setBiometricScanError('Nenhum dado biométrico foi gerado pelo dispositivo.');
         }
       } catch (err: any) {
-        console.error('WebAuthn register error:', err);
+        const isPolicyOrCanceled =
+          err?.name === 'NotAllowedError' ||
+          err?.name === 'SecurityError' ||
+          err?.message?.includes('publickey-credentials') ||
+          err?.message?.includes('Permissions Policy');
+
+        if (!isPolicyOrCanceled) {
+          console.error('WebAuthn register error:', err);
+        } else {
+          console.warn('WebAuthn register unavailable in current environment:', err?.message || err);
+        }
         setBiometricScanStatus('error');
         setBiometricScanError(getWebAuthnErrorMessage(err));
       }
@@ -3114,7 +3121,17 @@ export const App: React.FC = () => {
           setBiometricScanError('A verificação biométrica não pôde ser completada.');
         }
       } catch (err: any) {
-        console.error('WebAuthn login error:', err);
+        const isPolicyOrCanceled =
+          err?.name === 'NotAllowedError' ||
+          err?.name === 'SecurityError' ||
+          err?.message?.includes('publickey-credentials') ||
+          err?.message?.includes('Permissions Policy');
+
+        if (!isPolicyOrCanceled) {
+          console.error('WebAuthn login error:', err);
+        } else {
+          console.warn('WebAuthn login unavailable in current environment:', err?.message || err);
+        }
         setBiometricScanStatus('error');
         setBiometricScanError(getWebAuthnErrorMessage(err));
       }
@@ -3241,18 +3258,16 @@ export const App: React.FC = () => {
         const parsed = JSON.parse(motivo);
         if (Array.isArray(parsed)) {
           return parsed.map((item, idx) => {
-            const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.justificativa || item.motivoDigitado || '').trim();
-            const tag = (item.motivo || item.keyword || item.tag || '').trim();
-            const reason = written || tag;
+            const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.justificativa || item.motivoDigitado || item.motivo || '').trim();
             const duration = Number(item.durationMinutes || item.minutos || item.minutes || 0);
             return {
               id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
               de: item.de || '',
               ate: item.ate || '',
-              motivo: reason,
-              keyword: item.keyword || item.tag || tag,
-              explicacao: reason,
-              justification: reason,
+              motivo: written,
+              keyword: '',
+              explicacao: written,
+              justification: written,
               isAvulso: Boolean(item.isAvulso || (!item.de && !item.ate && (duration > 0 || min > 0))),
               durationMinutes: duration > 0 ? duration : (min > 0 && !item.de && !item.ate ? min : 0)
             };
@@ -4349,14 +4364,8 @@ export const App: React.FC = () => {
           const list = parsed.map((item: any) => {
             const de = (item.de || '').trim();
             const ate = (item.ate || '').trim();
-            const motivoStr = (item.motivo || item.descricao || item.tipo || '').trim();
-            const expStr = (item.explicacao || item.observacao || item.justificativa || item.causa || '').trim();
-            let fullMotivo = '';
-            if (motivoStr && expStr) {
-              fullMotivo = `${motivoStr} (${expStr})`;
-            } else {
-              fullMotivo = motivoStr || expStr || defaultCategory;
-            }
+            const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.observacoes || item.descricao || item.causa || item.motivo || '').trim();
+            const fullMotivo = written || defaultCategory;
             const calcMin = getDiffMin(de, ate);
             return {
               de,
@@ -5365,13 +5374,11 @@ Atenciosamente,
             const list = parsed.map((item: any) => {
               const de = (item.de || '').trim();
               const ate = (item.ate || '').trim();
-              const motivoStr = (item.motivo || item.descricao || item.tipo || '').trim();
-              const expStr = (item.explicacao || item.observacao || item.justificativa || item.causa || '').trim();
-              const fullMotivo = [motivoStr, expStr].filter(Boolean).join(' - ');
+              const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.observacoes || item.descricao || item.causa || item.motivo || '').trim();
               return {
                 de,
                 ate,
-                motivo: fullMotivo || defaultCategory
+                motivo: written || defaultCategory
               };
             }).filter(item => item.de || item.ate || item.motivo);
 
@@ -10299,35 +10306,6 @@ Atenciosamente,
             <div className="mt-4 pt-4 border-t border-slate-100 space-y-2.5">
               <button 
                 type="button"
-                id="btn-login-calculadora-cast1"
-                onClick={() => {
-                  try {
-                    window.history.pushState({}, '', '/calculadora-cast1');
-                  } catch {}
-                  setIsExternalCalculatorView(true);
-                }}
-                className="w-full py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 border border-blue-400/30"
-              >
-                <Calculator size={16} /> Calculadora Cast 1
-              </button>
-
-              <button 
-                type="button"
-                id="btn-login-projecao-tv"
-                onClick={() => {
-                  try {
-                    localStorage.setItem('manupackaging_tv_mode', 'true');
-                    window.history.pushState({}, '', '/tv');
-                  } catch {}
-                  setIsExternalTvView(true);
-                }}
-                className="w-full py-3.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 hover:from-slate-800 hover:to-indigo-900 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-indigo-500/30 active:scale-95 shadow-md cursor-pointer"
-              >
-                <Tv size={16} className="text-indigo-400" /> Projeção TV (Smart TV / Telão)
-              </button>
-
-              <button 
-                type="button"
                 id="btn-login-visitante"
                 onClick={handleGuestLogin}
                 className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-slate-200 active:scale-95 shadow-sm"
@@ -10662,18 +10640,6 @@ Atenciosamente,
                       <span>Cadastrar / Usar Digital</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsSpellcheckModalOpen(true);
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors active:bg-slate-100 text-left cursor-pointer"
-                    >
-                      <Languages size={16} className="text-emerald-600 shrink-0" />
-                      <span>Corretor Norma Culta</span>
-                    </button>
-
                     {canManageSettings && (
                       <button
                         type="button"
@@ -10736,14 +10702,6 @@ Atenciosamente,
           >
             <Tv size={18} className="text-indigo-200 shrink-0 md:w-5 md:h-5 animate-pulse" />
             <span className="text-[10px] md:text-xs font-black uppercase tracking-wider whitespace-nowrap">Projeção TV</span>
-          </button>
-          <button 
-            onClick={() => setIsSpellcheckModalOpen(true)}
-            className="p-2 md:p-3 px-2.5 md:px-3.5 bg-emerald-600/10 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-300 rounded-xl md:rounded-2xl transition-all shadow-sm active:scale-95 flex items-center gap-1.5 cursor-pointer"
-            title="Corretor Ortográfico da Língua Portuguesa (Norma Culta)"
-          >
-            <Languages size={18} className="md:w-5 md:h-5 shrink-0" />
-            <span className="text-[10px] md:text-xs font-black uppercase tracking-wider hidden lg:inline whitespace-nowrap">Norma Culta</span>
           </button>
           {canManageSettings && (
             <button onClick={() => setIsSettingsModalOpen(true)} className="p-3 md:p-3.5 text-blue-600 bg-blue-50 border border-blue-100 rounded-xl md:rounded-2xl transition-all shadow-sm active:scale-95" title="Configurações"><Settings size={20} className="md:w-[22px] md:h-[22px]" /></button>
@@ -19860,12 +19818,6 @@ Atenciosamente,
       />
 
       <GlobalSpellchecker />
-
-      <SpellcheckModal
-        isOpen={isSpellcheckModalOpen}
-        initialTab={spellcheckModalTab}
-        onClose={() => setIsSpellcheckModalOpen(false)}
-      />
 
       <RoleModal
         isOpen={isRoleModalOpen}

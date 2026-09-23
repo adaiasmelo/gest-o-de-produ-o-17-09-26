@@ -595,18 +595,16 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         const parsed = JSON.parse(motivo);
         if (Array.isArray(parsed)) {
           return parsed.map((item, idx) => {
-            const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '').trim();
-            const tag = (item.motivo || item.keyword || '').trim();
-            const reason = written || tag;
+            const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.motivo || item.keyword || '').trim();
             const duration = Number(item.durationMinutes || item.minutos || item.minutes || 0);
             return {
               id: item.id || `stop-${idx}-${Date.now()}-${Math.random()}`,
               de: item.de || '',
               ate: item.ate || '',
-              motivo: reason,
-              keyword: item.keyword || tag,
-              explicacao: reason,
-              justification: reason,
+              motivo: written,
+              keyword: '',
+              explicacao: written,
+              justification: written,
               isAvulso: Boolean(item.isAvulso || (!item.de && !item.ate && (duration > 0 || min > 0))),
               durationMinutes: duration > 0 ? duration : (min > 0 && !item.de && !item.ate ? min : 0)
             };
@@ -924,14 +922,12 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const sanitizeStops = (stops: StopItem[]) => {
         return stops.map(s => {
           const written = (s.explicacao || s.justification || s.motivo || '').trim();
-          const tag = (s.keyword || s.motivo || '').trim();
-          const reason = written || tag;
           return {
             ...s,
-            motivo: reason,
-            explicacao: reason,
-            justification: reason,
-            keyword: s.keyword || tag
+            motivo: written,
+            explicacao: written,
+            justification: written,
+            keyword: ''
           };
         });
       };

@@ -488,12 +488,7 @@ export const WeeklyProductionSummaryModal: React.FC<WeeklyProductionSummaryModal
           const itemMin = (de && ate ? getDiffMin(de, ate) : 0) || (fallbackMin > 0 ? Math.round(fallbackMin / totalItems) : 0);
           const timeRange = de && ate ? `${de} às ${ate}` : '';
           
-          let fullDesc = '';
-          if (motivo && exp && motivo.toLowerCase() !== exp.toLowerCase()) {
-            fullDesc = `${motivo} (${exp})`;
-          } else {
-            fullDesc = exp || motivo || category;
-          }
+          const fullDesc = exp || motivo || category;
 
           const keyword = extractStopKeyword(motivo, exp, category);
           machineStopOccurrences[mKey].push({
@@ -535,12 +530,7 @@ export const WeeklyProductionSummaryModal: React.FC<WeeklyProductionSummaryModal
               const ate = (item.ate || '').trim();
               const motivo = (item.motivo || item.keyword || '').trim();
               const exp = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '').trim();
-              let desc = '';
-              if (motivo && exp && motivo.toLowerCase() !== exp.toLowerCase()) {
-                desc = `${motivo} (${exp})`;
-              } else {
-                desc = exp || motivo || '';
-              }
+              const desc = exp || motivo || '';
               if (de && ate) {
                 return `${de} às ${ate}${desc ? `: ${desc}` : ''}`;
               }

@@ -12,6 +12,7 @@ import {
   AlertCircle,
   ChevronRight
 } from 'lucide-react';
+import { isBiometricFeatureAllowed } from '../services/biometricService';
 
 interface PermissionStatus {
   id: string;
@@ -119,7 +120,7 @@ const PermissionOverlay: React.FC<PermissionOverlayProps> = ({ isOpen, onClose }
     }
 
     // Biometrics (WebAuthn check)
-    if (window.PublicKeyCredential) {
+    if (window.PublicKeyCredential && isBiometricFeatureAllowed()) {
       updated[3].status = 'prompt';
     } else {
       updated[3].status = 'unsupported';

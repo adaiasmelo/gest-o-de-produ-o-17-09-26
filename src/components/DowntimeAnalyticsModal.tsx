@@ -85,12 +85,7 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
             const ate = (item.ate || '').trim();
             const motivo = (item.motivo || item.keyword || '').trim();
             const explicacao = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '').trim();
-            let desc = '';
-            if (motivo && explicacao && motivo.toLowerCase() !== explicacao.toLowerCase()) {
-              desc = `${motivo} (${explicacao})`;
-            } else {
-              desc = explicacao || motivo || '';
-            }
+            const desc = explicacao || motivo || '';
             return {
               de,
               ate,
