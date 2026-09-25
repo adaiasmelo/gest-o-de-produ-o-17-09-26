@@ -1,0 +1,12 @@
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+  Access-Control-Allow-Origin: *
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/registerSW.js
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/manifest.webmanifest
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0

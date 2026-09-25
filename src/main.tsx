@@ -118,6 +118,23 @@ const updateSW = registerSW({
   },
   onRegistered(r) {
     console.log('PWA: Service Worker registrado com sucesso:', r);
+    if (r) {
+      // Checa periodicamente por nova versão do Service Worker a cada 15 segundos
+      setInterval(() => {
+        r.update().catch(err => console.warn('PWA: Verificação de SW:', err));
+      }, 15000);
+
+      // Checa imediatamente ao focar na janela ou voltar de segundo plano
+      window.addEventListener('focus', () => {
+        r.update().catch(() => {});
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          r.update().catch(() => {});
+        }
+      });
+    }
   },
   onRegisterError(error) {
     console.log('PWA: Erro ao registrar Service Worker:', error);

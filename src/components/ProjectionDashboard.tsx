@@ -40,6 +40,7 @@ interface ProjectionDashboardProps {
   onExitScreensaver?: () => void;
   isTvMode?: boolean;
   isStandaloneTv?: boolean;
+  canViewWeeklySummary?: boolean;
 }
 
 const ContinuousConfettiOverlay: React.FC = () => {
@@ -162,6 +163,7 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
   onExitScreensaver,
   isTvMode = false,
   isStandaloneTv = false,
+  canViewWeeklySummary = false,
 }) => {
   const effectiveTvMode = isTvMode || isStandaloneTv;
 
@@ -2787,6 +2789,7 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
         ribbonData={ribbonEntries}
         employees={employees}
         isReadOnly={isReadOnly}
+        canView={canViewWeeklySummary}
         onBlockedAction={onBlockedAction}
       />
 

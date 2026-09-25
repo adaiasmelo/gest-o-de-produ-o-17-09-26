@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { VitePWA } from 'vite-plugin-pwa';
 import tailwindcss from '@tailwindcss/vite';
@@ -8,9 +9,48 @@ import tailwindcss from '@tailwindcss/vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const buildTime = new Date().toISOString();
+const buildTimestamp = Date.now();
+const versionData = {
+  version: buildTimestamp,
+  buildTime: buildTime,
+  timestamp: buildTimestamp,
+  tag: `v${new Date().getFullYear()}.${String(new Date().getMonth() + 1).padStart(2, '0')}.${String(new Date().getDate()).padStart(2, '0')}-${buildTimestamp.toString().slice(-4)}`
+};
+
+function versionPlugin() {
+  return {
+    name: 'generate-version-file',
+    buildStart() {
+      try {
+        const publicDir = path.resolve(__dirname, 'public');
+        if (!fs.existsSync(publicDir)) {
+          fs.mkdirSync(publicDir, { recursive: true });
+        }
+        fs.writeFileSync(
+          path.resolve(publicDir, 'version.json'),
+          JSON.stringify(versionData, null, 2),
+          'utf-8'
+        );
+      } catch (e) {
+        console.warn('Could not write public/version.json', e);
+      }
+    },
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify(versionData, null, 2)
+      });
+    }
+  };
+}
+
 export default defineConfig({
   define: {
-    'process.env': {}
+    'process.env': {},
+    '__APP_BUILD_TIME__': JSON.stringify(buildTime),
+    '__APP_BUILD_TIMESTAMP__': JSON.stringify(buildTimestamp),
   },
   server: {
     port: 3000,
@@ -20,6 +60,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    versionPlugin(),
     react(),
     tailwindcss(),
     VitePWA({

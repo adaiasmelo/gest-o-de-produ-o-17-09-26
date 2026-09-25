@@ -9,7 +9,7 @@ import {
   UserPlus, Download, AlertCircle, FileSpreadsheet, Scale, FileText, Menu, Fingerprint, Smartphone, Bell, Volume2, Share, ExternalLink, Mail, Copy, Filter,
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
-  MoreVertical, ChevronLeft, Gauge
+  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -24,7 +24,8 @@ import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialDa
 import { getToken, onMessage } from 'firebase/messaging';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, OperatorPenalty, CompanyNotice } from './types';
+import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, UserActivityLog, OperatorPenalty, CompanyNotice } from './types';
+import { recordUserActivity, subscribeUserActivities, clearUserActivities, loadActivityLogsFromCache } from './services/activityService';
 import { DEFAULT_COMPANY_NOTICES } from './data/defaultNotices';
 import * as XLSX from 'xlsx';
 
@@ -78,6 +79,9 @@ import {
   isComputerDevice, 
   ScreensaverSettings 
 } from './utils/screensaverUtils';
+import { GranularPermissionsEditor } from './components/GranularPermissionsEditor';
+import { normalizeUserPermissions, DEFAULT_FULL_PERMISSIONS, createPresetPermissions } from './utils/userPermissions';
+import { SettingsPermissions } from './types';
 
 
 
@@ -99,6 +103,20 @@ import { RibbonMachineProductivity } from './components/RibbonMachineProductivit
 import PermissionOverlay from './components/PermissionOverlay';
 import InstallExperience from './components/InstallExperience';
 import UpdateModal from './components/UpdateModal';
+import { 
+  LOCAL_BUILD_TIME, 
+  fetchRemoteVersion, 
+  isNewerVersion, 
+  executeAppUpdate 
+} from './utils/updateManager';
+import {
+  loadProductionCache,
+  saveProductionCache,
+  mergeProductionDocChanges,
+  loadRibbonCache,
+  saveRibbonCache,
+  mergeRibbonDocChanges
+} from './utils/productionCache';
 import { EvaluationsTab } from './components/EvaluationsTab';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
@@ -207,7 +225,7 @@ const findManualMapKey = (normName: string): string | undefined => {
   });
 };
 
-const APP_BUILD_TIME = "2026-06-10T18:25:00Z";
+const APP_BUILD_TIME = LOCAL_BUILD_TIME;
 
 const JUMBO_MICRAS_MAP: Record<string, number> = {
   'AR9': 45,
@@ -839,6 +857,7 @@ export const App: React.FC = () => {
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
+  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(() => loadActivityLogsFromCache());
   const [isActiveUsersModalOpen, setIsActiveUsersModalOpen] = useState(false);
   const [systemName, setSystemName] = useState(() => localStorage.getItem('manupackaging_system_name') || 'CONTROLE DE PRODUÇÃO');
   const [loginSystemName, setLoginSystemName] = useState(() => localStorage.getItem('manupackaging_login_name') || 'CONTROLE DE PRODUÇÃO');
@@ -929,7 +948,7 @@ export const App: React.FC = () => {
   }, [isExtrusionMenuOpen, isRibbonMenuOpen]);
   const [extrusionSubTab, setExtrusionSubTab] = useState<'dashboard' | 'reports' | 'stock'>('reports');
   const [stockEntries, setStockEntries] = useState<StockEntry[]>([]);
-  const [ribbonEntries, setRibbonEntries] = useState<RibbonCuttingEntry[]>([]);
+  const [ribbonEntries, setRibbonEntries] = useState<RibbonCuttingEntry[]>(() => loadRibbonCache().entries);
   const [isGeneratingMock, setIsGeneratingMock] = useState(false);
 
   // Corte de Fita form state
@@ -1035,17 +1054,23 @@ export const App: React.FC = () => {
     stops: []
   });
   const [stackedGroupBy, setStackedGroupBy] = useState<'machine' | 'operator'>('machine');
+  const [productionSyncStatus, setProductionSyncStatus] = useState<{
+    lastSyncTime: string | null;
+    isLoadedFromCache: boolean;
+    isSyncing: boolean;
+  }>(() => {
+    const cached = loadProductionCache();
+    return {
+      lastSyncTime: cached.lastSyncTime,
+      isLoadedFromCache: cached.isLoadedFromCache,
+      isSyncing: false
+    };
+  });
+
   const [productionData, setProductionData] = useState<ProductionEntry[]>(() => {
     try {
-      const saved = localStorage.getItem('manupackaging_production');
-      const loaded: ProductionEntry[] = saved ? JSON.parse(saved) : [];
-      return loaded
-        .map(e => ({ ...e, shift: sanitizeShift(e.shift, e.machine) }))
-        .filter(entry => {
-          if (!entry || !entry.date) return false;
-          const year = parseInt(entry.date.split('-')[0], 10);
-          return !isNaN(year) && year >= 2026;
-        });
+      const cached = loadProductionCache();
+      return cached.entries;
     } catch (e) {
       return [];
     }
@@ -1273,6 +1298,7 @@ export const App: React.FC = () => {
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [updateNotes, setUpdateNotes] = useState<string>('');
+  const [updateVersionTag, setUpdateVersionTag] = useState<string>('');
   const sessionLoadedBuildTimeRef = useRef<string | null>(null);
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
   const [isQuickAllocModalOpen, setIsQuickAllocModalOpen] = useState(false);
@@ -1683,12 +1709,59 @@ export const App: React.FC = () => {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     const handleUpdateAvailable = () => {
-      console.log('App: Capturou evento de atualização');
+      console.log('App: Capturou evento de atualização PWA');
       setIsUpdateAvailable(true);
+      setUpdateDismissed(false);
     };
     window.addEventListener('pwa-update-available', handleUpdateAvailable);
 
-    const handleOnline = () => setIsOnline(true);
+    // Verificação proativa e contínua de novas versões publicadas no Cloudflare
+    const checkCloudflareUpdate = async () => {
+      try {
+        const remote = await fetchRemoteVersion();
+        if (remote && isNewerVersion(remote)) {
+          console.log('App: Nova compilação detectada no Cloudflare via /version.json!', remote);
+          setIsUpdateAvailable(true);
+          setUpdateDismissed(false);
+          if (remote.tag) {
+            setUpdateVersionTag(remote.tag);
+          }
+          if (remote.updateNotes) {
+            setUpdateNotes(remote.updateNotes);
+          }
+
+          // Disparar notificação nativa para alertar o usuário se o sistema estiver em segundo plano
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification('🚀 Nova Atualização do Sistema!', {
+                body: remote.updateNotes || 'Uma nova versão foi carregada no Cloudflare. O sistema está sendo atualizado.',
+                icon: systemLogo || 'https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png',
+                tag: 'system-update-cf'
+              });
+            } catch (err) {}
+          }
+        }
+      } catch (err) {}
+    };
+
+    // Checagem inicial após 2 segundos
+    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 2000);
+    // Intervalo de verificação a cada 15 segundos
+    const updateInterval = setInterval(checkCloudflareUpdate, 15000);
+
+    // Checagem imediata quando o usuário retorna à janela/aba ou desbloqueia o aparelho
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        checkCloudflareUpdate();
+      }
+    };
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      checkCloudflareUpdate();
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -1703,6 +1776,10 @@ export const App: React.FC = () => {
     clearBadge();
 
     return () => {
+      clearTimeout(initialCheckTimer);
+      clearInterval(updateInterval);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('pwa-update-available', handleUpdateAvailable);
@@ -1730,57 +1807,86 @@ export const App: React.FC = () => {
 
     const sessionStartTime = new Date().toISOString();
     let isInitialLoad = true;
+    setProductionSyncStatus(prev => ({ ...prev, isSyncing: true }));
+
     const unsubProduction = onSnapshot(collection(db, 'productionEntries'), (snap) => {
-      const docsFiltered: ProductionEntry[] = [];
-      
-      snap.docs.forEach(docRef => {
-        const raw = docRef.data() as ProductionEntry;
-        const cleaned = { ...raw, shift: sanitizeShift(raw.shift, raw.machine), id: docRef.id };
-        const upgraded = { ...cleaned, operator: upgradeName(cleaned.operator) };
-        
-        // Exclude and delete older entries from firebase if prior to 2026-01-01
-        if (upgraded.date) {
-          const year = parseInt(upgraded.date.split('-')[0], 10);
-          if (!isNaN(year) && year < 2026) {
-            deleteDoc(doc(db, 'productionEntries', docRef.id)).catch(err => {
-              console.error('Erro ao excluir apontamento antigo da nuvem:', err);
-            });
+      // 1. Manutenção em segundo plano de registros legados / higienização de nomes e turnos
+      snap.docChanges().forEach((change) => {
+        if (change.type === 'added' || change.type === 'modified') {
+          const raw = change.doc.data() as ProductionEntry;
+          const cleaned = { ...raw, shift: sanitizeShift(raw.shift, raw.machine), id: change.doc.id };
+          const upgraded = { ...cleaned, operator: upgradeName(cleaned.operator) };
+          
+          if (upgraded.date) {
+            const year = parseInt(upgraded.date.split('-')[0], 10);
+            if (!isNaN(year) && year < 2026) {
+              deleteDoc(doc(db, 'productionEntries', change.doc.id)).catch(err => {
+                console.error('Erro ao excluir apontamento antigo da nuvem:', err);
+              });
+              return;
+            }
+          } else {
+            deleteDoc(doc(db, 'productionEntries', change.doc.id)).catch(() => {});
             return;
           }
-        } else {
-          // Skip mapping or delete if invalid
-          deleteDoc(doc(db, 'productionEntries', docRef.id)).catch(() => {});
-          return;
-        }
 
-        if (upgraded.operator !== raw.operator || upgraded.shift !== raw.shift) {
-          // Asynchronously update Firestore in background
-          setDoc(doc(db, 'productionEntries', docRef.id), upgraded).catch(err => {
-            console.error('Erro ao migrar dados em productionEntries:', err);
-          });
+          if (upgraded.operator !== raw.operator || upgraded.shift !== raw.shift) {
+            setDoc(doc(db, 'productionEntries', change.doc.id), upgraded).catch(err => {
+              console.error('Erro ao migrar dados em productionEntries:', err);
+            });
+          }
         }
-        docsFiltered.push(upgraded);
       });
 
-      setProductionData(docsFiltered.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')));
-      if (docsFiltered.length > 0) {
-        localStorage.setItem('manupackaging_production', JSON.stringify(docsFiltered));
-      }
+      // 2. Sincronização Inteligente Incremental (Zero Latência e apenas diferenças aplicadas)
+      const allLiveDocIds = isInitialLoad ? new Set(snap.docs.map(d => d.id)) : undefined;
 
-      // Notify on new entries
+      setProductionData(prevEntries => {
+        const { updatedEntries, hasChanges } = mergeProductionDocChanges(
+          prevEntries,
+          snap.docChanges(),
+          {
+            sanitizeShift,
+            upgradeName,
+            isInitialSnapshot: isInitialLoad,
+            allLiveDocIds
+          }
+        );
+
+        if (hasChanges) {
+          const syncTimestamp = new Date().toISOString();
+          saveProductionCache(updatedEntries, syncTimestamp);
+          setProductionSyncStatus({
+            lastSyncTime: syncTimestamp,
+            isLoadedFromCache: false,
+            isSyncing: false
+          });
+          return updatedEntries;
+        }
+
+        // Se nenhuma alteração ocorreu entre o cache local e a nuvem, mantemos a referência exata
+        setProductionSyncStatus(prev => ({
+          ...prev,
+          lastSyncTime: prev.lastSyncTime || new Date().toISOString(),
+          isSyncing: false
+        }));
+        return prevEntries;
+      });
+
+      // 3. Notificações sonoras e visuais para novos lançamentos recebidos em tempo real
       snap.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const newEntry = change.doc.data() as ProductionEntry;
           const entryTime = newEntry.updatedAt || '';
           
-          // Only trigger if added/updated after sessionStartTime
+          // Apenas notifica se adicionado/atualizado após o início da sessão e não for rota TV
           if (entryTime >= sessionStartTime && !isExternalTvRoute()) {
             const id = Math.random().toString(36).substring(7);
             
-            // Play sound
-            audioRef.current.play().catch(e => console.log('Autoplay blocked or audio error:', e));
+            // Toca áudio de alerta
+            audioRef.current.play().catch(e => console.log('Autoplay bloqueado ou erro de áudio:', e));
 
-            // Add notification
+            // Adiciona notificação toast
             setNotifications(prev => [
               { 
                 id, 
@@ -1792,7 +1898,7 @@ export const App: React.FC = () => {
             ]);
             setUnreadCount(prev => prev + 1);
 
-            // Auto remove
+            // Remoção automática após 5 segundos
             setTimeout(() => {
               setNotifications(prev => prev.filter(n => n.id !== id));
             }, 5000);
@@ -1801,8 +1907,9 @@ export const App: React.FC = () => {
       });
       isInitialLoad = false;
     }, (err) => {
-      console.warn('Erro ao escutar productionEntries, carregando dados locais.', err);
+      console.warn('Erro ao escutar productionEntries, operando com cache local instantâneo.', err);
       try { handleFirestoreError(err, OperationType.LIST, 'productionEntries'); } catch (_) {}
+      setProductionSyncStatus(prev => ({ ...prev, isSyncing: false }));
       setIsInitializing(false);
     });
 
@@ -2099,13 +2206,16 @@ export const App: React.FC = () => {
     });
 
     const unsubRibbon = onSnapshot(collection(db, 'ribbon_cutting_entries'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as RibbonCuttingEntry;
-        return { ...raw, id: docRef.id };
+      setRibbonEntries(prev => {
+        const { updatedEntries, hasChanges } = mergeRibbonDocChanges(prev, snap.docChanges());
+        if (hasChanges) {
+          saveRibbonCache(updatedEntries);
+          return updatedEntries;
+        }
+        return prev;
       });
-      setRibbonEntries(data.sort((a, b) => b.date.localeCompare(a.date)));
     }, (err) => {
-      console.warn('Erro ao escutar ribbon_cutting_entries:', err);
+      console.warn('Erro ao escutar ribbon_cutting_entries, operando com cache local.', err);
       try { handleFirestoreError(err, OperationType.LIST, 'ribbon_cutting_entries'); } catch (_) {}
     });
 
@@ -2137,6 +2247,10 @@ export const App: React.FC = () => {
       setAccessLogs(data);
     }, (err) => {
       console.warn('Erro ao escutar access_logs:', err);
+    });
+
+    const unsubActivities = subscribeUserActivities((data) => {
+      setActivityLogs(data);
     });
 
     const unsubPenalties = onSnapshot(collection(db, 'operator_penalties'), (snap) => {
@@ -2187,6 +2301,7 @@ export const App: React.FC = () => {
       unsubVacations();
       unsubActiveSessions();
       unsubAccessLogs();
+      unsubActivities();
       unsubPenalties();
       unsubNotices();
     };
@@ -2717,12 +2832,164 @@ export const App: React.FC = () => {
 
       setSelectedCollaborator(null);
       addNotification(`Colaborador ${finalCollaboratorData.name} (#${finalCollaboratorData.registration}) salvo com sucesso em todo o sistema!`);
+      recordUserActivity({
+        user: loggedUser,
+        type: 'action',
+        screen: 'Gestão de Pessoas',
+        subScreen: 'Colaboradores',
+        action: prevCol ? 'Atualizou colaborador' : 'Cadastrou novo colaborador',
+        details: `${finalCollaboratorData.name} (#${finalCollaboratorData.registration}) - ${finalCollaboratorData.role}`
+      });
     } catch (err) {
       console.error('Erro ao salvar colaborador no banco de dados:', err);
       alert('Erro ao salvar colaborador no banco de dados. Verifique a conexão.');
       handleFirestoreError(err, OperationType.WRITE, 'collaborators');
     }
   };
+
+  const getCurrentScreenInfo = () => {
+    // Se modais específicos estiverem abertos, eles representam a tela de foco do usuário
+    if (isCast1CalculatorOpen) {
+      return { screen: 'Calculadora Cast 1', subScreen: 'Cálculo Técnico' };
+    }
+    if (isWeeklySummaryOpen) {
+      return { screen: 'Extrusão', subScreen: 'Resumo Semanal de Produção' };
+    }
+    if (isActiveUsersModalOpen) {
+      return { screen: 'Administração', subScreen: 'Usuários Online & Histórico' };
+    }
+    if (isModalOpen) {
+      return { screen: 'Extrusão', subScreen: 'Novo Lançamento' };
+    }
+    if (isHistoryModalOpen) {
+      return { screen: 'Extrusão', subScreen: 'Histórico de Lançamentos' };
+    }
+    if (isDowntimeAnalyticsModalOpen) {
+      return { screen: 'Extrusão', subScreen: 'Análise de Paradas' };
+    }
+    if (isDowntimeReasonsModalOpen) {
+      return { screen: 'Extrusão', subScreen: 'Motivos de Parada' };
+    }
+    if (isRibbonGoalsModalOpen) {
+      return { screen: 'Corte de Fita', subScreen: 'Configuração de Metas' };
+    }
+    if (isCollaboratorModalOpen) {
+      return { screen: 'Gestão de Pessoas', subScreen: 'Colaboradores' };
+    }
+    if (isEmployeeModalOpen) {
+      return { screen: 'Gestão de Pessoas', subScreen: 'Quadro de Funcionários' };
+    }
+    if (isTrainingModalOpen) {
+      return { screen: 'Gestão de Pessoas', subScreen: 'Treinamentos' };
+    }
+    if (isDatabaseModalOpen) {
+      return { screen: 'Administração', subScreen: 'Banco de Dados & Backup' };
+    }
+    if (isSettingsModalOpen) {
+      return { screen: 'Configurações', subScreen: 'Ajustes Gerais' };
+    }
+    if (isOperatorModalOpen) {
+      return { screen: 'Configurações', subScreen: 'Operadores' };
+    }
+    if (isRoleModalOpen) {
+      return { screen: 'Configurações', subScreen: 'Cargos e Salários' };
+    }
+    if (isShiftModalOpen) {
+      return { screen: 'Configurações', subScreen: 'Turnos' };
+    }
+
+    let screen = 'Painel Inicial';
+    let subScreen = '';
+
+    switch (activeTab) {
+      case 'home':
+        screen = 'Painel Inicial';
+        subScreen = 'Visão Geral';
+        break;
+      case 'extrusion':
+        screen = 'Extrusão';
+        if (extrusionSubTab === 'reports') subScreen = 'Lançamentos & Registros';
+        else if (extrusionSubTab === 'dashboard') {
+          if (dashboardSubTab === 'summary') subScreen = 'Dashboard - Resumo';
+          else if (dashboardSubTab === 'charts') subScreen = 'Dashboard - Gráficos';
+          else if (dashboardSubTab === 'comparison') subScreen = 'Dashboard - Comparativo';
+          else subScreen = 'Dashboard BI';
+        } else if (extrusionSubTab === 'stock') {
+          subScreen = 'Estoque Diário';
+        }
+        break;
+      case 'ribbon':
+        screen = 'Corte de Fita';
+        if (ribbonSubTab === 'dashboard') subScreen = 'Dashboard BI';
+        else if (ribbonSubTab === 'reports') subScreen = 'Lançamentos';
+        else if (ribbonSubTab === 'productivity') subScreen = 'Produtividade por Máquina';
+        break;
+      case 'personnel':
+        screen = 'Gestão de Pessoas';
+        if (personnelSubView === 'board') subScreen = 'Quadro Geral';
+        else if (personnelSubView === 'vacations') subScreen = 'Programação de Férias';
+        else if (personnelSubView === 'training') subScreen = 'Treinamentos';
+        else if (personnelSubView === 'lunch') subScreen = 'Escala de Almoço';
+        else if (personnelSubView === 'overtime') subScreen = 'Solicitação de Horas Extras';
+        else if (personnelSubView === 'evaluations') subScreen = 'Avaliação de Desempenho';
+        break;
+      case 'evaluations':
+        screen = 'Avaliação de Desempenho';
+        subScreen = 'Formulários & Notas';
+        break;
+      case 'maintenance':
+        screen = 'Manutenção';
+        if (maintenanceSubTab === 'requests') subScreen = 'Ordens de Serviço';
+        else if (maintenanceSubTab === 'causes') subScreen = 'Causas & Paradas';
+        break;
+      case 'projection':
+        screen = 'Projeção TV';
+        subScreen = 'Painel Contínuo';
+        break;
+      default:
+        screen = activeTab;
+    }
+
+    return { screen, subScreen };
+  };
+
+  // Monitoramento e Histórico Automático de Navegação de Telas
+  useEffect(() => {
+    if (!loggedUser) return;
+    const info = getCurrentScreenInfo();
+    recordUserActivity({
+      user: loggedUser,
+      type: 'screen_view',
+      screen: info.screen,
+      subScreen: info.subScreen,
+      action: 'Acessou tela',
+      details: info.subScreen ? `Navegou para ${info.screen} > ${info.subScreen}` : `Navegou para ${info.screen}`
+    });
+  }, [
+    loggedUser,
+    activeTab,
+    extrusionSubTab,
+    dashboardSubTab,
+    ribbonSubTab,
+    personnelSubView,
+    maintenanceSubTab,
+    isCast1CalculatorOpen,
+    isWeeklySummaryOpen,
+    isActiveUsersModalOpen,
+    isModalOpen,
+    isHistoryModalOpen,
+    isDowntimeAnalyticsModalOpen,
+    isDowntimeReasonsModalOpen,
+    isRibbonGoalsModalOpen,
+    isCollaboratorModalOpen,
+    isEmployeeModalOpen,
+    isTrainingModalOpen,
+    isDatabaseModalOpen,
+    isSettingsModalOpen,
+    isOperatorModalOpen,
+    isRoleModalOpen,
+    isShiftModalOpen
+  ]);
 
   // User Presence & Heartbeat em tempo real
   useEffect(() => {
@@ -2738,6 +3005,7 @@ export const App: React.FC = () => {
 
     const updatePresence = async () => {
       const now = new Date().toISOString();
+      const currentInfo = getCurrentScreenInfo();
       try {
         await setDoc(doc(db, 'active_sessions', sessionId), {
           id: sessionId,
@@ -2746,6 +3014,8 @@ export const App: React.FC = () => {
           role: loggedUser.role,
           lastSeen: now,
           loginTime: loginTime,
+          currentScreen: currentInfo.screen,
+          currentSubScreen: currentInfo.subScreen || '',
           device: typeof window !== 'undefined' && window.innerWidth < 768 ? 'Mobile' : 'Desktop'
         }, { merge: true });
       } catch (e) {
@@ -2765,7 +3035,31 @@ export const App: React.FC = () => {
       clearInterval(interval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [loggedUser]);
+  }, [
+    loggedUser,
+    activeTab,
+    extrusionSubTab,
+    dashboardSubTab,
+    ribbonSubTab,
+    personnelSubView,
+    maintenanceSubTab,
+    isCast1CalculatorOpen,
+    isWeeklySummaryOpen,
+    isActiveUsersModalOpen,
+    isModalOpen,
+    isHistoryModalOpen,
+    isDowntimeAnalyticsModalOpen,
+    isDowntimeReasonsModalOpen,
+    isRibbonGoalsModalOpen,
+    isCollaboratorModalOpen,
+    isEmployeeModalOpen,
+    isTrainingModalOpen,
+    isDatabaseModalOpen,
+    isSettingsModalOpen,
+    isOperatorModalOpen,
+    isRoleModalOpen,
+    isShiftModalOpen
+  ]);
 
   const recordAccessLog = async (user: { name: string; registration: string; role: string }, action: 'login' | 'logout' | 'disconnect') => {
     if (!user || !user.name) return;
@@ -2781,6 +3075,15 @@ export const App: React.FC = () => {
         action,
         timestamp: now,
         device
+      });
+      // Registra também nas atividades unificadas
+      recordUserActivity({
+        user: { name: user.name, registration: user.registration, role: user.role },
+        type: 'auth',
+        screen: 'Sistema',
+        subScreen: 'Autenticação',
+        action: action === 'login' ? 'Entrada no Sistema' : action === 'logout' ? 'Saída do Sistema' : 'Desconexão de Sessão',
+        details: `${action === 'login' ? 'Login efetuado' : action === 'logout' ? 'Logout efetuado' : 'Sessão desconectada'} via ${device}`
       });
     } catch (e) {
       console.error('Erro ao registrar histórico de acesso:', e);
@@ -2799,6 +3102,18 @@ export const App: React.FC = () => {
     } catch (e) {
       console.error('Erro ao limpar histórico:', e);
       alert('Erro ao limpar histórico de acessos.');
+    }
+  };
+
+  const handleClearActivities = async () => {
+    if (!confirm('Tem certeza que deseja limpar todo o histórico de telas e ações dos colaboradores?')) return;
+    try {
+      await clearUserActivities(activityLogs);
+      setActivityLogs([]);
+      addNotification('Histórico de telas e ações limpo com sucesso.');
+    } catch (e) {
+      console.error('Erro ao limpar histórico de atividades:', e);
+      alert('Erro ao limpar histórico de telas e ações.');
     }
   };
 
@@ -3553,14 +3868,19 @@ export const App: React.FC = () => {
   }, [stockEntries, selectedStockDate, hasAutoSelectedStock]);
 
 
+  const userPerms = useMemo(() => {
+    return normalizeUserPermissions(loggedUser?.permissions, loggedUser?.role, loggedUser?.registration);
+  }, [loggedUser]);
+
   const isSupervisor = (loggedUser?.role || '').toLowerCase().includes('supervisor');
+  const canViewWeeklySummary = isAdmin || isSupervisor;
   const canViewActiveUsers = isAdmin || isSupervisor;
-  const canViewDashboard = isAdmin || loggedUser?.permissions?.canViewDashboard || isReadOnlyAccount;
-  const canViewReports = isAdmin || loggedUser?.permissions?.canViewReports || isReadOnlyAccount;
-  const canViewPersonnel = isAdmin || loggedUser?.permissions?.canViewPersonnel || isReadOnlyAccount;
-  const canManageSettings = !isReadOnlyAccount;
-  const canEditProduction = !isReadOnlyAccount;
-  const canManagePersonnel = !isReadOnlyAccount;
+  const canViewDashboard = isAdmin || userPerms.extrusion.summary || userPerms.ribbon.summary;
+  const canViewReports = isAdmin || userPerms.extrusion.reports || userPerms.ribbon.reports;
+  const canViewPersonnel = isAdmin || userPerms.personnel.enabled;
+  const canManageSettings = isAdmin || (userPerms.settings.enabled && !isReadOnlyAccount);
+  const canEditProduction = isAdmin || ((userPerms.extrusion.newEntry || userPerms.ribbon.newEntry) && !isReadOnlyAccount);
+  const canManagePersonnel = isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount);
 
   // Helper de normalização e compatibilidade de máquinas do corte de fita (Ghezzi, Lintech, Wultec)
   const matchRibbonMachine = (entryMachine: string | undefined, targetKey: string) => {
@@ -4423,7 +4743,15 @@ export const App: React.FC = () => {
       }
 
       if (allStopsList.length > 0) {
-        const formattedStops = allStopsList.map(stop => {
+        const seenStopKeys = new Set<string>();
+        const uniqueStops = allStopsList.filter(stop => {
+          const key = `${(stop.de || '').trim()}_${(stop.ate || '').trim()}_${(stop.motivo || '').toLowerCase().trim()}_${stop.min}`;
+          if (seenStopKeys.has(key)) return false;
+          seenStopKeys.add(key);
+          return true;
+        });
+
+        const formattedStops = uniqueStops.map(stop => {
           const timeRange = (stop.de && stop.ate) ? `${stop.de} às ${stop.ate}` : '';
           const minText = stop.min > 0 ? ` (${stop.min} min)` : '';
           const motivoText = stop.motivo ? `: ${stop.motivo}` : '';
@@ -4889,6 +5217,14 @@ Atenciosamente,
 
     try {
       await setDoc(doc(db, 'ribbon_cutting_entries', entryId), cleanUndefined(payload));
+      recordUserActivity({
+        user: loggedUser,
+        type: 'action',
+        screen: 'Corte de Fita',
+        subScreen: 'Lançamentos',
+        action: editingRibbonId ? 'Atualizou lançamento de corte de fita' : 'Novo lançamento de corte de fita',
+        details: `${payload.machine} - Op: ${payload.operator} (${payload.producedM2} m²)`
+      });
       alert(editingRibbonId ? 'Lançamento de Corte de Fita atualizado!' : 'Lançamento de Corte de Fita cadastrado!');
       setRibbonOperator('');
       setRibbonShift('');
@@ -5024,6 +5360,14 @@ Atenciosamente,
       async () => {
         try {
           await deleteDoc(doc(db, 'ribbon_cutting_entries', id));
+          recordUserActivity({
+            user: loggedUser,
+            type: 'action',
+            screen: 'Corte de Fita',
+            subScreen: 'Lançamentos',
+            action: 'Excluiu lançamento de corte de fita',
+            details: `ID: ${id}`
+          });
           setSelectedRibbonIds(prev => prev.filter(item => item !== id));
         } catch (err) {
           console.error('Erro ao excluir no Firestore:', err);
@@ -5427,7 +5771,15 @@ Atenciosamente,
       }
 
       if (allStopsList.length > 0) {
-        const formattedStops = allStopsList.map(stop => {
+        const seenStopKeys = new Set<string>();
+        const uniqueStops = allStopsList.filter(stop => {
+          const key = `${(stop.de || '').trim()}_${(stop.ate || '').trim()}_${(stop.motivo || '').toLowerCase().trim()}_${stop.min}`;
+          if (seenStopKeys.has(key)) return false;
+          seenStopKeys.add(key);
+          return true;
+        });
+
+        const formattedStops = uniqueStops.map(stop => {
           const timeRange = (stop.de && stop.ate) ? `${stop.de} às ${stop.ate}` : '';
           const minText = stop.min > 0 ? ` (${stop.min} min)` : '';
           const motivoText = stop.motivo ? `: ${stop.motivo}` : '';
@@ -5474,23 +5826,30 @@ Atenciosamente,
         stopsTotal = 720;
       }
 
-      const ecoAJusts = entries
+      const ecoAJusts = Array.from(new Set(entries
         .filter(e => (e.ecoA || 0) > 0 && e.ecoAMotivo && e.ecoAMotivo.trim())
-        .map(e => e.ecoAMotivo!.trim());
+        .map(e => e.ecoAMotivo!.trim())));
       
-      const ecoBJusts: string[] = [];
+      const ecoBJustsSet = new Set<string>();
       entries.forEach(e => {
         if ((e.ecoBP || 0) > 0 && e.ecoBPMotivo && e.ecoBPMotivo.trim()) {
-          ecoBJusts.push(e.ecoBPMotivo.trim());
+          e.ecoBPMotivo.split(/ • |;|,/).forEach(m => {
+            const clean = m.trim();
+            if (clean) ecoBJustsSet.add(clean);
+          });
         }
         if ((e.ecoBM || 0) > 0 && e.ecoBMMotivo && e.ecoBMMotivo.trim()) {
-          ecoBJusts.push(e.ecoBMMotivo.trim());
+          e.ecoBMMotivo.split(/ • |;|,/).forEach(m => {
+            const clean = m.trim();
+            if (clean) ecoBJustsSet.add(clean);
+          });
         }
       });
+      const ecoBJusts = Array.from(ecoBJustsSet);
 
-      const borraJusts = entries
+      const borraJusts = Array.from(new Set(entries
         .filter(e => (e.borraTotal || 0) > 0 && e.borraTotalMotivo && e.borraTotalMotivo.trim())
-        .map(e => e.borraTotalMotivo!.trim());
+        .map(e => e.borraTotalMotivo!.trim())));
 
       const ecoAJustText = ecoAJusts.length > 0 ? ` - ${ecoAJusts.join('; ')}` : '';
       const ecoBJustText = ecoBJusts.length > 0 ? ` - ${ecoBJusts.join('; ')}` : '';
@@ -8179,6 +8538,7 @@ Atenciosamente,
   const handleSaveTraining = async (data: Partial<TrainingRecord>) => {
     try {
       const id = data.id || doc(collection(db, 'training_records')).id;
+      const isNew = !data.id;
       const record = {
         ...data,
         id,
@@ -8186,6 +8546,16 @@ Atenciosamente,
         updatedAt: new Date().toISOString()
       };
       await setDoc(doc(db, 'training_records', id), record, { merge: true });
+      if (loggedUser) {
+        recordUserActivity({
+          user: loggedUser,
+          type: 'action',
+          screen: 'Treinamento / DDP',
+          subScreen: 'Fichas de Treinamento',
+          action: isNew ? 'Criou nova ficha de treinamento / DDP' : 'Atualizou ficha de treinamento / DDP',
+          details: `${record.training || 'DDP'} - Instrutor: ${record.instructor || 'N/A'}`
+        });
+      }
       await exportTrainingToPDF(record as TrainingRecord);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'training_records');
@@ -8199,6 +8569,16 @@ Atenciosamente,
     }
     try {
       await deleteDoc(doc(db, 'training_records', id));
+      if (loggedUser) {
+        recordUserActivity({
+          user: loggedUser,
+          type: 'action',
+          screen: 'Treinamento / DDP',
+          subScreen: 'Fichas de Treinamento',
+          action: 'Excluiu ficha de treinamento / DDP',
+          details: `ID: ${id}`
+        });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `training_records/${id}`);
     }
@@ -10740,91 +11120,100 @@ Atenciosamente,
             <button onClick={() => setActiveTab('home')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'home' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><HomeIcon className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Início</span></button>
             
             {/* Aba Extrusão */}
-            <div className={`flex-1 shrink-0 min-w-max flex items-center rounded-xl md:rounded-[1.4rem] transition-all select-none ${activeTab === 'extrusion' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>
-              <button 
-                id="tab-extrusao"
-                type="button"
-                onClick={() => {
-                  setActiveTab('extrusion');
-                  setExtrusionSubTab('dashboard');
-                  setDashboardSubTab('summary');
-                }} 
-                className="flex items-center justify-center gap-1 md:gap-1.5 pl-3 sm:pl-4 pr-1 py-2 sm:py-2.5 md:pl-5 md:pr-2 md:py-3.5 text-[10px] md:text-[11px] font-black uppercase cursor-pointer"
-              >
-                <Factory className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> 
-                <span className="whitespace-nowrap">Extrusão</span>
-              </button>
-              <button
-                id="btn-menu-extrusao"
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab('extrusion');
-                  if (isExtrusionMenuOpen) {
-                    setIsExtrusionMenuOpen(false);
-                  } else {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const menuWidth = 240;
-                    const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - menuWidth - 10));
-                    const top = rect.bottom + 8;
-                    setExtrusionMenuPos({ top, left });
-                    setIsExtrusionMenuOpen(true);
-                    setIsRibbonMenuOpen(false);
-                  }
-                }}
-                className="p-1.5 sm:p-2 mr-1 hover:bg-slate-100 rounded-lg cursor-pointer inline-flex items-center justify-center transition-colors text-slate-400 hover:text-blue-600 active:scale-90"
-                title="Menu Extrusão"
-              >
-                <Menu className="w-3.5 h-3.5 md:w-4 md:h-4" />
-              </button>
-            </div>
+            {(isAdmin || userPerms.extrusion.enabled) && (
+              <div className={`flex-1 shrink-0 min-w-max flex items-center rounded-xl md:rounded-[1.4rem] transition-all select-none ${activeTab === 'extrusion' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>
+                <button 
+                  id="tab-extrusao"
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('extrusion');
+                    setExtrusionSubTab('dashboard');
+                    setDashboardSubTab('summary');
+                  }} 
+                  className="flex items-center justify-center gap-1 md:gap-1.5 pl-3 sm:pl-4 pr-1 py-2 sm:py-2.5 md:pl-5 md:pr-2 md:py-3.5 text-[10px] md:text-[11px] font-black uppercase cursor-pointer"
+                >
+                  <Factory className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> 
+                  <span className="whitespace-nowrap">Extrusão</span>
+                </button>
+                <button
+                  id="btn-menu-extrusao"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTab('extrusion');
+                    if (isExtrusionMenuOpen) {
+                      setIsExtrusionMenuOpen(false);
+                    } else {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const menuWidth = 240;
+                      const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - menuWidth - 10));
+                      const top = rect.bottom + 8;
+                      setExtrusionMenuPos({ top, left });
+                      setIsExtrusionMenuOpen(true);
+                      setIsRibbonMenuOpen(false);
+                    }
+                  }}
+                  className="p-1.5 sm:p-2 mr-1 hover:bg-slate-100 rounded-lg cursor-pointer inline-flex items-center justify-center transition-colors text-slate-400 hover:text-blue-600 active:scale-90"
+                  title="Menu Extrusão"
+                >
+                  <Menu className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                </button>
+              </div>
+            )}
             
             {/* Aba Corte de Fita */}
-            <div className={`flex-1 shrink-0 min-w-max flex items-center rounded-xl md:rounded-[1.4rem] transition-all select-none ${activeTab === 'ribbon' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>
-              <button 
-                id="tab-corte"
-                type="button"
-                onClick={() => {
-                  setActiveTab('ribbon');
-                  setRibbonSubTab('dashboard');
-                  setRibbonDashboardSubTab('summary');
-                }} 
-                className="flex items-center justify-center gap-1 md:gap-1.5 pl-3 sm:pl-4 pr-1 py-2 sm:py-2.5 md:pl-5 md:pr-2 md:py-3.5 text-[10px] md:text-[11px] font-black uppercase cursor-pointer"
-              >
-                <BarChart3 className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> 
-                <span className="whitespace-nowrap">Corte de Fita</span>
-              </button>
-              <button
-                id="btn-menu-corte"
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab('ribbon');
-                  if (isRibbonMenuOpen) {
-                    setIsRibbonMenuOpen(false);
-                  } else {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const menuWidth = 240;
-                    const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - menuWidth - 10));
-                    const top = rect.bottom + 8;
-                    setRibbonMenuPos({ top, left });
-                    setIsRibbonMenuOpen(true);
-                    setIsExtrusionMenuOpen(false);
-                  }
-                }}
-                className="p-1.5 sm:p-2 mr-1 hover:bg-slate-100 rounded-lg cursor-pointer inline-flex items-center justify-center transition-colors text-slate-400 hover:text-blue-600 active:scale-90"
-                title="Menu Corte de Fita"
-              >
-                <Menu className="w-3.5 h-3.5 md:w-4 md:h-4" />
-              </button>
-            </div>
+            {(isAdmin || userPerms.ribbon.enabled) && (
+              <div className={`flex-1 shrink-0 min-w-max flex items-center rounded-xl md:rounded-[1.4rem] transition-all select-none ${activeTab === 'ribbon' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>
+                <button 
+                  id="tab-corte"
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('ribbon');
+                    setRibbonSubTab('dashboard');
+                    setRibbonDashboardSubTab('summary');
+                  }} 
+                  className="flex items-center justify-center gap-1 md:gap-1.5 pl-3 sm:pl-4 pr-1 py-2 sm:py-2.5 md:pl-5 md:pr-2 md:py-3.5 text-[10px] md:text-[11px] font-black uppercase cursor-pointer"
+                >
+                  <BarChart3 className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> 
+                  <span className="whitespace-nowrap">Corte de Fita</span>
+                </button>
+                <button
+                  id="btn-menu-corte"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTab('ribbon');
+                    if (isRibbonMenuOpen) {
+                      setIsRibbonMenuOpen(false);
+                    } else {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const menuWidth = 240;
+                      const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - menuWidth - 10));
+                      const top = rect.bottom + 8;
+                      setRibbonMenuPos({ top, left });
+                      setIsRibbonMenuOpen(true);
+                      setIsExtrusionMenuOpen(false);
+                    }
+                  }}
+                  className="p-1.5 sm:p-2 mr-1 hover:bg-slate-100 rounded-lg cursor-pointer inline-flex items-center justify-center transition-colors text-slate-400 hover:text-blue-600 active:scale-90"
+                  title="Menu Corte de Fita"
+                >
+                  <Menu className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                </button>
+              </div>
+            )}
             
-            {canViewPersonnel && (
+            {(isAdmin || userPerms.personnel.enabled) && (
               <button onClick={() => { setActiveTab('personnel'); setPersonnelSubView('board'); }} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'personnel' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Users className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Pessoal</span></button>
             )}
 
-            <button onClick={() => setActiveTab('maintenance')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'maintenance' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Wrench className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Manutenção</span></button>
-            <button id="tab-projecao" onClick={() => { setActiveTab('projection'); setIsTvProjectionActive(false); }} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'projection' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Tv className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Projeção</span></button>
+            {(isAdmin || userPerms.maintenance.enabled) && (
+              <button onClick={() => setActiveTab('maintenance')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'maintenance' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Wrench className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Manutenção</span></button>
+            )}
+
+            {(isAdmin || userPerms.projection.enabled) && (
+              <button id="tab-projecao" onClick={() => { setActiveTab('projection'); setIsTvProjectionActive(false); }} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'projection' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Tv className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Projeção</span></button>
+            )}
           </div>
         </div>
 
@@ -10873,85 +11262,98 @@ Atenciosamente,
                       <span>Indicadores</span>
                     </div>
                     <div className="pl-3 space-y-0.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('extrusion');
-                          setExtrusionSubTab('dashboard');
-                          setDashboardSubTab('summary');
-                          setIsExtrusionMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'summary' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                      >
-                        <span>- Visão Geral</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('extrusion');
-                          setExtrusionSubTab('dashboard');
-                          setDashboardSubTab('charts');
-                          setIsExtrusionMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'charts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                      >
-                        <span>- Gráficos</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('extrusion');
-                          setExtrusionSubTab('dashboard');
-                          setDashboardSubTab('comparison');
-                          setIsExtrusionMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'comparison' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                      >
-                        <span>- Comparativos BI</span>
-                      </button>
+                      {(isAdmin || userPerms.extrusion.summary) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('extrusion');
+                            setExtrusionSubTab('dashboard');
+                            setDashboardSubTab('summary');
+                            setIsExtrusionMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'summary' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                        >
+                          <span>- Visão Geral</span>
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.extrusion.charts) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('extrusion');
+                            setExtrusionSubTab('dashboard');
+                            setDashboardSubTab('charts');
+                            setIsExtrusionMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'charts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                        >
+                          <span>- Gráficos</span>
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.extrusion.comparison) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('extrusion');
+                            setExtrusionSubTab('dashboard');
+                            setDashboardSubTab('comparison');
+                            setIsExtrusionMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'comparison' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                        >
+                          <span>- Comparativos BI</span>
+                        </button>
+                      )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('extrusion');
-                        setExtrusionSubTab('reports');
-                        setIsExtrusionMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'reports' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                    >
-                      <FileDown className="w-4 h-4 shrink-0 text-slate-400" />
-                      <span>Relatórios</span>
-                    </button>
+                    {(isAdmin || userPerms.extrusion.reports) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('extrusion');
+                          setExtrusionSubTab('reports');
+                          setIsExtrusionMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'reports' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                      >
+                        <FileDown className="w-4 h-4 shrink-0 text-slate-400" />
+                        <span>Relatórios</span>
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('extrusion');
-                        setExtrusionSubTab('stock');
-                        setIsExtrusionMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'stock' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                    >
-                      <FileSpreadsheet className="w-4 h-4 shrink-0 text-slate-400" />
-                      <span>Estoque</span>
-                    </button>
+                    {(isAdmin || userPerms.extrusion.stock) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('extrusion');
+                          setExtrusionSubTab('stock');
+                          setIsExtrusionMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'extrusion' && extrusionSubTab === 'stock' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                      >
+                        <FileSpreadsheet className="w-4 h-4 shrink-0 text-slate-400" />
+                        <span>Estoque</span>
+                      </button>
+                    )}
 
-                    <div className="border-t border-slate-100 my-1.5" />
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('extrusion');
-                        setEditingEntry(null);
-                        setIsModalOpen(true);
-                        setIsExtrusionMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4 shrink-0 text-blue-600" />
-                      <span>Novo Lançamento</span>
-                    </button>
+                    {(isAdmin || (userPerms.extrusion.newEntry && !isReadOnlyAccount)) && (
+                      <>
+                        <div className="border-t border-slate-100 my-1.5" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('extrusion');
+                            setEditingEntry(null);
+                            setIsModalOpen(true);
+                            setIsExtrusionMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4 shrink-0 text-blue-600" />
+                          <span>Novo Lançamento</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </motion.div>
               </div>
@@ -10997,96 +11399,133 @@ Atenciosamente,
                       <span>Indicadores</span>
                     </div>
                     <div className="pl-3 space-y-0.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('ribbon');
-                          setRibbonSubTab('dashboard');
-                          setRibbonDashboardSubTab('summary');
-                          setIsRibbonMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'summary' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                      >
-                        <span>- Visão Geral</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('ribbon');
-                          setRibbonSubTab('dashboard');
-                          setRibbonDashboardSubTab('charts');
-                          setIsRibbonMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'charts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                      >
-                        <span>- Gráficos</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('ribbon');
-                          setRibbonSubTab('dashboard');
-                          setRibbonDashboardSubTab('comparison');
-                          setIsRibbonMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'comparison' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                      >
-                        <span>- Comparativos BI</span>
-                      </button>
+                      {(isAdmin || userPerms.ribbon.summary) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('ribbon');
+                            setRibbonSubTab('dashboard');
+                            setRibbonDashboardSubTab('summary');
+                            setIsRibbonMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'summary' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                        >
+                          <span>- Visão Geral</span>
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.ribbon.charts) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('ribbon');
+                            setRibbonSubTab('dashboard');
+                            setRibbonDashboardSubTab('charts');
+                            setIsRibbonMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'charts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                        >
+                          <span>- Gráficos</span>
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.ribbon.comparison) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('ribbon');
+                            setRibbonSubTab('dashboard');
+                            setRibbonDashboardSubTab('comparison');
+                            setIsRibbonMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'comparison' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                        >
+                          <span>- Comparativos BI</span>
+                        </button>
+                      )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('ribbon');
-                        setRibbonSubTab('reports');
-                        setIsRibbonMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'reports' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                    >
-                      <FileDown className="w-4 h-4 shrink-0 text-slate-400" />
-                      <span>Relatório Lançamentos</span>
-                    </button>
+                    {(isAdmin || userPerms.ribbon.reports) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('ribbon');
+                          setRibbonSubTab('reports');
+                          setIsRibbonMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'reports' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                      >
+                        <FileDown className="w-4 h-4 shrink-0 text-slate-400" />
+                        <span>Relatório Lançamentos</span>
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('ribbon');
-                        setRibbonSubTab('productivity');
-                        setIsRibbonMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'productivity' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
-                    >
-                      <Gauge className="w-4 h-4 shrink-0 text-blue-600" />
-                      <span>Produtividade de Máquina</span>
-                    </button>
+                    {(isAdmin || userPerms.ribbon.productivity) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('ribbon');
+                          setRibbonSubTab('productivity');
+                          setIsRibbonMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'ribbon' && ribbonSubTab === 'productivity' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'} cursor-pointer`}
+                      >
+                        <Gauge className="w-4 h-4 shrink-0 text-blue-600" />
+                        <span>Produtividade de Máquina</span>
+                      </button>
+                    )}
 
-                    <div className="border-t border-slate-100 my-1.5" />
+                    {(isAdmin || (userPerms.ribbon.newEntry && !isReadOnlyAccount)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('ribbon');
+                          if (editingRibbonId) {
+                            setEditingRibbonId(null);
+                            setRibbonOperator('');
+                            setRibbonShift('');
+                            setRibbonProducedM2('');
+                            setRibbonRejectedM2('');
+                            setRibbonWasteWeight('');
+                            setRibbonJumboM2('');
+                            setRibbonJumboType('');
+                          }
+                          setShowRibbonForm(true);
+                          setIsRibbonMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4 shrink-0 text-blue-600" />
+                        <span>Novo Lançamento Fita</span>
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('ribbon');
-                        setIsRibbonGoalsModalOpen(true);
-                        setIsRibbonMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
-                    >
-                      <Target className="w-4 h-4 shrink-0 text-blue-600" />
-                      <span>Definir Metas</span>
-                    </button>
+                    {(isAdmin || (userPerms.settings.goals && !isReadOnlyAccount)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('ribbon');
+                          setIsRibbonGoalsModalOpen(true);
+                          setIsRibbonMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 cursor-pointer"
+                      >
+                        <Target className="w-4 h-4 shrink-0 text-indigo-600" />
+                        <span>Definir Metas</span>
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        exportRibbonToExcel();
-                        setIsRibbonMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 cursor-pointer mt-1"
-                    >
-                      <Download className="w-4 h-4 shrink-0 text-emerald-600" />
-                      <span>Exportar Dados (Excel)</span>
-                    </button>
+                    {(isAdmin || userPerms.ribbon.reports) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          exportRibbonToExcel();
+                          setIsRibbonMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 cursor-pointer mt-1"
+                      >
+                        <Download className="w-4 h-4 shrink-0 text-emerald-600" />
+                        <span>Exportar Dados (Excel)</span>
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               </div>
@@ -11107,132 +11546,148 @@ Atenciosamente,
 
 
 
-             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-                <button 
-                  onClick={() => setIsCollaboratorModalOpen(true)}
-                  className="bg-blue-600 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-blue-100 active:scale-95 transition-all group cursor-pointer"
-                >
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><UserPlus className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Cadastrar Colaborador</span>
-                </button>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+                {(isAdmin || (userPerms.personnel.enabled && userPerms.personnel.manage && !isReadOnlyAccount)) && (
+                  <button 
+                    onClick={() => setIsCollaboratorModalOpen(true)}
+                    className="bg-blue-600 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-blue-100 active:scale-95 transition-all group cursor-pointer"
+                  >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><UserPlus className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Cadastrar Colaborador</span>
+                  </button>
+                )}
 
-                <button 
-                  onClick={() => { setActiveTab('personnel'); setPersonnelSubView('overtime'); }}
-                  className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer"
-                  title="Abrir Solicitação de Hora Extra (DOC 076)"
-                >
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-amber-50 text-amber-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Clock className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-amber-600" /></div>
-                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Solicitação de Hora Extra</span>
-                </button>
+                {(isAdmin || (userPerms.personnel.enabled && userPerms.personnel.overtime)) && (
+                  <button 
+                    onClick={() => { setActiveTab('personnel'); setPersonnelSubView('overtime'); }}
+                    className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer"
+                    title="Abrir Solicitação de Hora Extra (DOC 076)"
+                  >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-amber-50 text-amber-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Clock className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-amber-600" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Solicitação de Hora Extra</span>
+                  </button>
+                )}
 
-                <button 
-                  onClick={() => {
-                    setMaintenanceSubTab('requests');
-                    setMaintenanceInitialCreateOpen(false);
-                    setActiveTab('maintenance');
-                  }}
-                  className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer hover:border-blue-200"
-                  title="Abrir Novo Fluxo de Solicitação de Manutenção (Diretriz Oficial / Outlook)"
-                >
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Wrench className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-blue-600" /></div>
-                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Solicitação de Manutenção</span>
-                </button>
+                {(isAdmin || (userPerms.maintenance.enabled && (userPerms.maintenance.requests || userPerms.maintenance.newRequest))) && (
+                  <button 
+                    onClick={() => {
+                      setMaintenanceSubTab('requests');
+                      setMaintenanceInitialCreateOpen(false);
+                      setActiveTab('maintenance');
+                    }}
+                    className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer hover:border-blue-200"
+                    title="Abrir Novo Fluxo de Solicitação de Manutenção (Diretriz Oficial / Outlook)"
+                  >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Wrench className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-blue-600" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Solicitação de Manutenção</span>
+                  </button>
+                )}
 
-                <button 
-                  onClick={() => setIsTrainingModalOpen(true)}
-                  className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer"
-                >
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-slate-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Treinamento / DDP</span>
-                </button>
+                {(isAdmin || (userPerms.personnel.enabled && userPerms.personnel.training)) && (
+                  <button 
+                    onClick={() => setIsTrainingModalOpen(true)}
+                    className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer"
+                  >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-slate-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Treinamento / DDP</span>
+                  </button>
+                )}
 
-                <button 
-                  onClick={() => setIsWeeklySummaryOpen(true)}
-                  className="bg-gradient-to-br from-blue-600 to-indigo-700 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-blue-200/50 border border-blue-400/30 active:scale-95 transition-all group cursor-pointer"
-                  title="Abrir Resumo Semanal de Produção para Reunião de Resultados"
-                >
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Presentation className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-amber-300 animate-pulse" /></div>
-                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Resumo Semanal (Reunião)</span>
-                </button>
+                {(isAdmin || ((userPerms.extrusion.enabled || userPerms.ribbon.enabled) && canViewWeeklySummary)) && (
+                  <button 
+                    onClick={() => setIsWeeklySummaryOpen(true)}
+                    className="bg-gradient-to-br from-blue-600 to-indigo-700 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-blue-200/50 border border-blue-400/30 active:scale-95 transition-all group cursor-pointer"
+                    title="Abrir Resumo Semanal de Produção para Reunião de Resultados"
+                  >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Presentation className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-amber-300 animate-pulse" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Resumo Semanal (Reunião)</span>
+                  </button>
+                )}
 
-                <button 
-                  onClick={() => setIsDowntimeAnalyticsModalOpen(true)}
-                  className="bg-gradient-to-br from-slate-900 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-slate-900/20 border border-blue-500/30 active:scale-95 transition-all group cursor-pointer"
-                  title="Abrir Módulo BI de Análise Detalhada de Paradas de Máquina"
-                >
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-500/20 text-blue-400 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Análise BI de Paradas</span>
-                </button>
+                {(isAdmin || ((userPerms.extrusion.enabled && userPerms.extrusion.comparison) || (userPerms.maintenance.enabled && userPerms.maintenance.causes))) && (
+                  <button 
+                    onClick={() => setIsDowntimeAnalyticsModalOpen(true)}
+                    className="bg-gradient-to-br from-slate-900 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-slate-900/20 border border-blue-500/30 active:scale-95 transition-all group cursor-pointer"
+                    title="Abrir Módulo BI de Análise Detalhada de Paradas de Máquina"
+                  >
+                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-500/20 text-blue-400 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
+                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Análise BI de Paradas</span>
+                  </button>
+                )}
 
-                <div className="bg-gradient-to-br from-indigo-900 to-blue-900 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-900/20 border border-indigo-400/30 group">
-                   <div 
-                     onClick={() => setIsCast1CalculatorOpen(true)}
-                     className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
-                     title="Abrir Calculadora % CAST 1 - Produção Integrada"
-                   >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Calculator className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Calculadora CAST 1</span>
-                   </div>
-                   <button
-                     type="button"
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       let link = "https://gest-o-de-produ-o-2026.pages.dev/calculadora.html";
-                       if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
-                         link = `${window.location.origin}/calculadora.html`;
-                       }
-                       if (navigator.clipboard && window.isSecureContext) {
-                         navigator.clipboard.writeText(link).then(() => {
-                           alert('Link Externo da Calculadora CAST 1 copiado com sucesso! Pode enviar pelo WhatsApp para qualquer pessoa acessar sem login.');
-                         });
-                       } else {
-                         window.prompt('Copie o link externo abaixo para enviar:', link);
-                       }
-                     }}
-                     className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
-                     title="Copiar link público para enviar aos operadores"
-                   >
-                     <Copy size={11} /> Copiar Link Externo
-                   </button>
-                </div>
+                {(isAdmin || userPerms.extrusion.enabled) && (
+                  <div className="bg-gradient-to-br from-indigo-900 to-blue-900 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-900/20 border border-indigo-400/30 group">
+                     <div 
+                       onClick={() => setIsCast1CalculatorOpen(true)}
+                       className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
+                       title="Abrir Calculadora % CAST 1 - Produção Integrada"
+                     >
+                       <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Calculator className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
+                       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Calculadora CAST 1</span>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         let link = "https://gest-o-de-produ-o-2026.pages.dev/calculadora.html";
+                         if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
+                           link = `${window.location.origin}/calculadora.html`;
+                         }
+                         if (navigator.clipboard && window.isSecureContext) {
+                           navigator.clipboard.writeText(link).then(() => {
+                             alert('Link Externo da Calculadora CAST 1 copiado com sucesso! Pode enviar pelo WhatsApp para qualquer pessoa acessar sem login.');
+                           });
+                         } else {
+                           window.prompt('Copie o link externo abaixo para enviar:', link);
+                         }
+                       }}
+                       className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
+                       title="Copiar link público para enviar aos operadores"
+                     >
+                       <Copy size={11} /> Copiar Link Externo
+                     </button>
+                  </div>
+                )}
 
-                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-950/30 border border-indigo-500/30 group">
-                   <div 
-                     onClick={() => {
-                       setIsTvProjectionActive(true);
-                       if (!document.fullscreenElement) {
-                         document.documentElement.requestFullscreen().catch(() => {});
-                       }
-                     }}
-                     className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
-                     title="Abrir Projeção TV com transmissão contínua"
-                   >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Tv className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 animate-pulse" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Projeção TV (Smart TV)</span>
-                   </div>
-                   <button
-                     type="button"
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       let link = "https://gest-o-de-produ-o-2026.pages.dev/tv";
-                       if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
-                         link = `${window.location.origin}/tv`;
-                       }
-                       if (navigator.clipboard && window.isSecureContext) {
-                         navigator.clipboard.writeText(link).then(() => {
-                           alert('Link Externo da Projeção TV copiado com sucesso!\n\n' + link + '\n\nAbra diretamente no navegador da Smart TV para reprodução contínua automática em tela cheia.');
-                         });
-                       } else {
-                         window.prompt('Copie o link externo da Projeção TV abaixo para a Smart TV:', link);
-                       }
-                     }}
-                     className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
-                     title="Copiar link externo para abrir em Smart TV ou telão industrial"
-                   >
-                     <Copy size={11} /> Copiar Link Smart TV
-                   </button>
-                </div>
-             </div>
+                {(isAdmin || userPerms.projection.enabled) && (
+                  <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-950/30 border border-indigo-500/30 group">
+                     <div 
+                       onClick={() => {
+                         setIsTvProjectionActive(true);
+                         if (!document.fullscreenElement) {
+                           document.documentElement.requestFullscreen().catch(() => {});
+                         }
+                       }}
+                       className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
+                       title="Abrir Projeção TV com transmissão contínua"
+                     >
+                       <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Tv className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 animate-pulse" /></div>
+                       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Projeção TV (Smart TV)</span>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         let link = "https://gest-o-de-produ-o-2026.pages.dev/tv";
+                         if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
+                           link = `${window.location.origin}/tv`;
+                         }
+                         if (navigator.clipboard && window.isSecureContext) {
+                           navigator.clipboard.writeText(link).then(() => {
+                             alert('Link Externo da Projeção TV copiado com sucesso!\n\n' + link + '\n\nAbra diretamente no navegador da Smart TV para reprodução contínua automática em tela cheia.');
+                           });
+                         } else {
+                           window.prompt('Copie o link externo da Projeção TV abaixo para a Smart TV:', link);
+                         }
+                       }}
+                       className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
+                       title="Copiar link externo para abrir em Smart TV ou telão industrial"
+                     >
+                       <Copy size={11} /> Copiar Link Smart TV
+                     </button>
+                  </div>
+                )}
+              </div>
 
              <div className="bg-slate-900 p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] text-white overflow-hidden relative group">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
@@ -11286,15 +11741,42 @@ Atenciosamente,
                 <div className="bg-[#2563eb] text-white p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <p className="text-[8.5px] sm:text-[10px] font-bold opacity-80 uppercase tracking-widest flex items-center gap-1">
-                    DESEMPENHO
-                    <span className="group relative inline-block cursor-help align-middle">
-                      <span className="w-3.5 h-3.5 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white"><Info size={9} /></span>
-                      <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                        Mede a eficácia e o percentual de atingimento da meta de produção física planejada para as extrusoras.
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <p className="text-[8.5px] sm:text-[10px] font-bold opacity-80 uppercase tracking-widest flex items-center gap-1">
+                      DESEMPENHO
+                      <span className="group relative inline-block cursor-help align-middle">
+                        <span className="w-3.5 h-3.5 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white"><Info size={9} /></span>
+                        <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                          Mede a eficácia e o percentual de atingimento da meta de produção física planejada para as extrusoras.
+                        </span>
+                      </span>
+                    </p>
+                    <span 
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[8.5px] font-bold tracking-tight transition-all backdrop-blur-xs ${
+                        !isOnline
+                          ? 'bg-red-500/30 text-red-100 border border-red-400/40'
+                          : productionSyncStatus.isSyncing 
+                            ? 'bg-amber-400/25 text-amber-100 border border-amber-300/40' 
+                            : 'bg-emerald-500/25 text-emerald-100 border border-emerald-400/40'
+                      }`}
+                      title={productionSyncStatus.lastSyncTime ? `Última sincronização com Firestore: ${new Date(productionSyncStatus.lastSyncTime).toLocaleTimeString('pt-BR')}` : 'Cache local ativo com carregamento instantâneo'}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        !isOnline 
+                          ? 'bg-red-300' 
+                          : productionSyncStatus.isSyncing 
+                            ? 'bg-amber-300 animate-ping' 
+                            : 'bg-emerald-300'
+                      }`} />
+                      <span>
+                        {!isOnline 
+                          ? 'Offline • Cache Local' 
+                          : productionSyncStatus.isSyncing 
+                            ? 'Sincronizando...' 
+                            : 'Carregamento Instantâneo • Cache Ativo'}
                       </span>
                     </span>
-                  </p>
+                  </div>
                   <h2 className="text-lg sm:text-2xl font-black uppercase tracking-tight">
                     {filterStartDate && filterEndDate 
                       ? `RESULTADO DE ${filterStartDate.split('-').reverse().join('/')} A ${filterEndDate.split('-').reverse().join('/')}` 
@@ -12841,14 +13323,16 @@ Atenciosamente,
                       </div>
 
                       <div className="flex items-center gap-2 self-start sm:self-auto">
-                        <button 
-                          onClick={() => setIsWeeklySummaryOpen(true)}
-                          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border border-blue-400/30 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
-                          title="Gerar Resumo Geral Semanal para Reunião de Resultados"
-                        >
-                          <Tv size={13} className="text-amber-300 animate-pulse" />
-                          <span>Resumo Semanal (Reunião)</span>
-                        </button>
+                        {canViewWeeklySummary && (
+                          <button 
+                            onClick={() => setIsWeeklySummaryOpen(true)}
+                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border border-blue-400/30 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                            title="Gerar Resumo Geral Semanal para Reunião de Resultados"
+                          >
+                            <Tv size={13} className="text-amber-300 animate-pulse" />
+                            <span>Resumo Semanal (Reunião)</span>
+                          </button>
+                        )}
 
                         {isAnyFilterActive && (
                           <button 
@@ -14329,6 +14813,14 @@ Atenciosamente,
                                                   async () => {
                                                     try {
                                                       await deleteDoc(doc(db, 'productionEntries', entry.id));
+                                                      recordUserActivity({
+                                                        user: loggedUser,
+                                                        type: 'action',
+                                                        screen: 'Extrusão',
+                                                        subScreen: 'Lançamentos',
+                                                        action: 'Excluiu lançamento de produção',
+                                                        details: `${entry.machine} - ${entry.product} (${entry.operator})`
+                                                      });
                                                     } catch(e) { console.error(e); }
                                                   }
                                                 );
@@ -18677,62 +19169,78 @@ Atenciosamente,
                     
                     {/* VERSÃO CELULAR (MOBILE): Permanece exatamente como está (em coluna vertical) */}
                     <div className="md:hidden absolute left-1/2 -translate-x-1/2 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200 origin-top">
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-b border-slate-50 cursor-pointer"
-                      >
-                        <UserPlus size={18} className="text-blue-600" />
-                        Cadastrar Colaborador
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); exportPersonnelToPDF(); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors cursor-pointer"
-                      >
-                        <FileText size={18} className="text-emerald-500" />
-                        Baixar PDF Pessoal
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors cursor-pointer"
-                      >
-                        <Database size={18} className="text-emerald-500" />
-                        Banco de Dados
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('vacations'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
-                      >
-                        <Calendar size={18} className="text-violet-600" />
-                        Planejamento de Férias
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('training'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
-                      >
-                        <Award size={18} className="text-violet-500" />
-                        Treinamento Operacional
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
-                      >
-                        <Clock size={18} className="text-amber-600" />
-                        Solicitação de Hora Extra (DOC 076)
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('evaluations'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
-                      >
-                        <Award size={18} className="text-indigo-600" />
-                        Avaliações e Desempenho
-                      </button>
-                      <button 
-                        onClick={() => { setIsExtraMenuOpen(false); setIsTrainingModalOpen(true); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
-                      >
-                        <FileText size={18} className="text-blue-600" />
-                        Diário de Produção (DDP)
-                      </button>
+                      {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-b border-slate-50 cursor-pointer"
+                        >
+                          <UserPlus size={18} className="text-blue-600" />
+                          Cadastrar Colaborador
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.reports) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); exportPersonnelToPDF(); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors cursor-pointer"
+                        >
+                          <FileText size={18} className="text-emerald-500" />
+                          Baixar PDF Pessoal
+                        </button>
+                      )}
+                      {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors cursor-pointer"
+                        >
+                          <Database size={18} className="text-emerald-500" />
+                          Banco de Dados
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.vacations) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('vacations'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <Calendar size={18} className="text-violet-600" />
+                          Planejamento de Férias
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.training) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('training'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <Award size={18} className="text-violet-500" />
+                          Treinamento Operacional
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.overtime) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <Clock size={18} className="text-amber-600" />
+                          Solicitação de Hora Extra (DOC 076)
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.evaluations) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('evaluations'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <Award size={18} className="text-indigo-600" />
+                          Avaliações e Desempenho
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.training) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setIsTrainingModalOpen(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <FileText size={18} className="text-blue-600" />
+                          Diário de Produção (DDP)
+                        </button>
+                      )}
                     </div>
 
                     {/* VERSÃO COMPUTADOR (DESKTOP): Horizontal abaixo do menu */}
@@ -18746,91 +19254,104 @@ Atenciosamente,
                             Menu Extra de Pessoal
                           </span>
                         </div>
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
-                          8 Módulos Disponíveis
-                        </span>
                       </div>
                       
                       <div className="flex flex-wrap items-center justify-center gap-2.5">
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
-                            <UserPlus size={15} className="text-blue-600" />
-                          </div>
-                          <span>Cadastrar Colaborador</span>
-                        </button>
+                        {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
+                              <UserPlus size={15} className="text-blue-600" />
+                            </div>
+                            <span>Cadastrar Colaborador</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); exportPersonnelToPDF(); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-100/60 transition-colors shadow-2xs">
-                            <FileText size={15} className="text-emerald-500" />
-                          </div>
-                          <span>Baixar PDF Pessoal</span>
-                        </button>
+                        {(isAdmin || userPerms.personnel.reports) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); exportPersonnelToPDF(); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-100/60 transition-colors shadow-2xs">
+                              <FileText size={15} className="text-emerald-500" />
+                            </div>
+                            <span>Baixar PDF Pessoal</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-100/60 transition-colors shadow-2xs">
-                            <Database size={15} className="text-emerald-500" />
-                          </div>
-                          <span>Banco de Dados</span>
-                        </button>
+                        {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-100/60 transition-colors shadow-2xs">
+                              <Database size={15} className="text-emerald-500" />
+                            </div>
+                            <span>Banco de Dados</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('vacations'); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-violet-50/80 text-slate-700 hover:text-violet-900 border border-slate-200 hover:border-violet-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-violet-100/60 transition-colors shadow-2xs">
-                            <Calendar size={15} className="text-violet-600" />
-                          </div>
-                          <span>Planejamento de Férias</span>
-                        </button>
+                        {(isAdmin || userPerms.personnel.vacations) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('vacations'); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-violet-50/80 text-slate-700 hover:text-violet-900 border border-slate-200 hover:border-violet-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-violet-100/60 transition-colors shadow-2xs">
+                              <Calendar size={15} className="text-violet-600" />
+                            </div>
+                            <span>Planejamento de Férias</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('training'); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-violet-50/80 text-slate-700 hover:text-violet-900 border border-slate-200 hover:border-violet-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-violet-100/60 transition-colors shadow-2xs">
-                            <Award size={15} className="text-violet-500" />
-                          </div>
-                          <span>Treinamento Operacional</span>
-                        </button>
+                        {(isAdmin || userPerms.personnel.training) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('training'); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-violet-50/80 text-slate-700 hover:text-violet-900 border border-slate-200 hover:border-violet-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-violet-100/60 transition-colors shadow-2xs">
+                              <Award size={15} className="text-violet-500" />
+                            </div>
+                            <span>Treinamento Operacional</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime'); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-amber-50/80 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-amber-100/60 transition-colors shadow-2xs">
-                            <Clock size={15} className="text-amber-600" />
-                          </div>
-                          <span>Solicitação de Hora Extra (DOC 076)</span>
-                        </button>
+                        {(isAdmin || userPerms.personnel.overtime) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime'); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-amber-50/80 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-amber-100/60 transition-colors shadow-2xs">
+                              <Clock size={15} className="text-amber-600" />
+                            </div>
+                            <span>Solicitação de Hora Extra (DOC 076)</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('evaluations'); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-indigo-50/80 text-slate-700 hover:text-indigo-900 border border-slate-200 hover:border-indigo-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-indigo-100/60 transition-colors shadow-2xs">
-                            <Award size={15} className="text-indigo-600" />
-                          </div>
-                          <span>Avaliações e Desempenho</span>
-                        </button>
+                        {(isAdmin || userPerms.personnel.evaluations) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('evaluations'); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-indigo-50/80 text-slate-700 hover:text-indigo-900 border border-slate-200 hover:border-indigo-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-indigo-100/60 transition-colors shadow-2xs">
+                              <Award size={15} className="text-indigo-600" />
+                            </div>
+                            <span>Avaliações e Desempenho</span>
+                          </button>
+                        )}
 
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setIsTrainingModalOpen(true); }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                        >
-                          <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
-                            <FileText size={15} className="text-blue-600" />
-                          </div>
-                          <span>Diário de Produção (DDP)</span>
-                        </button>
+                        {(isAdmin || userPerms.personnel.training) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsTrainingModalOpen(true); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
+                              <FileText size={15} className="text-blue-600" />
+                            </div>
+                            <span>Diário de Produção (DDP)</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </>
@@ -19146,6 +19667,7 @@ Atenciosamente,
             collaborators={collaborators}
             systemName={systemName}
             systemLogo={systemLogo || undefined}
+            canViewWeeklySummary={canViewWeeklySummary}
             onClose={() => {
               if (isScreensaverActive) {
                 setIsScreensaverActive(false);
@@ -19345,6 +19867,7 @@ Atenciosamente,
         screensaverSettings={screensaverSettings}
         setScreensaverSettings={setScreensaverSettings}
         onTriggerScreensaverTest={() => setIsScreensaverActive(true)}
+        settingsPerms={userPerms.settings}
       />
 
       <PermissionOverlay 
@@ -19386,6 +19909,15 @@ Atenciosamente,
           const id = editingEntry ? editingEntry.id : Math.random().toString(36).substr(2, 9);
           const entry = { ...e, id, userId: currentUser.uid, updatedAt: new Date().toISOString() };
           await setDoc(doc(db, 'productionEntries', id), entry);
+
+          recordUserActivity({
+            user: loggedUser,
+            type: 'action',
+            screen: 'Extrusão',
+            subScreen: 'Lançamentos',
+            action: isNew ? 'Novo lançamento de produção' : 'Atualizou lançamento de produção',
+            details: `${entry.machine} - ${entry.product} (${entry.operator})`
+          });
           
           if (isNew) {
             addNotification(`Novo lançamento realizado por ${entry.operator} na ${entry.machine}`);
@@ -19449,6 +19981,15 @@ Atenciosamente,
               userId: currentUser.uid
             });
 
+            recordUserActivity({
+              user: loggedUser,
+              type: 'action',
+              screen: 'Gestão de Pessoas',
+              subScreen: 'Quadro de Funcionários',
+              action: action === 'Contratação' ? 'Contratação de Funcionário' : action === 'Desligamento' ? 'Desligamento de Funcionário' : action === 'Exclusão' ? 'Exclusão de Funcionário' : 'Alteração no Quadro',
+              details: `${data.name || 'Vaga'} - ${action}${details ? ` (${details})` : ''}`
+            });
+
             // Local simulate lists for the operators sync function
             const updatedEmployeesList = [...employees];
             const empIdx = updatedEmployeesList.findIndex(e => e.id === empId);
@@ -19492,22 +20033,27 @@ Atenciosamente,
         }
       }} />
       
+      {/* Pill Flutuante de Alerta de Atualização Pendente (quando adiado) */}
+      {isUpdateAvailable && updateDismissed && (
+        <div 
+          onClick={() => setUpdateDismissed(false)}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 text-white px-5 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center gap-3 cursor-pointer animate-pulse hover:scale-105 transition-all text-xs font-black uppercase tracking-wider select-none shadow-blue-500/25"
+          title="Clique para abrir e concluir o carregamento da nova versão"
+        >
+          <RefreshCw size={15} className="animate-spin text-emerald-300" />
+          <span>Nova Atualização Cloudflare Pronta • Clique para Concluir</span>
+        </div>
+      )}
+
       <UpdateModal 
-        isOpen={isUpdateAvailable} 
+        isOpen={isUpdateAvailable && !updateDismissed} 
         updateNotes={updateNotes}
+        versionTag={updateVersionTag}
         onClose={() => {
-          setIsUpdateAvailable(false);
           setUpdateDismissed(true);
         }} 
         onUpdate={() => {
-          if (sessionLoadedBuildTimeRef.current) {
-            sessionLoadedBuildTimeRef.current = new Date().toISOString();
-          }
-          if ((window as any).refreshAppVersion) {
-            (window as any).refreshAppVersion();
-          } else {
-            window.location.reload();
-          }
+          executeAppUpdate();
         }} 
       />
       <HistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} logs={personnelLogs} />
@@ -19542,6 +20088,8 @@ Atenciosamente,
         onUpdateUsers={setSystemUsers}
         availableRoles={availableRoles} 
         collaborators={collaborators}
+        loggedUser={loggedUser}
+        setLoggedUser={setLoggedUser}
       />
       
       <ActiveUsersModal
@@ -19549,9 +20097,12 @@ Atenciosamente,
         onClose={() => setIsActiveUsersModalOpen(false)}
         activeSessions={activeSessions}
         accessLogs={accessLogs}
+        activityLogs={activityLogs}
         onDisconnectUser={handleDisconnectUser}
         onClearHistory={isAdmin ? handleClearAccessLogs : undefined}
+        onClearActivities={isAdmin ? handleClearActivities : undefined}
         currentUserId={loggedUser?.id || loggedUser?.registration}
+        isAdmin={isAdmin}
       />
       <QuickAllocationModal
         isOpen={isQuickAllocModalOpen}
@@ -19706,6 +20257,7 @@ Atenciosamente,
         ribbonData={ribbonEntries}
         employees={employees}
         isReadOnly={isReadOnlyAccount}
+        canView={canViewWeeklySummary}
         onBlockedAction={handleBlockedReadOnlyAction}
         setPdfModal={setPdfModal}
       />
@@ -20778,46 +21330,160 @@ const StockConciliationPreviewModal: React.FC<StockConciliationPreviewModalProps
   );
 };
 
-const UserManagementModal: React.FC<{ isOpen: boolean; onClose: () => void; users: SystemUser[]; onUpdateUsers: React.Dispatch<React.SetStateAction<SystemUser[]>>; availableRoles: string[]; collaborators: Collaborator[] }> = ({ isOpen, onClose, users, onUpdateUsers, availableRoles, collaborators }) => {
+const UserManagementModal: React.FC<{ 
+  isOpen: boolean; 
+  onClose: () => void; 
+  users: SystemUser[]; 
+  onUpdateUsers: React.Dispatch<React.SetStateAction<SystemUser[]>>; 
+  availableRoles: string[]; 
+  collaborators: Collaborator[];
+  loggedUser?: SystemUser | null;
+  setLoggedUser?: React.Dispatch<React.SetStateAction<SystemUser | null>>;
+}> = ({ isOpen, onClose, users, onUpdateUsers, availableRoles, collaborators, loggedUser, setLoggedUser }) => {
+  const defaultPermissions: UserPermissions = DEFAULT_FULL_PERMISSIONS;
+
   const [name, setName] = useState('');
   const [registration, setRegistration] = useState('');
   const [role, setRole] = useState(availableRoles[0] || '');
-  const [permissions, setPermissions] = useState<UserPermissions>({
-    canViewDashboard: true,
-    canViewReports: true,
-    canViewPersonnel: true,
-    canManageSettings: false,
-    canEditProduction: true,
-    canManagePersonnel: false,
-    isReadOnly: false
-  });
+  const [permissions, setPermissions] = useState<UserPermissions>(createPresetPermissions('operator'));
   const [userToDelete, setUserToDelete] = useState<SystemUser | null>(null);
 
-  const handleCreate = async () => {
-    if (!name || !registration || !role) {
-      alert('Preencha todos os campos.');
+  // Modo de edição completa no formulário
+  const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Edição rápida de permissões diretamente na barra/linha do usuário
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [inlinePerms, setInlinePerms] = useState<Record<string, UserPermissions>>({});
+  const [savingInlineId, setSavingInlineId] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const formTopRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
+
+  const resetForm = () => {
+    setEditingUser(null);
+    setName('');
+    setRegistration('');
+    setRole(availableRoles[0] || '');
+    setPermissions(createPresetPermissions('operator'));
+  };
+
+  const handleStartEditInForm = (u: SystemUser) => {
+    setEditingUser(u);
+    setName(u.name);
+    setRegistration(u.registration);
+    setRole(u.role);
+    setPermissions(normalizeUserPermissions(u.permissions));
+    formTopRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const applyPresetToForm = (preset: 'readOnly' | 'operator' | 'supervisor' | 'admin') => {
+    setPermissions(createPresetPermissions(preset));
+  };
+
+  const handleCreateOrUpdate = async () => {
+    if (!name.trim() || !registration.trim() || !role.trim()) {
+      alert('Preencha todos os campos obrigatórios.');
       return;
     }
-    if (users.find(u => u.registration === registration)) {
-      alert('Esta matrícula já está cadastrada.');
-      return;
+
+    const normalizedPermissions = normalizeUserPermissions(permissions);
+
+    if (editingUser) {
+      if (users.some(u => u.id !== editingUser.id && u.registration === registration.trim())) {
+        alert('Esta matrícula já está cadastrada para outro usuário.');
+        return;
+      }
+
+      const updatedUser: SystemUser = {
+        ...editingUser,
+        name: name.trim(),
+        registration: registration.trim(),
+        role: role.trim(),
+        permissions: normalizedPermissions
+      };
+
+      try {
+        await setDoc(doc(db, 'system_users', editingUser.id), updatedUser, { merge: true });
+        onUpdateUsers(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
+        if (loggedUser && loggedUser.id === editingUser.id && setLoggedUser) {
+          setLoggedUser(updatedUser);
+        }
+        setSuccessToast(`Usuário e permissões de "${updatedUser.name}" atualizados com sucesso!`);
+        resetForm();
+      } catch (err) {
+        console.error('Erro ao atualizar usuário:', err);
+        alert('Erro ao salvar alterações no banco de dados.');
+      }
+    } else {
+      if (users.find(u => u.registration === registration.trim())) {
+        alert('Esta matrícula já está cadastrada.');
+        return;
+      }
+      const id = Math.random().toString(36).substr(2, 9);
+      const newUser: SystemUser = {
+        id,
+        name: name.trim(),
+        registration: registration.trim(),
+        role: role.trim(),
+        isFirstAccess: true,
+        permissions: normalizedPermissions
+      };
+      try {
+        await setDoc(doc(db, 'system_users', id), newUser);
+        onUpdateUsers(prev => [...prev, newUser]);
+        resetForm();
+        setSuccessToast(`Usuário "${newUser.name}" cadastrado com sucesso!`);
+      } catch (err) {
+        console.error('Erro ao cadastrar:', err);
+        alert('Erro ao cadastrar usuário.');
+      }
     }
-    const id = Math.random().toString(36).substr(2, 9);
-    const newUser: SystemUser = {
-      id,
-      name,
-      registration,
-      role,
-      isFirstAccess: true,
-      permissions
-    };
+  };
+
+  // Abre/fecha edição de permissões diretamente na barra do usuário
+  const toggleInlinePermissions = (u: SystemUser) => {
+    if (expandedUserId === u.id) {
+      setExpandedUserId(null);
+    } else {
+      setExpandedUserId(u.id);
+      setInlinePerms(prev => ({
+        ...prev,
+        [u.id]: normalizeUserPermissions(u.permissions)
+      }));
+    }
+  };
+
+  const applyInlinePreset = (userId: string, preset: 'readOnly' | 'operator' | 'supervisor' | 'admin') => {
+    setInlinePerms(prev => ({ ...prev, [userId]: createPresetPermissions(preset) }));
+  };
+
+  const handleSaveInlinePerms = async (targetUser: SystemUser) => {
+    const updatedPerms = normalizeUserPermissions(inlinePerms[targetUser.id] || targetUser.permissions || defaultPermissions);
+    setSavingInlineId(targetUser.id);
     try {
-      await setDoc(doc(db, 'system_users', id), newUser);
-      setName('');
-      setRegistration('');
-      alert('Usuário cadastrado com sucesso! A senha será solicitada no primeiro acesso.');
+      await setDoc(doc(db, 'system_users', targetUser.id), { permissions: updatedPerms }, { merge: true });
+      const updatedUser: SystemUser = {
+        ...targetUser,
+        permissions: updatedPerms
+      };
+      onUpdateUsers(prev => prev.map(u => u.id === targetUser.id ? updatedUser : u));
+      if (loggedUser && loggedUser.id === targetUser.id && setLoggedUser) {
+        setLoggedUser(updatedUser);
+      }
+      setSuccessToast(`Permissões de "${targetUser.name}" atualizadas e salvas com sucesso!`);
+      setExpandedUserId(null);
     } catch (err) {
-      alert('Erro ao cadastrar usuário.');
+      console.error('Erro ao salvar permissões inline:', err);
+      alert('Erro ao salvar permissões no banco de dados.');
+    } finally {
+      setSavingInlineId(null);
     }
   };
 
@@ -20825,34 +21491,69 @@ const UserManagementModal: React.FC<{ isOpen: boolean; onClose: () => void; user
     if (!userToDelete) return;
     const targetUserId = userToDelete.id;
     try {
-      // Optimistically remove the user from local state immediately
       onUpdateUsers(prev => prev.filter(u => u.id !== targetUserId));
       setUserToDelete(null);
       await deleteDoc(doc(db, 'system_users', targetUserId));
+      if (editingUser?.id === targetUserId) {
+        resetForm();
+      }
+      setSuccessToast('Usuário excluído com sucesso.');
     } catch (err) {
       console.error("Erro ao excluir usuário:", err);
       alert('Erro ao excluir usuário no banco de dados. Tentando reverter...');
-      // Re-fetch or fall back if it failed, but since onSnapshot is listening, it will automatically sync eventually.
     }
   };
+
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const sorted = [...users].sort((a,b) => (a.registration || '').localeCompare(b.registration || ''));
+    if (!q) return sorted;
+    return sorted.filter(u => 
+      (u.name || '').toLowerCase().includes(q) || 
+      (u.registration || '').toLowerCase().includes(q) || 
+      (u.role || '').toLowerCase().includes(q)
+    );
+  }, [users, searchQuery]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
-      <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl relative animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
+      <div ref={formTopRef} className="bg-white rounded-[2.5rem] p-6 sm:p-8 w-full max-w-4xl max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl relative animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+         
+         {/* Toast de sucesso */}
+         {successToast && (
+           <div className="sticky top-0 z-50 mb-4 p-3.5 bg-emerald-600 text-white rounded-2xl shadow-lg flex items-center justify-between text-xs font-black uppercase tracking-wider animate-in fade-in slide-in-from-top-2">
+             <div className="flex items-center gap-2">
+               <Check size={18} className="text-emerald-200" />
+               <span>{successToast}</span>
+             </div>
+             <button onClick={() => setSuccessToast(null)} className="p-1 hover:bg-emerald-700 rounded-lg">
+               <X size={14} />
+             </button>
+           </div>
+         )}
+
          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Cadastro de Usuários</h3>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-800 transition-colors">
-              <div className="p-2 hover:bg-slate-100 rounded-xl"><X size={24}/></div>
+            <div>
+              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <Users className="text-blue-600" size={24} />
+                Cadastro e Permissões de Usuários
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                Cadastre novos acessos ou edite diretamente as permissões dos usuários existentes
+              </p>
+            </div>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-100 rounded-2xl">
+              <X size={22}/>
             </button>
          </div>
 
          {/* Confirmação de Exclusão */}
          {userToDelete && (
-           <div className="absolute inset-0 z-[120] bg-white/95 backdrop-blur-md flex items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-200">
+           <div className="absolute inset-0 z-[120] bg-white/95 backdrop-blur-md flex items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-200 rounded-[2.5rem]">
               <div className="max-w-xs">
-                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
                   <AlertCircle size={32} />
                 </div>
                 <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">Confirmar Exclusão</h4>
@@ -20860,21 +21561,63 @@ const UserManagementModal: React.FC<{ isOpen: boolean; onClose: () => void; user
                   Tem certeza que deseja excluir o usuário <span className="text-red-600 underline">{userToDelete.name}</span>? Esta ação não pode ser desfeita.
                 </p>
                 <div className="flex gap-3">
-                  <button onClick={() => setUserToDelete(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
-                  <button onClick={handleDelete} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-100">Confirmar</button>
+                  <button onClick={() => setUserToDelete(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all cursor-pointer">Cancelar</button>
+                  <button onClick={handleDelete} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-100 cursor-pointer">Confirmar</button>
                 </div>
               </div>
            </div>
          )}
 
-         <div className="space-y-4 mb-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+         {/* Formulário Principal: Criação ou Edição do Usuário Selecionado */}
+         <div className={`space-y-4 mb-8 p-6 rounded-3xl border transition-all ${
+           editingUser 
+             ? 'bg-blue-50/60 border-blue-200 shadow-md ring-2 ring-blue-100' 
+             : 'bg-slate-50/60 border-slate-200/80'
+         }`}>
+            {editingUser ? (
+              <div className="flex items-center justify-between pb-3 border-b border-blue-200">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 bg-blue-600 text-white rounded-xl shadow-xs">
+                    <ShieldCheck size={18} />
+                  </span>
+                  <div>
+                    <h4 className="text-xs font-black text-blue-900 uppercase tracking-wider">
+                      Editando Permissões e Cadastro
+                    </h4>
+                    <p className="text-[10px] font-bold text-blue-600 uppercase">
+                      Usuário: <span className="underline">{editingUser.name}</span> (Matrícula {editingUser.registration})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-[10px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar Edição
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 pb-2">
+                <span className="p-1.5 bg-slate-200 text-slate-700 rounded-lg">
+                  <Plus size={14} />
+                </span>
+                <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider">Novo Cadastro de Usuário</span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Nome Completo</label>
-                <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all" placeholder="Nome do usuário" />
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block ml-1">Nome Completo</label>
+                <input 
+                  value={name} 
+                  onChange={e => setName(e.target.value)} 
+                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-xs" 
+                  placeholder="Nome do usuário" 
+                />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Matrícula</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block ml-1">Matrícula</label>
                 <div className="relative group">
                   <input 
                     value={registration} 
@@ -20886,7 +21629,7 @@ const UserManagementModal: React.FC<{ isOpen: boolean; onClose: () => void; user
                         setRole(col.role || role);
                       }
                     }} 
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all font-mono" 
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all font-mono shadow-xs" 
                     placeholder="Ex: 0001" 
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -20896,81 +21639,282 @@ const UserManagementModal: React.FC<{ isOpen: boolean; onClose: () => void; user
                 <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 ml-1 tracking-tighter">Digite a matrícula para buscar no banco central</p>
               </div>
             </div>
+
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Função</label>
-              <select value={role} onChange={e => setRole(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block ml-1">Função / Cargo</label>
+              <select 
+                value={role} 
+                onChange={e => setRole(e.target.value)} 
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-xs"
+              >
                 <option value="" disabled>Selecione uma função</option>
                 {availableRoles.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
 
+            {/* Painel de Permissões Detalhadas */}
             <div className="pt-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block ml-1">Permissões de Acesso</label>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { key: 'canViewDashboard', label: 'Ver Dashboard' },
-                  { key: 'canViewReports', label: 'Ver Relatórios' },
-                  { key: 'canViewPersonnel', label: 'Ver RH' },
-                  { key: 'canEditProduction', label: 'Lançar Produção' },
-                  { key: 'canManageSettings', label: 'Configurações' },
-                  { key: 'canManagePersonnel', label: 'Gerir RH' },
-                  { key: 'isReadOnly', label: 'Somente Leitura' }
-                ].map((perm) => (
-                  <button 
-                    key={perm.key}
-                    onClick={() => setPermissions(prev => ({ ...prev, [perm.key]: !prev[perm.key as keyof UserPermissions] }))}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${permissions[perm.key as keyof UserPermissions] ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-100 text-slate-400'}`}
-                  >
-                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${permissions[perm.key as keyof UserPermissions] ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
-                      {permissions[perm.key as keyof UserPermissions] && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-tight">{perm.label}</span>
-                  </button>
-                ))}
+              <div className="mb-3">
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-widest block ml-1">
+                  Permissões de Acesso por Módulo e Tela
+                </label>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1 mt-0.5">
+                  Selecione cada página individualmente ou marque o cabeçalho do módulo para conceder ou revogar todas as telas do setor
+                </p>
               </div>
-            </div>
-            <button onClick={handleCreate} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 flex items-center justify-center gap-2 mt-2">
-              <Plus size={18}/> Cadastrar Novo Usuário
-            </button>
-         </div>
 
-         <div className="space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuários Registrados ({users.length})</p>
+              <GranularPermissionsEditor 
+                permissions={permissions}
+                onChange={setPermissions}
+              />
             </div>
-            <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2 pr-1">
-              {users.length === 0 ? (
-                <div className="text-center py-10 text-slate-300">
-                  <Users size={32} className="mx-auto mb-2 opacity-20"/>
-                  <p className="text-[10px] font-black uppercase tracking-widest">Nenhum usuário cadastrado</p>
+
+            <div className="pt-2">
+              {editingUser ? (
+                <div className="flex gap-3">
+                  <button 
+                    type="button" 
+                    onClick={resetForm} 
+                    className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleCreateOrUpdate} 
+                    className="flex-2 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-emerald-100 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                  >
+                    <Check size={18}/> Salvar Alterações de Permissão
+                  </button>
                 </div>
               ) : (
-                [...users].sort((a,b) => (a.registration || '').localeCompare(b.registration || '')).map(u => (
-                  <div key={u.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 group hover:border-blue-200 transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 border border-slate-200 font-black text-[10px]">{u.registration}</div>
-                      <div>
-                        <p className="text-sm font-black text-slate-800 uppercase leading-none mb-1">{u.name}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.1em]">{u.role}</p>
+                <button 
+                  type="button" 
+                  onClick={handleCreateOrUpdate} 
+                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                >
+                  <Plus size={18}/> Cadastrar Novo Usuário
+                </button>
+              )}
+            </div>
+         </div>
+
+         {/* Seção da Lista de Usuários Cadastrados com Edição na Barra */}
+         <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-1">
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                  Usuários Registrados ({filteredUsers.length} de {users.length})
+                </p>
+              </div>
+              <div className="w-full sm:w-64 relative">
+                <input 
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar usuário, matrícula..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all"
+                />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                {searchQuery && (
+                  <button 
+                    type="button" 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-black"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3 pr-1 max-h-[420px] overflow-y-auto custom-scrollbar">
+              {filteredUsers.length === 0 ? (
+                <div className="text-center py-10 text-slate-300 bg-slate-50 rounded-2xl border border-slate-100">
+                  <Users size={32} className="mx-auto mb-2 opacity-30"/>
+                  <p className="text-[10px] font-black uppercase tracking-widest">Nenhum usuário encontrado</p>
+                </div>
+              ) : (
+                filteredUsers.map(u => {
+                  const isMasterAdmin = u.registration === '1010';
+                  const isCurrentlyEditing = editingUser?.id === u.id;
+                  const isExpandedInline = expandedUserId === u.id;
+                  const currentPerms = normalizeUserPermissions(inlinePerms[u.id] || u.permissions || defaultPermissions);
+                  const userNorm = normalizeUserPermissions(u.permissions);
+
+                  return (
+                    <div 
+                      key={u.id} 
+                      className={`rounded-2xl border transition-all overflow-hidden ${
+                        isCurrentlyEditing 
+                          ? 'bg-blue-50/40 border-blue-400 shadow-md ring-2 ring-blue-100' 
+                          : isExpandedInline
+                            ? 'bg-slate-50/80 border-indigo-300 shadow-md ring-2 ring-indigo-50'
+                            : 'bg-white border-slate-200/80 hover:border-blue-200 hover:shadow-xs'
+                      }`}
+                    >
+                      {/* Barra Principal do Usuário */}
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 sm:p-4 gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs font-mono shrink-0 shadow-xs border ${
+                            isMasterAdmin 
+                              ? 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold' 
+                              : 'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}>
+                            {u.registration}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-black text-slate-800 uppercase leading-none truncate">{u.name}</p>
+                              {isMasterAdmin && (
+                                <span className="bg-amber-100 text-amber-800 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md border border-amber-300">
+                                  👑 Master
+                                </span>
+                              )}
+                              {u.permissions?.isReadOnly && (
+                                <span className="bg-amber-50 text-amber-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md border border-amber-200">
+                                  Modo Leitura
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{u.role}</p>
+                              <span className="text-slate-300">•</span>
+                              {/* Badges resumidos de permissões na barra */}
+                              <div className="flex items-center gap-1 flex-wrap text-[8px] font-bold">
+                                {userNorm.extrusion?.enabled && (
+                                  <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">Extrusão</span>
+                                )}
+                                {userNorm.ribbon?.enabled && (
+                                  <span className="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">Corte</span>
+                                )}
+                                {userNorm.personnel?.enabled && (
+                                  <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">RH</span>
+                                )}
+                                {userNorm.maintenance?.enabled && (
+                                  <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">Manut.</span>
+                                )}
+                                {userNorm.projection?.enabled && (
+                                  <span className="text-cyan-600 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-100">Projeção</span>
+                                )}
+                                {userNorm.settings?.enabled && (
+                                  <span className="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">Config</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Botões de Ação na Barra */}
+                        <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                          {/* Botão de Editar Permissões na Barra (Expansão Rápida) */}
+                          <button 
+                            type="button"
+                            onClick={() => toggleInlinePermissions(u)} 
+                            className={`px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 ${
+                              isExpandedInline
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100'
+                                : 'bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                            }`}
+                            title="Editar permissões diretamente nesta barra"
+                          >
+                            <ShieldCheck size={14} />
+                            <span>Permissões</span>
+                            <ChevronDown size={12} className={`transition-transform ${isExpandedInline ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* Botão de Editar Cadastro Completo no Formulário */}
+                          <button 
+                            type="button"
+                            onClick={() => handleStartEditInForm(u)} 
+                            className={`p-2 rounded-xl border transition-all shadow-xs cursor-pointer active:scale-95 ${
+                              isCurrentlyEditing
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200 bg-white'
+                            }`}
+                            title="Carregar no formulário superior para editar dados e permissões"
+                          >
+                            <Edit2 size={15}/>
+                          </button>
+
+                          {/* Botão Excluir */}
+                          {!isMasterAdmin && (
+                            <button 
+                              type="button"
+                              onClick={() => setUserToDelete(u)} 
+                              className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 border border-red-200 bg-white rounded-xl transition-all shadow-xs cursor-pointer active:scale-95"
+                              title="Excluir Usuário"
+                            >
+                              <Trash2 size={15}/>
+                            </button>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Painel Expansível de Edição de Permissões Diretamente na Barra */}
+                      {isExpandedInline && (
+                        <div className="bg-slate-50/90 border-t border-indigo-100 p-4 sm:p-5 animate-in slide-in-from-top-2 duration-150">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200/80">
+                            <div>
+                              <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
+                                <Sliders size={14} className="text-indigo-600" />
+                                Ajustar Permissões Detalhadas: <span className="text-indigo-600">{u.name}</span>
+                              </p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                Selecione as telas específicas ou use o botão do módulo para conceder ou revogar todo o setor
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Editor Granular de Permissões */}
+                          <div className="mb-4">
+                            <GranularPermissionsEditor
+                              permissions={currentPerms}
+                              onChange={(newPerms) => {
+                                setInlinePerms(prev => ({
+                                  ...prev,
+                                  [u.id]: newPerms
+                                }));
+                              }}
+                            />
+                          </div>
+
+                          {/* Ações do painel inline */}
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedUserId(null)}
+                              className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                            >
+                              Fechar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingInlineId === u.id}
+                              onClick={() => handleSaveInlinePerms(u)}
+                              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-emerald-100 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                            >
+                              {savingInlineId === u.id ? (
+                                <span>Salvando...</span>
+                              ) : (
+                                <>
+                                  <Check size={14} />
+                                  <span>Salvar Permissões</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {u.registration !== '1010' && (
-                      <button 
-                        onClick={() => setUserToDelete(u)} 
-                        className="p-2.5 text-red-500 hover:text-red-700 hover:bg-red-50 border border-red-100 rounded-xl transition-all shadow-sm active:scale-95"
-                        title="Excluir Usuário"
-                      >
-                        <Trash2 size={18}/>
-                      </button>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
          </div>
       </div>
     </div>
-  )
+  );
 };
 
 const SettingsModal: React.FC<{
@@ -21027,6 +21971,7 @@ const SettingsModal: React.FC<{
   screensaverSettings?: ScreensaverSettings;
   setScreensaverSettings?: React.Dispatch<React.SetStateAction<ScreensaverSettings>>;
   onTriggerScreensaverTest?: () => void;
+  settingsPerms?: SettingsPermissions;
 }> = ({
   isOpen, onClose, onSave, activeTab, setActiveTab,
   filterOperator, setFilterOperator, filterDay, setFilterDay, filterStartDate, setFilterStartDate, filterEndDate, setFilterEndDate, dashboardMonth, setDashboardMonth,
@@ -21035,9 +21980,24 @@ const SettingsModal: React.FC<{
   downloadBackup, handleRestoreData, handleSyncLocalToCloud, openConfirm, isInitializing, fileInputRef,
   systemName, setSystemName, loginSystemName, setLoginSystemName, loginSystemSubtitle, setLoginSystemSubtitle, systemLogo, setSystemLogo, systemCoverImage, setSystemCoverImage, 
   isAdminUser, isInstallable, isStandalone, isIOS, handleInstallClick, setShowInstallExperience, onTriggerUpdateNotification,
-  screensaverSettings, setScreensaverSettings, onTriggerScreensaverTest
+  screensaverSettings, setScreensaverSettings, onTriggerScreensaverTest,
+  settingsPerms
 }) => {
   const [isSaving, setIsSaving] = useState(false);
+
+  const tabs = [
+    { id: 'filters', label: 'Filtros', icon: Search, hidden: !isAdminUser && !settingsPerms?.filters },
+    { id: 'goals', label: 'Metas', icon: Target, hidden: !isAdminUser && !settingsPerms?.goals },
+    { id: 'config', label: 'Cadastro', icon: Settings, hidden: !isAdminUser && !settingsPerms?.config },
+    { id: 'system', label: 'Sistema', icon: Cpu, hidden: !isAdminUser && !settingsPerms?.system },
+    { id: 'app', label: 'App', icon: Smartphone, hidden: !isAdminUser && !settingsPerms?.app },
+  ].filter(t => !t.hidden);
+
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.some(t => t.id === activeTab)) {
+      setActiveTab(tabs[0].id as any);
+    }
+  }, [tabs, activeTab, setActiveTab]);
 
   if (!isOpen) return null;
 
@@ -21046,14 +22006,6 @@ const SettingsModal: React.FC<{
     await onSave();
     setIsSaving(false);
   };
-
-  const tabs = [
-    { id: 'filters', label: 'Filtros', icon: Search },
-    { id: 'goals', label: 'Metas', icon: Target, hidden: !isAdminUser },
-    { id: 'config', label: 'Cadastro', icon: Settings, hidden: !isAdminUser },
-    { id: 'system', label: 'Sistema', icon: Cpu, hidden: !isAdminUser },
-    { id: 'app', label: 'App', icon: Smartphone },
-  ].filter(t => !t.hidden);
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-2 md:p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300" onClick={onClose}>
@@ -21524,7 +22476,7 @@ const SettingsModal: React.FC<{
 
           {activeTab === 'config' && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-               {isAdminUser && (
+               {(isAdminUser || settingsPerms?.config) && (
                  <button onClick={() => { onClose(); setIsUserManagementOpen(true); }} className="w-full group px-8 py-6 bg-slate-50 text-slate-700 rounded-[2rem] font-black text-xs uppercase flex items-center justify-between border border-slate-200 hover:bg-blue-600 hover:text-white hover:border-blue-700 hover:shadow-xl hover:shadow-blue-200 transition-all">
                     <div className="flex items-center gap-6">
                       <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:bg-white/20 group-hover:text-white transition-all"><UserPlus size={24}/></div>

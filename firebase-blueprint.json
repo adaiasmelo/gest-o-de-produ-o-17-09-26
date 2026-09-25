@@ -299,6 +299,61 @@
         "userId": { "type": "string" }
       },
       "required": ["id", "sector", "equipmentOrLocation", "problemDescription", "equipmentCondition", "productionImpact", "requesterName", "status", "createdAt"]
+    },
+    "UserActivityLog": {
+      "title": "User Activity Log",
+      "description": "Logs all screens accessed and actions performed by users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "registration": { "type": "string" },
+        "role": { "type": "string" },
+        "type": { "type": "string", "enum": ["screen_view", "action", "auth"] },
+        "screen": { "type": "string" },
+        "subScreen": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "device": { "type": "string" }
+      },
+      "required": ["id", "name", "registration", "role", "type", "screen", "action", "timestamp"]
+    },
+    "ActiveSession": {
+      "title": "Active Session",
+      "description": "Represents currently online sessions with current screen tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "registration": { "type": "string" },
+        "role": { "type": "string" },
+        "loginTime": { "type": "string" },
+        "lastSeen": { "type": "string" },
+        "device": { "type": "string" },
+        "currentScreen": { "type": "string" },
+        "currentSubScreen": { "type": "string" },
+        "lastAction": { "type": "string" },
+        "lastActionTime": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "registration", "role", "loginTime", "lastSeen"]
+    },
+    "AccessLog": {
+      "title": "Access Log",
+      "description": "Logs user login and logout events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "registration": { "type": "string" },
+        "role": { "type": "string" },
+        "action": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "device": { "type": "string" }
+      },
+      "required": ["id", "name", "registration", "role", "action", "timestamp"]
     }
   },
   "firestore": {
@@ -318,6 +373,9 @@
     "vacations": { "schema": "Vacation", "description": "Vacation planning entries" },
     "lunch_schedules": { "schema": "LunchSchedule", "description": "Weekly lunch scheduling data" },
     "overtime_requests": { "schema": "OvertimeRequest", "description": "Overtime authorization requests (DOC 076)" },
-    "maintenance_requests": { "schema": "MaintenanceRequest", "description": "Formal maintenance requests and work scheduling" }
+    "maintenance_requests": { "schema": "MaintenanceRequest", "description": "Formal maintenance requests and work scheduling" },
+    "active_sessions": { "schema": "ActiveSession", "description": "Online user sessions and live screen tracking" },
+    "access_logs": { "schema": "AccessLog", "description": "User login and logout logs" },
+    "user_activity_logs": { "schema": "UserActivityLog", "description": "Audited history of user screen visits and actions" }
   }
 }

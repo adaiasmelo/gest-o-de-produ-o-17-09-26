@@ -224,14 +224,76 @@ export interface TrainingTemplate {
   logoBase64?: string;
 }
 
+export interface ExtrusionPermissions {
+  enabled: boolean;
+  summary: boolean;      // Visão Geral
+  charts: boolean;       // Gráficos
+  comparison: boolean;   // Comparativos BI
+  reports: boolean;      // Relatórios
+  stock: boolean;        // Estoque
+  newEntry: boolean;     // Novo Lançamento
+}
+
+export interface RibbonPermissions {
+  enabled: boolean;
+  summary: boolean;      // Visão Geral
+  charts: boolean;       // Gráficos
+  comparison: boolean;   // Comparativos BI
+  reports: boolean;      // Relatório Lançamentos
+  productivity: boolean; // Produtividade de Máquina
+  newEntry: boolean;     // Novo Lançamento
+}
+
+export interface PersonnelPermissions {
+  enabled: boolean;
+  board: boolean;        // Quadro de Colaboradores / Presença
+  vacations: boolean;    // Escala de Férias
+  training: boolean;     // Treinamento Operacional
+  lunch: boolean;        // Escala de Almoço
+  overtime: boolean;     // Solicitação de Hora Extra
+  evaluations: boolean;  // Avaliações de Desempenho
+  manage: boolean;       // Cadastrar / Gerir Colaboradores
+}
+
+export interface MaintenancePermissions {
+  enabled: boolean;
+  requests: boolean;     // Solicitações de Manutenção
+  causes: boolean;       // Análise de Causas
+  newRequest: boolean;   // Nova Solicitação
+}
+
+export interface ProjectionPermissions {
+  enabled: boolean;      // Projeção TV
+}
+
+export interface SettingsPermissions {
+  enabled: boolean;
+  filters: boolean;      // Filtros
+  goals: boolean;        // Metas
+  config: boolean;       // Cadastro (Colaboradores, Funções, Turnos, Motivos, Usuários)
+  system: boolean;       // Sistema (Identidade, Logo, Banco, Backup)
+  app: boolean;          // App / Versão / PWA
+}
+
 export interface UserPermissions {
-  canViewDashboard: boolean;
-  canViewReports: boolean;
-  canViewPersonnel: boolean;
-  canManageSettings: boolean;
-  canEditProduction: boolean;
-  canManagePersonnel: boolean;
-  isReadOnly: boolean;
+  // Flag global de proteção contra escrita
+  isReadOnly?: boolean;
+
+  // Permissões detalhadas e granulares por módulo
+  extrusion?: ExtrusionPermissions;
+  ribbon?: RibbonPermissions;
+  personnel?: PersonnelPermissions;
+  maintenance?: MaintenancePermissions;
+  projection?: ProjectionPermissions;
+  settings?: SettingsPermissions;
+
+  // Flags legadas para retrocompatibilidade
+  canViewDashboard?: boolean;
+  canViewReports?: boolean;
+  canViewPersonnel?: boolean;
+  canManageSettings?: boolean;
+  canEditProduction?: boolean;
+  canManagePersonnel?: boolean;
 }
 
 export interface SystemUser {
@@ -254,6 +316,27 @@ export interface ActiveSession {
   lastSeen: string;
   device?: string;
   status?: 'active' | 'disconnected';
+  currentScreen?: string;
+  currentSubScreen?: string;
+  lastAction?: string;
+  lastActionTime?: string;
+}
+
+export type UserActivityType = 'screen_view' | 'action' | 'auth';
+
+export interface UserActivityLog {
+  id: string;
+  userId?: string;
+  name: string;
+  registration: string;
+  role: string;
+  type: UserActivityType;
+  screen: string;
+  subScreen?: string;
+  action: string;
+  details?: string;
+  timestamp: string;
+  device?: string;
 }
 
 export interface AccessLog {

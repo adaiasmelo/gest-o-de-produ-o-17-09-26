@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getMessaging, isSupported, Messaging } from 'firebase/messaging';
 import { 
   doc, setDoc, getDoc, collection, query, where, onSnapshot, getDocs, deleteDoc, writeBatch,
-  getFirestore, getDocFromServer
+  getFirestore
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -28,30 +28,6 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     console.warn('Firebase Messaging não suportado neste ambiente.');
   });
 }
-
-console.log('Firebase Init: Conectando ao Banco:', firebaseConfig.firestoreDatabaseId || 'ai-studio-f0309e5c-c262-4bce-92fb-80bc63dce14b');
-
-// Validação de Conexão conforme a Skill
-async function testConnection() {
-  try {
-    // Tenta ler um documento qualquer para testar permissões e conexão
-    await getDocFromServer(doc(db, 'settings', 'global'));
-    console.log('Firebase Connection: Sucesso!');
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    const isOffline = errorMsg.toLowerCase().includes('offline') || 
-                      errorMsg.toLowerCase().includes('network') || 
-                      errorMsg.toLowerCase().includes('reach') ||
-                      errorMsg.toLowerCase().includes('unreachable');
-    if (isOffline) {
-      console.warn('Firebase Connection: Dispositivo offline ou conexão lenta. Operando no modo offline local (cache).');
-    } else {
-      console.error("Firebase Connection Error:", error);
-    }
-  }
-}
-testConnection();
-
 
 export enum OperationType {
   CREATE = 'create',
@@ -84,7 +60,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const isOffline = errorMsg.toLowerCase().includes('offline') || 
                     errorMsg.toLowerCase().includes('network') || 
                     errorMsg.toLowerCase().includes('reach') ||
-                    errorMsg.toLowerCase().includes('unreachable');
+                    errorMsg.toLowerCase().includes('unavailable') ||
+                    errorMsg.toLowerCase().includes('unreachable') ||
+                    errorMsg.toLowerCase().includes('the operation could not be completed') ||
+                    errorMsg.toLowerCase().includes('failed to get document');
 
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),

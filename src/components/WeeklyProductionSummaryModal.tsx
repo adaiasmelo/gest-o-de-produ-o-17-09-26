@@ -21,6 +21,7 @@ interface WeeklyProductionSummaryModalProps {
   employees?: Employee[];
   goals?: Record<string, number>;
   isReadOnly?: boolean;
+  canView?: boolean;
   onBlockedAction?: (title?: string, message?: string) => void;
   setPdfModal?: (modal: any) => void;
 }
@@ -172,6 +173,7 @@ export const WeeklyProductionSummaryModal: React.FC<WeeklyProductionSummaryModal
   employees = [],
   goals = {},
   isReadOnly = false,
+  canView = true,
   onBlockedAction,
   setPdfModal
 }) => {
@@ -1267,6 +1269,30 @@ _Relatório Padronizado de Reunião Semanal • Manupackaging Amazônia_
   };
 
   if (!isOpen) return null;
+
+  if (canView === false) {
+    return (
+      <div id="weekly-meeting-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-red-100 text-center space-y-4">
+          <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+            <ShieldAlert size={32} />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-lg font-black text-slate-800 tracking-tight">Acesso Restrito</h3>
+            <p className="text-xs text-slate-500 font-bold leading-relaxed">
+              Os dados e relatórios do <strong>Resumo Semanal de Produção</strong> são confidenciais e estão disponíveis exclusivamente para usuários com perfil de <strong>Supervisor</strong> ou <strong>Administrador</strong>.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="weekly-meeting-modal" className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm transition-all animate-in fade-in duration-200">
