@@ -505,19 +505,19 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
       },
       {
-        id: 'mach-cast-3',
+        id: 'mach-erema',
         category: 'machines',
-        title: 'CAST 3 • Extrusora de Filme Stretch',
-        subtitle: 'Setor de Extrusão • Filtrar apontamentos e produtividade da CAST 3',
-        badge: 'Extrusora CAST',
-        badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+        title: 'Erema • Recuperadora & Reciclagem',
+        subtitle: 'Setor de Reciclagem • Moagem, recuperação de filme de purga e pellets',
+        badge: 'Reciclagem Erema',
+        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         icon: <Factory size={18} />,
-        iconBg: 'bg-blue-500/10 text-blue-600',
-        iconColor: 'text-blue-600',
-        keywords: ['cast 3', 'cast3', 'extrusora 3', 'linha 3'],
+        iconBg: 'bg-emerald-500/10 text-emerald-600',
+        iconColor: 'text-emerald-600',
+        keywords: ['erema', 'erema 1', 'recuperadora', 'reciclagem', 'pellet'],
         action: () => {
           onClose();
-          onNavigateTab('extrusion', 'dashboard', 'summary');
+          onNavigateTab('extrusion', 'charts');
         }
       },
       {

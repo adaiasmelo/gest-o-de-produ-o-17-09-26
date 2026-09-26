@@ -81,6 +81,11 @@ import {
 } from './utils/screensaverUtils';
 import { GranularPermissionsEditor } from './components/GranularPermissionsEditor';
 import { CommandPalette } from './components/CommandPalette';
+// ==================== INÍCIO OPÇÃO 1 E 3: IMPORTS (DESFAZER) ====================
+import { InteractiveBreadcrumbs } from './components/InteractiveBreadcrumbs';
+import { FloatingQuickDock } from './components/FloatingQuickDock';
+import { IndustrialBentoGrid } from './components/IndustrialBentoGrid';
+// ==================== FIM OPÇÃO 1 E 3: IMPORTS (DESFAZER) ====================
 import { normalizeUserPermissions, DEFAULT_FULL_PERMISSIONS, createPresetPermissions } from './utils/userPermissions';
 import { SettingsPermissions } from './types';
 
@@ -11711,185 +11716,44 @@ Atenciosamente,
       </div>
 
       <main className="max-w-7xl mx-auto px-3 py-4 sm:p-6 space-y-4 sm:space-y-8">
+        {/* ==================== INÍCIO OPÇÃO 3: BREADCRUMBS INTERATIVOS (DESFAZER: OPÇÃO 3) ==================== */}
+        <InteractiveBreadcrumbs
+          activeTab={activeTab}
+          extrusionSubTab={extrusionSubTab}
+          dashboardSubTab={dashboardSubTab}
+          ribbonSubTab={ribbonSubTab}
+          ribbonDashboardSubTab={ribbonDashboardSubTab}
+          personnelSubView={personnelSubView}
+          maintenanceSubTab={maintenanceSubTab}
+          onNavigateTab={handleCommandPaletteNavigate}
+        />
+        {/* ==================== FIM OPÇÃO 3: BREADCRUMBS INTERATIVOS (DESFAZER: OPÇÃO 3) ==================== */}
+
+        {/* ==================== INÍCIO OPÇÃO 1: BENTO GRID INDUSTRIAL (DESFAZER: OPÇÃO 1) ==================== */}
         {activeTab === 'home' && (
-          <div className="space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             {systemCoverImage && (
-                <div className="w-full h-32 sm:h-48 md:h-64 rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] overflow-hidden border border-slate-100 shadow-md sm:shadow-xl animate-in zoom-in-95 duration-500">
-                   <img src={systemCoverImage} alt="Imagem de Capa" className="w-full h-full object-cover" />
-                </div>
-             )}
-
-
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-                {(isAdmin || (userPerms.personnel.enabled && userPerms.personnel.manage && !isReadOnlyAccount)) && (
-                  <button 
-                    onClick={() => setIsCollaboratorModalOpen(true)}
-                    className="bg-blue-600 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-blue-100 active:scale-95 transition-all group cursor-pointer"
-                  >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><UserPlus className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Cadastrar Colaborador</span>
-                  </button>
-                )}
-
-                {(isAdmin || (userPerms.personnel.enabled && userPerms.personnel.overtime)) && (
-                  <button 
-                    onClick={() => { setActiveTab('personnel'); setPersonnelSubView('overtime'); }}
-                    className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer"
-                    title="Abrir Solicitação de Hora Extra (DOC 076)"
-                  >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-amber-50 text-amber-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Clock className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-amber-600" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Solicitação de Hora Extra</span>
-                  </button>
-                )}
-
-                {(isAdmin || (userPerms.maintenance.enabled && (userPerms.maintenance.requests || userPerms.maintenance.newRequest))) && (
-                  <button 
-                    onClick={() => {
-                      setMaintenanceSubTab('requests');
-                      setMaintenanceInitialCreateOpen(false);
-                      setActiveTab('maintenance');
-                    }}
-                    className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer hover:border-blue-200"
-                    title="Abrir Novo Fluxo de Solicitação de Manutenção (Diretriz Oficial / Outlook)"
-                  >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Wrench className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-blue-600" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Solicitação de Manutenção</span>
-                  </button>
-                )}
-
-                {(isAdmin || (userPerms.personnel.enabled && userPerms.personnel.training)) && (
-                  <button 
-                    onClick={() => setIsTrainingModalOpen(true)}
-                    className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer"
-                  >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-slate-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-slate-500 text-center leading-snug">Treinamento / DDP</span>
-                  </button>
-                )}
-
-                {(isAdmin || ((userPerms.extrusion.enabled || userPerms.ribbon.enabled) && canViewWeeklySummary)) && (
-                  <button 
-                    onClick={() => setIsWeeklySummaryOpen(true)}
-                    className="bg-gradient-to-br from-blue-600 to-indigo-700 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-blue-200/50 border border-blue-400/30 active:scale-95 transition-all group cursor-pointer"
-                    title="Abrir Resumo Semanal de Produção para Reunião de Resultados"
-                  >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Presentation className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-amber-300 animate-pulse" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Resumo Semanal (Reunião)</span>
-                  </button>
-                )}
-
-                {(isAdmin || ((userPerms.extrusion.enabled && userPerms.extrusion.comparison) || (userPerms.maintenance.enabled && userPerms.maintenance.causes))) && (
-                  <button 
-                    onClick={() => setIsDowntimeAnalyticsModalOpen(true)}
-                    className="bg-gradient-to-br from-slate-900 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-slate-900/20 border border-blue-500/30 active:scale-95 transition-all group cursor-pointer"
-                    title="Abrir Módulo BI de Análise Detalhada de Paradas de Máquina"
-                  >
-                     <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-500/20 text-blue-400 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Análise BI de Paradas</span>
-                  </button>
-                )}
-
-                {(isAdmin || userPerms.extrusion.enabled) && (
-                  <div className="bg-gradient-to-br from-indigo-900 to-blue-900 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-900/20 border border-indigo-400/30 group">
-                     <div 
-                       onClick={() => setIsCast1CalculatorOpen(true)}
-                       className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
-                       title="Abrir Calculadora % CAST 1 - Produção Integrada"
-                     >
-                       <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Calculator className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" /></div>
-                       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Calculadora CAST 1</span>
-                     </div>
-                     <button
-                       type="button"
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         let link = "https://gest-o-de-produ-o-2026.pages.dev/calculadora.html";
-                         if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
-                           link = `${window.location.origin}/calculadora.html`;
-                         }
-                         if (navigator.clipboard && window.isSecureContext) {
-                           navigator.clipboard.writeText(link).then(() => {
-                             alert('Link Externo da Calculadora CAST 1 copiado com sucesso! Pode enviar pelo WhatsApp para qualquer pessoa acessar sem login.');
-                           });
-                         } else {
-                           window.prompt('Copie o link externo abaixo para enviar:', link);
-                         }
-                       }}
-                       className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
-                       title="Copiar link público para enviar aos operadores"
-                     >
-                       <Copy size={11} /> Copiar Link Externo
-                     </button>
-                  </div>
-                )}
-
-                {(isAdmin || userPerms.projection.enabled) && (
-                  <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-950/30 border border-indigo-500/30 group">
-                     <div 
-                       onClick={() => {
-                         setIsTvProjectionActive(true);
-                         if (!document.fullscreenElement) {
-                           document.documentElement.requestFullscreen().catch(() => {});
-                         }
-                       }}
-                       className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
-                       title="Abrir Projeção TV com transmissão contínua"
-                     >
-                       <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform"><Tv className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 animate-pulse" /></div>
-                       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">Projeção TV (Smart TV)</span>
-                     </div>
-                     <button
-                       type="button"
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         let link = "https://gest-o-de-produ-o-2026.pages.dev/tv";
-                         if (typeof window !== "undefined" && (window.location.origin.includes("gest-o-de-produ-o-2026.pages.dev") || window.location.origin.includes("pages.dev"))) {
-                           link = `${window.location.origin}/tv`;
-                         }
-                         if (navigator.clipboard && window.isSecureContext) {
-                           navigator.clipboard.writeText(link).then(() => {
-                             alert('Link Externo da Projeção TV copiado com sucesso!\n\n' + link + '\n\nAbra diretamente no navegador da Smart TV para reprodução contínua automática em tela cheia.');
-                           });
-                         } else {
-                           window.prompt('Copie o link externo da Projeção TV abaixo para a Smart TV:', link);
-                         }
-                       }}
-                       className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
-                       title="Copiar link externo para abrir em Smart TV ou telão industrial"
-                     >
-                       <Copy size={11} /> Copiar Link Smart TV
-                     </button>
-                  </div>
-                )}
-              </div>
-
-             <div className="bg-slate-900 p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] text-white overflow-hidden relative group">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                   <div className="flex items-center gap-2.5 sm:gap-3">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/10 rounded-xl flex items-center justify-center"><Smartphone size={18} className="sm:w-5 sm:h-5" /></div>
-                      <h3 className="text-xs sm:text-sm font-black uppercase tracking-tight">Experiência App</h3>
-                   </div>
-                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                </div>
-                <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed sm:leading-loose mb-4 sm:mb-6">
-                   Este sistema foi otimizado para uso como aplicativo. Para uma melhor experiência, adicione-o à sua tela de início.
-                </p>
-                {isStandalone ? (
-                  <div className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-500/10 text-emerald-500 rounded-full text-[9px] font-black uppercase">
-                     <ShieldCheck size={14} /> Modo Aplicativo Ativo
-                  </div>
-                ) : (
-                  <button 
-                    onClick={handleInstallClick}
-                    className="w-full py-3 sm:py-4 bg-white text-slate-900 rounded-xl sm:rounded-2xl font-black text-[9px] sm:text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
-                  >
-                     <Download size={15} /> Instalar Agora
-                  </button>
-                )}
-             </div>
-          </div>
+          <IndustrialBentoGrid
+            productionData={productionData}
+            ribbonEntries={ribbonEntries}
+            goals={goals}
+            dashboardMonth={dashboardMonth}
+            filterDay={filterDay}
+            collaborators={collaborators}
+            employees={employees}
+            isAdmin={isAdmin}
+            userPerms={userPerms}
+            isReadOnlyAccount={isReadOnlyAccount}
+            canViewWeeklySummary={canViewWeeklySummary}
+            isOnline={isOnline}
+            isStandalone={isStandalone}
+            systemCoverImage={systemCoverImage}
+            onNavigateTab={handleCommandPaletteNavigate}
+            onOpenModal={handleCommandPaletteOpenModal}
+            onInstallClick={handleInstallClick}
+            setMaintenanceSubTab={setMaintenanceSubTab}
+            setMaintenanceInitialCreateOpen={setMaintenanceInitialCreateOpen}
+          />
         )}
+        {/* ==================== FIM OPÇÃO 1: BENTO GRID INDUSTRIAL (DESFAZER: OPÇÃO 1) ==================== */}
 
         {activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'summary' && canEditProduction && (
           <div className="mb-4 flex items-center justify-end animate-in fade-in duration-300">
@@ -20645,6 +20509,23 @@ Atenciosamente,
         canManage={canManagePersonnel || isAdmin}
         onFilterEmployee={handleCommandPaletteFilterEmployee}
       />
+
+      {/* ==================== INÍCIO OPÇÃO 3: MINI DOCK FLUTUANTE (DESFAZER: OPÇÃO 3) ==================== */}
+      <FloatingQuickDock
+        onOpenProductionModal={() => {
+          setEditingEntry(null);
+          setIsModalOpen(true);
+        }}
+        onNavigateOvertime={() => {
+          setActiveTab('personnel');
+          setPersonnelSubView('overtime');
+        }}
+        onOpenCast1Calculator={() => setIsCast1CalculatorOpen(true)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        isOnline={isOnline}
+        isSyncing={productionSyncStatus.isSyncing}
+      />
+      {/* ==================== FIM OPÇÃO 3: MINI DOCK FLUTUANTE (DESFAZER: OPÇÃO 3) ==================== */}
 
       <AnimatePresence>
         {fullscreenChart && ['stops-motifs-card', 'ribbon-chart-composed', 'ribbon-chart-prod', 'ribbon-chart-waste', 'ribbon-chart-scatter', 'ribbon-chart-stacked'].includes(fullscreenChart) && (
