@@ -80,6 +80,7 @@ import {
   ScreensaverSettings 
 } from './utils/screensaverUtils';
 import { GranularPermissionsEditor } from './components/GranularPermissionsEditor';
+import { CommandPalette } from './components/CommandPalette';
 import { normalizeUserPermissions, DEFAULT_FULL_PERMISSIONS, createPresetPermissions } from './utils/userPermissions';
 import { SettingsPermissions } from './types';
 
@@ -868,6 +869,7 @@ export const App: React.FC = () => {
   const [isDowntimeReasonsModalOpen, setIsDowntimeReasonsModalOpen] = useState(false);
   const [isDowntimeAnalyticsModalOpen, setIsDowntimeAnalyticsModalOpen] = useState(false);
   const [isCast1CalculatorOpen, setIsCast1CalculatorOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [downtimeReasonsVersion, setDowntimeReasonsVersion] = useState(0);
   const [stopsSearchTerm, setStopsSearchTerm] = useState<string>('');
 
@@ -876,6 +878,179 @@ export const App: React.FC = () => {
     window.addEventListener('downtime_reasons_updated', handleUpdate);
     return () => window.removeEventListener('downtime_reasons_updated', handleUpdate);
   }, []);
+
+  // Atalho Global para Navegabilidade Ultrarrápida (Ctrl + K / Cmd + K)
+  // e Gesto de Segurar por alguns segundos em área sem ação no Celular / Tablet
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+
+    // Gesto de Toque Longo (Pressionar e segurar por alguns segundos em parte neutra da tela no celular e tablet)
+    let touchHoldTimer: NodeJS.Timeout | null = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    const isInteractive = (target: EventTarget | null): boolean => {
+      if (!target || !(target instanceof HTMLElement)) return false;
+      // Checar botões, links, inputs, selects, textareas, elementos clicáveis ou menus
+      if (
+        target.closest(
+          'button, a, input, select, textarea, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], [role="option"], [data-no-longpress], .cursor-pointer'
+        )
+      ) {
+        return true;
+      }
+      try {
+        const style = window.getComputedStyle(target);
+        if (style.cursor === 'pointer') return true;
+      } catch {
+        // Ignora caso estilo não esteja acessível
+      }
+      return false;
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const target = e.target;
+      if (isInteractive(target)) return;
+
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+
+      // Pressionar e segurar por aproximadamente 800ms
+      touchHoldTimer = setTimeout(() => {
+        if (navigator.vibrate) {
+          try {
+            navigator.vibrate(50);
+          } catch {
+            // Ignora se o dispositivo não suportar vibração
+          }
+        }
+        setIsCommandPaletteOpen(true);
+      }, 800);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!touchHoldTimer) return;
+      if (e.touches.length !== 1) {
+        clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+        return;
+      }
+      const touch = e.touches[0];
+      const moveDist = Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY);
+      // Se mover o dedo (ex: rolando a página), cancela o timer para não atrapalhar o scroll
+      if (moveDist > 12) {
+        clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (touchHoldTimer) {
+        clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+      }
+    };
+
+    const handleTouchCancel = () => {
+      if (touchHoldTimer) {
+        clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', handleTouchCancel, { passive: true });
+
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      if (touchHoldTimer) clearTimeout(touchHoldTimer);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchCancel);
+    };
+  }, []);
+
+  const handleCommandPaletteNavigate = (
+    tab: 'home' | 'extrusion' | 'ribbon' | 'personnel' | 'evaluations' | 'maintenance' | 'projection',
+    subTab?: string,
+    subSubTab?: string
+  ) => {
+    setActiveTab(tab);
+    if (tab === 'extrusion') {
+      if (subTab) setExtrusionSubTab(subTab as any);
+      if (subSubTab) setDashboardSubTab(subSubTab as any);
+    } else if (tab === 'ribbon') {
+      if (subTab) setRibbonSubTab(subTab as any);
+      if (subSubTab) setRibbonDashboardSubTab(subSubTab as any);
+    } else if (tab === 'personnel') {
+      if (subTab) setPersonnelSubView(subTab as any);
+    } else if (tab === 'projection') {
+      setIsTvProjectionActive(true);
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    }
+  };
+
+  const handleCommandPaletteOpenModal = (modalName: string, payload?: any) => {
+    switch (modalName) {
+      case 'launch_production':
+        setIsModalOpen(true);
+        break;
+      case 'training':
+        setIsTrainingModalOpen(true);
+        break;
+      case 'cast1_calculator':
+        setIsCast1CalculatorOpen(true);
+        break;
+      case 'weekly_summary':
+        setIsWeeklySummaryOpen(true);
+        break;
+      case 'downtime_analytics':
+        setIsDowntimeAnalyticsModalOpen(true);
+        break;
+      case 'database':
+        setIsDatabaseModalOpen(true);
+        break;
+      case 'permissions':
+        setIsPermissionModalOpen(true);
+        break;
+      case 'settings':
+        setIsSettingsModalOpen(true);
+        break;
+      case 'collaborator':
+        setSelectedCollaborator(payload || null);
+        setIsCollaboratorModalOpen(true);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleCommandPaletteFilterEmployee = (employeeName: string) => {
+    setActiveTab('personnel');
+    setPersonnelSubView('board');
+    setTimeout(() => {
+      const match = employees.find(
+        (e) => e.name?.toLowerCase().trim() === employeeName.toLowerCase().trim()
+      );
+      if (match) {
+        setSelectedEmployee(match);
+        setIsDetailModalOpen(true);
+      }
+    }, 150);
+  };
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -20457,6 +20632,18 @@ Atenciosamente,
         }}
         setRibbonGoals={setRibbonGoals}
         db={db}
+      />
+
+      {/* Paleta Global de Comandos & Navegabilidade Ultrarrápida (Ctrl + K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigateTab={handleCommandPaletteNavigate}
+        onOpenModal={handleCommandPaletteOpenModal}
+        employees={employees}
+        isAdmin={isAdmin}
+        canManage={canManagePersonnel || isAdmin}
+        onFilterEmployee={handleCommandPaletteFilterEmployee}
       />
 
       <AnimatePresence>

@@ -319,3 +319,180 @@ export function calculateOvertimeHoursDetailed(params: OvertimeCalcParams): Over
     explanation
   };
 }
+
+/**
+ * =========================================================================
+ * REGRAS DE FECHAMENTO DA FOLHA DE PONTO (DIA 24 DO MÊS)
+ * =========================================================================
+ * 
+ * Regra da Empresa:
+ * - A folha de ponto fecha impreterivelmente no dia 24 de cada mês.
+ * - Na contagem de horas extras de um determinado colaborador, aparecem apenas as horas
+ *   lançadas até o dia 24 do mês.
+ * - Qualquer hora extra lançada após o dia 24 (a partir do dia 25) deve começar a contar
+ *   zerada (começa do zero novamente), passando a contabilizar para a folha do mês seguinte.
+ * 
+ * Exemplo de Ciclos:
+ * - Folha de Setembro/2026: 25/08/2026 até 24/09/2026 (fechamento em 24/09).
+ * - Folha de Outubro/2026: 25/09/2026 até 24/10/2026 (horas zeradas recomeçando a contar a partir de 25/09).
+ */
+
+export const PAYROLL_CUTOFF_DAY = 24;
+
+export const MONTH_NAMES_PT = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+export interface PayrollCycle {
+  key: string;            // Ex: "2026-09" ou "2026-10"
+  referenceYear: number;  // Ano de competência da folha (ex: 2026)
+  referenceMonth: number; // Mês de competência 1-12 (ex: 9 para Setembro)
+  monthName: string;      // "Setembro"
+  startDate: string;      // "YYYY-MM-DD" (ex: "2026-08-25")
+  endDate: string;        // "YYYY-MM-DD" (ex: "2026-09-24")
+  label: string;          // "Folha Setembro / 2026 (25/08 a 24/09)"
+  shortLabel: string;     // "Setembro/2026 (Fech. 24)"
+  intervalLabel: string;  // "25/08 a 24/09"
+  isCurrent: boolean;     // Se a data de hoje está dentro deste ciclo
+  isClosed: boolean;      // Se o ciclo já foi fechado (hoje > endDate)
+}
+
+/**
+ * Determina o ciclo de folha de ponto correspondente a uma data específica.
+ */
+export function getPayrollCycleFromDate(dateInput: string | Date): PayrollCycle {
+  let y: number;
+  let m: number; // 1 a 12
+  let d: number; // 1 a 31
+
+  if (typeof dateInput === 'string') {
+    const cleanStr = dateInput.substring(0, 10);
+    const parts = cleanStr.split('-').map(Number);
+    y = parts[0] || new Date().getFullYear();
+    m = parts[1] || (new Date().getMonth() + 1);
+    d = parts[2] || new Date().getDate();
+  } else {
+    y = dateInput.getFullYear();
+    m = dateInput.getMonth() + 1;
+    d = dateInput.getDate();
+  }
+
+  let refYear = y;
+  let refMonth = m;
+
+  let startYear = y;
+  let startMonth = m;
+  let endYear = y;
+  let endMonth = m;
+
+  if (d <= PAYROLL_CUTOFF_DAY) {
+    // Pertence à folha do mês de referência atual (m)
+    refYear = y;
+    refMonth = m;
+
+    // Período: dia 25 do mês anterior até dia 24 do mês atual
+    if (m === 1) {
+      startYear = y - 1;
+      startMonth = 12;
+    } else {
+      startYear = y;
+      startMonth = m - 1;
+    }
+    endYear = y;
+    endMonth = m;
+  } else {
+    // Data posterior ao dia 24: zera a contagem e conta para a folha do próximo mês!
+    if (m === 12) {
+      refYear = y + 1;
+      refMonth = 1;
+    } else {
+      refYear = y;
+      refMonth = m + 1;
+    }
+
+    startYear = y;
+    startMonth = m;
+    endYear = refYear;
+    endMonth = refMonth;
+  }
+
+  const startDate = `${startYear}-${String(startMonth).padStart(2, '0')}-25`;
+  const endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(PAYROLL_CUTOFF_DAY).padStart(2, '0')}`;
+  const key = `${refYear}-${String(refMonth).padStart(2, '0')}`;
+  const monthName = MONTH_NAMES_PT[refMonth - 1] || `Mês ${refMonth}`;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isCurrent = todayStr >= startDate && todayStr <= endDate;
+  const isClosed = todayStr > endDate;
+
+  const startDayStr = '25';
+  const startMonthStr = String(startMonth).padStart(2, '0');
+  const endDayStr = String(PAYROLL_CUTOFF_DAY).padStart(2, '0');
+  const endMonthStr = String(endMonth).padStart(2, '0');
+  const intervalLabel = `${startDayStr}/${startMonthStr} a ${endDayStr}/${endMonthStr}`;
+
+  return {
+    key,
+    referenceYear: refYear,
+    referenceMonth: refMonth,
+    monthName,
+    startDate,
+    endDate,
+    label: `Folha ${monthName} / ${refYear} (${intervalLabel})`,
+    shortLabel: `${monthName}/${refYear} (Fech. 24)`,
+    intervalLabel,
+    isCurrent,
+    isClosed
+  };
+}
+
+/**
+ * Retorna o ciclo da folha de ponto vigente na data atual.
+ */
+export function getCurrentPayrollCycle(): PayrollCycle {
+  return getPayrollCycleFromDate(new Date());
+}
+
+/**
+ * Retorna a chave do ciclo atual da folha (ex: "2026-10" se hoje for 25/09 ou "2026-09" se hoje for 20/09)
+ */
+export function getCurrentPayrollCycleKey(): string {
+  return getCurrentPayrollCycle().key;
+}
+
+/**
+ * Constrói um ciclo de folha a partir de uma chave "YYYY-MM"
+ */
+export function getPayrollCycleByKey(key: string): PayrollCycle {
+  if (!key || key === 'todos') {
+    return getCurrentPayrollCycle();
+  }
+  const [yStr, mStr] = key.split('-');
+  const y = parseInt(yStr, 10) || new Date().getFullYear();
+  const m = parseInt(mStr, 10) || (new Date().getMonth() + 1);
+  // O dia 15 sempre cai dentro do ciclo daquele refMonth
+  return getPayrollCycleFromDate(new Date(y, m - 1, 15));
+}
+
+/**
+ * Verifica se uma data específica (YYYY-MM-DD) pertence a um determinado ciclo de folha (YYYY-MM).
+ */
+export function isDateInPayrollCycle(dateStr: string, cycleKey: string): boolean {
+  if (!dateStr) return false;
+  if (!cycleKey || cycleKey === 'todos') return true;
+  const cycle = getPayrollCycleByKey(cycleKey);
+  const cleanDate = dateStr.substring(0, 10);
+  return cleanDate >= cycle.startDate && cleanDate <= cycle.endDate;
+}
+
+/**
+ * Formata amigavelmente a identificação do ciclo de folha para seletores e relatórios.
+ */
+export function formatPayrollMonthLabel(cycleKey: string): string {
+  if (!cycleKey || cycleKey === 'todos') return 'Todos os Períodos (Histórico Geral)';
+  const cycle = getPayrollCycleByKey(cycleKey);
+  const statusTag = cycle.isCurrent ? ' • Ciclo Vigente' : cycle.isClosed ? ' • Fechada em 24/' + String(cycle.referenceMonth).padStart(2, '0') : '';
+  return `${cycle.label}${statusTag}`;
+}
+

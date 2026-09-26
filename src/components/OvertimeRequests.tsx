@@ -19,7 +19,15 @@ import {
   getCanonicalShiftCategory,
   calculateCommercialFlexibleEnd,
   calculateOvertimeHoursDetailed,
-  formatOvertimeDisplay
+  formatOvertimeDisplay,
+  PAYROLL_CUTOFF_DAY,
+  getPayrollCycleFromDate,
+  getCurrentPayrollCycle,
+  getCurrentPayrollCycleKey,
+  getPayrollCycleByKey,
+  isDateInPayrollCycle,
+  formatPayrollMonthLabel,
+  PayrollCycle
 } from '../utils/shiftUtils';
 
 interface OvertimeRequestsProps {
@@ -76,8 +84,8 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterSector, setFilterSector] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
-  // 'todos' por padrão para que solicitações de qualquer mês (agosto, setembro, etc.) sejam sempre visíveis
-  const [filterMonth, setFilterMonth] = useState<string>('todos');
+  // Filtro de mês baseado no fechamento da folha no dia 24 (inicia automaticamente no ciclo vigente)
+  const [filterMonth, setFilterMonth] = useState<string>(() => getCurrentPayrollCycleKey());
 
   // Campos do Formulário
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
@@ -170,39 +178,70 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     return () => unsub();
   }, []);
 
-  // Meses disponíveis com solicitações para o filtro de histórico
-  const availableMonths = useMemo(() => {
-    const set = new Set<string>();
+  // Ciclos da Folha de Ponto disponíveis (com fechamento no dia 24)
+  const availablePayrollCycles = useMemo(() => {
+    const keysSet = new Set<string>();
+
+    // Sempre garante o ciclo atual vigente e o ciclo anterior no seletor
+    const currentCycle = getCurrentPayrollCycle();
+    keysSet.add(currentCycle.key);
+
+    const prevDate = new Date();
+    prevDate.setDate(prevDate.getDate() - 32);
+    const prevCycle = getPayrollCycleFromDate(prevDate);
+    keysSet.add(prevCycle.key);
+
+    // Adiciona ciclos de todas as solicitações registradas no banco
     requests.forEach((r) => {
-      if (r.date && r.date.length >= 7) {
-        set.add(r.date.substring(0, 7));
+      if (r.date) {
+        const c = getPayrollCycleFromDate(r.date);
+        keysSet.add(c.key);
       }
     });
-    // Garantir mês atual e anterior no seletor
-    const now = new Date();
-    const currM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const prevD = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevM = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`;
-    set.add(currM);
-    set.add(prevM);
-    return Array.from(set).sort().reverse();
+
+    const sortedKeys = Array.from(keysSet).sort().reverse();
+    return sortedKeys.map((key) => getPayrollCycleByKey(key));
   }, [requests]);
 
-  // Formatação amigável do mês (ex: 2026-08 -> Agosto / 2026)
+  // Formatação amigável do ciclo de folha (ex: 2026-09 -> Folha Setembro / 2026 (25/08 a 24/09))
   const formatMonthLabel = (mStr: string) => {
-    if (!mStr || mStr === 'todos') return 'Todos os Meses (Geral)';
-    try {
-      const [y, m] = mStr.split('-');
-      const monthNames = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-      ];
-      const mIdx = parseInt(m, 10) - 1;
-      return `${monthNames[mIdx] || m} / ${y}`;
-    } catch {
-      return mStr;
-    }
+    return formatPayrollMonthLabel(mStr);
   };
+
+  // Ciclo da folha ativo selecionado no filtro
+  const activePayrollCycle = useMemo(() => {
+    return getPayrollCycleByKey(filterMonth);
+  }, [filterMonth]);
+
+  // Estatísticas de horas extras do colaborador selecionado no formulário para a Folha de Ponto (fechamento dia 24)
+  const collaboratorFormCycleStats = useMemo(() => {
+    if (!employeeName.trim()) return null;
+    const currentCycle = getCurrentPayrollCycle();
+    const normalize = (str: string | undefined | null) =>
+      (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const targetName = normalize(employeeName);
+    const targetReg = normalize(registration);
+
+    const matchedRequests = requests.filter((r) => {
+      const rName = normalize(r.employeeName);
+      const rReg = normalize(r.registration);
+      const matches = rName === targetName || (targetReg && rReg === targetReg) || (selectedEmployeeId && r.employeeId === selectedEmployeeId);
+      if (!matches) return false;
+      return isDateInPayrollCycle(r.date, currentCycle.key);
+    });
+
+    const totalHours = matchedRequests.reduce((acc, r) => acc + (Number(r.estimatedHours) || 0), 0);
+    return {
+      cycle: currentCycle,
+      totalHours: Number(totalHours.toFixed(2)),
+      count: matchedRequests.length
+    };
+  }, [employeeName, registration, selectedEmployeeId, requests]);
+
+  // Ciclo da folha correspondente à data informada no formulário de solicitação
+  const formDatePayrollCycle = useMemo(() => {
+    return getPayrollCycleFromDate(date || new Date().toISOString().split('T')[0]);
+  }, [date]);
 
   // Cálculo automático de horas estimadas baseado no Turno (Comercial, Diurno, Noturno) e Modalidade
   useEffect(() => {
@@ -1422,11 +1461,11 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
         id: docId || 'he-' + Date.now()
       };
 
-      // Se estiver filtrando por um mês específico que não seja o da data salva,
-      // ajustar o filtro para 'todos' para que a solicitação recém-salva apareça imediatamente na listagem
-      const savedMonth = (payload.date || '').substring(0, 7);
-      if (filterMonth !== 'todos' && filterMonth !== savedMonth) {
-        setFilterMonth('todos');
+      // Se estiver filtrando por um ciclo específico que não seja o da data salva,
+      // ajustar o filtro para o ciclo da folha correspondente para exibição imediata
+      const savedCycle = getPayrollCycleFromDate(payload.date || new Date().toISOString().split('T')[0]);
+      if (filterMonth !== 'todos' && filterMonth !== savedCycle.key) {
+        setFilterMonth(savedCycle.key);
       }
 
       setIsFormOpen(false);
@@ -1778,11 +1817,13 @@ ${htmlBody}
     }
   };
 
-  // Lista filtrada
+  // Lista filtrada com suporte à apuração da folha de ponto (fechamento dia 24)
   const filteredRequests = useMemo(() => {
     return requests.filter((r) => {
-      // Filtro mês (se 'todos', exibe todos os meses sem restrição)
-      if (filterMonth && filterMonth !== 'todos' && !r.date.startsWith(filterMonth)) return false;
+      // Filtro ciclo da folha de ponto (com fechamento no dia 24)
+      if (filterMonth && filterMonth !== 'todos') {
+        if (!isDateInPayrollCycle(r.date, filterMonth)) return false;
+      }
 
       // Filtro setor
       if (filterSector !== 'todos') {
@@ -1919,9 +1960,16 @@ ${htmlBody}
             <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
               {stats.totalHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
             </div>
-            <p className="text-[10px] text-slate-500 font-bold mt-1">
-              Estimadas no período selecionado
-            </p>
+            <div className="mt-1">
+              <p className="text-[10px] text-amber-700 font-extrabold flex items-center gap-1">
+                {filterMonth === 'todos' ? 'Geral (Todos os Períodos)' : `${activePayrollCycle.shortLabel}`}
+              </p>
+              <p className="text-[9px] text-slate-400 font-medium">
+                {filterMonth === 'todos' 
+                  ? 'Fechamento da folha no dia 24' 
+                  : `Até dia 24 (${activePayrollCycle.intervalLabel}) • após dia 24 zera para o novo mês`}
+              </p>
+            </div>
           </div>
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -1981,26 +2029,37 @@ ${htmlBody}
               />
             </div>
 
-            {/* Filtro por Mês */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mês:</span>
+            {/* Filtro por Ciclo de Folha de Ponto (Fechamento no dia 24) */}
+            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0">Folha / Ciclo:</span>
               <select
                 value={filterMonth}
                 onChange={(e) => setFilterMonth(e.target.value)}
-                className="py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
               >
-                <option value="todos">Todos os Meses (Geral)</option>
-                {availableMonths.map((m) => (
-                  <option key={m} value={m}>
-                    {formatMonthLabel(m)}
+                {availablePayrollCycles.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {formatPayrollMonthLabel(c.key)}
                   </option>
                 ))}
+                <option value="todos">Todos os Períodos (Histórico Geral)</option>
               </select>
+              {filterMonth !== getCurrentPayrollCycleKey() && (
+                <button
+                  type="button"
+                  onClick={() => setFilterMonth(getCurrentPayrollCycleKey())}
+                  className="text-[10px] font-black text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-1 rounded-lg transition-all shrink-0 flex items-center gap-1"
+                  title="Voltar ao ciclo vigente da folha da empresa"
+                >
+                  <Clock size={11} />
+                  Ciclo Vigente
+                </button>
+              )}
               {filterMonth !== 'todos' && (
                 <button
                   type="button"
                   onClick={() => setFilterMonth('todos')}
-                  className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition-all"
+                  className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition-all shrink-0"
                   title="Exibir todos os meses e períodos"
                 >
                   Ver Todos
@@ -2045,6 +2104,57 @@ ${htmlBody}
             Exibindo <span className="text-amber-600 font-bold">{filteredRequests.length}</span> solicitações
           </div>
         </div>
+
+        {/* ============================================================== */}
+        {/* BANNER DE APURAÇÃO DE HORAS EXTRAS DO COLABORADOR PESQUISADO */}
+        {/* ============================================================== */}
+        {searchTerm.trim() && (
+          <div className="bg-amber-500/10 border border-amber-300 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs animate-in fade-in duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                <Clock size={20} />
+              </div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-amber-950 uppercase tracking-tight">
+                    Apuração por Colaborador • Fechamento da Folha no dia 24
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-200 text-amber-900 text-[9px] font-black uppercase">
+                    Regra Automática
+                  </span>
+                  {filterMonth !== 'todos' && (
+                    <span className="px-2 py-0.5 rounded-md bg-white border border-amber-300 text-amber-800 text-[9px] font-black uppercase">
+                      {activePayrollCycle.shortLabel}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-amber-900">
+                  Filtro ativo: <span className="font-black text-amber-950">&ldquo;{searchTerm}&rdquo;</span>
+                </p>
+                <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
+                  {filterMonth === 'todos' ? (
+                    <>Exibindo todas as horas no histórico. Na apuração mensal oficial da folha de ponto, a contagem considera somente até o dia 24 do mês. Horas extras lançadas a partir do dia 25 iniciam zeradas para o próximo mês.</>
+                  ) : (
+                    <>
+                      Competência: <strong>{activePayrollCycle.label}</strong>. Na folha de ponto da empresa, as horas extras são contabilizadas <strong>somente até o dia 24 do mês</strong>. Qualquer extra lançada a partir do dia 25 começa a contar zerada (começa do zero), contando para o próximo mês.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="text-right sm:border-l sm:border-amber-300 sm:pl-5 shrink-0">
+              <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider block">
+                {filterMonth === 'todos' ? 'Total Geral Histórico:' : 'Total de Horas no Ciclo:'}
+              </span>
+              <div className="text-2xl sm:text-3xl font-black text-amber-950">
+                {stats.totalHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
+              </div>
+              <span className="text-[9.5px] font-bold text-amber-700 block">
+                {filteredRequests.length} {filteredRequests.length === 1 ? 'solicitação no período' : 'solicitações no período'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ============================================================== */}
         {/* LISTAGEM DE HISTÓRICO DE SOLICITAÇÕES */}
@@ -2122,8 +2232,27 @@ ${htmlBody}
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
-                        Data: {formattedDate}
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Data: {formattedDate}
+                        </span>
+                        {(() => {
+                          const reqCycle = getPayrollCycleFromDate(req.date);
+                          const reqDay = parseInt(req.date.split('-')[2] || '0', 10);
+                          const isPostCutoff = reqDay > PAYROLL_CUTOFF_DAY;
+                          return (
+                            <span 
+                              className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold ${
+                                isPostCutoff 
+                                  ? 'bg-amber-50 text-amber-900 border border-amber-300' 
+                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                              title={isPostCutoff ? 'Data posterior ao dia 24: contabiliza zerada para o mês seguinte' : 'Data até o dia 24: contabilizada na folha atual'}
+                            >
+                              Folha {reqCycle.monthName} ({isPostCutoff ? 'após dia 24 • zerada' : 'até dia 24'})
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -2509,6 +2638,41 @@ ${htmlBody}
                   <p className="text-[9px] text-slate-500 font-medium">
                     Somente nomes da Aba Pessoal / Alocação (Extrusão, Reciclagem, Fita e Liderança). O preenchimento de matrícula, cargo, setor e máquina/turno é automático.
                   </p>
+
+                  {/* CARD DE HORAS EXTRAS ACUMULADAS NO CICLO DA FOLHA (FECHAMENTO DIA 24) */}
+                  {collaboratorFormCycleStats && (
+                    <div className="p-3.5 bg-amber-500/10 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                          <Clock size={16} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-black text-amber-950 uppercase tracking-tight">
+                              Folha de Ponto • Fechamento no Dia 24
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-amber-200 text-amber-900 text-[9px] font-black uppercase">
+                              {collaboratorFormCycleStats.cycle.shortLabel}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-amber-800 font-medium mt-0.5">
+                            Ciclo: <strong>{collaboratorFormCycleStats.cycle.intervalLabel}</strong>. Extras até o dia 24 contam para este mês; após o dia 24 a contagem zera e recomeça para o próximo mês.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right sm:border-l sm:border-amber-200 sm:pl-4 shrink-0">
+                        <span className="text-[8.5px] font-black text-amber-700 uppercase tracking-wider block">
+                          Total de Horas Extras no Ciclo:
+                        </span>
+                        <div className="text-lg font-black text-amber-950 leading-tight">
+                          {collaboratorFormCycleStats.totalHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
+                        </div>
+                        <span className="text-[8.5px] font-bold text-amber-600 block">
+                          {collaboratorFormCycleStats.count} {collaboratorFormCycleStats.count === 1 ? 'ocorrência' : 'ocorrências'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2807,6 +2971,25 @@ ${htmlBody}
                     <p className="text-[9px] text-slate-400 font-medium mt-1">
                       Aceita qualquer data: meses anteriores (ex: 31/08), dias passados (ex: 03/09), hoje ou futura.
                     </p>
+
+                    {/* INDICADOR DE FECHAMENTO DA FOLHA NO DIA 24 PARA A DATA SELECIONADA */}
+                    {date && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[10px]">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <span className={parseInt(date.split('-')[2] || '0', 10) > PAYROLL_CUTOFF_DAY ? 'text-amber-600' : 'text-emerald-600'}>
+                            {parseInt(date.split('-')[2] || '0', 10) > PAYROLL_CUTOFF_DAY ? '⚠️' : '✓'}
+                          </span>
+                          <span className="text-slate-800">
+                            Competência: <strong>Folha {formDatePayrollCycle.monthName} / {formDatePayrollCycle.referenceYear}</strong> ({formDatePayrollCycle.intervalLabel})
+                          </span>
+                        </div>
+                        <p className="text-[9.5px] text-slate-500 font-medium mt-0.5 leading-snug">
+                          {parseInt(date.split('-')[2] || '0', 10) > PAYROLL_CUTOFF_DAY 
+                            ? `Data posterior ao dia 24: Esta solicitação inicia zerada e será contabilizada na Folha de ${formDatePayrollCycle.monthName}.` 
+                            : `Data até o dia 24: Contabilizada na folha atual com fechamento em 24/${String(formDatePayrollCycle.referenceMonth).padStart(2, '0')}.`}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div>
