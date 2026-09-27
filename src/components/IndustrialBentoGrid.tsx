@@ -30,11 +30,13 @@ import {
 } from 'lucide-react';
 import { ProductionEntry, RibbonCuttingEntry, Employee, Collaborator } from '../types';
 import { GOAL_VALUE } from '../constants';
+import { getRibbonTotalGoal, calcJumboUnits, formatJumboUnits } from '../utils/ribbonGoalsUtils';
 
 export interface IndustrialBentoGridProps {
   productionData: ProductionEntry[];
   ribbonEntries: RibbonCuttingEntry[];
   goals: Record<string, number>;
+  ribbonGoals?: Record<string, any>;
   dashboardMonth: string;
   filterDay?: string;
   collaborators: Collaborator[];
@@ -61,6 +63,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
   productionData,
   ribbonEntries,
   goals,
+  ribbonGoals,
   dashboardMonth,
   filterDay,
   collaborators,
@@ -116,6 +119,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
     let yesterdayNet = 0;
     let monthNet = 0;
     let eremaMonthNet = 0;
+    let eremaYesterdayNet = 0;
     let todayWastes = 0;
     let todayGross = 0;
     let todayStopsMin = 0;
@@ -134,7 +138,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
       'Wultec': { m2: 0, rolls: 0 }
     };
 
-    // Processar Extrusão
+    // Processar Extrusão & Reciclagem Erema
     productionData.forEach((entry) => {
       const net = entry.netWeight || 0;
       const waste = (entry.ecoA || 0) + (entry.ecoBP || 0) + (entry.ecoBM || 0) + (entry.borraTotal || 0);
@@ -174,17 +178,33 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
       if (entry.date === yesterdayStr) {
         if (!isErema) {
           yesterdayNet += net;
+        } else {
+          eremaYesterdayNet += net;
         }
       }
     });
 
-    // Processar Corte de Fita no Dia Ativo
+    // Processar Corte de Fita (Dia, Mês e Tendência - Independente de Máquina e Consolidado Geral)
     let ribbonTodayNet = 0;
+    let ribbonTodayRolls = 0;
+    let ribbonYesterdayNet = 0;
+    let ribbonMonthNet = 0;
+    let ribbonMonthRolls = 0;
+
     ribbonEntries.forEach((r) => {
+      const m2 = r.producedM2 || 0;
+      const rolls = r.rollsCount || 0;
+
+      // Acumulado do Mês (independente da máquina)
+      if (r.date && r.date.startsWith(dashboardMonth)) {
+        ribbonMonthNet += m2;
+        ribbonMonthRolls += rolls;
+      }
+
+      // Produção do Dia Ativo (independente da máquina)
       if (r.date === activeDay) {
-        const m2 = r.producedM2 || 0;
-        const rolls = r.rollsCount || 0;
         ribbonTodayNet += m2;
+        ribbonTodayRolls += rolls;
 
         const m = (r.machine || '').toLowerCase();
         if (m.includes('lintech') || m.includes('lintec')) {
@@ -197,21 +217,41 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
           ribbonMachineToday['Wultec'].m2 += m2;
           ribbonMachineToday['Wultec'].rolls += rolls;
         } else {
-          // Se não especificada, agrupa como Lintech ou distribui conforme apontamento
           ribbonMachineToday['Lintech'].m2 += m2;
           ribbonMachineToday['Lintech'].rolls += rolls;
         }
       }
+
+      // Produção de Ontem (para cálculo de tendência)
+      if (r.date === yesterdayStr) {
+        ribbonYesterdayNet += m2;
+      }
     });
 
-    // Metas (Garantir valor padrão de 1.200.000 kg se a meta ainda não estiver cadastrada no mês)
+    // Metas de Extrusão (Garantir valor padrão de 1.200.000 kg se a meta ainda não estiver cadastrada no mês)
     const currentMonthGoal = goals[dashboardMonth] || GOAL_VALUE || 1200000;
     const goalPercentage = currentMonthGoal > 0 ? (monthNet / currentMonthGoal) * 100 : 0;
 
-    // Tendência vs Ontem
+    // Tendência vs Ontem (Extrusão)
     let trendPercent = 0;
     if (yesterdayNet > 0) {
       trendPercent = ((todayNet - yesterdayNet) / yesterdayNet) * 100;
+    }
+
+    // Metas de Corte de Fita (Consolidado Global de Todas as Cortadeiras)
+    const ribbonMonthGoal = getRibbonTotalGoal(ribbonGoals, dashboardMonth);
+    const ribbonGoalPercentage = ribbonMonthGoal > 0 ? (ribbonMonthNet / ribbonMonthGoal) * 100 : 0;
+
+    // Tendência vs Ontem (Corte de Fita)
+    let ribbonTrendPercent = 0;
+    if (ribbonYesterdayNet > 0) {
+      ribbonTrendPercent = ((ribbonTodayNet - ribbonYesterdayNet) / ribbonYesterdayNet) * 100;
+    }
+
+    // Tendência vs Ontem (Erema)
+    let eremaTrendPercent = 0;
+    if (eremaYesterdayNet > 0) {
+      eremaTrendPercent = ((machineTodayNet['Erema'] - eremaYesterdayNet) / eremaYesterdayNet) * 100;
     }
 
     // % Refugo hoje
@@ -222,6 +262,8 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
       yesterdayNet,
       monthNet,
       eremaMonthNet,
+      eremaYesterdayNet,
+      eremaTrendPercent,
       todayWastes,
       wastePercent,
       todayStopsMin,
@@ -230,9 +272,16 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
       trendPercent,
       machineTodayNet,
       ribbonMachineToday,
-      ribbonTodayNet
+      ribbonTodayNet,
+      ribbonTodayRolls,
+      ribbonYesterdayNet,
+      ribbonMonthNet,
+      ribbonMonthRolls,
+      ribbonMonthGoal,
+      ribbonGoalPercentage,
+      ribbonTrendPercent
     };
-  }, [productionData, ribbonEntries, goals, dashboardMonth, activeDay, yesterdayStr]);
+  }, [productionData, ribbonEntries, goals, ribbonGoals, dashboardMonth, activeDay, yesterdayStr]);
 
   // Contagem de Colaboradores Reais
   const workforce = useMemo(() => {
@@ -273,19 +322,12 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
-      {/* Imagem de Capa se configurada */}
-      {systemCoverImage && (
-        <div className="w-full h-32 sm:h-48 md:h-64 rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] overflow-hidden border border-slate-100 shadow-md sm:shadow-xl animate-in zoom-in-95 duration-500">
-          <img src={systemCoverImage} alt="Imagem de Capa" className="w-full h-full object-cover" />
-        </div>
-      )}
-
+    <div className="space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-400">
       {/* Barra Superior Centro de Comando */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 w-full sm:w-auto">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
-            <LayoutGrid size={18} />
+          <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs shadow-blue-200">
+            <LayoutGrid size={16} />
           </div>
           <div>
             <h2 className="text-xs sm:text-sm font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
@@ -294,14 +336,14 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                 Geral & Chão de Fábrica
               </span>
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+            <p className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider leading-none mt-0.5">
               Painel Integrado • Fábrica em Tempo Real
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+          <span className="text-[9.5px] sm:text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
             Referência: {activeDayFormatted} • Mês: {dashboardMonth.split('-').reverse().join('/')}
           </span>
         </div>
@@ -310,98 +352,259 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
       {/* ========================================================================= */}
       {/* BENTO GRID INDUSTRIAL V2                                                  */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4.5">
-          {/* ===================================================================== */}
-          {/* CARD 1: STATUS GERAL DA FÁBRICA & METAS (Grande - 2 Colunas)          */}
-          {/* ===================================================================== */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-2 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white p-4 sm:p-5 md:p-6 rounded-3xl shadow-lg shadow-blue-200/50 border border-blue-400/30 relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute -right-6 -bottom-6 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4.5 items-start">
+        {/* ======================================================================= */}
+        {/* COLUNA ESQUERDA: CARD 1 PRODUÇÃO DIÁRIA & MENSAL (DIVIDIDO AO MEIO)     */}
+        {/* ======================================================================= */}
+        <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 text-white p-3.5 sm:p-4.5 rounded-3xl shadow-lg shadow-blue-500/15 border border-blue-400/40 relative overflow-hidden flex flex-col space-y-3">
+          <div className="absolute -right-8 -bottom-8 w-56 h-56 bg-white/10 rounded-full blur-2xl pointer-events-none" />
 
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <span className="px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Produção Diária & Mensal
-                </span>
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-100">
-                  Referência: {activeDayFormatted}
-                </span>
-              </div>
+          {/* Cabeçalho Superior do Card */}
+          <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-2">
+            <span className="px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 text-white border border-white/20 shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+              Produção Diária & Mensal Consolidada
+            </span>
+            <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-black uppercase text-blue-100">
+              <span>Dia: {activeDayFormatted}</span>
+              <span>•</span>
+              <span>Mês: {dashboardMonth.split('-').reverse().join('/')}</span>
+            </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 my-2">
+          {/* ========================================================================= */}
+          {/* PARTE 1 (METADE SUPERIOR): SETOR DE EXTRUSÃO & RECICLAGEM EREMA           */}
+          {/* ========================================================================= */}
+          <div className="bg-white/15 backdrop-blur-md rounded-2xl p-3 sm:p-3.5 border border-white/20 space-y-2.5 shadow-xs">
+            {/* Header Extrusão */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-white/20 border border-white/30 flex items-center justify-center text-white shrink-0">
+                  <Factory size={13} />
+                </div>
                 <div className="min-w-0">
-                  <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-100/80 truncate">
-                    Produção do Dia ({activeDayFormatted})
-                  </p>
-                  <p className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight mt-0.5 truncate">
+                  <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5 truncate">
+                    Setor de Extrusão Stretch
+                    <span className="text-[9px] font-bold text-blue-100 normal-case">(Cast 1 & Cast 2)</span>
+                  </span>
+                </div>
+              </div>
+              <span className="text-[9px] sm:text-[10px] font-black uppercase text-blue-900 bg-white/90 px-2 py-0.5 rounded-full shadow-xs whitespace-nowrap">
+                Meta: {(metrics.currentMonthGoal / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t
+              </span>
+            </div>
+
+            {/* Métricas Extrusão: Dia e Mês */}
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
+              {/* Dia Extrusão */}
+              <div className="min-w-0">
+                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-blue-100 truncate">
+                  Produção do Dia
+                </p>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-lg sm:text-2xl font-black tracking-tight text-white truncate">
                     {metrics.todayNet < 1000
                       ? `${metrics.todayNet.toLocaleString('pt-BR')} `
                       : `${(metrics.todayNet / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })} `}
-                    <span className="text-xs sm:text-sm font-bold opacity-80">
-                      {metrics.todayNet < 1000 ? 'kg' : 't'}
-                    </span>
-                  </p>
-                  {metrics.yesterdayNet > 0 && (
-                    <div className="flex items-center gap-1 mt-1 text-[9px] sm:text-[10px] font-black">
-                      {metrics.trendPercent >= 0 ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-200">
-                          <TrendingUp size={11} /> +{metrics.trendPercent.toFixed(1)}% vs ontem
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200">
-                          <TrendingDown size={11} /> {metrics.trendPercent.toFixed(1)}% vs ontem
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  </span>
+                  <span className="text-xs font-bold text-blue-100">
+                    {metrics.todayNet < 1000 ? 'kg' : 't'}
+                  </span>
                 </div>
+                {metrics.yesterdayNet > 0 && (
+                  <div className="flex items-center gap-1 mt-0.5 text-[9px] font-black">
+                    {metrics.trendPercent >= 0 ? (
+                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-400/30 text-emerald-100 border border-emerald-300/30">
+                        <TrendingUp size={10} /> +{metrics.trendPercent.toFixed(1)}% vs ontem
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-400/30 text-amber-100 border border-amber-300/30">
+                        <TrendingDown size={10} /> {metrics.trendPercent.toFixed(1)}% vs ontem
+                      </span>
+                    )}
+                  </div>
+                )}
+                <p className="text-[9px] text-blue-100 font-semibold mt-1 truncate">
+                  Cast 1: {formatMachineWeight(metrics.machineTodayNet['CAST 1'])} • Cast 2: {formatMachineWeight(metrics.machineTodayNet['CAST 2'])}
+                </p>
+              </div>
 
-                <div className="min-w-0">
-                  <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-100/80 truncate">
-                    Acumulado do Mês ({dashboardMonth.split('-').reverse().join('/')})
-                  </p>
-                  <p className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight mt-0.5 truncate">
-                    {(metrics.monthNet / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })}{' '}
-                    <span className="text-xs sm:text-sm font-bold opacity-80">t</span>
-                  </p>
-                  <p className="text-[9px] sm:text-[10px] font-bold text-blue-100/80 mt-1 truncate">
-                    Meta: {metrics.currentMonthGoal.toLocaleString('pt-BR')} kg ({(metrics.currentMonthGoal / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t)
-                  </p>
+              {/* Mês Extrusão */}
+              <div className="min-w-0">
+                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-blue-100 truncate">
+                  Acumulado do Mês
+                </p>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-lg sm:text-2xl font-black tracking-tight text-white truncate">
+                    {(metrics.monthNet / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })}
+                  </span>
+                  <span className="text-xs font-bold text-blue-100">t</span>
                 </div>
+                <p className="text-[9px] sm:text-[10px] font-bold text-blue-100 mt-1 truncate">
+                  {metrics.monthNet.toLocaleString('pt-BR')} kg acumulados
+                </p>
               </div>
             </div>
 
-            {/* Barra de Progresso da Meta com Cálculo Corrigido */}
-            <div className="mt-4 pt-3 border-t border-white/15">
-              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-black uppercase tracking-wider mb-1.5">
-                <span>Atingimento da Meta Mensal</span>
-                <span className="text-emerald-300 font-extrabold text-[11px] sm:text-xs">
-                  {metrics.goalPercentage.toFixed(1)}% de {metrics.currentMonthGoal.toLocaleString('pt-BR')} kg
+            {/* Barra de Progresso Meta Extrusão */}
+            <div className="pt-1.5 border-t border-white/20">
+              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-black uppercase tracking-wider mb-1">
+                <span className="text-blue-100">Atingimento da Meta Extrusão</span>
+                <span className="text-emerald-200 font-extrabold text-[10px] sm:text-xs">
+                  {metrics.goalPercentage.toFixed(1)}% ({((metrics.monthNet / 1000)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} t de {(metrics.currentMonthGoal / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t)
                 </span>
               </div>
-              <div className="w-full h-2.5 sm:h-3 bg-black/25 rounded-full overflow-hidden p-0.5 border border-white/20">
+              <div className="w-full h-2 bg-black/25 rounded-full overflow-hidden p-0.5 border border-white/25">
                 <div
-                  className="h-full bg-gradient-to-r from-emerald-400 to-cyan-300 rounded-full transition-all duration-700 shadow-sm"
+                  className="h-full bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-200 rounded-full transition-all duration-700 shadow-sm"
                   style={{ width: `${Math.min(metrics.goalPercentage, 100)}%` }}
                 />
               </div>
             </div>
+
+            {/* Linha Erema (Reciclagem & Recuperadora) */}
+            <div className="bg-emerald-950/25 border border-emerald-300/30 rounded-xl p-2 sm:p-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-5 h-5 rounded-md bg-emerald-400/30 border border-emerald-300/40 flex items-center justify-center text-emerald-200 shrink-0">
+                  <Flame size={11} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-black uppercase text-emerald-100 truncate block">
+                    Erema • Reciclagem & Recuperação
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 sm:gap-4 shrink-0 text-right">
+                <div>
+                  <span className="text-[8px] sm:text-[9px] font-bold text-emerald-200 uppercase block">Dia</span>
+                  <span className="text-xs sm:text-sm font-extrabold text-white">
+                    {formatMachineWeight(metrics.machineTodayNet['Erema'])}
+                  </span>
+                </div>
+                <div className="h-5 w-px bg-emerald-400/30" />
+                <div>
+                  <span className="text-[8px] sm:text-[9px] font-bold text-emerald-200 uppercase block">Mês</span>
+                  <span className="text-xs sm:text-sm font-extrabold text-emerald-200">
+                    {formatMachineWeight(metrics.eremaMonthNet)}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* ===================================================================== */}
-          {/* CARD 2: MÁQUINAS (2 COLUNAS: CAST 1, CAST 2, EREMA | LINTECH, GHEZZI, WULTEC) */}
-          {/* ===================================================================== */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-2 bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          {/* ========================================================================= */}
+          {/* PARTE 2 (METADE INFERIOR): SETOR DE CORTE DE FITA (TODAS AS MÁQUINAS)     */}
+          {/* ========================================================================= */}
+          <div className="bg-white/15 backdrop-blur-md rounded-2xl p-3 sm:p-3.5 border border-white/20 space-y-2.5 shadow-xs">
+            {/* Header Corte de Fita */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-cyan-400/30 border border-cyan-300/40 flex items-center justify-center text-cyan-100 shrink-0">
+                  <Scissors size={13} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5 truncate">
+                    Setor de Corte de Fita
+                    <span className="text-[9px] font-bold text-cyan-100 normal-case">(Consolidado - Todas as Máquinas)</span>
+                  </span>
+                </div>
+              </div>
+              <span className="text-[9px] sm:text-[10px] font-black uppercase text-cyan-900 bg-white/90 px-2 py-0.5 rounded-full shadow-xs whitespace-nowrap">
+                Meta: {metrics.ribbonMonthGoal.toLocaleString('pt-BR')} m²
+              </span>
+            </div>
+
+            {/* Métricas Corte de Fita: Dia e Mês */}
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
+              {/* Dia Fita */}
+              <div className="min-w-0">
+                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-cyan-100 truncate">
+                  Produção do Dia
+                </p>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-lg sm:text-2xl font-black tracking-tight text-white truncate">
+                    {metrics.ribbonTodayNet.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}
+                  </span>
+                  <span className="text-xs font-bold text-cyan-100">m²</span>
+                </div>
+                {metrics.ribbonYesterdayNet > 0 && (
+                  <div className="flex items-center gap-1 mt-0.5 text-[9px] font-black">
+                    {metrics.ribbonTrendPercent >= 0 ? (
+                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-400/30 text-emerald-100 border border-emerald-300/30">
+                        <TrendingUp size={10} /> +{metrics.ribbonTrendPercent.toFixed(1)}% vs ontem
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-400/30 text-amber-100 border border-amber-300/30">
+                        <TrendingDown size={10} /> {metrics.ribbonTrendPercent.toFixed(1)}% vs ontem
+                      </span>
+                    )}
+                  </div>
+                )}
+                <p className="text-[9px] text-cyan-100 font-semibold mt-1 truncate">
+                  {metrics.ribbonTodayRolls.toLocaleString('pt-BR')} rolos • {formatJumboUnits(calcJumboUnits(metrics.ribbonTodayNet))}
+                </p>
+              </div>
+
+              {/* Mês Fita */}
+              <div className="min-w-0">
+                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-cyan-100 truncate">
+                  Acumulado do Mês
+                </p>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-lg sm:text-2xl font-black tracking-tight text-white truncate">
+                    {metrics.ribbonMonthNet.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </span>
+                  <span className="text-xs font-bold text-cyan-100">m²</span>
+                </div>
+                <p className="text-[9px] sm:text-[10px] font-bold text-cyan-100 mt-1 truncate">
+                  {metrics.ribbonMonthRolls.toLocaleString('pt-BR')} rolos • {formatJumboUnits(calcJumboUnits(metrics.ribbonMonthNet))}
+                </p>
+              </div>
+            </div>
+
+            {/* Barra de Progresso Meta Fita */}
+            <div className="pt-1.5 border-t border-white/20">
+              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-black uppercase tracking-wider mb-1">
+                <span className="text-cyan-100">Atingimento da Meta Fita</span>
+                <span className="text-cyan-200 font-extrabold text-[10px] sm:text-xs">
+                  {metrics.ribbonGoalPercentage.toFixed(1)}% ({metrics.ribbonMonthNet.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m² de {metrics.ribbonMonthGoal.toLocaleString('pt-BR')} m²)
+                </span>
+              </div>
+              <div className="w-full h-2 bg-black/25 rounded-full overflow-hidden p-0.5 border border-white/25">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-300 via-sky-200 to-indigo-200 rounded-full transition-all duration-700 shadow-sm"
+                  style={{ width: `${Math.min(metrics.ribbonGoalPercentage, 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Detalhamento compacto das cortadeiras no dia */}
+            <div className="flex items-center justify-between text-[8px] sm:text-[9px] text-cyan-100 font-semibold pt-0.5">
+              <span>Lintech: {metrics.ribbonMachineToday['Lintech']?.m2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
+              <span>•</span>
+              <span>Ghezzi: {metrics.ribbonMachineToday['Ghezzi']?.m2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
+              <span>•</span>
+              <span>Wultec: {metrics.ribbonMachineToday['Wultec']?.m2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* COLUNA DIREITA: CARD MÁQUINAS + 2 CARDS PEQUENOS EMBAIXO               */}
+        {/* ======================================================================= */}
+        <div className="flex flex-col space-y-3.5 sm:space-y-4">
+          {/* CARD DE MÁQUINAS (ALTURA NATURAL, HARMONIOSA) */}
+          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Factory size={16} className="text-blue-600" />
                   <span className="text-xs font-black uppercase tracking-wider text-slate-800">
-                    Máquinas
+                    Máquinas em Operação
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black uppercase bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+                  <span className="text-[9px] font-black uppercase bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full border border-blue-200">
                     Dia: {activeDayFormatted}
                   </span>
                 </div>
@@ -455,7 +658,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                     </span>
                   </div>
 
-                  {/* Erema (Sempre presente, exatamente como solicitado) */}
+                  {/* Erema */}
                   <div
                     onClick={() => onNavigateTab('extrusion', 'charts')}
                     className="p-2 sm:p-2.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/70 border border-slate-100 transition-all cursor-pointer flex items-center justify-between active:scale-98"
@@ -555,7 +758,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 mt-3 pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-3 gap-2 mt-3 pt-2.5 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => onOpenModal('cast1_calculator')}
@@ -583,19 +786,111 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
             </div>
           </div>
 
-          {/* ===================================================================== */}
-          {/* CARD 3: FORÇA DE TRABALHO & RH (Colaboradores & DOC 076)               */}
-          {/* ===================================================================== */}
-          <div className="col-span-1 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Equipe & DOC 076
-                </span>
-                <Users size={16} className="text-emerald-600" />
+          {/* DOIS CARDS EMBAIXO DO CARD DE MÁQUINAS: REFUGOS & PERDAS + PARADAS DE MÁQUINA */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+            {/* CARD: REFUGOS & BALANÇO DE MASSA */}
+            <div className="bg-white p-4 sm:p-4.5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Refugo & Perdas
+                  </span>
+                  <Flame size={15} className="text-rose-500" />
+                </div>
+
+                <div className="my-1.5">
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
+                    {metrics.todayWastes.toLocaleString('pt-BR')}{' '}
+                    <span className="text-xs font-bold text-slate-400">kg</span>
+                  </p>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                        metrics.wastePercent <= 5
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : metrics.wastePercent <= 8
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-rose-100 text-rose-800 border border-rose-200'
+                      }`}
+                    >
+                      Índice: {metrics.wastePercent.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div className="my-2">
+              <button
+                type="button"
+                onClick={() => onNavigateTab('extrusion', 'charts')}
+                className="mt-2.5 w-full py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+              >
+                <BarChart3 size={12} />
+                <span>Ver Balanço BI</span>
+              </button>
+            </div>
+
+            {/* CARD: PARADAS DE MÁQUINA */}
+            <div className="bg-white p-4 sm:p-4.5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 truncate">
+                    Paradas ({activeDayFormatted})
+                  </span>
+                  <Wrench size={15} className="text-orange-500 shrink-0" />
+                </div>
+
+                <div className="my-1.5">
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
+                    {metrics.todayStopsMin}{' '}
+                    <span className="text-xs font-bold text-slate-400">min</span>
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">
+                    {(metrics.todayStopsMin / 60).toFixed(1)}h no dia
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 mt-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaintenanceSubTab('requests');
+                    setMaintenanceInitialCreateOpen(false);
+                    onNavigateTab('maintenance');
+                  }}
+                  className="flex-1 py-1.5 px-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 border border-orange-200"
+                >
+                  Abrir OS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenModal('downtime_analytics')}
+                  className="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 shadow-sm"
+                >
+                  BI Paradas
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* LINHA SECUNDÁRIA: EQUIPE & CORTE DE FITA RESUMO                           */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4.5">
+        {/* CARD: FORÇA DE TRABALHO & RH (Colaboradores & DOC 076) */}
+        <div className="bg-white p-4.5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Equipe & DOC 076
+              </span>
+              <Users size={16} className="text-emerald-600" />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 my-2">
+              <div>
                 <p className="text-2xl font-black text-slate-800 tracking-tight">
                   {workforce.totalActive}{' '}
                   <span className="text-xs font-bold text-slate-400">Ativos</span>
@@ -606,161 +901,69 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               </div>
 
               {/* Destaque DOC 076 com Fechamento dia 24 */}
-              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200/70 text-amber-900 mt-2">
-                <div className="flex items-center justify-between text-[10px] font-black uppercase">
-                  <span>Horas Extras (DOC 076)</span>
+              <div className="p-2.5 px-3 bg-amber-50 rounded-2xl border border-amber-200/70 text-amber-900">
+                <div className="flex items-center gap-1.5 text-[10px] font-black uppercase">
                   <Clock size={12} className="text-amber-700" />
+                  <span>Horas Extras (DOC 076)</span>
                 </div>
-                <p className="text-[9px] font-bold text-amber-700/80 mt-1 leading-snug">
-                  Folha com fechamento automático no dia 24.
+                <p className="text-[9px] font-bold text-amber-700/80 mt-0.5">
+                  Fechamento automático no dia 24.
                 </p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 mt-3">
-              <button
-                type="button"
-                onClick={() => onNavigateTab('personnel', 'board')}
-                className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95"
-              >
-                Quadro
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('personnel', 'overtime')}
-                className="flex-1 py-2 px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 shadow-sm"
-              >
-                DOC 076
-              </button>
             </div>
           </div>
 
-          {/* ===================================================================== */}
-          {/* CARD 4: REFUGOS & BALANÇO DE MASSA                                    */}
-          {/* ===================================================================== */}
-          <div className="col-span-1 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Refugo & Perdas do Dia
-                </span>
-                <Flame size={16} className="text-rose-500" />
-              </div>
-
-              <div className="my-2">
-                <p className="text-2xl font-black text-slate-800 tracking-tight">
-                  {metrics.todayWastes.toLocaleString('pt-BR')}{' '}
-                  <span className="text-xs font-bold text-slate-400">kg</span>
-                </p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                      metrics.wastePercent <= 5
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        : metrics.wastePercent <= 8
-                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                        : 'bg-rose-100 text-rose-800 border border-rose-200'
-                    }`}
-                  >
-                    Índice: {metrics.wastePercent.toFixed(1)}%
-                  </span>
-                  <span className="text-[9px] font-bold text-slate-400">
-                    {metrics.wastePercent <= 5 ? 'Dentro da meta' : 'Alerta refugo'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100">
             <button
               type="button"
-              onClick={() => onNavigateTab('extrusion', 'charts')}
-              className="mt-3 w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+              onClick={() => onNavigateTab('personnel', 'board')}
+              className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95"
             >
-              <BarChart3 size={13} />
-              <span>Ver Gráficos BI</span>
+              Quadro Geral
             </button>
-          </div>
-
-          {/* ===================================================================== */}
-          {/* CARD 5: PARADAS DE MÁQUINA & MANUTENÇÃO                               */}
-          {/* ===================================================================== */}
-          <div className="col-span-1 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Paradas Registradas ({activeDayFormatted})
-                </span>
-                <Wrench size={16} className="text-orange-500" />
-              </div>
-
-              <div className="my-2">
-                <p className="text-2xl font-black text-slate-800 tracking-tight">
-                  {metrics.todayStopsMin}{' '}
-                  <span className="text-xs font-bold text-slate-400">min</span>
-                </p>
-                <p className="text-[10px] font-bold text-slate-500 mt-0.5">
-                  {(metrics.todayStopsMin / 60).toFixed(1)}h paradas no dia
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 mt-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setMaintenanceSubTab('requests');
-                  setMaintenanceInitialCreateOpen(false);
-                  onNavigateTab('maintenance');
-                }}
-                className="flex-1 py-2 px-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 border border-orange-200"
-              >
-                Abrir OS
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenModal('downtime_analytics')}
-                className="flex-1 py-2 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 shadow-sm"
-              >
-                BI Paradas
-              </button>
-            </div>
-          </div>
-
-          {/* ===================================================================== */}
-          {/* CARD 6: CORTE DE FITA (Resumo Rápido)                                 */}
-          {/* ===================================================================== */}
-          <div className="col-span-1 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Corte de Fita do Dia
-                </span>
-                <span className="text-[9px] font-black bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full border border-cyan-200">
-                  Lintech • Ghezzi • Wultec
-                </span>
-              </div>
-
-              <div className="my-2">
-                <p className="text-2xl font-black text-slate-800 tracking-tight">
-                  {metrics.ribbonTodayNet.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}{' '}
-                  <span className="text-xs font-bold text-slate-400">m²</span>
-                </p>
-                <p className="text-[10px] font-bold text-slate-500 mt-0.5">
-                  Produção registrada em {activeDayFormatted}
-                </p>
-              </div>
-            </div>
-
             <button
               type="button"
-              onClick={() => onNavigateTab('ribbon', 'dashboard', 'summary')}
-              className="mt-3 w-full py-2 px-3 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 border border-cyan-200/60"
+              onClick={() => onNavigateTab('personnel', 'overtime')}
+              className="flex-1 py-2 px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 shadow-sm"
             >
-              <span>Ver Painel Corte de Fita</span>
-              <ChevronRight size={13} />
+              DOC 076
             </button>
           </div>
         </div>
+
+        {/* CARD: CORTE DE FITA (Resumo Rápido) */}
+        <div className="bg-white p-4.5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Corte de Fita do Dia
+              </span>
+              <span className="text-[9px] font-black bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full border border-cyan-200">
+                Lintech • Ghezzi • Wultec
+              </span>
+            </div>
+
+            <div className="my-2">
+              <p className="text-2xl font-black text-slate-800 tracking-tight">
+                {metrics.ribbonTodayNet.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}{' '}
+                <span className="text-xs font-bold text-slate-400">m²</span>
+              </p>
+              <p className="text-[10px] font-bold text-slate-500 mt-0.5">
+                Produção total registrada no dia {activeDayFormatted}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigateTab('ribbon', 'dashboard', 'summary')}
+            className="mt-2 w-full py-2 px-3 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 border border-cyan-200/60"
+          >
+            <span>Ver Painel Corte de Fita</span>
+            <ChevronRight size={13} />
+          </button>
+        </div>
+      </div>
 
       {/* ========================================================================= */}
       {/* AÇÕES OPERACIONAIS DE CHÃO DE FÁBRICA (Fixo junto com Geral Executivo)    */}

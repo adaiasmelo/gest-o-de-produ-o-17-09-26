@@ -173,7 +173,7 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
   return (
     <nav
       aria-label="Trilha de Navegação"
-      className="w-full flex items-center justify-between py-2 px-1 sm:px-2 text-xs select-none no-print overflow-hidden"
+      className="w-full flex items-center justify-between py-0.5 sm:py-1 px-1 sm:px-1.5 text-xs select-none no-print overflow-hidden"
     >
       <ol className="flex items-center flex-wrap gap-1 sm:gap-1.5 min-w-0">
         {crumbs.map((crumb, idx) => {

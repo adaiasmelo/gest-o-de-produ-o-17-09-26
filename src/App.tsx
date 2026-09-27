@@ -1465,7 +1465,7 @@ export const App: React.FC = () => {
   };
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<'filters' | 'goals' | 'config' | 'system' | 'app'>('filters');
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
@@ -11116,7 +11116,7 @@ Atenciosamente,
           <Bell size={14} className="animate-bounce animate-duration-1000" /> Nova atualização disponível! Clique para ver os novos recursos e recarregar.
         </div>
       )}
-      <header className="bg-white px-3 py-2.5 sm:px-4 sm:py-3 md:px-6 md:py-4 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print shadow-sm w-full max-w-full">
+      <header className="bg-white px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print shadow-xs w-full max-w-full">
         <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-1 min-w-0 mr-1 sm:mr-2">
           <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-blue-600 rounded-lg sm:rounded-xl flex-shrink-0 flex items-center justify-center text-white shadow-md overflow-hidden border border-blue-500">
             {systemLogo ? (
@@ -11134,297 +11134,732 @@ Atenciosamente,
           </div>
         </div>
 
-        {/* Versão Mobile (< md): Ações ultra compactas e menu rápido de sistema */}
-        <div className="flex md:hidden items-center gap-1.5 shrink-0">
+        {/* Barra Superior Minimalista: Apenas Usuários Online e Menu de 4 Barras */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 ml-2">
           {canViewActiveUsers && (
             <button 
+              type="button"
               onClick={() => setIsActiveUsersModalOpen(true)}
-              className="px-2 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-xl transition-all shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer"
-              title="Usuários Online"
+              className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-xl md:rounded-2xl transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              title="Usuários Conectados em Tempo Real"
             >
-              <span className="relative flex h-2 w-2 shrink-0">
+              <span className="relative flex h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-emerald-500"></span>
               </span>
-              <span className="text-[10px] font-black">{onlineUsers.length}</span>
-              <Users size={13} className="text-emerald-600 shrink-0" />
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider">{onlineUsers.length} On-line</span>
+              <Users size={14} className="text-emerald-600 shrink-0 hidden sm:inline" />
             </button>
           )}
 
-          {/* Botão Menu de Ações Mobile (com TV, Tela Cheia, Digital, etc.) */}
-          <div className="relative">
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className={`p-2 rounded-xl border transition-all active:scale-95 flex items-center justify-center cursor-pointer ${isMobileMenuOpen ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-              title="Menu de Ações do Sistema"
+          {/* Botão de Menu com 4 Barrinhas Horizontais */}
+          <button
+            type="button"
+            onClick={() => setIsMainMenuOpen(true)}
+            className="p-2 sm:p-2.5 md:p-3 bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-blue-600 border border-slate-200/90 rounded-xl md:rounded-2xl transition-all shadow-xs active:scale-95 flex items-center justify-center cursor-pointer"
+            title="Abrir Menu Principal"
+            aria-label="Abrir Menu Principal"
+          >
+            {/* Ícone com exatamente 4 barrinhas horizontais */}
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <line x1="3" y1="5" x2="21" y2="5" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+              <line x1="3" y1="15" x2="21" y2="15" />
+              <line x1="3" y1="20" x2="21" y2="20" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      {/* Menu Principal Unificado (Drawer 4 Barrinhas) */}
+      <AnimatePresence>
+        {isMainMenuOpen && (
+          <div className="fixed inset-0 z-[99999] overflow-hidden select-none">
+            {/* Backdrop escurecido */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm cursor-pointer"
+              onClick={() => setIsMainMenuOpen(false)}
+            />
+
+            {/* Painel Deslizante da Direita */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="fixed right-0 top-0 bottom-0 w-84 sm:w-96 max-w-[92vw] bg-white shadow-2xl flex flex-col justify-between border-l border-slate-200 z-10 font-sans"
             >
-              {isMobileMenuOpen ? <X size={17} /> : <MoreVertical size={17} />}
-            </button>
+              {/* Topo do Menu */}
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm shadow-blue-500/30 overflow-hidden border border-blue-500">
+                    {systemLogo ? (
+                      <img src={systemLogo} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                      'MP'
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-tight truncate leading-tight">
+                      {loggedUser.name}
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                      {loggedUser.role} • Matrícula {loggedUser.registration}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMainMenuOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition-all cursor-pointer"
+                  title="Fechar Menu"
+                >
+                  <X size={20} />
+                </button>
+              </div>
 
-            <AnimatePresence>
-              {isMobileMenuOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 z-50 space-y-1 text-slate-700"
-                  >
-                    <div className="px-3 py-2 border-b border-slate-100 mb-1 flex items-center justify-between">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Ações do Sistema</span>
-                      <span className="text-[8px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full uppercase">Menu Rápido</span>
-                    </div>
-
+              {/* Corpo de Opções com Rolagem */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 custom-scrollbar">
+                {/* SEÇÃO 1: MÓDULOS DE NAVEGAÇÃO */}
+                <div>
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest px-2 mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
+                    Navegação Principal
+                  </p>
+                  <div className="space-y-1">
+                    {/* Início */}
                     <button
                       type="button"
                       onClick={() => {
-                        setActiveTab('projection');
-                        if (!document.fullscreenElement) {
-                          document.documentElement.requestFullscreen().catch(() => {});
-                        }
-                        setIsMobileMenuOpen(false);
+                        setActiveTab('home');
+                        setIsMainMenuOpen(false);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-indigo-700 hover:bg-indigo-50 transition-colors active:bg-indigo-100 text-left cursor-pointer"
+                      className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        activeTab === 'home'
+                          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
                     >
-                      <Tv size={16} className="text-indigo-600 shrink-0" />
-                      <span>Projetar em TV / Painel</span>
+                      <div className="flex items-center gap-3">
+                        <HomeIcon size={18} className={activeTab === 'home' ? 'text-white' : 'text-blue-600'} />
+                        <span>Início • Visão Geral</span>
+                      </div>
+                      {activeTab === 'home' && (
+                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                      )}
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        toggleFullscreen();
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors active:bg-slate-100 text-left cursor-pointer"
-                    >
-                      {isFullscreen ? <Minimize2 size={16} className="text-blue-600 shrink-0" /> : <Maximize2 size={16} className="text-blue-600 shrink-0" />}
-                      <span>{isFullscreen ? 'Sair da Tela Cheia' : 'Expandir Tela Cheia'}</span>
-                    </button>
+                    {/* Extrusão */}
+                    {(isAdmin || userPerms.extrusion.enabled) && (
+                      <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('extrusion');
+                            setExtrusionSubTab('dashboard');
+                            setDashboardSubTab('summary');
+                            setIsMainMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                            activeTab === 'extrusion'
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                              : 'text-slate-800 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Factory size={17} className={activeTab === 'extrusion' ? 'text-white' : 'text-blue-600'} />
+                            <span>Extrusão</span>
+                          </div>
+                          {activeTab === 'extrusion' && (
+                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                          )}
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBiometricUser(loggedUser);
-                        handleOpenBiometricRegisterModal(loggedUser);
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors active:bg-slate-100 text-left cursor-pointer"
-                    >
-                      <Fingerprint size={16} className="text-blue-600 shrink-0" />
-                      <span>Cadastrar / Usar Digital</span>
-                    </button>
+                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
+                          {/* Visão Geral */}
+                          {(isAdmin || userPerms.extrusion.summary) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('extrusion');
+                                setExtrusionSubTab('dashboard');
+                                setDashboardSubTab('summary');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'summary'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <LayoutDashboard size={14} className="shrink-0 text-blue-600" />
+                              <span>Visão Geral</span>
+                            </button>
+                          )}
 
+                          {/* Gráficos */}
+                          {(isAdmin || userPerms.extrusion.charts) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('extrusion');
+                                setExtrusionSubTab('dashboard');
+                                setDashboardSubTab('charts');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'charts'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <TrendingUp size={14} className="shrink-0 text-indigo-600" />
+                              <span>Gráficos</span>
+                            </button>
+                          )}
+
+                          {/* Comparativo BI */}
+                          {(isAdmin || userPerms.extrusion.comparison) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('extrusion');
+                                setExtrusionSubTab('dashboard');
+                                setDashboardSubTab('comparison');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'comparison'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Layers size={14} className="shrink-0 text-purple-600" />
+                              <span>Comparativo BI</span>
+                            </button>
+                          )}
+
+                          {/* Relatórios */}
+                          {(isAdmin || userPerms.extrusion.reports) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('extrusion');
+                                setExtrusionSubTab('reports');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'extrusion' && extrusionSubTab === 'reports'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <FileDown size={14} className="shrink-0 text-emerald-600" />
+                              <span>Relatórios</span>
+                            </button>
+                          )}
+
+                          {/* Estoque */}
+                          {(isAdmin || userPerms.extrusion.stock) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('extrusion');
+                                setExtrusionSubTab('stock');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'extrusion' && extrusionSubTab === 'stock'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <FileSpreadsheet size={14} className="shrink-0 text-amber-600" />
+                              <span>Estoque</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Corte de Fita */}
+                    {(isAdmin || userPerms.ribbon.enabled) && (
+                      <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('ribbon');
+                            setRibbonSubTab('dashboard');
+                            setRibbonDashboardSubTab('summary');
+                            setIsMainMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                            activeTab === 'ribbon'
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                              : 'text-slate-800 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <BarChart3 size={17} className={activeTab === 'ribbon' ? 'text-white' : 'text-blue-600'} />
+                            <span>Corte de Fita</span>
+                          </div>
+                          {activeTab === 'ribbon' && (
+                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                          )}
+                        </button>
+
+                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
+                          {/* Visão Geral */}
+                          {(isAdmin || userPerms.ribbon.summary) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('ribbon');
+                                setRibbonSubTab('dashboard');
+                                setRibbonDashboardSubTab('summary');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'summary'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <LayoutDashboard size={14} className="shrink-0 text-blue-600" />
+                              <span>Visão Geral</span>
+                            </button>
+                          )}
+
+                          {/* Gráficos */}
+                          {(isAdmin || userPerms.ribbon.charts) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('ribbon');
+                                setRibbonSubTab('dashboard');
+                                setRibbonDashboardSubTab('charts');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'charts'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <TrendingUp size={14} className="shrink-0 text-indigo-600" />
+                              <span>Gráficos</span>
+                            </button>
+                          )}
+
+                          {/* Comparativo BI */}
+                          {(isAdmin || userPerms.ribbon.comparison) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('ribbon');
+                                setRibbonSubTab('dashboard');
+                                setRibbonDashboardSubTab('comparison');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'comparison'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Layers size={14} className="shrink-0 text-purple-600" />
+                              <span>Comparativo BI</span>
+                            </button>
+                          )}
+
+                          {/* Relatório de Lançamentos */}
+                          {(isAdmin || userPerms.ribbon.reports) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('ribbon');
+                                setRibbonSubTab('reports');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'ribbon' && ribbonSubTab === 'reports'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <FileDown size={14} className="shrink-0 text-emerald-600" />
+                              <span>Relatório de Lançamento</span>
+                            </button>
+                          )}
+
+                          {/* Produtividade de Máquina */}
+                          {(isAdmin || userPerms.ribbon.productivity) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('ribbon');
+                                setRibbonSubTab('productivity');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'ribbon' && ribbonSubTab === 'productivity'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Gauge size={14} className="shrink-0 text-blue-600" />
+                              <span>Produtividade de Máquina</span>
+                            </button>
+                          )}
+
+                          {/* Definir Metas */}
+                          {(isAdmin || (userPerms.settings.goals && !isReadOnlyAccount)) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('ribbon');
+                                setIsRibbonGoalsModalOpen(true);
+                                setIsMainMenuOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-indigo-700 hover:bg-white"
+                            >
+                              <Target size={14} className="shrink-0 text-indigo-600" />
+                              <span>Definir Metas</span>
+                            </button>
+                          )}
+
+                          {/* Exportar Excel */}
+                          {(isAdmin || userPerms.ribbon.reports) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                exportRibbonToExcel();
+                                setIsMainMenuOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-emerald-700 hover:bg-white"
+                            >
+                              <Download size={14} className="shrink-0 text-emerald-600" />
+                              <span>Exportar Excel</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pessoal */}
+                    {(isAdmin || userPerms.personnel.enabled) && (
+                      <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('personnel');
+                            setPersonnelSubView('board');
+                            setIsMainMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                            activeTab === 'personnel'
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                              : 'text-slate-800 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Users size={17} className={activeTab === 'personnel' ? 'text-white' : 'text-blue-600'} />
+                            <span>Pessoal & Equipe</span>
+                          </div>
+                          {activeTab === 'personnel' && (
+                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                          )}
+                        </button>
+
+                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
+                          {/* Quadro Geral */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('personnel');
+                              setPersonnelSubView('board');
+                              setIsMainMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                              activeTab === 'personnel' && personnelSubView === 'board'
+                                ? 'bg-blue-100 text-blue-700 font-black'
+                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                            }`}
+                          >
+                            <Users size={14} className="shrink-0 text-blue-600" />
+                            <span>Quadro Geral</span>
+                          </button>
+
+                          {/* Programação de Férias */}
+                          {(isAdmin || userPerms.personnel.vacations) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('vacations');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'vacations'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Calendar size={14} className="shrink-0 text-indigo-600" />
+                              <span>Programação de Férias</span>
+                            </button>
+                          )}
+
+                          {/* Treinamentos */}
+                          {(isAdmin || userPerms.personnel.training) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('training');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'training'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Award size={14} className="shrink-0 text-purple-600" />
+                              <span>Treinamentos</span>
+                            </button>
+                          )}
+
+                          {/* Escala de Almoço */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('personnel');
+                              setPersonnelSubView('lunch');
+                              setIsMainMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                              activeTab === 'personnel' && personnelSubView === 'lunch'
+                                ? 'bg-blue-100 text-blue-700 font-black'
+                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                            }`}
+                          >
+                            <Utensils size={14} className="shrink-0 text-amber-600" />
+                            <span>Escala de Almoço</span>
+                          </button>
+
+                          {/* Horas Extras */}
+                          {(isAdmin || userPerms.personnel.overtime) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('overtime');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'overtime'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Clock size={14} className="shrink-0 text-emerald-600" />
+                              <span>Solicitação de Horas Extras</span>
+                            </button>
+                          )}
+
+                          {/* Avaliação de Desempenho */}
+                          {(isAdmin || userPerms.personnel.evaluations) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('evaluations');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'evaluations'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <ShieldCheck size={14} className="shrink-0 text-teal-600" />
+                              <span>Avaliação de Desempenho</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Manutenção */}
+                    {(isAdmin || userPerms.maintenance.enabled) && (
+                      <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('maintenance');
+                            setMaintenanceSubTab('requests');
+                            setIsMainMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                            activeTab === 'maintenance'
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                              : 'text-slate-800 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Wrench size={17} className={activeTab === 'maintenance' ? 'text-white' : 'text-blue-600'} />
+                            <span>Manutenção Industrial</span>
+                          </div>
+                          {activeTab === 'maintenance' && (
+                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                          )}
+                        </button>
+
+                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('maintenance');
+                              setMaintenanceSubTab('requests');
+                              setIsMainMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                              activeTab === 'maintenance' && maintenanceSubTab === 'requests'
+                                ? 'bg-blue-100 text-blue-700 font-black'
+                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                            }`}
+                          >
+                            <Wrench size={14} className="shrink-0 text-blue-600" />
+                            <span>Ordens de Serviço</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('maintenance');
+                              setMaintenanceSubTab('causes');
+                              setIsMainMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                              activeTab === 'maintenance' && maintenanceSubTab === 'causes'
+                                ? 'bg-blue-100 text-blue-700 font-black'
+                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                            }`}
+                          >
+                            <AlertCircle size={14} className="shrink-0 text-amber-600" />
+                            <span>Causas & Paradas</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Projeção TV */}
+                    {(isAdmin || userPerms.projection.enabled) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('projection');
+                          setIsTvProjectionActive(false);
+                          setIsMainMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          activeTab === 'projection'
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25'
+                            : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Tv size={18} className={activeTab === 'projection' ? 'text-white' : 'text-indigo-600'} />
+                          <span>Projeção em TV / Smart TV</span>
+                        </div>
+                        {activeTab === 'projection' && (
+                          <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* SEÇÃO 2: FERRAMENTAS DO SISTEMA */}
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest px-2 mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 inline-block" />
+                    Ferramentas & Ajustes
+                  </p>
+                  <div className="space-y-1">
+                    {/* Configurações Gerais */}
                     {canManageSettings && (
                       <button
                         type="button"
                         onClick={() => {
                           setIsSettingsModalOpen(true);
-                          setIsMobileMenuOpen(false);
+                          setIsMainMenuOpen(false);
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors active:bg-slate-100 text-left cursor-pointer"
+                        className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
                       >
-                        <Settings size={16} className="text-indigo-600 shrink-0" />
+                        <Settings size={18} className="text-indigo-600 shrink-0" />
                         <span>Configurações Gerais</span>
                       </button>
                     )}
 
-                    <div className="border-t border-slate-100 my-1 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMobileMenuOpen(false);
-                          handleLogout();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition-colors active:bg-red-100 text-left cursor-pointer"
-                      >
-                        <LogOut size={16} className="text-red-600 shrink-0" />
-                        <span>Sair do Sistema</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+                    {/* Tela Cheia */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleFullscreen();
+                      }}
+                      className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                    >
+                      {isFullscreen ? (
+                        <Minimize2 size={18} className="text-blue-600 shrink-0" />
+                      ) : (
+                        <Maximize2 size={18} className="text-blue-600 shrink-0" />
+                      )}
+                      <span>{isFullscreen ? 'Sair da Tela Cheia' : 'Expandir Tela Cheia'}</span>
+                    </button>
 
-        {/* Versão Desktop (>= md): Todos os botões visíveis lado a lado */}
-        <div className="hidden md:flex items-center gap-1.5 md:gap-3 ml-2">
-          {canViewActiveUsers && (
-            <button 
-              onClick={() => setIsActiveUsersModalOpen(true)}
-              className="p-2.5 md:p-3 px-3 md:px-4 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl md:rounded-2xl transition-all shadow-sm hover:bg-emerald-100 flex items-center gap-2 active:scale-95 cursor-pointer"
-              title="Ver Usuários Logados em Tempo Real"
-            >
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-              </span>
-              <span className="text-[10px] md:text-xs font-black uppercase tracking-wider whitespace-nowrap">{onlineUsers.length} On-line</span>
-              <Users size={18} className="text-emerald-600 shrink-0 md:w-5 md:h-5" />
-            </button>
-          )}
-          <button 
-            onClick={() => {
-              setIsTvProjectionActive(true);
-              if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {});
-              }
-            }}
-            className="p-2 md:p-3 px-2.5 md:px-4 bg-indigo-600 text-white border border-indigo-500 rounded-xl md:rounded-2xl transition-all shadow-md hover:bg-indigo-700 flex items-center gap-1.5 md:gap-2 active:scale-95 cursor-pointer"
-            title="Projetar em TV / Tela Cheia"
-          >
-            <Tv size={18} className="text-indigo-200 shrink-0 md:w-5 md:h-5 animate-pulse" />
-            <span className="text-[10px] md:text-xs font-black uppercase tracking-wider whitespace-nowrap">Projeção TV</span>
-          </button>
-          {canManageSettings && (
-            <button onClick={() => setIsSettingsModalOpen(true)} className="p-3 md:p-3.5 text-blue-600 bg-blue-50 border border-blue-100 rounded-xl md:rounded-2xl transition-all shadow-sm active:scale-95" title="Configurações"><Settings size={20} className="md:w-[22px] md:h-[22px]" /></button>
-          )}
-          <button 
-            onClick={toggleFullscreen} 
-            className="p-3 md:p-3.5 text-slate-600 bg-slate-50 border border-slate-100 rounded-xl md:rounded-2xl transition-all shadow-sm active:scale-95 hover:bg-slate-100" 
-            title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
-          >
-            {isFullscreen ? <Minimize2 size={20} className="md:w-[22px] md:h-[22px]" /> : <Maximize2 size={20} className="md:w-[22px] md:h-[22px]" />}
-          </button>
-          <button 
-            onClick={() => {
-              setBiometricUser(loggedUser);
-              handleOpenBiometricRegisterModal(loggedUser);
-            }} 
-            className="p-3 md:p-3.5 text-blue-600 bg-blue-50 border border-blue-100 rounded-xl md:rounded-2xl transition-all shadow-sm active:scale-95 hover:bg-blue-100" 
-            title="Cadastrar / Atualizar Biometria"
-          >
-            <Fingerprint size={20} className="md:w-[22px] md:h-[22px]" />
-          </button>
-          <button onClick={handleLogout} className="p-3 md:p-3.5 text-red-600 bg-red-50 border border-red-100 rounded-xl md:rounded-2xl transition-all shadow-sm active:scale-95" title="Sair do Sistema"><LogOut size={20} className="md:w-[22px] md:h-[22px]" /></button>
-        </div>
-      </header>
+                    {/* Biometria */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBiometricUser(loggedUser);
+                        handleOpenBiometricRegisterModal(loggedUser);
+                        setIsMainMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                    >
+                      <Fingerprint size={18} className="text-blue-600 shrink-0" />
+                      <span>Cadastrar / Atualizar Biometria</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-      <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-6 mt-3 md:mt-8 no-print overflow-x-hidden">
-        {/* Barra Tecnológica de Navegação com Efeito de Rolagem Suave */}
-        <div className="relative w-full max-w-4xl mx-auto">
-          {/* Efeitos visuais tecnológicos de máscara com gradiente nas bordas */}
-          <div className="absolute left-0 top-0 bottom-0 w-6 md:w-10 bg-gradient-to-r from-[#f8fafc] via-[#f8fafc]/70 to-transparent z-10 pointer-events-none rounded-l-2xl md:rounded-l-[1.8rem]" />
-          <div className="absolute right-0 top-0 bottom-0 w-8 md:w-12 bg-gradient-to-l from-[#f8fafc] via-[#f8fafc]/70 to-transparent z-10 pointer-events-none rounded-r-2xl md:rounded-r-[1.8rem] flex items-center justify-end pr-1 md:hidden">
-            <span className="w-1 h-5 bg-blue-500/40 rounded-full animate-pulse mr-0.5" />
-          </div>
-
-          <div className="flex overflow-x-auto p-1 sm:p-1.5 bg-slate-200/60 backdrop-blur-md rounded-2xl md:rounded-[1.8rem] w-full shadow-sm border border-slate-300/40 gap-1 md:gap-1.5 scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth overscroll-x-contain touch-pan-x min-w-0">
-            <button onClick={() => setActiveTab('home')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'home' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><HomeIcon className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Início</span></button>
-            
-            {/* Aba Extrusão */}
-            {(isAdmin || userPerms.extrusion.enabled) && (
-              <div className={`flex-1 shrink-0 min-w-max flex items-center rounded-xl md:rounded-[1.4rem] transition-all select-none ${activeTab === 'extrusion' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>
-                <button 
-                  id="tab-extrusao"
+              {/* Rodapé com Desconectar */}
+              <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/80">
+                <button
                   type="button"
                   onClick={() => {
-                    setActiveTab('extrusion');
-                    setExtrusionSubTab('dashboard');
-                    setDashboardSubTab('summary');
-                  }} 
-                  className="flex items-center justify-center gap-1 md:gap-1.5 pl-3 sm:pl-4 pr-1 py-2 sm:py-2.5 md:pl-5 md:pr-2 md:py-3.5 text-[10px] md:text-[11px] font-black uppercase cursor-pointer"
-                >
-                  <Factory className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> 
-                  <span className="whitespace-nowrap">Extrusão</span>
-                </button>
-                <button
-                  id="btn-menu-extrusao"
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveTab('extrusion');
-                    if (isExtrusionMenuOpen) {
-                      setIsExtrusionMenuOpen(false);
-                    } else {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const menuWidth = 240;
-                      const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - menuWidth - 10));
-                      const top = rect.bottom + 8;
-                      setExtrusionMenuPos({ top, left });
-                      setIsExtrusionMenuOpen(true);
-                      setIsRibbonMenuOpen(false);
-                    }
+                    setIsMainMenuOpen(false);
+                    handleLogout();
                   }}
-                  className="p-1.5 sm:p-2 mr-1 hover:bg-slate-100 rounded-lg cursor-pointer inline-flex items-center justify-center transition-colors text-slate-400 hover:text-blue-600 active:scale-90"
-                  title="Menu Extrusão"
+                  className="w-full py-3 px-4 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-95"
                 >
-                  <Menu className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <LogOut size={16} className="text-red-600 shrink-0" />
+                  <span>Desconectar / Sair do Sistema</span>
                 </button>
               </div>
-            )}
-            
-            {/* Aba Corte de Fita */}
-            {(isAdmin || userPerms.ribbon.enabled) && (
-              <div className={`flex-1 shrink-0 min-w-max flex items-center rounded-xl md:rounded-[1.4rem] transition-all select-none ${activeTab === 'ribbon' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>
-                <button 
-                  id="tab-corte"
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('ribbon');
-                    setRibbonSubTab('dashboard');
-                    setRibbonDashboardSubTab('summary');
-                  }} 
-                  className="flex items-center justify-center gap-1 md:gap-1.5 pl-3 sm:pl-4 pr-1 py-2 sm:py-2.5 md:pl-5 md:pr-2 md:py-3.5 text-[10px] md:text-[11px] font-black uppercase cursor-pointer"
-                >
-                  <BarChart3 className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> 
-                  <span className="whitespace-nowrap">Corte de Fita</span>
-                </button>
-                <button
-                  id="btn-menu-corte"
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveTab('ribbon');
-                    if (isRibbonMenuOpen) {
-                      setIsRibbonMenuOpen(false);
-                    } else {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const menuWidth = 240;
-                      const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - menuWidth - 10));
-                      const top = rect.bottom + 8;
-                      setRibbonMenuPos({ top, left });
-                      setIsRibbonMenuOpen(true);
-                      setIsExtrusionMenuOpen(false);
-                    }
-                  }}
-                  className="p-1.5 sm:p-2 mr-1 hover:bg-slate-100 rounded-lg cursor-pointer inline-flex items-center justify-center transition-colors text-slate-400 hover:text-blue-600 active:scale-90"
-                  title="Menu Corte de Fita"
-                >
-                  <Menu className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                </button>
-              </div>
-            )}
-            
-            {(isAdmin || userPerms.personnel.enabled) && (
-              <button onClick={() => { setActiveTab('personnel'); setPersonnelSubView('board'); }} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'personnel' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Users className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Pessoal</span></button>
-            )}
-
-            {(isAdmin || userPerms.maintenance.enabled) && (
-              <button onClick={() => setActiveTab('maintenance')} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'maintenance' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Wrench className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Manutenção</span></button>
-            )}
-
-            {(isAdmin || userPerms.projection.enabled) && (
-              <button id="tab-projecao" onClick={() => { setActiveTab('projection'); setIsTvProjectionActive(false); }} className={`flex-1 shrink-0 min-w-max flex items-center justify-center gap-1 px-3.5 py-2.5 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 rounded-xl md:rounded-[1.4rem] text-[10px] md:text-[11px] font-black uppercase transition-all select-none ${activeTab === 'projection' ? 'bg-white text-blue-600 shadow-sm md:shadow-md' : 'text-slate-500 hover:text-slate-800'}`}><Tv className="w-3.5 h-3.5 md:w-[18px] md:h-[18px] shrink-0 mr-0.5"/> <span className="whitespace-nowrap">Projeção</span></button>
-            )}
+            </motion.div>
           </div>
-        </div>
+        )}
+      </AnimatePresence>
 
-        {/* Indicador Tecnológico Mobile de Rolagem Lateral */}
-        <div className="flex md:hidden items-center justify-center gap-1.5 mt-1.5 text-[8.5px] font-black text-blue-600/70 uppercase tracking-widest select-none">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
-          <span>Deslize as opções para navegar</span>
-          <ChevronRight size={11} className="text-blue-500 animate-pulse" />
-        </div>
-
-        {/* Portais de Menus Flutuantes (Extrusão e Corte de Fita) */}
+      <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-6 mt-2 sm:mt-3 md:mt-4 no-print overflow-x-hidden">
         {typeof document !== 'undefined' && createPortal(
           <AnimatePresence>
             {isExtrusionMenuOpen && extrusionMenuPos && (
@@ -11735,7 +12170,7 @@ Atenciosamente,
         )}
       </div>
 
-      <main className="max-w-7xl mx-auto px-3 py-4 sm:p-6 space-y-4 sm:space-y-8">
+      <main className="max-w-7xl mx-auto px-3 py-2 sm:px-5 sm:py-3 space-y-2.5 sm:space-y-3.5">
         {/* ==================== INÍCIO OPÇÃO 3: BREADCRUMBS INTERATIVOS (DESFAZER: OPÇÃO 3) ==================== */}
         <InteractiveBreadcrumbs
           activeTab={activeTab}
@@ -11755,6 +12190,7 @@ Atenciosamente,
             productionData={productionData}
             ribbonEntries={ribbonEntries}
             goals={goals}
+            ribbonGoals={ribbonGoals}
             dashboardMonth={dashboardMonth}
             filterDay={filterDay}
             collaborators={collaborators}
