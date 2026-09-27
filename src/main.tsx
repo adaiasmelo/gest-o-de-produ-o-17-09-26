@@ -124,7 +124,10 @@ const updateSW = registerSW({
 
       // 1. Se já há um Service Worker em waiting pronto para assumir
       if (r.waiting) {
-        console.log('PWA: Service Worker aguardando ativação (waiting)');
+        console.log('PWA: Service Worker aguardando ativação (waiting) -> forçando ativação imediata');
+        try {
+          r.waiting.postMessage({ type: 'SKIP_WAITING' });
+        } catch (_) {}
         (window as any).refreshAppVersion = () => {
           updateSW(true);
         };
@@ -137,7 +140,10 @@ const updateSW = registerSW({
         if (installingWorker) {
           installingWorker.addEventListener('statechange', () => {
             if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('PWA: Novo worker instalado com sucesso. Disparando pwa-update-available');
+              console.log('PWA: Novo worker instalado com sucesso -> ativando automaticamente sem cliques');
+              try {
+                installingWorker.postMessage({ type: 'SKIP_WAITING' });
+              } catch (_) {}
               (window as any).refreshAppVersion = () => {
                 updateSW(true);
               };
@@ -147,10 +153,10 @@ const updateSW = registerSW({
         }
       });
 
-      // 3. Checa periodicamente por nova versão do Service Worker a cada 10 segundos
+      // 3. Checa periodicamente por nova versão do Service Worker a cada 5 segundos
       setInterval(() => {
         r.update().catch(err => console.warn('PWA: Verificação periódica de SW:', err));
-      }, 10000);
+      }, 5000);
 
       // 4. Checa imediatamente ao focar na janela ou voltar de segundo plano
       window.addEventListener('focus', () => {

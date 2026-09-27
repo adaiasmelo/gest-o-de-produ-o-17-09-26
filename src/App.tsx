@@ -1944,10 +1944,10 @@ export const App: React.FC = () => {
 
     (window as any).checkSystemUpdate = checkCloudflareUpdate;
 
-    // Checagem inicial após 1 segundo
-    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 1000);
-    // Intervalo de verificação a cada 10 segundos
-    const updateInterval = setInterval(checkCloudflareUpdate, 10000);
+    // Checagem inicial após 500ms
+    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 500);
+    // Intervalo de verificação a cada 5 segundos
+    const updateInterval = setInterval(checkCloudflareUpdate, 5000);
 
     // Checagem imediata quando o usuário retorna à janela/aba ou desbloqueia o aparelho
     const handleFocusOrVisible = () => {

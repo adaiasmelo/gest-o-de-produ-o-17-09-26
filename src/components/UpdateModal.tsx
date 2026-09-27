@@ -44,9 +44,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     setProgress(0);
     setIsCompleted(false);
 
-    // Duração total do carregamento automático (4.5 segundos para garantir download dos assets)
-    const durationMs = 4500;
-    const intervalMs = 45;
+    // Duração total do carregamento automático (1.2 segundos para atualização ágil e sem atrito)
+    const durationMs = 1200;
+    const intervalMs = 30;
     const stepIncrement = 100 / (durationMs / intervalMs);
 
     const timer = setInterval(() => {
@@ -64,13 +64,13 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     return () => clearInterval(timer);
   }, [isOpen]);
 
-  // Quando o progresso atinge 100%, aguarda 600ms e chama onUpdate automaticamente
+  // Quando o progresso atinge 100%, recarrega automaticamente
   useEffect(() => {
     if (isCompleted && isOpen && !updateTriggeredRef.current) {
       updateTriggeredRef.current = true;
       const timeout = setTimeout(() => {
         onUpdate();
-      }, 700);
+      }, 300);
       return () => clearTimeout(timeout);
     }
   }, [isCompleted, isOpen, onUpdate]);
