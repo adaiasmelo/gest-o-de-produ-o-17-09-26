@@ -1,12 +1,21 @@
 /version.json
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+  CDN-Cache-Control: no-store
+  Cloudflare-CDN-Cache-Control: no-store
   Access-Control-Allow-Origin: *
 
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+  CDN-Cache-Control: no-store
+  Cloudflare-CDN-Cache-Control: no-store
 
 /registerSW.js
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+  CDN-Cache-Control: no-store
+  Cloudflare-CDN-Cache-Control: no-store
 
 /manifest.webmanifest
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+  CDN-Cache-Control: no-store
+  Cloudflare-CDN-Cache-Control: no-store
+

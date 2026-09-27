@@ -1898,6 +1898,22 @@ export const App: React.FC = () => {
     // Verificação proativa e contínua de novas versões publicadas no Cloudflare
     const checkCloudflareUpdate = async () => {
       try {
+        // 1. Checa se o Service Worker nativo já possui nova versão esperando ou disponível
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(regs => {
+            regs.forEach(reg => {
+              if (reg.waiting) {
+                console.log('App: Service Worker com nova versão esperando (waiting)!');
+                setIsUpdateAvailable(true);
+                setUpdateDismissed(false);
+              } else {
+                reg.update().catch(() => {});
+              }
+            });
+          }).catch(() => {});
+        }
+
+        // 2. Checa o arquivo version.json no Cloudflare
         const remote = await fetchRemoteVersion();
         if (remote && isNewerVersion(remote)) {
           console.log('App: Nova compilação detectada no Cloudflare via /version.json!', remote);
@@ -1921,13 +1937,17 @@ export const App: React.FC = () => {
             } catch (err) {}
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.warn('App: Erro ao checar atualização Cloudflare:', err);
+      }
     };
 
-    // Checagem inicial após 2 segundos
-    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 2000);
-    // Intervalo de verificação a cada 15 segundos
-    const updateInterval = setInterval(checkCloudflareUpdate, 15000);
+    (window as any).checkSystemUpdate = checkCloudflareUpdate;
+
+    // Checagem inicial após 1 segundo
+    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 1000);
+    // Intervalo de verificação a cada 10 segundos
+    const updateInterval = setInterval(checkCloudflareUpdate, 10000);
 
     // Checagem imediata quando o usuário retorna à janela/aba ou desbloqueia o aparelho
     const handleFocusOrVisible = () => {

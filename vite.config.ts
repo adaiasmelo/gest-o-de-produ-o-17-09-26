@@ -11,11 +11,12 @@ const __dirname = path.dirname(__filename);
 
 const buildTime = new Date().toISOString();
 const buildTimestamp = Date.now();
+const buildTag = `v${new Date().getFullYear()}.${String(new Date().getMonth() + 1).padStart(2, '0')}.${String(new Date().getDate()).padStart(2, '0')}-${buildTimestamp.toString().slice(-4)}`;
 const versionData = {
   version: buildTimestamp,
   buildTime: buildTime,
   timestamp: buildTimestamp,
-  tag: `v${new Date().getFullYear()}.${String(new Date().getMonth() + 1).padStart(2, '0')}.${String(new Date().getDate()).padStart(2, '0')}-${buildTimestamp.toString().slice(-4)}`
+  tag: buildTag
 };
 
 function versionPlugin() {
@@ -51,6 +52,7 @@ export default defineConfig({
     'process.env': {},
     '__APP_BUILD_TIME__': JSON.stringify(buildTime),
     '__APP_BUILD_TIMESTAMP__': JSON.stringify(buildTimestamp),
+    '__APP_BUILD_TAG__': JSON.stringify(buildTag),
   },
   server: {
     port: 3000,
@@ -64,7 +66,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       injectRegister: 'auto',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'maskable-icon.png'],
       manifest: {
@@ -106,9 +108,14 @@ export default defineConfig({
         importScripts: ['/firebase-messaging-sw.js'],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        skipWaiting: true,
+        skipWaiting: false,
+        navigateFallbackDenylist: [/^\/api\//, /^\/version\.json/],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.includes('version.json'),
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: ({ request }) => request.destination === 'image',
             handler: 'CacheFirst',

@@ -106,8 +106,9 @@ const originalGetComputedStyle = window.getComputedStyle;
 };
 
 const updateSW = registerSW({
+  immediate: true,
   onNeedRefresh() {
-    console.log('PWA: Nova versão detectada');
+    console.log('PWA: Nova versão detectada via onNeedRefresh');
     (window as any).refreshAppVersion = () => {
       updateSW(true);
     };
@@ -119,12 +120,39 @@ const updateSW = registerSW({
   onRegistered(r) {
     console.log('PWA: Service Worker registrado com sucesso:', r);
     if (r) {
-      // Checa periodicamente por nova versão do Service Worker a cada 15 segundos
-      setInterval(() => {
-        r.update().catch(err => console.warn('PWA: Verificação de SW:', err));
-      }, 15000);
+      (window as any).__swRegistration = r;
 
-      // Checa imediatamente ao focar na janela ou voltar de segundo plano
+      // 1. Se já há um Service Worker em waiting pronto para assumir
+      if (r.waiting) {
+        console.log('PWA: Service Worker aguardando ativação (waiting)');
+        (window as any).refreshAppVersion = () => {
+          updateSW(true);
+        };
+        window.dispatchEvent(new CustomEvent('pwa-update-available'));
+      }
+
+      // 2. Quando um novo Service Worker for detectado e instalado
+      r.addEventListener('updatefound', () => {
+        const installingWorker = r.installing;
+        if (installingWorker) {
+          installingWorker.addEventListener('statechange', () => {
+            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('PWA: Novo worker instalado com sucesso. Disparando pwa-update-available');
+              (window as any).refreshAppVersion = () => {
+                updateSW(true);
+              };
+              window.dispatchEvent(new CustomEvent('pwa-update-available'));
+            }
+          });
+        }
+      });
+
+      // 3. Checa periodicamente por nova versão do Service Worker a cada 10 segundos
+      setInterval(() => {
+        r.update().catch(err => console.warn('PWA: Verificação periódica de SW:', err));
+      }, 10000);
+
+      // 4. Checa imediatamente ao focar na janela ou voltar de segundo plano
       window.addEventListener('focus', () => {
         r.update().catch(() => {});
       });
@@ -140,6 +168,18 @@ const updateSW = registerSW({
     console.log('PWA: Erro ao registrar Service Worker:', error);
   }
 });
+
+// Listener global para reload instantâneo quando o novo controller assumir controle
+if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      console.log('PWA: Novo controller assumiu o controle! Recarregando sistema...');
+      window.location.reload();
+    }
+  });
+}
 
 const isCalculatorRoute = () => {
   if (typeof window === 'undefined') return false;

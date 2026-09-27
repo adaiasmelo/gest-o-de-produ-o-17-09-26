@@ -15,7 +15,11 @@ export const LOCAL_BUILD_TIME: string = typeof __APP_BUILD_TIME__ !== 'undefined
 
 export const LOCAL_BUILD_TIMESTAMP: number = typeof __APP_BUILD_TIMESTAMP__ !== 'undefined'
   ? __APP_BUILD_TIMESTAMP__
-  : Date.now();
+  : 0;
+
+export const LOCAL_BUILD_TAG: string = typeof __APP_BUILD_TAG__ !== 'undefined'
+  ? __APP_BUILD_TAG__
+  : '';
 
 let isChecking = false;
 
@@ -31,15 +35,26 @@ export async function fetchRemoteVersion(): Promise<VersionInfo | null> {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
+        'Pragma': 'no-cache',
+        'Accept': 'application/json'
       }
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn('[UpdateManager] /version.json retornou status HTTP', res.status);
+      return null;
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      console.warn('[UpdateManager] /version.json retornou tipo não-JSON:', contentType);
+      return null;
+    }
+
     const data: VersionInfo = await res.json();
     return data;
   } catch (err) {
-    // Falha silenciosa em caso de perda temporária de conexão
+    console.warn('[UpdateManager] Erro ao buscar /version.json:', err);
     return null;
   } finally {
     isChecking = false;
@@ -47,17 +62,39 @@ export async function fetchRemoteVersion(): Promise<VersionInfo | null> {
 }
 
 /**
- * Verifica se a versão remota do Cloudflare é mais recente que a atualmente em execução
+ * Verifica se a versão remota do Cloudflare é mais recente ou diferente da atualmente em execução
  */
 export function isNewerVersion(remote: VersionInfo | null | undefined): boolean {
-  if (!remote || !remote.buildTime) return false;
+  if (!remote) return false;
   
-  // Se a tag ou buildTime forem diferentes do compilado nesta sessão
-  if (remote.buildTime !== LOCAL_BUILD_TIME) {
-    if (remote.version && LOCAL_BUILD_TIMESTAMP) {
-      // Se tiver timestamp numérico, valida se é posterior ou diferente
-      return remote.version > LOCAL_BUILD_TIMESTAMP || remote.buildTime !== LOCAL_BUILD_TIME;
+  // 1. Se os timestamps numéricos forem válidos e diferentes
+  if (remote.version && LOCAL_BUILD_TIMESTAMP > 0) {
+    if (remote.version !== LOCAL_BUILD_TIMESTAMP) {
+      console.log('[UpdateManager] Nova versão detectada por timestamp:', {
+        remote: remote.version,
+        local: LOCAL_BUILD_TIMESTAMP,
+        tag: remote.tag
+      });
+      return true;
     }
+    return false;
+  }
+
+  // 2. Se a data/hora ISO de build for diferente
+  if (remote.buildTime && remote.buildTime !== LOCAL_BUILD_TIME) {
+    console.log('[UpdateManager] Nova versão detectada por buildTime:', {
+      remote: remote.buildTime,
+      local: LOCAL_BUILD_TIME
+    });
+    return true;
+  }
+
+  // 3. Se a tag for diferente
+  if (remote.tag && LOCAL_BUILD_TAG && remote.tag !== LOCAL_BUILD_TAG) {
+    console.log('[UpdateManager] Nova versão detectada por tag:', {
+      remote: remote.tag,
+      local: LOCAL_BUILD_TAG
+    });
     return true;
   }
 
@@ -71,6 +108,7 @@ export function isNewerVersion(remote: VersionInfo | null | undefined): boolean 
  * 3. Recarrega a aplicação com os novos assets do Cloudflare
  */
 export async function executeAppUpdate(): Promise<void> {
+  console.log('[UpdateManager] Executando atualização forçada do sistema...');
   try {
     // 1. Notificar Service Worker para assumir controle imediatamente
     if ('serviceWorker' in navigator) {
@@ -92,7 +130,7 @@ export async function executeAppUpdate(): Promise<void> {
       }
     }
 
-    // 3. Limpar caches desatualizados do navegador
+    // 3. Limpar caches desatualizados do navegador (CacheStorage)
     if ('caches' in window) {
       try {
         const cacheKeys = await caches.keys();
@@ -109,6 +147,7 @@ export async function executeAppUpdate(): Promise<void> {
     // 4. Recarregar a página com parâmetro de limpeza de cache
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('_update', Date.now().toString());
-    window.location.href = currentUrl.toString();
+    window.location.replace(currentUrl.toString());
   }
 }
+

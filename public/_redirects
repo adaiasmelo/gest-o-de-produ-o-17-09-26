@@ -1,4 +1,7 @@
 /version.json /version.json 200
+/sw.js /sw.js 200
+/registerSW.js /registerSW.js 200
+/manifest.webmanifest /manifest.webmanifest 200
 /calculadora.html /calculadora.html 200
 /calculadora/index.html /calculadora/index.html 200
 /calculadora/* /calculadora/:splat 200
