@@ -1,17 +1,32 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <title>Projeção TV</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <title>Projeção TV - Manupackaging</title>
   <script>
-    try {
-      localStorage.setItem('manupackaging_tv_mode', 'true');
-    } catch(e) {}
-    window.location.replace('/tv.html');
+    (function() {
+      try {
+        localStorage.setItem('manupackaging_tv_mode', 'true');
+        sessionStorage.setItem('manupackaging_tv_mode', 'true');
+      } catch (e) {}
+      var search = window.location.search || '';
+      var hash = window.location.hash || '';
+      var sep = search ? '&' : '?';
+      var target = '/?tv=true' + (search ? '&' + search.substring(1) : '') + (hash ? hash : '');
+      window.location.replace(target);
+    })();
   </script>
-  <meta http-equiv="refresh" content="0; url=/tv.html">
 </head>
-<body style="background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;margin:0;">
-  <p style="font-size:18px;font-weight:bold;letter-spacing:1px;">Iniciando Projeção TV...</p>
+<body style="background-color: #0f172a; color: #ffffff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0;">
+  <div style="text-align: center;">
+    <div style="width: 44px; height: 44px; border: 4px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px auto;"></div>
+    <p style="font-size: 17px; font-weight: 700; letter-spacing: 0.5px; margin: 0 0 6px 0;">Iniciando Projeção TV...</p>
+    <p style="font-size: 13px; color: #94a3b8; margin: 0;">Conectando ao sistema em tempo real</p>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </body>
 </html>

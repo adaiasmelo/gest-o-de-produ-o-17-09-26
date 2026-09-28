@@ -10693,7 +10693,15 @@ Atenciosamente,
           collaborators={collaborators}
           systemName={systemName}
           systemLogo={systemLogo}
-          onClose={() => {}}
+          onClose={() => {
+            try {
+              localStorage.removeItem('manupackaging_tv_mode');
+              sessionStorage.removeItem('manupackaging_tv_mode');
+              (window as any).__IS_TV_PROJECTION_DIRECT__ = false;
+              window.history.pushState({}, '', '/');
+            } catch {}
+            setIsExternalTvView(false);
+          }}
           operatorPenalties={operatorPenalties}
           employees={employees}
           companyNotices={companyNotices}

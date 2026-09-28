@@ -195,6 +195,21 @@ const isCalculatorRoute = () => {
     const hash = (window.location.hash || '').toLowerCase();
     const pathname = (window.location.pathname || '').toLowerCase();
 
+    // Se for rota de TV ou Projeção, nunca é a calculadora
+    if (
+      pathname.includes('/tv') ||
+      pathname.includes('projecao') ||
+      pathname.includes('projeção') ||
+      search.includes('tv') ||
+      search.includes('projecao') ||
+      search.includes('projeção') ||
+      hash.includes('tv') ||
+      hash.includes('projecao') ||
+      hash.includes('projeção')
+    ) {
+      return false;
+    }
+
     return (
       search.includes('page=calculadora') ||
       search.includes('calculadora') ||

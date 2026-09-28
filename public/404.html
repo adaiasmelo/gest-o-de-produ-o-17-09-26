@@ -26,8 +26,9 @@
         ) {
           try {
             localStorage.setItem('manupackaging_tv_mode', 'true');
+            sessionStorage.setItem('manupackaging_tv_mode', 'true');
           } catch(err) {}
-          window.location.replace('/tv.html');
+          window.location.replace('/?tv=true');
           return;
         }
 
