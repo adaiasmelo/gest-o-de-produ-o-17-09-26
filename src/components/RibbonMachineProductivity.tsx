@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { downloadOutlookEml, copyRichAndPlainText } from '../utils/outlookEml';
+import { downloadOutlookEml, copyRichAndPlainText, getFormattedFileDate } from '../utils/outlookEml';
 
 export type TapeMachine = 'LINTECH' | 'GHEZZI' | 'WULTEC';
 
@@ -601,7 +601,8 @@ TEMPOS OPERACIONAIS:
     const plainText = generateEmailPlainText();
 
     copyRichAndPlainText(plainText, htmlBody);
-    downloadOutlookEml(subject, htmlBody, `Produtividade_${selectedMachine}_${selectedWidthMm}mmx${selectedLengthM}m.eml`);
+    const datePrefix = getFormattedFileDate();
+    downloadOutlookEml(subject, htmlBody, `${datePrefix}_Produtividade_${selectedMachine}_${selectedWidthMm}mmx${selectedLengthM}m.eml`);
     setOpenEmailMenu(false);
     showNotification('Rascunho .eml baixado para Outlook com dados em negrito!');
   };

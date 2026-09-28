@@ -19,7 +19,7 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas';
 import { downloadChartAsImageWithLegend } from './utils/exportChartImage';
-import { copyRichAndPlainText, downloadOutlookEml } from './utils/outlookEml';
+import { copyRichAndPlainText, downloadOutlookEml, getFormattedFileDate } from './utils/outlookEml';
 import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialData } from './lib/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
@@ -211,7 +211,7 @@ const findManualMapKey = (normName: string): string | undefined => {
 
   // Se o nome for curto/único (sem sobrenome) e tiver mais de um colaborador com esse nome, não autocompleta para evitar conflito
   const matchesCount = IMPORTED_COLLABORATORS.filter(c => 
-    c.name.toLowerCase().includes(normName)
+    String(c?.name || '').toLowerCase().includes(normName)
   ).length;
 
   if (matchesCount > 1) {
@@ -5264,7 +5264,8 @@ Atenciosamente,
     const plainText = generateRibbonShareReportText(false);
 
     copyRichAndPlainText(plainText, htmlBody);
-    downloadOutlookEml(subject, htmlBody, `Relatorio_Producao_Corte_Fita_${ribbonShareDate}.eml`);
+    const datePrefix = getFormattedFileDate(ribbonShareDate);
+    downloadOutlookEml(subject, htmlBody, `${datePrefix}_Apontamento_Producao_Corte_Fita.eml`);
     setOpenRibbonOutlookMenu(false);
     alert(`Rascunho aberto para o Outlook! Ao abrir o arquivo .eml baixado, o Outlook abre diretamente a mensagem com todos os títulos e destaques 100% em negrito.`);
   };
@@ -6364,7 +6365,8 @@ Atenciosamente,
     const plainText = generateExtrusionShareReportPlain(false);
 
     copyRichAndPlainText(plainText, htmlBody);
-    downloadOutlookEml(subject, htmlBody, `Relatorio_Producao_Extrusao_${shareDate}.eml`);
+    const datePrefix = getFormattedFileDate(shareDate);
+    downloadOutlookEml(subject, htmlBody, `${datePrefix}_Apontamento_Producao_Extrusao_Cast1_Cast2_Erema.eml`);
     setOpenExtrusionOutlookMenu(false);
     alert(`Rascunho aberto para o Outlook! Ao abrir o arquivo .eml baixado, o Outlook abre diretamente a mensagem com todos os títulos e destaques 100% em negrito.`);
   };

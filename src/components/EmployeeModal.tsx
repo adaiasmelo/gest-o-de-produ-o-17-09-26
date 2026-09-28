@@ -33,12 +33,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const filteredCollaborators = useMemo(() => {
-    const active = (collaborators || []).filter(c => !isCollaboratorSilenced(c));
-    if (!searchTerm) return active;
-    return active.filter(c => 
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.registration && String(c.registration).includes(searchTerm))
-    );
+    const active = (collaborators || []).filter(c => c && c.name && !isCollaboratorSilenced(c));
+    const term = (searchTerm || '').trim().toLowerCase();
+    if (!term) return active;
+    return active.filter(c => {
+      const name = String(c?.name || '').toLowerCase();
+      const reg = c?.registration ? String(c.registration).toLowerCase() : '';
+      return name.includes(term) || reg.includes(term);
+    });
   }, [collaborators, searchTerm]);
   
   const [extraData, setExtraData] = useState({
@@ -51,7 +53,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
-        const isLeadership = (initialData.sector || '').toLowerCase().includes('lideran');
+        const isLeadership = String(initialData.sector || '').toLowerCase().includes('lideran');
         let initialShift = initialData.shift || '';
         if (isLeadership && (!initialShift || initialShift === 'Integral' || initialShift === 'Dia' || initialShift === 'Noite')) {
           initialShift = 'Comercial';
@@ -68,16 +70,16 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
         });
         setActionType('update');
       } else if (slotInfo) {
-        const isLeadership = (slotInfo.sector || '').toLowerCase().includes('lideran');
-        let initialShift = slotInfo.shift;
+        const isLeadership = String(slotInfo.sector || '').toLowerCase().includes('lideran');
+        let initialShift = slotInfo.shift || '';
         if (isLeadership && (!initialShift || initialShift === 'Integral' || initialShift === 'Dia' || initialShift === 'Noite')) {
           initialShift = 'Comercial';
         }
         setFormData({
           name: '',
-          role: slotInfo.role === 'Novo Slot' ? 'Operador 1' : slotInfo.role,
-          sector: slotInfo.sector,
-          machine: slotInfo.machine,
+          role: slotInfo.role === 'Novo Slot' ? 'Operador 1' : (slotInfo.role || 'Operador 1'),
+          sector: slotInfo.sector || '',
+          machine: slotInfo.machine || '',
           shift: initialShift,
           status: 'Ativo'
         });
@@ -276,13 +278,13 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5">Função</label>
-                        <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold outline-none">
+                        <select value={formData.role || ''} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold outline-none">
                             {formData.sector === 'Liderança' ? (
                                 ['Gerente', 'Supervisor de Produção', 'Líder'].map(role => (
                                     <option key={role} value={role}>{role}</option>
                                 ))
                             ) : (
-                                availableRoles.map(role => (
+                                (availableRoles || []).map(role => (
                                     <option key={role} value={role}>{role}</option>
                                 ))
                             )}
@@ -291,7 +293,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                     <div>
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5">Status Atual</label>
                         <select 
-                            value={formData.status} 
+                            value={formData.status || 'Ativo'} 
                             onChange={e => setFormData({...formData, status: e.target.value as any})}
                             className={`w-full px-5 py-3.5 rounded-2xl text-sm font-black border outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
                                 formData.status === 'Ativo' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 
@@ -315,21 +317,21 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                       <div className="grid grid-cols-2 gap-3">
                            <div>
                               <label className="text-[9px] font-bold text-slate-400 uppercase">Setor</label>
-                              <input type="text" value={formData.sector} disabled className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-500" />
+                              <input type="text" value={formData.sector || ''} disabled className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-500" />
                            </div>
                            <div>
                               <label className="text-[9px] font-bold text-slate-400 uppercase">Turno</label>
-                              <select value={formData.shift} onChange={e => setFormData({...formData, shift: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500">
-                                  {(formData.sector || '').toLowerCase().includes('lideran') ? (
+                              <select value={formData.shift || ''} onChange={e => setFormData({...formData, shift: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500">
+                                  {String(formData.sector || '').toLowerCase().includes('lideran') ? (
                                       ['Comercial', 'Comercial Flexível'].map(s => <option key={s} value={s}>{s}</option>)
-                                  ) : (formData.sector || '').toLowerCase().includes('extrus') ? (
+                                  ) : String(formData.sector || '').toLowerCase().includes('extrus') ? (
                                       ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].map(s => <option key={s} value={s}>{s}</option>)
                                   ) : (
                                       Array.from(new Set([
                                         ...(formData.shift ? [formData.shift] : []),
                                         'Comercial',
                                         'Comercial Flexível',
-                                        ...availableShifts.map(s => s.name)
+                                        ...(availableShifts || []).map(s => s?.name || '').filter(Boolean)
                                       ])).map(sName => (
                                         <option key={sName} value={sName}>{sName}</option>
                                       ))
@@ -338,8 +340,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                            </div>
                            <div className="col-span-2">
                               <label className="text-[9px] font-bold text-slate-400 uppercase">Máquina</label>
-                              <select value={formData.machine} onChange={e => setFormData({...formData, machine: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500">
-                                  {availableMachines.map(m => <option key={m} value={m}>{m}</option>)}
+                              <select value={formData.machine || ''} onChange={e => setFormData({...formData, machine: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500">
+                                  {(availableMachines || []).map(m => <option key={m} value={m}>{m}</option>)}
                               </select>
                            </div>
                       </div>

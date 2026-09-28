@@ -12,6 +12,7 @@ import autoTable from 'jspdf-autotable';
 import { db } from '../lib/firebase';
 import { Employee, OvertimeRequest, SystemUser } from '../types';
 import ConfirmDialog from './ConfirmDialog';
+import { getFormattedFileDate } from '../utils/outlookEml';
 import {
   COMMERCIAL_DURATION_MINUTES,
   COMMERCIAL_FLEXIBLE_DURATION_MINUTES,
@@ -1795,8 +1796,27 @@ ${htmlBody}
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    const safeName = req.employeeName.replace(/[^a-zA-Z0-9]/g, '_');
-    link.download = `DOC076_Hora_Extra_${safeName}.eml`;
+
+    // Prefixo de data do dia DD-MM-YY (ex: 28-09-26)
+    const datePrefix = getFormattedFileDate(req.date);
+    const safeEmployee = (req.employeeName || 'Colaborador')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_');
+
+    // Detalhe de horário/turno para que lançamentos adicionais não peçam para substituir
+    const timeDetail = (req.startTime && req.endTime)
+      ? `_${req.startTime.replace(':', 'h')}_as_${req.endTime.replace(':', 'h')}`
+      : req.startTime
+      ? `_${req.startTime.replace(':', 'h')}`
+      : req.shift
+      ? `_${req.shift.replace(/[^a-zA-Z0-9]/g, '_')}`
+      : '';
+
+    const uniqueSuffix = req.id ? `_${req.id.slice(-4)}` : '';
+    link.download = `${datePrefix}_DOC_076_Hora_Extra_${safeEmployee}${timeDetail}${uniqueSuffix}.eml`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

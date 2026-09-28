@@ -3,6 +3,38 @@
  * e cópia de texto rico com formatação nativa em negrito.
  */
 
+/**
+ * Converte data para o formato de nome de arquivo brasileiro: DD-MM-YY (ex: 28-09-26).
+ * Sempre inicia com a data do dia para evitar repetição ou sobrescrita de arquivos.
+ */
+export const getFormattedFileDate = (rawDate?: string): string => {
+  if (rawDate && typeof rawDate === 'string') {
+    const clean = rawDate.split('T')[0].trim();
+    if (clean.includes('-')) {
+      const parts = clean.split('-');
+      if (parts.length === 3) {
+        const dd = parts[2].padStart(2, '0');
+        const mm = parts[1].padStart(2, '0');
+        const yy = parts[0].length === 4 ? parts[0].slice(2) : parts[0];
+        return `${dd}-${mm}-${yy}`;
+      }
+    } else if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts.length === 3) {
+        const dd = parts[0].padStart(2, '0');
+        const mm = parts[1].padStart(2, '0');
+        const yy = parts[2].length === 4 ? parts[2].slice(2) : parts[2];
+        return `${dd}-${mm}-${yy}`;
+      }
+    }
+  }
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(2);
+  return `${dd}-${mm}-${yy}`;
+};
+
 export const copyRichAndPlainText = async (plainText: string, htmlText: string): Promise<boolean> => {
   try {
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
@@ -162,7 +194,9 @@ ${processedHtmlBody}
   const link = document.createElement('a');
   link.href = url;
   const safeName = fileName.endsWith('.eml') ? fileName : `${fileName}.eml`;
-  link.download = safeName;
+  // Sanitiza caracteres proibidos em sistemas de arquivos (Windows/Linux/Mac/Android)
+  const sanitizedName = safeName.replace(/[\\/:*?"<>|]/g, '-').replace(/-+/g, '-');
+  link.download = sanitizedName;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

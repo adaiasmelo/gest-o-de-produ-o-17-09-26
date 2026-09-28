@@ -71,9 +71,10 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 
   const filteredCollaboratorsForSelect = useMemo(() => {
     if (!colSearchTerm) return activeCollaborators;
+    const term = (colSearchTerm || '').trim().toLowerCase();
     return activeCollaborators.filter(c => 
-      c.name.toLowerCase().includes(colSearchTerm.toLowerCase()) ||
-      c.registration.includes(colSearchTerm)
+      String(c?.name || '').toLowerCase().includes(term) ||
+      String(c?.registration || '').includes(term)
     );
   }, [activeCollaborators, colSearchTerm]);
 
@@ -127,34 +128,41 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     const nameNorm = (e.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
     const isExcluded = statusNorm.includes('excluid') || nameNorm.includes('excluid') || statusNorm.includes('silenciad') || e.isSilenced;
     if (isExcluded && !showExcludedSlots) return false;
+    const term = (searchTerm || '').trim().toLowerCase();
     return (
-      e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.sector.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.machine.toLowerCase().includes(searchTerm.toLowerCase())
+      String(e?.name || '').toLowerCase().includes(term) ||
+      String(e?.role || '').toLowerCase().includes(term) ||
+      String(e?.sector || '').toLowerCase().includes(term) ||
+      String(e?.machine || '').toLowerCase().includes(term)
     );
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
-  const filteredCollaboratorsList = activeCollaborators.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.registration.includes(searchTerm) ||
-    (c.role && c.role.toLowerCase().includes(searchTerm.toLowerCase()))
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  const filteredCollaboratorsList = activeCollaborators.filter(c => {
+    const term = (searchTerm || '').trim().toLowerCase();
+    return (
+      String(c?.name || '').toLowerCase().includes(term) ||
+      String(c?.registration || '').includes(term) ||
+      String(c?.role || '').toLowerCase().includes(term)
+    );
+  }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
-  const filteredSilencedList = silencedCollaborators.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.registration.includes(searchTerm) ||
-    (c.role && c.role.toLowerCase().includes(searchTerm.toLowerCase()))
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  const filteredSilencedList = silencedCollaborators.filter(c => {
+    const term = (searchTerm || '').trim().toLowerCase();
+    return (
+      String(c?.name || '').toLowerCase().includes(term) ||
+      String(c?.registration || '').includes(term) ||
+      String(c?.role || '').toLowerCase().includes(term)
+    );
+  }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
   const filteredImportedCollaborators = useMemo(() => {
     if (!searchTerm) return IMPORTED_COLLABORATORS;
-    const term = searchTerm.toLowerCase();
+    const term = (searchTerm || '').trim().toLowerCase();
     return IMPORTED_COLLABORATORS.filter(c => 
-      c.name.toLowerCase().includes(term) ||
-      c.registration.includes(term) ||
-      (c.role && c.role.toLowerCase().includes(term))
-    ).sort((a, b) => a.name.localeCompare(b.name));
+      String(c?.name || '').toLowerCase().includes(term) ||
+      String(c?.registration || '').includes(term) ||
+      String(c?.role || '').toLowerCase().includes(term)
+    ).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
   }, [searchTerm]);
 
   const handleAdd = () => {

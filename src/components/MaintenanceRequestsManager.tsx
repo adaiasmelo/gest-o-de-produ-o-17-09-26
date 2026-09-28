@@ -22,7 +22,7 @@ import {
   SystemUser, 
   Employee 
 } from '../types';
-import { copyRichAndPlainText, downloadOutlookEml } from '../utils/outlookEml';
+import { copyRichAndPlainText, downloadOutlookEml, getFormattedFileDate } from '../utils/outlookEml';
 import ConfirmDialog from './ConfirmDialog';
 
 interface MaintenanceRequestsManagerProps {
@@ -576,7 +576,10 @@ Mensagem gerada pelo Sistema de Gestão e Controle de Produção`;
 
   const handleDownloadEml = (req: MaintenanceRequest) => {
     const { subject, htmlBody } = buildOutlookContent(req);
-    const fileName = `Solicitacao_Manutencao_${(req.requestNumber || 'Nova').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const datePrefix = getFormattedFileDate(req.createdAt);
+    const safeReqNum = (req.requestNumber || 'OS').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeSector = (req.sector || 'Geral').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${datePrefix}_Solicitacao_Manutencao_${safeReqNum}_${safeSector}.eml`;
     downloadOutlookEml(subject, htmlBody, fileName);
   };
 
