@@ -24,11 +24,12 @@ import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialDa
 import { getToken, onMessage } from 'firebase/messaging';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, UserActivityLog, OperatorPenalty, CompanyNotice } from './types';
+import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, UserActivityLog, OperatorPenalty, CompanyNotice, EcoBalanceSettings } from './types';
 import { recordUserActivity, subscribeUserActivities, clearUserActivities, loadActivityLogsFromCache } from './services/activityService';
 import { DEFAULT_COMPANY_NOTICES } from './data/defaultNotices';
 import * as XLSX from 'xlsx';
 
+import { EcoBalanceCard } from './components/EcoBalanceCard';
 import PdfChoiceModal from './components/PdfChoiceModal';
 import { InternalPdfViewerModal } from './components/InternalPdfViewerModal';
 import { ReadOnlyBlockedModal } from './components/ReadOnlyBlockedModal';
@@ -1309,6 +1310,49 @@ export const App: React.FC = () => {
       return {};
     }
   });
+
+const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
+  initialMatrizStock: 18071,
+  initialGalpaoStock: 111991,
+  initialEcoBStock: 130062, // 18.071 + 111.991
+  initialRecycledStock: 0,
+  baseCountDate: '2026-09-25',
+  physicalMatrizStock: 20385,
+  physicalGalpaoStock: 111991,
+  physicalEcoBStock: 132376, // 20.385 + 111.991
+  physicalInventoryDate: '2026-09-28',
+  calculationPeriodDays: ['2026-09-25', '2026-09-26', '2026-09-27'],
+  notes: 'Última contagem base dia 25 (ref. 24): Matriz 18.071 kg, Galpão 111.991 kg. Contagem hoje: Matriz 20.385 kg, Galpão 111.991 kg. Período apurado: dias 25, 26 e 27.'
+};
+
+  const [ecoBalanceSettings, setEcoBalanceSettings] = useState<EcoBalanceSettings>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_eco_balance_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Se já tinha algo salvo mas sem diferenciação de Matriz/Galpão, aplica os valores oficiais
+        if (!parsed.initialMatrizStock && !parsed.initialGalpaoStock) {
+          return { ...DEFAULT_ECO_BALANCE_SETTINGS, ...parsed, initialMatrizStock: 18071, initialGalpaoStock: 111991, initialEcoBStock: 130062, physicalMatrizStock: 20385, physicalGalpaoStock: 111991, physicalEcoBStock: 132376 };
+        }
+        return { ...DEFAULT_ECO_BALANCE_SETTINGS, ...parsed };
+      }
+      return DEFAULT_ECO_BALANCE_SETTINGS;
+    } catch (e) {
+      return DEFAULT_ECO_BALANCE_SETTINGS;
+    }
+  });
+
+  const handleSaveEcoBalanceSettings = async (newSettings: EcoBalanceSettings) => {
+    setEcoBalanceSettings(newSettings);
+    localStorage.setItem('manupackaging_eco_balance_settings', JSON.stringify(newSettings));
+    try {
+      await setDoc(doc(db, 'settings', 'global'), {
+        ecoBalanceSettings: newSettings
+      }, { merge: true });
+    } catch (err) {
+      console.error('Erro ao salvar ecoBalanceSettings no Firestore:', err);
+    }
+  };
   const [operators, setOperators] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('manupackaging_operators');
@@ -2340,6 +2384,20 @@ export const App: React.FC = () => {
         if (data.ribbonGoals) {
           setRibbonGoals(data.ribbonGoals);
           localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(data.ribbonGoals));
+        }
+        if (data.ecoBalanceSettings) {
+          const mergedSettings = { ...DEFAULT_ECO_BALANCE_SETTINGS, ...data.ecoBalanceSettings };
+          if (!mergedSettings.initialMatrizStock && !mergedSettings.initialGalpaoStock) {
+            mergedSettings.initialMatrizStock = 18071;
+            mergedSettings.initialGalpaoStock = 111991;
+            mergedSettings.initialEcoBStock = 130062;
+            mergedSettings.physicalMatrizStock = 20385;
+            mergedSettings.physicalGalpaoStock = 111991;
+            mergedSettings.physicalEcoBStock = 132376;
+            mergedSettings.calculationPeriodDays = ['2026-09-25', '2026-09-26', '2026-09-27'];
+          }
+          setEcoBalanceSettings(mergedSettings);
+          localStorage.setItem('manupackaging_eco_balance_settings', JSON.stringify(mergedSettings));
         }
         if (data.availableRoles) {
           const rolesList = [...data.availableRoles];
@@ -12858,103 +12916,15 @@ Atenciosamente,
               );
             })()}
 
-            {!filterDay && ecoBalance[dashboardMonth] && (
-              <div className="bg-white p-5 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col gap-6 sm:gap-8">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
-                  <div className="flex items-center gap-3 sm:gap-4 text-slate-800">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-50 text-orange-500 rounded-xl sm:rounded-[1.2rem] flex items-center justify-center border border-orange-100"><Scale size={20} className="sm:w-6 sm:h-6" /></div>
-                    <div>
-                      <h3 className="text-lg sm:text-xl font-black uppercase tracking-tight leading-tight">Ciclo do Balanço de Eco B & Reciclagem</h3>
-                      <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-widest">Acompanhamento Circular Estruturado • MÊS DE REFERÊNCIA: {dashboardMonth}</p>
-                    </div>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] sm:text-[10px] font-black uppercase px-3 py-1 rounded-full self-start sm:self-center tracking-wider">
-                    Ciclo Fechado Eco-eficiente
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 leading-none">
-                  {/* TRACK 1: ECO B (Resíduos Coletados para Reciclabilidade) */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-orange-600 font-extrabold text-xs uppercase tracking-wider">
-                      <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse"></span>
-                      1. Coleta de Resíduos (Eco B)
-                    </div>
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Material de refugo oriundo do processo de extrusão das Cast 1 e 2.</p>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="bg-slate-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 flex items-center justify-between gap-2 shadow-sm">
-                        <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">Sobra Mês Anterior</p>
-                        <p className="text-base sm:text-lg font-black text-slate-500">{formatWeight(ecoBalance[dashboardMonth].startingSurplus)}</p>
-                      </div>
-                      <div className="bg-orange-50/40 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-orange-150/40 flex items-center justify-between gap-2 shadow-sm">
-                        <p className="text-[9px] sm:text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center gap-1"><TrendingUp size={10}/> Gerado Cast 1/2</p>
-                        <p className="text-base sm:text-lg font-black text-orange-500">+{formatWeight(ecoBalance[dashboardMonth].monthEcoB)}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 flex items-center justify-between gap-2 shadow-sm">
-                        <p className="text-[9px] sm:text-[10px] font-black text-slate-600 uppercase tracking-widest">Total Disponível</p>
-                        <p className="text-base sm:text-lg font-black text-slate-800">{formatWeight(ecoBalance[dashboardMonth].totalAvailable)}</p>
-                      </div>
-                      <div className="bg-amber-50/40 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-amber-100 flex items-center justify-between gap-2 shadow-sm">
-                        <p className="text-[9px] sm:text-[10px] font-black text-amber-600 uppercase tracking-widest">Processado Erema</p>
-                        <p className="text-base sm:text-lg font-black text-amber-600">-{formatWeight(ecoBalance[dashboardMonth].monthRecycled)}</p>
-                      </div>
-                    </div>
-                    <div className="bg-amber-900 text-amber-100 p-3.5 rounded-xl sm:rounded-2xl flex items-center justify-between gap-2 shadow-md">
-                      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Sobra Eco B (Pendente)</span>
-                      <span className="text-base sm:text-lg font-black">{formatWeight(ecoBalance[dashboardMonth].endingSurplus)}</span>
-                    </div>
-                  </div>
-
-                  {/* TRACK 2: PELLETS RECICLADOS (Retorno Direto à Produção) */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-xs uppercase tracking-wider">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      2. Retorno à Extrusão (Pellets Reciclados)
-                    </div>
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Pellets gerados na Erema reintroduzidos como matéria-prima no Cast.</p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="bg-slate-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 flex items-center justify-between gap-2 shadow-sm">
-                        <div className="leading-tight">
-                          <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">Estoque de Pellets Ant.</p>
-                          <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold uppercase tracking-wider">{(ecoBalance[dashboardMonth].startingRecycledSurplus / 1100).toFixed(1).replace('.', ',')} {(ecoBalance[dashboardMonth].startingRecycledSurplus / 1100) === 1 ? 'Bag' : 'Bags'}</span>
-                        </div>
-                        <p className="text-base sm:text-lg font-black text-slate-500">{formatWeight(ecoBalance[dashboardMonth].startingRecycledSurplus)}</p>
-                      </div>
-                      <div className="bg-emerald-50/30 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-emerald-100/30 flex items-center justify-between gap-2 shadow-sm">
-                        <div className="leading-tight">
-                          <p className="text-[9px] sm:text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1"><Package size={10}/> Produzido Erema</p>
-                          <span className="text-[8px] sm:text-[9px] text-emerald-500/75 font-bold uppercase tracking-wider">{(ecoBalance[dashboardMonth].monthRecycled / 1100).toFixed(1).replace('.', ',')} {((ecoBalance[dashboardMonth].monthRecycled / 1100) === 1) ? 'Bag' : 'Bags'}</span>
-                        </div>
-                        <p className="text-base sm:text-lg font-black text-emerald-600">+{formatWeight(ecoBalance[dashboardMonth].monthRecycled)}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 flex items-center justify-between gap-2 shadow-sm">
-                        <div className="leading-tight">
-                          <p className="text-[9px] sm:text-[10px] font-black text-slate-600 uppercase tracking-widest">Total Disponível Pellets</p>
-                          <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold uppercase tracking-wider">{(ecoBalance[dashboardMonth].totalRecycledAvailable / 1100).toFixed(1).replace('.', ',')} {((ecoBalance[dashboardMonth].totalRecycledAvailable / 1100) === 1) ? 'Bag' : 'Bags'}</span>
-                        </div>
-                        <p className="text-base sm:text-lg font-black text-slate-800">{formatWeight(ecoBalance[dashboardMonth].totalRecycledAvailable)}</p>
-                      </div>
-                      <div className="bg-red-50/40 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-red-100 flex items-center justify-between gap-2 shadow-sm">
-                        <div className="leading-tight">
-                          <p className="text-[9px] sm:text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-1"><TrendingDown size={10}/> Abatido Cast 1/2</p>
-                          <span className="text-[8px] sm:text-[9px] text-red-400 font-bold uppercase tracking-wider">{(ecoBalance[dashboardMonth].monthRecycledUsed / 1100).toFixed(1).replace('.', ',')} {((ecoBalance[dashboardMonth].monthRecycledUsed / 1100) === 1) ? 'Bag' : 'Bags'}</span>
-                        </div>
-                        <p className="text-base sm:text-lg font-black text-red-500">-{formatWeight(ecoBalance[dashboardMonth].monthRecycledUsed)}</p>
-                      </div>
-                    </div>
-                    <div className="bg-emerald-800 text-emerald-100 p-3.5 rounded-xl sm:rounded-2xl flex items-center justify-between gap-2 shadow-md">
-                      <div className="leading-tight">
-                        <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-nowrap">Pellets em Estoque Atual</span>
-                        <span className="text-[8px] sm:text-[9px] text-emerald-100/75 font-bold uppercase tracking-wider block mt-0.5">{(ecoBalance[dashboardMonth].endingRecycledSurplus / 1100).toFixed(1).replace('.', ',')} {((ecoBalance[dashboardMonth].endingRecycledSurplus / 1100) === 1) ? 'Bag' : 'Bags'}</span>
-                      </div>
-                      <span className="text-base sm:text-lg font-black">{formatWeight(ecoBalance[dashboardMonth].endingRecycledSurplus)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            <EcoBalanceCard
+              productionData={productionData}
+              dashboardMonth={dashboardMonth}
+              filterDay={filterDay}
+              ecoBalanceSettings={ecoBalanceSettings}
+              onSaveEcoBalanceSettings={handleSaveEcoBalanceSettings}
+              formatWeight={formatWeight}
+              isReadOnly={isReadOnlyAccount}
+            />
           </div>
         )}
 

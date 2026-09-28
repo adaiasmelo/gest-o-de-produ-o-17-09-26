@@ -665,9 +665,9 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
 
                   {/* Erema */}
                   <div
-                    onClick={() => onNavigateTab('extrusion', 'charts')}
+                    onClick={() => onNavigateTab('extrusion', 'dashboard', 'summary')}
                     className="p-2 sm:p-2.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/70 border border-slate-100 transition-all cursor-pointer flex items-center justify-between active:scale-98"
-                    title="Recuperadora Erema • Clique para ver balanço de massa"
+                    title="Recuperadora Erema • Clique para ver balanço de massa e ciclo Eco B"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span

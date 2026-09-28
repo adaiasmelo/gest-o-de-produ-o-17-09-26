@@ -563,5 +563,23 @@ export interface MaintenanceRequest {
   userId?: string;
 }
 
+export interface EcoBalanceSettings {
+  initialEcoBStock: number;          // Total Eco B de partida (kg) = matriz + galpão
+  initialMatrizStock?: number;       // Na Matriz (kg) na última contagem
+  initialGalpaoStock?: number;       // No Galpão (kg) na última contagem
+  initialRecycledStock: number;      // O que já temos de reciclado produzido (kg)
+  baseCountDate?: string;            // Data da última contagem base (ex: '2026-09-25')
+  
+  physicalEcoBStock?: number;        // Total Eco B contado fisicamente (kg) = matriz + galpão
+  physicalMatrizStock?: number;      // Contagem hoje na Matriz (kg)
+  physicalGalpaoStock?: number;      // Contagem hoje no Galpão (kg)
+  physicalInventoryDate?: string;    // Data da aferição física de hoje (ex: '2026-09-28')
+
+  calculationPeriodDays?: string[];  // Dias considerados no ciclo (ex: ['2026-09-25', '2026-09-26', '2026-09-27'])
+  notes?: string;                    // Observações do balanço / inventário
+  updatedAt?: string;
+}
+
+
 
 
