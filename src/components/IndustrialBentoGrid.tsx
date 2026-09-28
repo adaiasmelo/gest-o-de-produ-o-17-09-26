@@ -83,16 +83,18 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
 }) => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
-  // Data atual local (ano-mês-dia em fuso local)
+  // Data de referência do Dia: sempre a produção do dia anterior (ontem) por padrão,
+  // pois a fábrica opera com apontamentos lançados no dia posterior (ex: se hoje é dia 28, a referência é dia 27).
   const activeDay = useMemo(() => {
     if (filterDay && filterDay.trim()) {
       return filterDay.trim();
     }
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }, [filterDay]);
 
   const activeDayFormatted = useMemo(() => {
@@ -104,14 +106,20 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
     return activeDay;
   }, [activeDay]);
 
-  const yesterdayStr = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }, []);
+  // Dia anterior à data de referência (para cálculo de tendência percentual diária)
+  const previousDayStr = useMemo(() => {
+    if (!activeDay) return '';
+    const parts = activeDay.split('-');
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      d.setDate(d.getDate() - 1);
+      const prevY = d.getFullYear();
+      const prevM = String(d.getMonth() + 1).padStart(2, '0');
+      const prevD = String(d.getDate()).padStart(2, '0');
+      return `${prevY}-${prevM}-${prevD}`;
+    }
+    return '';
+  }, [activeDay]);
 
   // Cálculos de Produção Real & Métricas
   const metrics = useMemo(() => {
@@ -174,8 +182,8 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
         }
       }
 
-      // Produção de Ontem (para cálculo de tendência)
-      if (entry.date === yesterdayStr) {
+      // Produção do dia anterior (para cálculo de evolução/tendência)
+      if (entry.date === previousDayStr) {
         if (!isErema) {
           yesterdayNet += net;
         } else {
@@ -222,8 +230,8 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
         }
       }
 
-      // Produção de Ontem (para cálculo de tendência)
-      if (r.date === yesterdayStr) {
+      // Produção do dia anterior (para cálculo de evolução/tendência)
+      if (r.date === previousDayStr) {
         ribbonYesterdayNet += m2;
       }
     });
@@ -232,7 +240,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
     const currentMonthGoal = goals[dashboardMonth] || GOAL_VALUE || 1200000;
     const goalPercentage = currentMonthGoal > 0 ? (monthNet / currentMonthGoal) * 100 : 0;
 
-    // Tendência vs Ontem (Extrusão)
+    // Tendência vs Dia Anterior (Extrusão)
     let trendPercent = 0;
     if (yesterdayNet > 0) {
       trendPercent = ((todayNet - yesterdayNet) / yesterdayNet) * 100;
@@ -242,13 +250,13 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
     const ribbonMonthGoal = getRibbonTotalGoal(ribbonGoals, dashboardMonth);
     const ribbonGoalPercentage = ribbonMonthGoal > 0 ? (ribbonMonthNet / ribbonMonthGoal) * 100 : 0;
 
-    // Tendência vs Ontem (Corte de Fita)
+    // Tendência vs Dia Anterior (Corte de Fita)
     let ribbonTrendPercent = 0;
     if (ribbonYesterdayNet > 0) {
       ribbonTrendPercent = ((ribbonTodayNet - ribbonYesterdayNet) / ribbonYesterdayNet) * 100;
     }
 
-    // Tendência vs Ontem (Erema)
+    // Tendência vs Dia Anterior (Erema)
     let eremaTrendPercent = 0;
     if (eremaYesterdayNet > 0) {
       eremaTrendPercent = ((machineTodayNet['Erema'] - eremaYesterdayNet) / eremaYesterdayNet) * 100;
@@ -281,7 +289,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
       ribbonGoalPercentage,
       ribbonTrendPercent
     };
-  }, [productionData, ribbonEntries, goals, ribbonGoals, dashboardMonth, activeDay, yesterdayStr]);
+  }, [productionData, ribbonEntries, goals, ribbonGoals, dashboardMonth, activeDay, previousDayStr]);
 
   // Contagem de Colaboradores Reais
   const workforce = useMemo(() => {
@@ -415,11 +423,11 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                   <div className="flex items-center gap-1 mt-0.5 text-[9px] font-black">
                     {metrics.trendPercent >= 0 ? (
                       <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-400/30 text-emerald-100 border border-emerald-300/30">
-                        <TrendingUp size={10} /> +{metrics.trendPercent.toFixed(1)}% vs ontem
+                        <TrendingUp size={10} /> +{metrics.trendPercent.toFixed(1)}% vs dia ant.
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-400/30 text-amber-100 border border-amber-300/30">
-                        <TrendingDown size={10} /> {metrics.trendPercent.toFixed(1)}% vs ontem
+                        <TrendingDown size={10} /> {metrics.trendPercent.toFixed(1)}% vs dia ant.
                       </span>
                     )}
                   </div>
@@ -440,9 +448,6 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                   </span>
                   <span className="text-xs font-bold text-blue-100">t</span>
                 </div>
-                <p className="text-[9px] sm:text-[10px] font-bold text-blue-100 mt-1 truncate">
-                  {metrics.monthNet.toLocaleString('pt-BR')} kg acumulados
-                </p>
               </div>
             </div>
 
@@ -451,7 +456,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-black uppercase tracking-wider mb-1">
                 <span className="text-blue-100">Atingimento da Meta Extrusão</span>
                 <span className="text-emerald-200 font-extrabold text-[10px] sm:text-xs">
-                  {metrics.goalPercentage.toFixed(1)}% ({((metrics.monthNet / 1000)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} t de {(metrics.currentMonthGoal / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t)
+                  {metrics.goalPercentage.toFixed(1)}% de {(metrics.currentMonthGoal / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t
                 </span>
               </div>
               <div className="w-full h-2 bg-black/25 rounded-full overflow-hidden p-0.5 border border-white/25">
@@ -531,11 +536,11 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                   <div className="flex items-center gap-1 mt-0.5 text-[9px] font-black">
                     {metrics.ribbonTrendPercent >= 0 ? (
                       <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-400/30 text-emerald-100 border border-emerald-300/30">
-                        <TrendingUp size={10} /> +{metrics.ribbonTrendPercent.toFixed(1)}% vs ontem
+                        <TrendingUp size={10} /> +{metrics.ribbonTrendPercent.toFixed(1)}% vs dia ant.
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-400/30 text-amber-100 border border-amber-300/30">
-                        <TrendingDown size={10} /> {metrics.ribbonTrendPercent.toFixed(1)}% vs ontem
+                        <TrendingDown size={10} /> {metrics.ribbonTrendPercent.toFixed(1)}% vs dia ant.
                       </span>
                     )}
                   </div>
@@ -567,7 +572,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-black uppercase tracking-wider mb-1">
                 <span className="text-cyan-100">Atingimento da Meta Fita</span>
                 <span className="text-cyan-200 font-extrabold text-[10px] sm:text-xs">
-                  {metrics.ribbonGoalPercentage.toFixed(1)}% ({metrics.ribbonMonthNet.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m² de {metrics.ribbonMonthGoal.toLocaleString('pt-BR')} m²)
+                  {metrics.ribbonGoalPercentage.toFixed(1)}% de {metrics.ribbonMonthGoal.toLocaleString('pt-BR')} m²
                 </span>
               </div>
               <div className="w-full h-2 bg-black/25 rounded-full overflow-hidden p-0.5 border border-white/25">
