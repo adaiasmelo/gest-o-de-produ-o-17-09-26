@@ -58,6 +58,7 @@ import { VacationPlanning } from './components/VacationPlanning';
 import { OperationalTraining } from './components/OperationalTraining';
 import { LunchSchedule } from './components/LunchSchedule';
 import { OvertimeRequests } from './components/OvertimeRequests';
+import { OvertimeEntries } from './components/OvertimeEntries';
 import { ProjectionDashboard } from './components/ProjectionDashboard';
 import { DowntimeReasonsModal } from './components/DowntimeReasonsModal';
 import { DowntimeAnalyticsModal } from './components/DowntimeAnalyticsModal';
@@ -1108,7 +1109,7 @@ export const App: React.FC = () => {
     };
   }, [screensaverSettings, loggedUser, activeTab, isScreensaverActive]);
 
-  const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'evaluations'>('board');
+  const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations'>('board');
   const [isExtrusionMenuOpen, setIsExtrusionMenuOpen] = useState(false);
   const [extrusionMenuPos, setExtrusionMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [isRibbonMenuOpen, setIsRibbonMenuOpen] = useState(false);
@@ -3189,6 +3190,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         else if (personnelSubView === 'training') subScreen = 'Treinamentos';
         else if (personnelSubView === 'lunch') subScreen = 'Escala de Almoço';
         else if (personnelSubView === 'overtime') subScreen = 'Solicitação de Horas Extras';
+        else if (personnelSubView === 'overtime_entries') subScreen = 'Lançamento de Horas Extras';
         else if (personnelSubView === 'evaluations') subScreen = 'Avaliação de Desempenho';
         break;
       case 'evaluations':
@@ -11735,8 +11737,28 @@ Atenciosamente,
                                   : 'text-slate-600 hover:text-blue-600 hover:bg-white'
                               }`}
                             >
-                              <Clock size={14} className="shrink-0 text-emerald-600" />
+                              <Clock size={14} className="shrink-0 text-amber-600" />
                               <span>Solicitação de Horas Extras</span>
+                            </button>
+                          )}
+
+                          {/* Lançamento de Horas Extras (Base Mensal) */}
+                          {(isAdmin || userPerms.personnel.overtime) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('overtime_entries');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'overtime_entries'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Clock size={14} className="shrink-0 text-blue-600" />
+                              <span>Lançamento de Horas Extras</span>
                             </button>
                           )}
 
@@ -19594,6 +19616,17 @@ Atenciosamente,
               isReadOnly={isReadOnlyAccount}
               onBlockedAction={handleBlockedReadOnlyAction}
               setPdfModal={setPdfModal}
+              onOpenOvertimeEntries={() => setPersonnelSubView('overtime_entries')}
+            />
+          ) : personnelSubView === 'overtime_entries' ? (
+            <OvertimeEntries
+              employees={employees}
+              loggedUser={loggedUser}
+              onClose={() => setPersonnelSubView('board')}
+              canManage={canManagePersonnel}
+              isReadOnly={isReadOnlyAccount}
+              onBlockedAction={handleBlockedReadOnlyAction}
+              onNavigateToRequests={() => setPersonnelSubView('overtime')}
             />
           ) : personnelSubView === 'evaluations' ? (
             <EvaluationsTab
@@ -19696,6 +19729,15 @@ Atenciosamente,
                         >
                           <Clock size={18} className="text-amber-600" />
                           Solicitação de Hora Extra (DOC 076)
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.overtime) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime_entries'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <Clock size={18} className="text-blue-600" />
+                          Lançamento de Horas Extras (Base Mensal)
                         </button>
                       )}
                       {(isAdmin || userPerms.personnel.evaluations) && (
@@ -19801,6 +19843,18 @@ Atenciosamente,
                               <Clock size={15} className="text-amber-600" />
                             </div>
                             <span>Solicitação de Hora Extra (DOC 076)</span>
+                          </button>
+                        )}
+
+                        {(isAdmin || userPerms.personnel.overtime) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime_entries'); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
+                              <Clock size={15} className="text-blue-600" />
+                            </div>
+                            <span>Lançamento de Horas Extras (Base Mensal)</span>
                           </button>
                         )}
 

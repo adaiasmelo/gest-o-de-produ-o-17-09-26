@@ -251,6 +251,7 @@ export interface PersonnelPermissions {
   training: boolean;     // Treinamento Operacional
   lunch: boolean;        // Escala de Almoço
   overtime: boolean;     // Solicitação de Hora Extra
+  overtimeEntries?: boolean; // Lançamentos de Horas Extras
   evaluations: boolean;  // Avaliações de Desempenho
   manage: boolean;       // Cadastrar / Gerir Colaboradores
 }
@@ -532,6 +533,42 @@ export interface OvertimeRequest {
   overtimeMinutes?: number;
   displayOvertime?: string;
   overtimeUnit?: 'minutos' | 'horas';
+}
+
+export interface OvertimeEntry {
+  id: string;
+  employeeId?: string;
+  registration: string; // Matrícula
+  employeeName: string; // Nome do colaborador / operador
+  role?: string;
+  sector: string; // Setor do colaborador
+  machine?: string;
+  shift?: string;
+  date: string; // YYYY-MM-DD
+  overtimeMode?: OvertimeMode; // 'pos_turno' | 'integral'
+  shiftTypeChoice?: 'Comercial' | 'Diurno' | 'Noturno';
+  isCommercialFlexible?: boolean;
+  normalShiftStartTime?: string; // Início do horário normal
+  normalShiftEndTime?: string; // Término do horário normal
+  startTime: string; // Início da jornada/extra (HH:MM)
+  endTime: string; // Término da jornada/extra (HH:MM)
+  breakMinutes?: number; // Intervalo em minutos (ex: almoço/jantar)
+  workingHours: number; // Horas trabalhando em decimal (ex: 2.00)
+  workingHoursFormatted: string; // ex: "02:00" ou "2h 00min"
+  overtimeHours: number; // Horas extras calculadas em decimal (ex: 2.00)
+  overtimeMinutes: number; // Minutos de hora extra
+  overtimeHoursFormatted: string; // ex: "02:00" ou "2h 00min"
+  overtimePercentage: number; // Porcentagem de HE (ex: 50 ou 100)
+  overtimePercentageLabel: string; // ex: "50%" ou "100%"
+  equivalentHours?: number; // Horas ponderadas com adicional (ex: horas * (1 + %/100))
+  overtimeExplanation?: string; // Explicação detalhada da regra do turno aplicada
+  reason?: string; // Motivo / Justificativa
+  requestedBy?: string; // Líder ou solicitante
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  userId?: string;
+  userName?: string;
 }
 
 export type MaintenanceEquipmentCondition = 'Operando Normalmente' | 'Operando com Restrições / Ruído' | 'Parado / Inoperante';

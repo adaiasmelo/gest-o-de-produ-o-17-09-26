@@ -139,6 +139,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
       },
       {
+        id: 'action-new-overtime-entry',
+        category: 'actions',
+        title: 'Novo Lançamento de Hora Extra (Base Mensal)',
+        subtitle: 'Apontamento de horas extras já realizadas com cálculo automático',
+        badge: 'Base Mensal',
+        badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+        icon: <Clock size={18} />,
+        iconBg: 'bg-blue-500/10 text-blue-600',
+        iconColor: 'text-blue-600',
+        keywords: ['lancamento', 'horas extras', 'apontamento', 'base mensal', 'he 50', 'he 100', 'novo lancamento'],
+        action: () => {
+          onClose();
+          onNavigateTab('personnel', 'overtime_entries');
+        }
+      },
+      {
         id: 'action-new-training',
         category: 'actions',
         title: 'Novo Treinamento / DDP (Diálogo de Produção)',
@@ -380,6 +396,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => {
           onClose();
           onNavigateTab('personnel', 'overtime');
+        }
+      },
+      {
+        id: 'nav-personnel-overtime-entries',
+        category: 'navigation',
+        title: 'Pessoal > Lançamento de Horas Extras (Base Mensal)',
+        subtitle: 'Lançamentos de horas extras efetivas com cálculo de % HE e horas trabalhando',
+        badge: 'Base Mensal',
+        badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+        icon: <Clock size={18} />,
+        iconBg: 'bg-blue-500/10 text-blue-600',
+        iconColor: 'text-blue-600',
+        keywords: ['lancamento de horas extras', 'apontamento', 'base mensal', 'he', 'horas extras'],
+        action: () => {
+          onClose();
+          onNavigateTab('personnel', 'overtime_entries');
         }
       },
       {

@@ -131,6 +131,7 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
       training: { label: 'Treinamento Operacional', icon: <FileText size={13} /> },
       lunch: { label: 'Escala de Almoço', icon: <Clock size={13} /> },
       overtime: { label: 'Solicitação de Horas Extras (DOC 076)', icon: <Clock size={13} /> },
+      overtime_entries: { label: 'Lançamento de Horas Extras', icon: <Clock size={13} /> },
       evaluations: { label: 'Avaliação de Desempenho', icon: <Award size={13} /> }
     };
 

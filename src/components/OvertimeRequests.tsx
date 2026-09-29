@@ -39,6 +39,7 @@ interface OvertimeRequestsProps {
   isReadOnly?: boolean;
   onBlockedAction?: (title?: string, message?: string) => void;
   setPdfModal?: (modal: any) => void;
+  onOpenOvertimeEntries?: () => void;
 }
 
 // Categorias oficiais da Etapa 1 do DOC 076
@@ -70,7 +71,8 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
   canManage,
   isReadOnly = false,
   onBlockedAction,
-  setPdfModal
+  setPdfModal,
+  onOpenOvertimeEntries
 }) => {
   const [requests, setRequests] = useState<OvertimeRequest[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -1946,6 +1948,17 @@ ${htmlBody}
             <FileText size={15} className="text-emerald-600" />
             Relatório RH (Etapa 5)
           </button>
+
+          {onOpenOvertimeEntries && (
+            <button
+              onClick={onOpenOvertimeEntries}
+              className="px-4 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
+              title="Ir para Lançamento e Apontamento de Horas Extras (Base Mensal)"
+            >
+              <Clock size={15} className="text-blue-600" />
+              Lançamento de Horas Extras
+            </button>
+          )}
 
           {canManage && (
             <button
