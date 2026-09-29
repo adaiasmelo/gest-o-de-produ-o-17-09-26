@@ -17,39 +17,39 @@
           var path = (window.location.pathname || '').toLowerCase();
           var search = (window.location.search || '').toLowerCase();
           var hash = (window.location.hash || '').toLowerCase();
-          var href = (window.location.href || '').toLowerCase();
-          var decodedPath = '';
-          try { decodedPath = decodeURIComponent(path); } catch(e) { decodedPath = path; }
 
+          // Calculadora CAST 1
           if (path.indexOf('calculadora.html') !== -1 || path.indexOf('/calculadora') !== -1 || search.indexOf('calculadora') !== -1 || search.indexOf('cast1') !== -1 || hash.indexOf('calculadora') !== -1 || hash.indexOf('cast1') !== -1) {
             window.__IS_CALCULATOR_DIRECT__ = true;
           }
 
-          var ua = (navigator.userAgent || '').toLowerCase();
-          var isSmartTv = ua.indexOf('smart-tv') !== -1 || ua.indexOf('smarttv') !== -1 || ua.indexOf('tizen') !== -1 || ua.indexOf('webos') !== -1 || ua.indexOf('web0s') !== -1 || ua.indexOf('viera') !== -1 || ua.indexOf('appletv') !== -1 || ua.indexOf('googletv') !== -1 || ua.indexOf('hbbtv') !== -1 || ua.indexOf('netcast') !== -1 || ua.indexOf('philipstv') !== -1 || ua.indexOf('bravia') !== -1 || ua.indexOf('crkey') !== -1 || ua.indexOf('roku') !== -1;
-
-          var hasTvStored = false;
-          try {
-            hasTvStored = localStorage.getItem('manupackaging_tv_mode') === 'true';
-          } catch(e) {}
-
-          if (
-            isSmartTv ||
-            hasTvStored ||
-            path.indexOf('/tv') !== -1 ||
+          // A Projeção TV DEVE abrir SOMENTE quando o endereço contiver expressamente a rota /tv (ou tv.html / #tv)
+          var isTvRoute = (
+            path === '/tv' ||
+            path === '/tv/' ||
+            path.indexOf('/tv/') === 0 ||
             path.indexOf('tv.html') !== -1 ||
-            path.indexOf('projecao') !== -1 ||
-            decodedPath.indexOf('projeção') !== -1 ||
-            search.indexOf('tv') !== -1 ||
-            search.indexOf('projecao') !== -1 ||
-            search.indexOf('projeção') !== -1 ||
-            hash.indexOf('tv') !== -1 ||
-            hash.indexOf('projecao') !== -1 ||
-            hash.indexOf('projeção') !== -1
-          ) {
+            path === '/projecao' ||
+            path === '/projecao/' ||
+            path.indexOf('/projecao/') === 0 ||
+            path.indexOf('projecao.html') !== -1 ||
+            hash === '#tv' ||
+            hash.indexOf('#/tv') === 0 ||
+            hash === '#projecao' ||
+            hash.indexOf('#/projecao') === 0 ||
+            search.indexOf('tv=true') !== -1 ||
+            search.indexOf('page=tv') !== -1
+          );
+
+          if (isTvRoute) {
             window.__IS_TV_PROJECTION_DIRECT__ = true;
+          } else {
+            // Endereço principal (/) ou qualquer tela interna regular:
+            // NUNCA abre TV e LIMPA qualquer resquício armazenado anteriormente
+            window.__IS_TV_PROJECTION_DIRECT__ = false;
             try {
-              localStorage.setItem('manupackaging_tv_mode', 'true');
+              localStorage.removeItem('manupackaging_tv_mode');
+              sessionStorage.removeItem('manupackaging_tv_mode');
             } catch(e) {}
           }
         } catch(e) {}

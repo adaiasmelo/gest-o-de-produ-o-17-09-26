@@ -695,85 +695,41 @@ const isExternalCalculatorRoute = () => {
 };
 
 // Helper para detectar acesso externo à Projeção TV (Smart TVs / Telões industriais sem necessidade de login)
+// A Projeção TV DEVE abrir EXCLUSIVAMENTE quando o endereço contiver expressamente a rota /tv (ou /projecao)
 const isExternalTvRoute = (): boolean => {
   if (typeof window === 'undefined') return false;
   try {
-    if ((window as any).__IS_TV_PROJECTION_DIRECT__) return true;
-
-    // Detecção por armazenamento local/sessão
-    try {
-      if (localStorage.getItem('manupackaging_tv_mode') === 'true') return true;
-      if (sessionStorage.getItem('manupackaging_tv_mode') === 'true') return true;
-    } catch (e) {}
-
-    // Detecção por Smart TV User Agent
-    const ua = (navigator.userAgent || '').toLowerCase();
-    const isSmartTvDevice =
-      ua.includes('smart-tv') ||
-      ua.includes('smarttv') ||
-      ua.includes('tizen') ||
-      ua.includes('webos') ||
-      ua.includes('web0s') ||
-      ua.includes('viera') ||
-      ua.includes('appletv') ||
-      ua.includes('googletv') ||
-      ua.includes('hbbtv') ||
-      ua.includes('netcast') ||
-      ua.includes('philipstv') ||
-      ua.includes('bravia') ||
-      ua.includes('crkey') ||
-      ua.includes('roku');
-
     const rawPath = (window.location.pathname || '').toLowerCase();
-    let decodedPath = '';
-    try {
-      decodedPath = decodeURIComponent(rawPath);
-    } catch {
-      decodedPath = rawPath;
-    }
     const search = (window.location.search || '').toLowerCase();
     const hash = (window.location.hash || '').toLowerCase();
-    const href = (window.location.href || '').toLowerCase();
 
-    // Se estiver em uma Smart TV, abre automaticamente a Projeção Direta
-    if (isSmartTvDevice) {
-      try {
-        localStorage.setItem('manupackaging_tv_mode', 'true');
-      } catch (e) {}
+    const isTvUrl = (
+      rawPath === '/tv' ||
+      rawPath === '/tv/' ||
+      rawPath.startsWith('/tv/') ||
+      rawPath.includes('tv.html') ||
+      rawPath === '/projecao' ||
+      rawPath === '/projecao/' ||
+      rawPath.startsWith('/projecao/') ||
+      rawPath.includes('projecao.html') ||
+      hash === '#tv' ||
+      hash.startsWith('#/tv') ||
+      hash === '#projecao' ||
+      hash.startsWith('#/projecao') ||
+      search.includes('tv=true') ||
+      search.includes('page=tv')
+    );
+
+    if (isTvUrl) {
       return true;
     }
 
-    const matchesTv = (str: string) => {
-      if (!str) return false;
-      return (
-        str.includes('tv') ||
-        str.includes('projecao') ||
-        str.includes('projeção') ||
-        str.includes('telao') ||
-        str.includes('telão')
-      );
-    };
-
-    if (rawPath !== '/' && rawPath !== '' && (matchesTv(rawPath) || matchesTv(decodedPath))) {
-      try {
-        localStorage.setItem('manupackaging_tv_mode', 'true');
-      } catch (e) {}
-      return true;
-    }
-
-    if (matchesTv(search) || matchesTv(hash)) {
-      try {
-        localStorage.setItem('manupackaging_tv_mode', 'true');
-      } catch (e) {}
-      return true;
-    }
-
-    if (matchesTv(href) && href !== window.location.origin + '/' && href !== window.location.origin) {
-      try {
-        localStorage.setItem('manupackaging_tv_mode', 'true');
-      } catch (e) {}
-      return true;
-    }
+    // Se NÃO for rota /tv (como o endereço principal /), NUNCA abre TV e LIMPA qualquer flag anterior
+    try {
+      localStorage.removeItem('manupackaging_tv_mode');
+      sessionStorage.removeItem('manupackaging_tv_mode');
+      (window as any).__IS_TV_PROJECTION_DIRECT__ = false;
+    } catch (e) {}
 
     return false;
   } catch (e) {
@@ -1511,6 +1467,19 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
+  // Seções retráteis do menu principal (drawer 4 barrinhas) - iniciam fechadas
+  const [openMenuSections, setOpenMenuSections] = useState<{ [key: string]: boolean }>({
+    extrusion: false,
+    ribbon: false,
+    personnel: false,
+    maintenance: false
+  });
+  const toggleMenuSection = (section: string) => {
+    setOpenMenuSections((prev) => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<'filters' | 'goals' | 'config' | 'system' | 'app'>('filters');
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
@@ -11225,7 +11194,15 @@ Atenciosamente,
           {/* Botão de Menu com 4 Barrinhas Horizontais */}
           <button
             type="button"
-            onClick={() => setIsMainMenuOpen(true)}
+            onClick={() => {
+              setOpenMenuSections({
+                extrusion: false,
+                ribbon: false,
+                personnel: false,
+                maintenance: false
+              });
+              setIsMainMenuOpen(true);
+            }}
             className="p-2 sm:p-2.5 md:p-3 bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-blue-600 border border-slate-200/90 rounded-xl md:rounded-2xl transition-all shadow-xs active:scale-95 flex items-center justify-center cursor-pointer"
             title="Abrir Menu Principal"
             aria-label="Abrir Menu Principal"
@@ -11326,15 +11303,9 @@ Atenciosamente,
                     {/* Extrusão */}
                     {(isAdmin || userPerms.extrusion.enabled) && (
                       <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('extrusion');
-                            setExtrusionSubTab('dashboard');
-                            setDashboardSubTab('summary');
-                            setIsMainMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        <div
+                          onClick={() => toggleMenuSection('extrusion')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer select-none ${
                             activeTab === 'extrusion'
                               ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                               : 'text-slate-800 hover:bg-white'
@@ -11344,130 +11315,147 @@ Atenciosamente,
                             <Factory size={17} className={activeTab === 'extrusion' ? 'text-white' : 'text-blue-600'} />
                             <span>Extrusão</span>
                           </div>
-                          {activeTab === 'extrusion' && (
-                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
-                          )}
-                        </button>
-
-                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
-                          {/* Visão Geral */}
-                          {(isAdmin || userPerms.extrusion.summary) && (
+                          <div className="flex items-center gap-1.5">
+                            {activeTab === 'extrusion' && (
+                              <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                            )}
                             <button
                               type="button"
-                              onClick={() => {
-                                setActiveTab('extrusion');
-                                setExtrusionSubTab('dashboard');
-                                setDashboardSubTab('summary');
-                                setIsMainMenuOpen(false);
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleMenuSection('extrusion');
                               }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'summary'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              className={`p-1 rounded-lg transition-transform duration-200 flex items-center justify-center cursor-pointer ${
+                                activeTab === 'extrusion'
+                                  ? 'hover:bg-white/20 text-white'
+                                  : 'hover:bg-slate-200/80 text-slate-500'
                               }`}
+                              title={openMenuSections.extrusion ? 'Recolher opções' : 'Abrir opções'}
+                              aria-label={openMenuSections.extrusion ? 'Recolher opções' : 'Abrir opções'}
                             >
-                              <LayoutDashboard size={14} className="shrink-0 text-blue-600" />
-                              <span>Visão Geral</span>
+                              <ChevronDown
+                                size={16}
+                                className={`transition-transform duration-200 ${openMenuSections.extrusion ? 'rotate-180' : ''}`}
+                              />
                             </button>
-                          )}
-
-                          {/* Gráficos */}
-                          {(isAdmin || userPerms.extrusion.charts) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('extrusion');
-                                setExtrusionSubTab('dashboard');
-                                setDashboardSubTab('charts');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'charts'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <TrendingUp size={14} className="shrink-0 text-indigo-600" />
-                              <span>Gráficos</span>
-                            </button>
-                          )}
-
-                          {/* Comparativo BI */}
-                          {(isAdmin || userPerms.extrusion.comparison) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('extrusion');
-                                setExtrusionSubTab('dashboard');
-                                setDashboardSubTab('comparison');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'comparison'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Layers size={14} className="shrink-0 text-purple-600" />
-                              <span>Comparativo BI</span>
-                            </button>
-                          )}
-
-                          {/* Relatórios */}
-                          {(isAdmin || userPerms.extrusion.reports) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('extrusion');
-                                setExtrusionSubTab('reports');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'extrusion' && extrusionSubTab === 'reports'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <FileDown size={14} className="shrink-0 text-emerald-600" />
-                              <span>Relatórios</span>
-                            </button>
-                          )}
-
-                          {/* Estoque */}
-                          {(isAdmin || userPerms.extrusion.stock) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('extrusion');
-                                setExtrusionSubTab('stock');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'extrusion' && extrusionSubTab === 'stock'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <FileSpreadsheet size={14} className="shrink-0 text-amber-600" />
-                              <span>Estoque</span>
-                            </button>
-                          )}
+                          </div>
                         </div>
+
+                        {openMenuSections.extrusion && (
+                          <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1 pt-1">
+                            {/* Visão Geral */}
+                            {(isAdmin || userPerms.extrusion.summary) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('extrusion');
+                                  setExtrusionSubTab('dashboard');
+                                  setDashboardSubTab('summary');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'summary'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <LayoutDashboard size={14} className="shrink-0 text-blue-600" />
+                                <span>Visão Geral</span>
+                              </button>
+                            )}
+
+                            {/* Gráficos */}
+                            {(isAdmin || userPerms.extrusion.charts) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('extrusion');
+                                  setExtrusionSubTab('dashboard');
+                                  setDashboardSubTab('charts');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'charts'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <TrendingUp size={14} className="shrink-0 text-indigo-600" />
+                                <span>Gráficos</span>
+                              </button>
+                            )}
+
+                            {/* Comparativo BI */}
+                            {(isAdmin || userPerms.extrusion.comparison) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('extrusion');
+                                  setExtrusionSubTab('dashboard');
+                                  setDashboardSubTab('comparison');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'extrusion' && extrusionSubTab === 'dashboard' && dashboardSubTab === 'comparison'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Layers size={14} className="shrink-0 text-purple-600" />
+                                <span>Comparativo BI</span>
+                              </button>
+                            )}
+
+                            {/* Relatórios */}
+                            {(isAdmin || userPerms.extrusion.reports) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('extrusion');
+                                  setExtrusionSubTab('reports');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'extrusion' && extrusionSubTab === 'reports'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <FileDown size={14} className="shrink-0 text-emerald-600" />
+                                <span>Relatórios</span>
+                              </button>
+                            )}
+
+                            {/* Estoque */}
+                            {(isAdmin || userPerms.extrusion.stock) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('extrusion');
+                                  setExtrusionSubTab('stock');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'extrusion' && extrusionSubTab === 'stock'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <FileSpreadsheet size={14} className="shrink-0 text-amber-600" />
+                                <span>Estoque</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Corte de Fita */}
                     {(isAdmin || userPerms.ribbon.enabled) && (
                       <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('ribbon');
-                            setRibbonSubTab('dashboard');
-                            setRibbonDashboardSubTab('summary');
-                            setIsMainMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        <div
+                          onClick={() => toggleMenuSection('ribbon')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer select-none ${
                             activeTab === 'ribbon'
                               ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                               : 'text-slate-800 hover:bg-white'
@@ -11477,160 +11465,178 @@ Atenciosamente,
                             <BarChart3 size={17} className={activeTab === 'ribbon' ? 'text-white' : 'text-blue-600'} />
                             <span>Corte de Fita</span>
                           </div>
-                          {activeTab === 'ribbon' && (
-                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
-                          )}
-                        </button>
-
-                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
-                          {/* Visão Geral */}
-                          {(isAdmin || userPerms.ribbon.summary) && (
+                          <div className="flex items-center gap-1.5">
+                            {activeTab === 'ribbon' && (
+                              <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                            )}
                             <button
                               type="button"
-                              onClick={() => {
-                                setActiveTab('ribbon');
-                                setRibbonSubTab('dashboard');
-                                setRibbonDashboardSubTab('summary');
-                                setIsMainMenuOpen(false);
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleMenuSection('ribbon');
                               }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'summary'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              className={`p-1 rounded-lg transition-transform duration-200 flex items-center justify-center cursor-pointer ${
+                                activeTab === 'ribbon'
+                                  ? 'hover:bg-white/20 text-white'
+                                  : 'hover:bg-slate-200/80 text-slate-500'
                               }`}
+                              title={openMenuSections.ribbon ? 'Recolher opções' : 'Abrir opções'}
+                              aria-label={openMenuSections.ribbon ? 'Recolher opções' : 'Abrir opções'}
                             >
-                              <LayoutDashboard size={14} className="shrink-0 text-blue-600" />
-                              <span>Visão Geral</span>
+                              <ChevronDown
+                                size={16}
+                                className={`transition-transform duration-200 ${openMenuSections.ribbon ? 'rotate-180' : ''}`}
+                              />
                             </button>
-                          )}
-
-                          {/* Gráficos */}
-                          {(isAdmin || userPerms.ribbon.charts) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('ribbon');
-                                setRibbonSubTab('dashboard');
-                                setRibbonDashboardSubTab('charts');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'charts'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <TrendingUp size={14} className="shrink-0 text-indigo-600" />
-                              <span>Gráficos</span>
-                            </button>
-                          )}
-
-                          {/* Comparativo BI */}
-                          {(isAdmin || userPerms.ribbon.comparison) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('ribbon');
-                                setRibbonSubTab('dashboard');
-                                setRibbonDashboardSubTab('comparison');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'comparison'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Layers size={14} className="shrink-0 text-purple-600" />
-                              <span>Comparativo BI</span>
-                            </button>
-                          )}
-
-                          {/* Relatório de Lançamentos */}
-                          {(isAdmin || userPerms.ribbon.reports) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('ribbon');
-                                setRibbonSubTab('reports');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'ribbon' && ribbonSubTab === 'reports'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <FileDown size={14} className="shrink-0 text-emerald-600" />
-                              <span>Relatório de Lançamento</span>
-                            </button>
-                          )}
-
-                          {/* Produtividade de Máquina */}
-                          {(isAdmin || userPerms.ribbon.productivity) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('ribbon');
-                                setRibbonSubTab('productivity');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'ribbon' && ribbonSubTab === 'productivity'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Gauge size={14} className="shrink-0 text-blue-600" />
-                              <span>Produtividade de Máquina</span>
-                            </button>
-                          )}
-
-                          {/* Definir Metas */}
-                          {(isAdmin || (userPerms.settings.goals && !isReadOnlyAccount)) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('ribbon');
-                                setIsRibbonGoalsModalOpen(true);
-                                setIsMainMenuOpen(false);
-                              }}
-                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-indigo-700 hover:bg-white"
-                            >
-                              <Target size={14} className="shrink-0 text-indigo-600" />
-                              <span>Definir Metas</span>
-                            </button>
-                          )}
-
-                          {/* Exportar Excel */}
-                          {(isAdmin || userPerms.ribbon.reports) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                exportRibbonToExcel();
-                                setIsMainMenuOpen(false);
-                              }}
-                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-emerald-700 hover:bg-white"
-                            >
-                              <Download size={14} className="shrink-0 text-emerald-600" />
-                              <span>Exportar Excel</span>
-                            </button>
-                          )}
+                          </div>
                         </div>
+
+                        {openMenuSections.ribbon && (
+                          <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1 pt-1">
+                            {/* Visão Geral */}
+                            {(isAdmin || userPerms.ribbon.summary) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('ribbon');
+                                  setRibbonSubTab('dashboard');
+                                  setRibbonDashboardSubTab('summary');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'summary'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <LayoutDashboard size={14} className="shrink-0 text-blue-600" />
+                                <span>Visão Geral</span>
+                              </button>
+                            )}
+
+                            {/* Gráficos */}
+                            {(isAdmin || userPerms.ribbon.charts) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('ribbon');
+                                  setRibbonSubTab('dashboard');
+                                  setRibbonDashboardSubTab('charts');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'charts'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <TrendingUp size={14} className="shrink-0 text-indigo-600" />
+                                <span>Gráficos</span>
+                              </button>
+                            )}
+
+                            {/* Comparativo BI */}
+                            {(isAdmin || userPerms.ribbon.comparison) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('ribbon');
+                                  setRibbonSubTab('dashboard');
+                                  setRibbonDashboardSubTab('comparison');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'ribbon' && ribbonSubTab === 'dashboard' && ribbonDashboardSubTab === 'comparison'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Layers size={14} className="shrink-0 text-purple-600" />
+                                <span>Comparativo BI</span>
+                              </button>
+                            )}
+
+                            {/* Relatório de Lançamentos */}
+                            {(isAdmin || userPerms.ribbon.reports) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('ribbon');
+                                  setRibbonSubTab('reports');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'ribbon' && ribbonSubTab === 'reports'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <FileDown size={14} className="shrink-0 text-emerald-600" />
+                                <span>Relatório de Lançamento</span>
+                              </button>
+                            )}
+
+                            {/* Produtividade de Máquina */}
+                            {(isAdmin || userPerms.ribbon.productivity) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('ribbon');
+                                  setRibbonSubTab('productivity');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'ribbon' && ribbonSubTab === 'productivity'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Gauge size={14} className="shrink-0 text-blue-600" />
+                                <span>Produtividade de Máquina</span>
+                              </button>
+                            )}
+
+                            {/* Definir Metas */}
+                            {(isAdmin || (userPerms.settings.goals && !isReadOnlyAccount)) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('ribbon');
+                                  setIsRibbonGoalsModalOpen(true);
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-indigo-700 hover:bg-white"
+                              >
+                                <Target size={14} className="shrink-0 text-indigo-600" />
+                                <span>Definir Metas</span>
+                              </button>
+                            )}
+
+                            {/* Exportar Excel */}
+                            {(isAdmin || userPerms.ribbon.reports) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  exportRibbonToExcel();
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-emerald-700 hover:bg-white"
+                              >
+                                <Download size={14} className="shrink-0 text-emerald-600" />
+                                <span>Exportar Excel</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Pessoal */}
                     {(isAdmin || userPerms.personnel.enabled) && (
                       <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('personnel');
-                            setPersonnelSubView('board');
-                            setIsMainMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        <div
+                          onClick={() => toggleMenuSection('personnel')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer select-none ${
                             activeTab === 'personnel'
                               ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                               : 'text-slate-800 hover:bg-white'
@@ -11640,162 +11646,180 @@ Atenciosamente,
                             <Users size={17} className={activeTab === 'personnel' ? 'text-white' : 'text-blue-600'} />
                             <span>Pessoal & Equipe</span>
                           </div>
-                          {activeTab === 'personnel' && (
-                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
-                          )}
-                        </button>
-
-                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
-                          {/* Quadro Geral */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab('personnel');
-                              setPersonnelSubView('board');
-                              setIsMainMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                              activeTab === 'personnel' && personnelSubView === 'board'
-                                ? 'bg-blue-100 text-blue-700 font-black'
-                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                            }`}
-                          >
-                            <Users size={14} className="shrink-0 text-blue-600" />
-                            <span>Quadro Geral</span>
-                          </button>
-
-                          {/* Programação de Férias */}
-                          {(isAdmin || userPerms.personnel.vacations) && (
+                          <div className="flex items-center gap-1.5">
+                            {activeTab === 'personnel' && (
+                              <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                            )}
                             <button
                               type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('vacations');
-                                setIsMainMenuOpen(false);
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleMenuSection('personnel');
                               }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'vacations'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              className={`p-1 rounded-lg transition-transform duration-200 flex items-center justify-center cursor-pointer ${
+                                activeTab === 'personnel'
+                                  ? 'hover:bg-white/20 text-white'
+                                  : 'hover:bg-slate-200/80 text-slate-500'
                               }`}
+                              title={openMenuSections.personnel ? 'Recolher opções' : 'Abrir opções'}
+                              aria-label={openMenuSections.personnel ? 'Recolher opções' : 'Abrir opções'}
                             >
-                              <Calendar size={14} className="shrink-0 text-indigo-600" />
-                              <span>Programação de Férias</span>
+                              <ChevronDown
+                                size={16}
+                                className={`transition-transform duration-200 ${openMenuSections.personnel ? 'rotate-180' : ''}`}
+                              />
                             </button>
-                          )}
-
-                          {/* Treinamentos */}
-                          {(isAdmin || userPerms.personnel.training) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('training');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'training'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Award size={14} className="shrink-0 text-purple-600" />
-                              <span>Treinamentos</span>
-                            </button>
-                          )}
-
-                          {/* Escala de Almoço */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab('personnel');
-                              setPersonnelSubView('lunch');
-                              setIsMainMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                              activeTab === 'personnel' && personnelSubView === 'lunch'
-                                ? 'bg-blue-100 text-blue-700 font-black'
-                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                            }`}
-                          >
-                            <Utensils size={14} className="shrink-0 text-amber-600" />
-                            <span>Escala de Almoço</span>
-                          </button>
-
-                          {/* Horas Extras */}
-                          {(isAdmin || userPerms.personnel.overtime) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('overtime');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'overtime'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Clock size={14} className="shrink-0 text-amber-600" />
-                              <span>Solicitação de Horas Extras</span>
-                            </button>
-                          )}
-
-                          {/* Lançamento de Horas Extras (Base Mensal) */}
-                          {(isAdmin || userPerms.personnel.overtime) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('overtime_entries');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'overtime_entries'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Clock size={14} className="shrink-0 text-blue-600" />
-                              <span>Lançamento de Horas Extras</span>
-                            </button>
-                          )}
-
-                          {/* Avaliação de Desempenho */}
-                          {(isAdmin || userPerms.personnel.evaluations) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('evaluations');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'evaluations'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <ShieldCheck size={14} className="shrink-0 text-teal-600" />
-                              <span>Avaliação de Desempenho</span>
-                            </button>
-                          )}
+                          </div>
                         </div>
+
+                        {openMenuSections.personnel && (
+                          <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1 pt-1">
+                            {/* Quadro Geral */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('board');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'board'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Users size={14} className="shrink-0 text-blue-600" />
+                              <span>Quadro Geral</span>
+                            </button>
+
+                            {/* Programação de Férias */}
+                            {(isAdmin || userPerms.personnel.vacations) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('vacations');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'vacations'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Calendar size={14} className="shrink-0 text-indigo-600" />
+                                <span>Programação de Férias</span>
+                              </button>
+                            )}
+
+                            {/* Treinamentos */}
+                            {(isAdmin || userPerms.personnel.training) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('training');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'training'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Award size={14} className="shrink-0 text-purple-600" />
+                                <span>Treinamentos</span>
+                              </button>
+                            )}
+
+                            {/* Escala de Almoço */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('personnel');
+                                setPersonnelSubView('lunch');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'personnel' && personnelSubView === 'lunch'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Utensils size={14} className="shrink-0 text-amber-600" />
+                              <span>Escala de Almoço</span>
+                            </button>
+
+                            {/* Horas Extras */}
+                            {(isAdmin || userPerms.personnel.overtime) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('overtime');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'overtime'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Clock size={14} className="shrink-0 text-amber-600" />
+                                <span>Solicitação de Horas Extras</span>
+                              </button>
+                            )}
+
+                            {/* Lançamento de Horas Extras (Base Mensal) */}
+                            {(isAdmin || userPerms.personnel.overtime) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('overtime_entries');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'overtime_entries'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Clock size={14} className="shrink-0 text-blue-600" />
+                                <span>Lançamento de Horas Extras</span>
+                              </button>
+                            )}
+
+                            {/* Avaliação de Desempenho */}
+                            {(isAdmin || userPerms.personnel.evaluations) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('evaluations');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'evaluations'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <ShieldCheck size={14} className="shrink-0 text-teal-600" />
+                                <span>Avaliação de Desempenho</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Manutenção */}
                     {(isAdmin || userPerms.maintenance.enabled) && (
                       <div className="bg-slate-50/80 rounded-2xl p-2 border border-slate-200/70 space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('maintenance');
-                            setMaintenanceSubTab('requests');
-                            setIsMainMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        <div
+                          onClick={() => toggleMenuSection('maintenance')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer select-none ${
                             activeTab === 'maintenance'
                               ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                               : 'text-slate-800 hover:bg-white'
@@ -11805,46 +11829,69 @@ Atenciosamente,
                             <Wrench size={17} className={activeTab === 'maintenance' ? 'text-white' : 'text-blue-600'} />
                             <span>Manutenção Industrial</span>
                           </div>
-                          {activeTab === 'maintenance' && (
-                            <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
-                          )}
-                        </button>
-
-                        <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab('maintenance');
-                              setMaintenanceSubTab('requests');
-                              setIsMainMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                              activeTab === 'maintenance' && maintenanceSubTab === 'requests'
-                                ? 'bg-blue-100 text-blue-700 font-black'
-                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                            }`}
-                          >
-                            <Wrench size={14} className="shrink-0 text-blue-600" />
-                            <span>Ordens de Serviço</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab('maintenance');
-                              setMaintenanceSubTab('causes');
-                              setIsMainMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                              activeTab === 'maintenance' && maintenanceSubTab === 'causes'
-                                ? 'bg-blue-100 text-blue-700 font-black'
-                                : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                            }`}
-                          >
-                            <AlertCircle size={14} className="shrink-0 text-amber-600" />
-                            <span>Causas & Paradas</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {activeTab === 'maintenance' && (
+                              <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleMenuSection('maintenance');
+                              }}
+                              className={`p-1 rounded-lg transition-transform duration-200 flex items-center justify-center cursor-pointer ${
+                                activeTab === 'maintenance'
+                                  ? 'hover:bg-white/20 text-white'
+                                  : 'hover:bg-slate-200/80 text-slate-500'
+                              }`}
+                              title={openMenuSections.maintenance ? 'Recolher opções' : 'Abrir opções'}
+                              aria-label={openMenuSections.maintenance ? 'Recolher opções' : 'Abrir opções'}
+                            >
+                              <ChevronDown
+                                size={16}
+                                className={`transition-transform duration-200 ${openMenuSections.maintenance ? 'rotate-180' : ''}`}
+                              />
+                            </button>
+                          </div>
                         </div>
+
+                        {openMenuSections.maintenance && (
+                          <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('maintenance');
+                                setMaintenanceSubTab('requests');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'maintenance' && maintenanceSubTab === 'requests'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <Wrench size={14} className="shrink-0 text-blue-600" />
+                              <span>Ordens de Serviço</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('maintenance');
+                                setMaintenanceSubTab('causes');
+                                setIsMainMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                activeTab === 'maintenance' && maintenanceSubTab === 'causes'
+                                  ? 'bg-blue-100 text-blue-700 font-black'
+                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                              }`}
+                            >
+                              <AlertCircle size={14} className="shrink-0 text-amber-600" />
+                              <span>Causas & Paradas</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 

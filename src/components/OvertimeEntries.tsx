@@ -115,7 +115,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   // Horários de Início e Término
   const [startTime, setStartTime] = useState<string>('07:30');
   const [endTime, setEndTime] = useState<string>('19:18');
-  const [breakMinutes, setBreakMinutes] = useState<number>(0);
 
   // Cálculos automáticos
   const [workingHours, setWorkingHours] = useState<number>(11.8);
@@ -281,7 +280,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         endMin += 1440;
       }
       const rawDiff = endMin - startMin;
-      const netWorkingMin = Math.max(0, rawDiff - (breakMinutes || 0));
+      const netWorkingMin = rawDiff;
       const workH = Math.floor(netWorkingMin / 60);
       const workM = netWorkingMin % 60;
       setWorkingHours(Number((netWorkingMin / 60).toFixed(2)));
@@ -296,7 +295,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   }, [
     startTime,
     endTime,
-    breakMinutes,
     autoCalculateHours,
     overtimeMode,
     shiftTypeChoice,
@@ -351,7 +349,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         const start = isFlex ? (customFlexibleStart || '06:00') : '07:30';
         setStartTime(start);
         if (isFlex) {
-          // Em Comercial Flexível, a jornada normal é de 10h (com almoço). Ex: 06:00 às 16:00.
+          // Em Comercial Flexível, a jornada normal é de 10h de permanência. Ex: 06:00 às 16:00.
           // Inicializa com 45min ou 1h de hora extra (17:00)
           const [sh, sm] = start.split(':').map(Number);
           const endTotalM = sh * 60 + sm + 600 + 45;
@@ -488,7 +486,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     // Horários padrão Comercial
     setStartTime('07:30');
     setEndTime('19:18');
-    setBreakMinutes(0);
     
     // Dia da semana de hoje
     const todayDay = new Date().getDay();
@@ -533,7 +530,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     setDate(entry.date || new Date().toISOString().split('T')[0]);
     setStartTime(entry.startTime || '07:30');
     setEndTime(entry.endTime || '19:18');
-    setBreakMinutes(entry.breakMinutes || 0);
     setOvertimePercentage(entry.overtimePercentage || 50);
     setReason(entry.reason || QUICK_REASONS[0]);
     setRequestedBy(entry.requestedBy || loggedUser?.name || 'Líder de Produção');
@@ -607,7 +603,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         normalShiftEndTime: normalEnd,
         startTime,
         endTime,
-        breakMinutes: Number(breakMinutes) || 0,
         workingHours,
         workingHoursFormatted,
         overtimeHours,
@@ -791,7 +786,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       'Dia da Semana',
       'Início Efetivo',
       'Término Efetivo',
-      'Intervalo (min)',
       'Horas Trabalhando',
       'Horas Extras (dec)',
       'Horas Extras (formatado)',
@@ -826,7 +820,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         dayName,
         item.startTime || '',
         item.endTime || '',
-        item.breakMinutes || 0,
         (item.workingHours || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
         (item.overtimeHours || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
         item.overtimeHoursFormatted || '',
@@ -1657,7 +1650,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         <span>🏢</span> Comercial Flexível
                       </div>
                       <div className="text-[9.5px] font-bold text-slate-500 mt-0.5">
-                        Jornada de 10h (Entrada livre + 10h com almoço)
+                        Jornada de 10h de permanência
                       </div>
                     </button>
 
@@ -1695,34 +1688,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       </div>
                     </button>
                   </div>
-
-                  {/* CONFIGURAÇÃO ADICIONAL PARA COMERCIAL FLEXÍVEL */}
-                  {shiftTypeChoice === 'Comercial' && isCommercialFlexible && (
-                    <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <label className="text-[10px] font-black text-blue-900 uppercase tracking-wider block">
-                            Regra do Comercial Flexível: 10 Horas de Permanência (com Almoço)
-                          </label>
-                          <p className="text-[10px] text-blue-700 font-medium">
-                            O colaborador não tem horário fixo de entrada, mas deve cumprir <strong>10 horas de permanência</strong> (8 horas de trabalho + intervalo de almoço já contabilizado). O excedente após as 10 horas é automaticamente hora extra.
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div className="text-right bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-xs">
-                            <span className="text-[8.5px] font-black text-blue-600 uppercase block">Término das 10h:</span>
-                            <span className="text-xs font-black text-blue-950 font-mono">
-                              {calculatedNormalEnd}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* HORÁRIOS: INÍCIO E TÉRMINO EFETIVO */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">
                       {overtimeMode === 'pos_turno' ? 'Início do Expediente *' : 'Horário de Entrada *'}
@@ -1737,11 +1706,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         }
                       }}
                       required
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
                     />
                     <p className="text-[9px] text-slate-400 font-medium mt-1">
                       {overtimeMode === 'pos_turno' 
-                        ? (isCommercialFlexible ? 'Entrada flexível (cumpre 10h a partir daqui)' : 'Início da jornada normal')
+                        ? (isCommercialFlexible ? 'Entrada flexível (jornada de 10h a partir deste horário)' : 'Início da jornada normal')
                         : 'Início do plantão extraordinário'}
                     </p>
                   </div>
@@ -1755,7 +1724,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
                       required
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
                     />
                     {/* Botões de ajuste rápido */}
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -1768,7 +1737,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                           const newM = totalM % 60;
                           setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
                         }}
-                        className="text-[9px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded cursor-pointer"
+                        className="text-[9px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer"
                         title="Acrescentar 30 minutos de saída"
                       >
                         +30m
@@ -1782,29 +1751,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                           const newM = totalM % 60;
                           setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
                         }}
-                        className="text-[9px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded cursor-pointer"
+                        className="text-[9px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer"
                         title="Acrescentar 1 hora de saída"
                       >
                         +1h
                       </button>
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">
-                      Intervalo / Almoço (min)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={180}
-                      step={5}
-                      value={breakMinutes}
-                      onChange={(e) => setBreakMinutes(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      placeholder="0"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
-                    />
-                    <p className="text-[9px] text-slate-400 font-medium mt-1">Descontado do tempo efetivo se houver</p>
                   </div>
                 </div>
 
