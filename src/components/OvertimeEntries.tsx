@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Clock, Calendar, User, Users, FileText, CheckCircle2, AlertCircle, 
   Plus, Trash2, Edit2, Search, Filter, ArrowLeft, Loader2, 
-  Printer, Check, X, Building2, Briefcase, ChevronRight,
+  Printer, Check, X, Building2, Briefcase, ChevronRight, ChevronDown,
   Download, Eye, AlertTriangle, ShieldCheck, History, Info,
   Share2, Copy, Percent, Sparkles, UserCheck, RefreshCw, FileSpreadsheet,
   Sun, Moon
 } from 'lucide-react';
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { db } from '../lib/firebase';
@@ -128,11 +128,52 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [equivalentHours, setEquivalentHours] = useState<number>(3);
 
   // Justificativa e observações
-  const [reason, setReason] = useState<string>(QUICK_REASONS[0]);
+  const [reason, setReason] = useState<string>('');
   const [requestedBy, setRequestedBy] = useState<string>(() => loggedUser?.name || 'Líder de Produção');
   const [notes, setNotes] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Relação de motivos customizados gravados no sistema
+  const [customReasons, setCustomReasons] = useState<string[]>(() => {
+    try {
+      const cached = localStorage.getItem('overtime_custom_reasons');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {
+      // ignore
+    }
+    return [];
+  });
+  const [showReasonDropdown, setShowReasonDropdown] = useState<boolean>(false);
+
+  // Escuta em tempo real no Firestore da coleção `overtime_reasons`
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'overtime_reasons'),
+      (snapshot) => {
+        const list = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            return (data.reason || '').trim();
+          })
+          .filter((r) => r.length > 0);
+
+        if (list.length > 0) {
+          setCustomReasons((prev) => {
+            const combined = Array.from(new Set([...prev, ...list]));
+            try {
+              localStorage.setItem('overtime_custom_reasons', JSON.stringify(combined));
+            } catch (e) {}
+            return combined;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Erro ao sincronizar overtime_reasons:', err);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Escuta em tempo real no Firestore da coleção `overtime_entries`
   useEffect(() => {
@@ -454,6 +495,107 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       .slice(0, 15);
   }, [employeeSearchText, activePersonnelEmployees]);
 
+  // Relação unificada de todos os motivos conhecidos (padrões + customizados salvos + histórico)
+  const allAvailableReasons = useMemo(() => {
+    const set = new Set<string>();
+    QUICK_REASONS.forEach((r) => set.add(r));
+    customReasons.forEach((r) => {
+      if (r && r.trim()) set.add(r.trim());
+    });
+    entries.forEach((e) => {
+      if (e.reason && e.reason.trim()) {
+        set.add(e.reason.trim());
+      }
+    });
+    return Array.from(set);
+  }, [customReasons, entries]);
+
+  // Sugestões inteligentes de motivos conforme o usuário digita
+  const filteredReasonSuggestions = useMemo(() => {
+    const normalize = (str: string) =>
+      (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    const query = normalize(reason);
+    if (!query) {
+      return allAvailableReasons;
+    }
+
+    const queryTokens = query.split(/\s+/).filter(Boolean);
+
+    // Ranqueamento por similaridade
+    const exactMatches: string[] = [];
+    const prefixMatches: string[] = [];
+    const phraseMatches: string[] = [];
+    const allTokensMatches: string[] = [];
+    const partialTokenMatches: string[] = [];
+
+    allAvailableReasons.forEach((item) => {
+      const normItem = normalize(item);
+      if (normItem === query) {
+        exactMatches.push(item);
+      } else if (normItem.startsWith(query)) {
+        prefixMatches.push(item);
+      } else if (normItem.includes(query)) {
+        phraseMatches.push(item);
+      } else if (queryTokens.length > 0 && queryTokens.every((token) => normItem.includes(token))) {
+        allTokensMatches.push(item);
+      } else if (queryTokens.some((token) => token.length >= 3 && normItem.includes(token))) {
+        partialTokenMatches.push(item);
+      }
+    });
+
+    return Array.from(
+      new Set([
+        ...exactMatches,
+        ...prefixMatches,
+        ...phraseMatches,
+        ...allTokensMatches,
+        ...partialTokenMatches
+      ])
+    );
+  }, [reason, allAvailableReasons]);
+
+  // Verifica se o motivo digitado é novo (não existe na relação)
+  const isReasonNew = useMemo(() => {
+    const trimmed = reason.trim();
+    if (!trimmed) return false;
+    const normalize = (str: string) =>
+      (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const query = normalize(trimmed);
+    return !allAvailableReasons.some((r) => normalize(r) === query);
+  }, [reason, allAvailableReasons]);
+
+  // Salva um novo motivo no Firestore e atualiza a relação do sistema
+  const saveNewReasonToDatabase = async (newReason: string) => {
+    const trimmed = newReason.trim();
+    if (!trimmed) return;
+    const normalize = (str: string) =>
+      (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const query = normalize(trimmed);
+    const alreadyExists = allAvailableReasons.some((r) => normalize(r) === query);
+    if (alreadyExists) return;
+
+    // Atualiza imediatamente estado local e cache
+    setCustomReasons((prev) => {
+      const next = Array.from(new Set([...prev, trimmed]));
+      try {
+        localStorage.setItem('overtime_custom_reasons', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    // Salva no Firestore na coleção overtime_reasons
+    try {
+      await addDoc(collection(db, 'overtime_reasons'), {
+        reason: trimmed,
+        createdAt: new Date().toISOString(),
+        createdBy: loggedUser?.name || 'Sistema'
+      });
+    } catch (err) {
+      console.warn('Erro ao salvar novo motivo no Firestore:', err);
+    }
+  };
+
   // Abertura do formulário de novo lançamento
   const handleOpenCreateModal = () => {
     if (isReadOnly) {
@@ -491,7 +633,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     const todayDay = new Date().getDay();
     setOvertimePercentage(todayDay === 0 ? 100 : 50);
 
-    setReason(QUICK_REASONS[0]);
+    setReason('');
+    setShowReasonDropdown(false);
     setRequestedBy(loggedUser?.name || 'Líder de Produção');
     setNotes('');
     setFormError(null);
@@ -531,7 +674,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     setStartTime(entry.startTime || '07:30');
     setEndTime(entry.endTime || '19:18');
     setOvertimePercentage(entry.overtimePercentage || 50);
-    setReason(entry.reason || QUICK_REASONS[0]);
+    setReason(entry.reason || '');
+    setShowReasonDropdown(false);
     setRequestedBy(entry.requestedBy || loggedUser?.name || 'Líder de Produção');
     setNotes(entry.notes || '');
     setAutoCalculateHours(false);
@@ -561,6 +705,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
     if (overtimeHours <= 0) {
       setFormError('Os horários informados não geram horas extras conforme a regra do turno.');
+      return;
+    }
+    if (!reason.trim()) {
+      setFormError('Por favor, informe ou selecione o motivo / atividade realizada.');
       return;
     }
 
@@ -625,6 +773,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         await updateDoc(doc(db, 'overtime_entries', editingEntry.id), payload);
       } else {
         await addDoc(collection(db, 'overtime_entries'), payload);
+      }
+
+      // Se for um novo motivo digitado que não está na relação, salva automaticamente no sistema
+      if (isReasonNew && reason.trim()) {
+        await saveNewReasonToDatabase(reason.trim());
       }
 
       setIsFormOpen(false);
@@ -1830,19 +1983,179 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
               {/* SEÇÃO 3: MOTIVO E OBSERVAÇÕES */}
               <div className="space-y-3 pt-1">
-                <div>
-                  <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                    Motivo / Atividade Realizada
-                  </label>
-                  <select
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white cursor-pointer"
-                  >
-                    {QUICK_REASONS.map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                      Motivo / Atividade Realizada *
+                    </label>
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      {isReasonNew && reason.trim().length > 0 ? (
+                        <span className="text-amber-600 font-bold flex items-center gap-1">
+                          <Sparkles size={11} /> Novo motivo
+                        </span>
+                      ) : (
+                        'Escreva ou selecione da lista'
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={reason}
+                      onChange={(e) => {
+                        setReason(e.target.value);
+                        setShowReasonDropdown(true);
+                      }}
+                      onFocus={() => setShowReasonDropdown(true)}
+                      placeholder="Escreva o motivo da hora extra ou busque na relação..."
+                      className={`w-full pl-3 pr-20 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all ${
+                        isReasonNew && reason.trim().length > 0
+                          ? 'border-amber-400 bg-amber-50/20'
+                          : 'border-slate-200'
+                      }`}
+                    />
+
+                    {/* Botões de ação rápida à direita do input */}
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      {reason && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReason('');
+                            setShowReasonDropdown(true);
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200/80 transition-colors"
+                          title="Limpar texto"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowReasonDropdown((prev) => !prev)}
+                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                          showReasonDropdown
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                        }`}
+                        title="Ver relação de motivos disponíveis"
+                      >
+                        <ChevronDown
+                          size={14}
+                          className={`transition-transform duration-200 ${
+                            showReasonDropdown ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Informação sobre novo motivo a ser salvo */}
+                  {isReasonNew && reason.trim().length > 0 && (
+                    <div className="mt-1.5 p-2.5 bg-amber-50/90 border border-amber-200/80 rounded-xl flex items-center justify-between gap-2 text-[11px] text-amber-900">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-amber-600 shrink-0" />
+                        <span>
+                          <strong>Novo motivo:</strong> Ao salvar o lançamento, este motivo será registrado na relação para aparecer nas próximas buscas.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await saveNewReasonToDatabase(reason.trim());
+                        }}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 transition-all cursor-pointer shadow-sm"
+                        title="Salvar agora na relação de motivos"
+                      >
+                        Salvar na Relação
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Dropdown de motivos e sugestões dinâmicas */}
+                  {showReasonDropdown && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowReasonDropdown(false)}
+                      />
+                      <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto z-20 py-1 divide-y divide-slate-100">
+                        {/* Se o usuário digitou algo novo, opção explícita no topo */}
+                        {isReasonNew && reason.trim().length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowReasonDropdown(false)}
+                            className="w-full px-3 py-2 text-left bg-amber-50/80 hover:bg-amber-100/80 flex items-center justify-between text-xs cursor-pointer transition-colors border-b border-amber-100"
+                          >
+                            <div className="flex items-center gap-2 pr-2">
+                              <Sparkles size={14} className="text-amber-600 shrink-0" />
+                              <div>
+                                <div className="font-black text-amber-900">
+                                  Usar novo motivo: "{reason.trim()}"
+                                </div>
+                                <div className="text-[10px] text-amber-700">
+                                  Será salvo na relação e sugerido nas próximas vezes
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-amber-200 text-amber-800 rounded-md shrink-0">
+                              Novo
+                            </span>
+                          </button>
+                        )}
+
+                        {/* Lista de motivos cadastrados e sugestões filtradas */}
+                        {filteredReasonSuggestions.length > 0 ? (
+                          filteredReasonSuggestions.map((item) => {
+                            const isSelected = item.toLowerCase() === reason.trim().toLowerCase();
+                            const isDefault = QUICK_REASONS.includes(item);
+
+                            return (
+                              <button
+                                key={item}
+                                type="button"
+                                onClick={() => {
+                                  setReason(item);
+                                  setShowReasonDropdown(false);
+                                }}
+                                className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'bg-blue-50 text-blue-900 font-black'
+                                    : 'hover:bg-slate-50 text-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 pr-2">
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                      isSelected
+                                        ? 'bg-blue-600'
+                                        : isDefault
+                                        ? 'bg-slate-300'
+                                        : 'bg-emerald-500'
+                                    }`}
+                                  />
+                                  <span className="leading-snug">{item}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {!isDefault && (
+                                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                      Cadastrado
+                                    </span>
+                                  )}
+                                  {isSelected && <Check size={14} className="text-blue-600" />}
+                                </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="px-3 py-4 text-center text-xs text-slate-400">
+                            Nenhum motivo parecido encontrado na relação. O motivo digitado será salvo automaticamente como um novo motivo.
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div>
