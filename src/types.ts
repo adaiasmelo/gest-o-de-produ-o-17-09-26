@@ -251,8 +251,9 @@ export interface PersonnelPermissions {
   training: boolean;     // Treinamento Operacional
   lunch: boolean;        // Escala de Almoço
   overtime: boolean;     // Solicitação de Hora Extra
-  overtimeEntries?: boolean; // Lançamentos de Horas Extras
+  overtimeEntries: boolean; // Lançamentos de Horas Extras
   evaluations: boolean;  // Avaliações de Desempenho
+  reports?: boolean;     // Relatórios e PDF de Pessoal
   manage: boolean;       // Cadastrar / Gerir Colaboradores
 }
 

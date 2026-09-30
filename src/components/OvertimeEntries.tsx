@@ -5,8 +5,24 @@ import {
   Printer, Check, X, Building2, Briefcase, ChevronRight, ChevronDown,
   Download, Eye, AlertTriangle, ShieldCheck, History, Info,
   Share2, Copy, Percent, Sparkles, UserCheck, RefreshCw, FileSpreadsheet,
-  Sun, Moon
+  Sun, Moon, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity,
+  Award, Flame, Layers, Hash, Zap, Factory
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -81,6 +97,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Sub-Aba ativa: Dashboard & Análise vs Tabela de Apontamentos
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'records'>('dashboard');
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -920,6 +939,314 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     };
   }, [filteredEntries]);
 
+  // Inteligência de Dados e Analytics para o Dashboard de Horas Extras
+  const dashboardAnalytics = useMemo(() => {
+    const dailyMap: Record<string, { date: string; dateLabel: string; dayOfWeek: string; hours50: number; hours100: number; totalHours: number; launches: number; employees: Set<string> }> = {};
+    const sectorMap: Record<string, { sector: string; hours: number; hours50: number; hours100: number; launches: number; employees: Set<string> }> = {};
+    const shiftMap: Record<string, { shift: string; hours: number; launches: number }> = {};
+    const modeMap: Record<string, { mode: string; label: string; hours: number; launches: number }> = {
+      pos_turno: { mode: 'pos_turno', label: 'Passando do Horário (Extensão)', hours: 0, launches: 0 },
+      integral: { mode: 'integral', label: 'Turno Extra Integral', hours: 0, launches: 0 }
+    };
+    const reasonMap: Record<string, { reason: string; hours: number; launches: number }> = {};
+    
+    const dayOfWeekNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    const dayOfWeekShort = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const weekdayMap = dayOfWeekNames.map((name, idx) => ({
+      dayIndex: idx,
+      name,
+      short: dayOfWeekShort[idx],
+      hours50: 0,
+      hours100: 0,
+      totalHours: 0,
+      launches: 0
+    }));
+
+    const employeeMap: Record<string, {
+      id: string;
+      name: string;
+      registration: string;
+      sector: string;
+      role: string;
+      shift: string;
+      hours50: number;
+      hours100: number;
+      totalHours: number;
+      workingHours: number;
+      equivalentHours: number;
+      launches: number;
+      dates: string[];
+    }> = {};
+
+    const machineMap: Record<string, { machine: string; hours: number; launches: number }> = {};
+    const requesterMap: Record<string, { requester: string; hours: number; launches: number }> = {};
+
+    const timeSlots = [
+      { key: 'madrugada', label: 'Madrugada (00h-06h)', hours: 0, count: 0 },
+      { key: 'manha', label: 'Manhã (06h-12h)', hours: 0, count: 0 },
+      { key: 'tarde', label: 'Tarde (12h-18h)', hours: 0, count: 0 },
+      { key: 'noite', label: 'Noite (18h-24h)', hours: 0, count: 0 }
+    ];
+
+    let totalOtHours = 0;
+    let totalWkHours = 0;
+    let totalEqHours = 0;
+    let sum50 = 0;
+    let sum100 = 0;
+
+    filteredEntries.forEach((entry) => {
+      const otH = Number(entry.overtimeHours) || 0;
+      const wkH = Number(entry.workingHours) || otH;
+      const is100 = (entry.overtimePercentage || 50) >= 100;
+      const eqH = Number(entry.equivalentHours) || (otH * (is100 ? 2 : 1.5));
+
+      totalOtHours += otH;
+      totalWkHours += wkH;
+      totalEqHours += eqH;
+
+      if (is100) sum100 += otH;
+      else sum50 += otH;
+
+      const dateStr = entry.date || '';
+      if (dateStr) {
+        if (!dailyMap[dateStr]) {
+          const parts = dateStr.split('-').map(Number);
+          const d = new Date(parts[0], parts[1] - 1, parts[2]);
+          const dayName = dayOfWeekNames[d.getDay()] || '';
+          const label = `${String(parts[2]).padStart(2, '0')}/${String(parts[1]).padStart(2, '0')}`;
+          dailyMap[dateStr] = {
+            date: dateStr,
+            dateLabel: label,
+            dayOfWeek: dayName,
+            hours50: 0,
+            hours100: 0,
+            totalHours: 0,
+            launches: 0,
+            employees: new Set<string>()
+          };
+        }
+        if (is100) dailyMap[dateStr].hours100 += otH;
+        else dailyMap[dateStr].hours50 += otH;
+        dailyMap[dateStr].totalHours += otH;
+        dailyMap[dateStr].launches += 1;
+        if (entry.employeeName) dailyMap[dateStr].employees.add(entry.employeeName);
+
+        const parts = dateStr.split('-').map(Number);
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        const dayIdx = d.getDay();
+        if (weekdayMap[dayIdx]) {
+          if (is100) weekdayMap[dayIdx].hours100 += otH;
+          else weekdayMap[dayIdx].hours50 += otH;
+          weekdayMap[dayIdx].totalHours += otH;
+          weekdayMap[dayIdx].launches += 1;
+        }
+      }
+
+      const sec = entry.sector || 'Outro';
+      if (!sectorMap[sec]) {
+        sectorMap[sec] = { sector: sec, hours: 0, hours50: 0, hours100: 0, launches: 0, employees: new Set<string>() };
+      }
+      sectorMap[sec].hours += otH;
+      if (is100) sectorMap[sec].hours100 += otH;
+      else sectorMap[sec].hours50 += otH;
+      sectorMap[sec].launches += 1;
+      if (entry.employeeName) sectorMap[sec].employees.add(entry.employeeName);
+
+      const sh = entry.shift || entry.shiftTypeChoice || 'Comercial';
+      if (!shiftMap[sh]) {
+        shiftMap[sh] = { shift: sh, hours: 0, launches: 0 };
+      }
+      shiftMap[sh].hours += otH;
+      shiftMap[sh].launches += 1;
+
+      const m = entry.overtimeMode === 'integral' ? 'integral' : 'pos_turno';
+      modeMap[m].hours += otH;
+      modeMap[m].launches += 1;
+
+      const r = (entry.reason || 'Demanda de produção').trim();
+      if (!reasonMap[r]) {
+        reasonMap[r] = { reason: r, hours: 0, launches: 0 };
+      }
+      reasonMap[r].hours += otH;
+      reasonMap[r].launches += 1;
+
+      if (entry.machine && entry.machine.trim()) {
+        const mac = entry.machine.trim();
+        if (!machineMap[mac]) {
+          machineMap[mac] = { machine: mac, hours: 0, launches: 0 };
+        }
+        machineMap[mac].hours += otH;
+        machineMap[mac].launches += 1;
+      }
+
+      const req = (entry.requestedBy || 'Líder de Turno').trim();
+      if (!requesterMap[req]) {
+        requesterMap[req] = { requester: req, hours: 0, launches: 0 };
+      }
+      requesterMap[req].hours += otH;
+      requesterMap[req].launches += 1;
+
+      const st = (entry.startTime || '07:30').split(':').map(Number);
+      const startHour = isNaN(st[0]) ? 7 : st[0];
+      if (startHour >= 0 && startHour < 6) {
+        timeSlots[0].hours += otH;
+        timeSlots[0].count += 1;
+      } else if (startHour >= 6 && startHour < 12) {
+        timeSlots[1].hours += otH;
+        timeSlots[1].count += 1;
+      } else if (startHour >= 12 && startHour < 18) {
+        timeSlots[2].hours += otH;
+        timeSlots[2].count += 1;
+      } else {
+        timeSlots[3].hours += otH;
+        timeSlots[3].count += 1;
+      }
+
+      const empKey = (entry.registration || entry.employeeName || 'Desconhecido').trim().toLowerCase();
+      if (!employeeMap[empKey]) {
+        employeeMap[empKey] = {
+          id: entry.employeeId || empKey,
+          name: entry.employeeName || 'Sem Nome',
+          registration: entry.registration || '-',
+          sector: entry.sector || '-',
+          role: entry.role || 'Operador',
+          shift: entry.shift || entry.shiftTypeChoice || '-',
+          hours50: 0,
+          hours100: 0,
+          totalHours: 0,
+          workingHours: 0,
+          equivalentHours: 0,
+          launches: 0,
+          dates: []
+        };
+      }
+      if (is100) employeeMap[empKey].hours100 += otH;
+      else employeeMap[empKey].hours50 += otH;
+      employeeMap[empKey].totalHours += otH;
+      employeeMap[empKey].workingHours += wkH;
+      employeeMap[empKey].equivalentHours += eqH;
+      employeeMap[empKey].launches += 1;
+      if (entry.date && !employeeMap[empKey].dates.includes(entry.date)) {
+        employeeMap[empKey].dates.push(entry.date);
+      }
+    });
+
+    const timelineList = Object.values(dailyMap)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(item => ({
+        ...item,
+        hours50: Number(item.hours50.toFixed(2)),
+        hours100: Number(item.hours100.toFixed(2)),
+        totalHours: Number(item.totalHours.toFixed(2)),
+        employeesCount: item.employees.size
+      }));
+
+    const sectorList = Object.values(sectorMap)
+      .map(s => ({
+        sector: s.sector,
+        hours: Number(s.hours.toFixed(2)),
+        hours50: Number(s.hours50.toFixed(2)),
+        hours100: Number(s.hours100.toFixed(2)),
+        launches: s.launches,
+        employeesCount: s.employees.size,
+        percentage: totalOtHours > 0 ? Number(((s.hours / totalOtHours) * 100).toFixed(1)) : 0
+      }))
+      .sort((a, b) => b.hours - a.hours);
+
+    const shiftList = Object.values(shiftMap)
+      .map(s => ({
+        shift: s.shift,
+        hours: Number(s.hours.toFixed(2)),
+        launches: s.launches,
+        percentage: totalOtHours > 0 ? Number(((s.hours / totalOtHours) * 100).toFixed(1)) : 0
+      }))
+      .sort((a, b) => b.hours - a.hours);
+
+    const reasonList = Object.values(reasonMap)
+      .map(r => ({
+        reason: r.reason,
+        hours: Number(r.hours.toFixed(2)),
+        launches: r.launches,
+        percentage: totalOtHours > 0 ? Number(((r.hours / totalOtHours) * 100).toFixed(1)) : 0
+      }))
+      .sort((a, b) => b.hours - a.hours);
+
+    const rankedEmployees = Object.values(employeeMap)
+      .map(e => ({
+        ...e,
+        hours50: Number(e.hours50.toFixed(2)),
+        hours100: Number(e.hours100.toFixed(2)),
+        totalHours: Number(e.totalHours.toFixed(2)),
+        workingHours: Number(e.workingHours.toFixed(2)),
+        equivalentHours: Number(e.equivalentHours.toFixed(2)),
+        percentageOfTotal: totalOtHours > 0 ? Number(((e.totalHours / totalOtHours) * 100).toFixed(1)) : 0,
+        averagePerLaunch: e.launches > 0 ? Number((e.totalHours / e.launches).toFixed(1)) : 0
+      }))
+      .sort((a, b) => b.totalHours - a.totalHours);
+
+    const machineList = Object.values(machineMap)
+      .map(m => ({
+        machine: m.machine,
+        hours: Number(m.hours.toFixed(2)),
+        launches: m.launches
+      }))
+      .sort((a, b) => b.hours - a.hours);
+
+    const requesterList = Object.values(requesterMap)
+      .map(r => ({
+        requester: r.requester,
+        hours: Number(r.hours.toFixed(2)),
+        launches: r.launches
+      }))
+      .sort((a, b) => b.hours - a.hours);
+
+    const averagePerEmployee = Object.keys(employeeMap).length > 0
+      ? Number((totalOtHours / Object.keys(employeeMap).length).toFixed(1))
+      : 0;
+
+    return {
+      totalOtHours: Number(totalOtHours.toFixed(2)),
+      totalWkHours: Number(totalWkHours.toFixed(2)),
+      totalEqHours: Number(totalEqHours.toFixed(2)),
+      sum50: Number(sum50.toFixed(2)),
+      sum100: Number(sum100.toFixed(2)),
+      averagePerEmployee,
+      uniqueEmployeesCount: Object.keys(employeeMap).length,
+      timelineList,
+      sectorList,
+      shiftList,
+      reasonList,
+      rankedEmployees,
+      machineList,
+      requesterList,
+      weekdayList: weekdayMap.map(w => ({
+        ...w,
+        hours50: Number(w.hours50.toFixed(2)),
+        hours100: Number(w.hours100.toFixed(2)),
+        totalHours: Number(w.totalHours.toFixed(2))
+      })),
+      modeList: [
+        {
+          label: 'Passando do Horário (Extensão)',
+          hours: Number(modeMap.pos_turno.hours.toFixed(2)),
+          launches: modeMap.pos_turno.launches,
+          percentage: totalOtHours > 0 ? Number(((modeMap.pos_turno.hours / totalOtHours) * 100).toFixed(1)) : 0
+        },
+        {
+          label: 'Turno Extra Integral (100% Extra)',
+          hours: Number(modeMap.integral.hours.toFixed(2)),
+          launches: modeMap.integral.launches,
+          percentage: totalOtHours > 0 ? Number(((modeMap.integral.hours / totalOtHours) * 100).toFixed(1)) : 0
+        }
+      ],
+      timeSlots: timeSlots.map(t => ({
+        ...t,
+        hours: Number(t.hours.toFixed(2)),
+        percentage: totalOtHours > 0 ? Number(((t.hours / totalOtHours) * 100).toFixed(1)) : 0
+      }))
+    };
+  }, [filteredEntries]);
+
   // Exportar para CSV / Excel (Base Mensal)
   const exportToCSV = () => {
     if (filteredEntries.length === 0) {
@@ -1127,17 +1454,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {onNavigateToRequests && (
-            <button
-              onClick={onNavigateToRequests}
-              className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
-              title="Ir para a tela de Solicitação de Horas Extras (DOC 076)"
-            >
-              <FileText size={15} className="text-amber-600" />
-              Solicitações (DOC 076)
-            </button>
-          )}
-
           <button
             onClick={exportToCSV}
             className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
@@ -1156,15 +1472,24 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             Relatório PDF
           </button>
 
-          {canManage && (
-            <button
-              onClick={handleOpenCreateModal}
-              className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-wider px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-md shadow-blue-600/20 transition-all cursor-pointer"
-            >
-              <Plus size={15} />
-              Novo Lançamento
-            </button>
-          )}
+          <button
+            onClick={() => {
+              if (isReadOnly) {
+                if (onBlockedAction) {
+                  onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                } else {
+                  alert('Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                }
+                return;
+              }
+              handleOpenCreateModal();
+            }}
+            className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-wider px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-md shadow-blue-600/20 transition-all cursor-pointer shrink-0"
+            title="Cadastrar Novo Lançamento de Hora Extra"
+          >
+            <Plus size={15} />
+            Novo Lançamento
+          </button>
 
           <button
             onClick={onClose}
@@ -1177,83 +1502,54 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       </div>
 
       {/* ============================================================== */}
-      {/* CARDS DE RESUMO E INDICADORES */}
+      {/* SELETOR DE TELAS: DASHBOARD vs TABELA */}
       {/* ============================================================== */}
-      <div className="p-6 sm:p-8 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {/* Card 1: Total Horas Extras */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Extras</span>
-              <Clock size={16} className="text-blue-600" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {stats.totalOvertimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
-            </div>
-            <p className="text-[10px] text-blue-700 font-extrabold mt-1">
-              {filterMonth === 'todos' ? 'Período Completo' : activePayrollCycle.shortLabel}
-            </p>
-          </div>
-
-          {/* Card 2: Horas Trabalhando */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Trabalhando</span>
-              <UserCheck size={16} className="text-indigo-600" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {stats.totalWorkingHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
-            </div>
-            <p className="text-[10px] text-slate-500 font-bold mt-1">
-              Duração efetiva total
-            </p>
-          </div>
-
-          {/* Card 3: % HE (50% vs 100%) */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faixa HE (% HE)</span>
-              <Percent size={16} className="text-amber-500" />
-            </div>
-            <div className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-              50%: <span className="text-blue-600">{stats.hours50}h</span> • 100%: <span className="text-amber-600">{stats.hours100}h</span>
-            </div>
-            <p className="text-[10px] text-slate-500 font-bold mt-1">
-              {stats.count50} a 50% • {stats.count100} a 100%
-            </p>
-          </div>
-
-          {/* Card 4: Colaboradores & Lançamentos */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lançamentos</span>
-              <FileText size={16} className="text-emerald-500" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {stats.totalLaunches}
-            </div>
-            <p className="text-[10px] text-emerald-700 font-bold mt-1">
-              {stats.uniqueEmployees} colaboradores
-            </p>
-          </div>
-
-          {/* Card 5: Setor com Maior Volume */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between col-span-2 md:col-span-1">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Maior Setor</span>
-              <Building2 size={16} className="text-purple-500" />
-            </div>
-            <div className="text-xl sm:text-2xl font-black text-purple-700 tracking-tight truncate">
-              {stats.topSector}
-            </div>
-            <p className="text-[10px] text-slate-500 font-bold mt-1">
-              {stats.topSectorHours}h acumuladas
-            </p>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 sm:px-8 py-3">
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('dashboard')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeSubTab === 'dashboard'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+            }`}
+          >
+            <BarChart3 size={15} />
+            Dashboard & Análise de Dados
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('records')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeSubTab === 'records'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+            }`}
+          >
+            <FileText size={15} />
+            Tabela de Apontamentos ({filteredEntries.length})
+          </button>
         </div>
 
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-[10px] font-black uppercase border border-blue-200">
+            <Calendar size={13} className="text-blue-600" />
+            <span>Ciclo: {filterMonth === 'todos' ? 'Todos os Períodos' : activePayrollCycle.fullLabel}</span>
+          </div>
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">
+            {filteredEntries.length} lançamento(s)
+          </span>
+        </div>
+      </div>
+
+      {/* ============================================================== */}
+      {/* CONTEÚDO PRINCIPAL (DASHBOARD OU TABELA DE LANÇAMENTOS) */}
+      {/* ============================================================== */}
+      <div className="p-6 sm:p-8 space-y-6">
+
         {/* ============================================================== */}
-        {/* BARRA DE FILTROS & BUSCA */}
+        {/* BARRA DE FILTROS & BUSCA GLOBAL */}
         {/* ============================================================== */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
@@ -1338,8 +1634,725 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         </div>
 
         {/* ============================================================== */}
-        {/* TABELA DE LANÇAMENTOS */}
+        {/* VISUALIZAÇÃO 1: DASHBOARD COMPLETO & ANÁLISE DE DADOS */}
         {/* ============================================================== */}
+        {activeSubTab === 'dashboard' ? (
+          <div className="space-y-6">
+            
+            {/* Cards de KPIs Executivos */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
+              {/* Card 1: Total Horas Extras */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Horas Extras</span>
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <Clock size={16} />
+                  </div>
+                </div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight">
+                  {stats.totalOvertimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-blue-700 font-extrabold">{filterMonth === 'todos' ? 'Base Completa' : activePayrollCycle.shortLabel}</span>
+                  <span className="text-slate-400 font-semibold">{Math.round(stats.totalOvertimeHours * 60)} min</span>
+                </div>
+              </div>
+
+              {/* Card 2: Horas Trabalhando */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Trabalhando</span>
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <UserCheck size={16} />
+                  </div>
+                </div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight">
+                  {stats.totalWorkingHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">Permanência Efetiva</span>
+                  <span className="text-indigo-600 font-black">Presencial</span>
+                </div>
+              </div>
+
+              {/* Card 3: Horas Equivalentes */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Equivalentes</span>
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                    <Percent size={16} />
+                  </div>
+                </div>
+                <div className="text-3xl font-black text-amber-600 tracking-tight">
+                  {stats.totalEquivalentHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">Ponderado c/ Adicional</span>
+                  <span className="text-amber-700 font-extrabold">+50% e +100%</span>
+                </div>
+              </div>
+
+              {/* Card 4: Colaboradores & Média */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipe com HE</span>
+                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                    <Users size={16} />
+                  </div>
+                </div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight">
+                  {stats.uniqueEmployees} <span className="text-xs text-slate-400 font-semibold">colab.</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">Média por Colaborador</span>
+                  <span className="text-emerald-700 font-extrabold">{dashboardAnalytics.averagePerEmployee}h/pes.</span>
+                </div>
+              </div>
+
+              {/* Card 5: Divisão 50% vs 100% */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faixa de HE (% HE)</span>
+                  <div className="w-8 h-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold">
+                    <Zap size={16} />
+                  </div>
+                </div>
+                <div className="text-xl font-black text-slate-900 tracking-tight">
+                  <span className="text-blue-600">{stats.hours50}h</span> <span className="text-xs text-slate-400 font-medium">(50%)</span> • <span className="text-amber-600">{stats.hours100}h</span> <span className="text-xs text-slate-400 font-medium">(100%)</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">{stats.count50} laç. a 50%</span>
+                  <span className="text-amber-700 font-extrabold">{stats.count100} laç. a 100%</span>
+                </div>
+              </div>
+
+              {/* Card 6: Setor Principal */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Setor Mais Demandado</span>
+                  <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                    <Building2 size={16} />
+                  </div>
+                </div>
+                <div className="text-xl font-black text-purple-700 tracking-tight truncate">
+                  {stats.topSector}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">{stats.topSectorHours}h acumuladas</span>
+                  <span className="text-purple-700 font-extrabold">
+                    {stats.totalOvertimeHours > 0 ? ((stats.topSectorHours / stats.totalOvertimeHours) * 100).toFixed(1) : 0}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 7: Modalidade */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modalidade Predominante</span>
+                  <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
+                    <Layers size={16} />
+                  </div>
+                </div>
+                <div className="text-lg font-black text-slate-800 tracking-tight truncate">
+                  {dashboardAnalytics.modeList[0].hours >= dashboardAnalytics.modeList[1].hours ? 'Passando do Horário' : 'Turno Extra Integral'}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">Extensão: {dashboardAnalytics.modeList[0].percentage}%</span>
+                  <span className="text-cyan-700 font-extrabold">Integral: {dashboardAnalytics.modeList[1].percentage}%</span>
+                </div>
+              </div>
+
+              {/* Card 8: Total de Lançamentos */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total de Lançamentos</span>
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold">
+                    <FileText size={16} />
+                  </div>
+                </div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight">
+                  {stats.totalLaunches}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 font-bold">Apontamentos</span>
+                  <span className="text-blue-600 font-extrabold">Registrados</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Banner de Ação Rápida */}
+            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="space-y-1 text-center md:text-left">
+                <div className="flex items-center justify-center md:justify-start gap-2">
+                  <Sparkles size={18} className="text-amber-300" />
+                  <h3 className="text-base font-black uppercase tracking-tight">
+                    Painel Geral de Horas Extras • Manupackaging Fitasa & Amazônia
+                  </h3>
+                </div>
+                <p className="text-xs text-blue-100 max-w-2xl font-medium">
+                  Controle analítico de sobrejornada em conformidade com as regras oficiais de turno: Comercial Padrão (9h48m), Comercial Flexível (10h), Diurno (12h), Noturno (12h) e Turno Integral.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isReadOnly) {
+                    if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura.');
+                    else alert('Usuário com perfil somente leitura.');
+                    return;
+                  }
+                  handleOpenCreateModal();
+                }}
+                className="px-5 py-3 bg-white text-blue-700 hover:bg-blue-50 active:scale-95 rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-2 shrink-0"
+              >
+                <Plus size={16} />
+                Fazer Novo Lançamento
+              </button>
+            </div>
+
+            {/* Grid de Gráficos Analíticos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Gráfico 1: Evolução Diária no Período */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                      <TrendingUp size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Evolução Diária de Horas Extras (Linha Temporal)
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Distribuição cronológica no ciclo ({stats.totalOvertimeHours}h acumuladas)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] font-bold">
+                    <span className="flex items-center gap-1.5 text-blue-600">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 50%
+                    </span>
+                    <span className="flex items-center gap-1.5 text-amber-600">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> 100%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-64 w-full">
+                  {dashboardAnalytics.timelineList.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                      <Clock size={24} className="mb-2 opacity-50" />
+                      Sem dados cronológicos no filtro selecionado
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={dashboardAnalytics.timelineList} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorOt50" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/>
+                          </linearGradient>
+                          <linearGradient id="colorOt100" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.05}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis dataKey="dateLabel" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} unit="h" />
+                        <Tooltip
+                          content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const d = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs space-y-1">
+                                <div className="font-black text-amber-300">{d.dateLabel} • {d.dayOfWeek}</div>
+                                <div className="text-[11px] text-slate-300">Total: <span className="font-bold text-white">{d.totalHours}h extras</span></div>
+                                <div className="text-[10px] text-blue-300">HE 50%: {d.hours50}h</div>
+                                <div className="text-[10px] text-amber-300">HE 100%: {d.hours100}h</div>
+                                <div className="text-[10px] text-emerald-300 pt-1 border-t border-slate-700">
+                                  {d.employeesCount} colaborador(es) • {d.launches} lançamento(s)
+                                </div>
+                              </div>
+                            );
+                          }}
+                        />
+                        <Area type="monotone" dataKey="hours50" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorOt50)" name="50%" />
+                        <Area type="monotone" dataKey="hours100" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorOt100)" name="100%" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Gráfico 2: Horas Extras por Setor */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                      <Building2 size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Horas Extras por Setor da Fábrica
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Volume acumulado por departamento
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-purple-700 bg-purple-50 px-2.5 py-1 rounded-xl border border-purple-200">
+                    {dashboardAnalytics.sectorList.length} setores ativos
+                  </span>
+                </div>
+
+                <div className="h-64 w-full">
+                  {dashboardAnalytics.sectorList.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                      <Building2 size={24} className="mb-2 opacity-50" />
+                      Sem dados por setor
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dashboardAnalytics.sectorList} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis dataKey="sector" tick={{ fontSize: 9.5, fill: '#475569', fontWeight: 600 }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} unit="h" />
+                        <Tooltip
+                          content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const s = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs space-y-1">
+                                <div className="font-black text-purple-300">{s.sector}</div>
+                                <div className="text-[11px] text-slate-300">Total: <span className="font-bold text-white">{s.hours}h ({s.percentage}%)</span></div>
+                                <div className="text-[10px] text-blue-300">50%: {s.hours50}h • 100%: {s.hours100}h</div>
+                                <div className="text-[10px] text-emerald-300">{s.employeesCount} colaboradores envolvidos</div>
+                              </div>
+                            );
+                          }}
+                        />
+                        <Bar dataKey="hours50" fill="#3b82f6" stackId="a" radius={[0, 0, 0, 0]} name="50%" />
+                        <Bar dataKey="hours100" fill="#f59e0b" stackId="a" radius={[6, 6, 0, 0]} name="100%" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Gráfico 3: Distribuição por Dia da Semana */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                      <Calendar size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Distribuição por Dia da Semana (Seg a Dom)
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Identificação de sobrecarga em dias úteis vs finais de semana
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={dashboardAnalytics.weekdayList} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="short" tick={{ fontSize: 10, fill: '#64748b', fontWeight: 700 }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} unit="h" />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const w = payload[0].payload;
+                          return (
+                            <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs space-y-1">
+                              <div className="font-black text-emerald-300">{w.name}</div>
+                              <div className="text-[11px] text-slate-300">Total: <span className="font-bold text-white">{w.totalHours}h</span></div>
+                              <div className="text-[10px] text-blue-300">50%: {w.hours50}h</div>
+                              <div className="text-[10px] text-amber-300">100%: {w.hours100}h</div>
+                              <div className="text-[10px] text-slate-400">{w.launches} lançamento(s)</div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Bar dataKey="hours50" fill="#3b82f6" stackId="w" name="50%" />
+                      <Bar dataKey="hours100" fill="#f59e0b" stackId="w" radius={[6, 6, 0, 0]} name="100%" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Gráfico 4: Principais Motivos / Justificativas */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                      <FileText size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Principais Motivos e Causas-Raiz de HE
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Classificação das razões geradoras de sobrejornada
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 overflow-y-auto max-h-64 pr-2">
+                  {dashboardAnalytics.reasonList.length === 0 ? (
+                    <div className="h-48 flex flex-col items-center justify-center text-slate-400 text-xs">
+                      Sem motivos registrados
+                    </div>
+                  ) : (
+                    dashboardAnalytics.reasonList.map((r, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800 truncate max-w-[260px] sm:max-w-xs" title={r.reason}>
+                            {r.reason}
+                          </span>
+                          <span className="text-[11px] font-black text-slate-700">
+                            {r.hours}h <span className="text-[9px] text-slate-400 font-semibold">({r.percentage}%)</span>
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(r.percentage, 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-medium">
+                          {r.launches} ocorrência(s)
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Gráfico 5: Turnos & Modalidades */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
+                      <Briefcase size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Distribuição por Turnos de Trabalho
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Comercial (Padrão/Flexível), Diurno e Noturno
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {dashboardAnalytics.shiftList.map((s, idx) => (
+                    <div key={idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight truncate">{s.shift}</span>
+                      <div className="text-lg font-black text-slate-900 mt-1">
+                        {s.hours}h
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-semibold mt-0.5">
+                        {s.percentage}% • {s.launches} lanç.
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    <span className="font-bold text-slate-700">Passando do Horário: {dashboardAnalytics.modeList[0].hours}h</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                    <span className="font-bold text-slate-700">Turno Integral: {dashboardAnalytics.modeList[1].hours}h</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gráfico 6: Faixas de Horário de Início */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold">
+                      <Clock size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Faixa de Horário de Início da Hora Extra
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Madrugada, Manhã, Tarde e Noite
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {dashboardAnalytics.timeSlots.map((ts, idx) => (
+                    <div key={idx} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                      <div className="flex items-center justify-between text-[10px] font-black text-slate-500 uppercase">
+                        <span>{ts.label}</span>
+                        {idx === 0 ? <Moon size={13} className="text-indigo-500" /> : idx === 1 ? <Sun size={13} className="text-amber-500" /> : idx === 2 ? <Sun size={13} className="text-orange-500" /> : <Moon size={13} className="text-blue-500" />}
+                      </div>
+                      <div className="text-xl font-black text-slate-900 mt-1">
+                        {ts.hours}h
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-bold mt-0.5">
+                        {ts.count} lançamentos • {ts.percentage}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
+            {/* TABELA DETALHADA: RANKING DE COLABORADORES */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                    <Award size={18} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                      Ranking Completo de Colaboradores com Horas Extras
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      Lista ordenada por volume acumulado de horas extras no ciclo
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black text-slate-500 bg-white px-3 py-1 rounded-xl border border-slate-200 shadow-xs">
+                  {dashboardAnalytics.rankedEmployees.length} colaboradores listados
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black">
+                      <th className="px-4 py-3 text-center">Rank</th>
+                      <th className="px-4 py-3">Matrícula</th>
+                      <th className="px-4 py-3">Colaborador / Operador</th>
+                      <th className="px-4 py-3">Setor & Cargo</th>
+                      <th className="px-4 py-3">Turno</th>
+                      <th className="px-4 py-3 text-center">Lançamentos</th>
+                      <th className="px-4 py-3 text-center">HE 50%</th>
+                      <th className="px-4 py-3 text-center">HE 100%</th>
+                      <th className="px-4 py-3 text-center">Total HE</th>
+                      <th className="px-4 py-3 text-center">Média/Lanç.</th>
+                      <th className="px-4 py-3">% Fábrica</th>
+                      <th className="px-4 py-3 text-center">Alerta de Sobrecarga</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {dashboardAnalytics.rankedEmployees.length === 0 ? (
+                      <tr>
+                        <td colSpan={12} className="px-4 py-8 text-center text-slate-400 text-xs">
+                          Nenhum apontamento encontrado no filtro selecionado.
+                        </td>
+                      </tr>
+                    ) : (
+                      dashboardAnalytics.rankedEmployees.map((emp, idx) => {
+                        const isOverLimit = emp.totalHours >= 30;
+                        const isWarning = emp.totalHours >= 20 && emp.totalHours < 30;
+                        return (
+                          <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="px-4 py-3 text-center whitespace-nowrap">
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black ${
+                                idx === 0 
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300 shadow-xs' 
+                                  : idx === 1 
+                                    ? 'bg-slate-200 text-slate-700 border border-slate-300' 
+                                    : idx === 2 
+                                      ? 'bg-orange-100 text-orange-800 border border-orange-300' 
+                                      : 'text-slate-400 font-bold'
+                              }`}>
+                                #{idx + 1}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="font-mono font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[10px]">
+                                {emp.registration}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="font-black text-slate-900">{emp.name}</div>
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="font-bold text-slate-700">{emp.sector}</span>
+                              <span className="text-[10px] text-slate-400 block">{emp.role}</span>
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                                {emp.shift}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 text-center whitespace-nowrap font-bold text-slate-700">
+                              {emp.launches}x
+                            </td>
+
+                            <td className="px-4 py-3 text-center whitespace-nowrap font-bold text-blue-600">
+                              {emp.hours50}h
+                            </td>
+
+                            <td className="px-4 py-3 text-center whitespace-nowrap font-bold text-amber-600">
+                              {emp.hours100}h
+                            </td>
+
+                            <td className="px-4 py-3 text-center whitespace-nowrap">
+                              <span className="font-black text-slate-900 text-sm">
+                                {emp.totalHours}h
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 text-center whitespace-nowrap text-slate-500 font-bold">
+                              {emp.averagePerLaunch}h
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 bg-slate-100 h-2 rounded-full overflow-hidden">
+                                  <div
+                                    className="bg-blue-600 h-full rounded-full"
+                                    style={{ width: `${Math.min(emp.percentageOfTotal * 3, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-600">{emp.percentageOfTotal}%</span>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-3 text-center whitespace-nowrap">
+                              {isOverLimit ? (
+                                <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-[9px] font-black uppercase tracking-wider border border-red-200 flex items-center justify-center gap-1 mx-auto w-fit">
+                                  <AlertTriangle size={11} /> Limite Crítico (&gt;30h)
+                                </span>
+                              ) : isWarning ? (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black uppercase tracking-wider border border-amber-200 flex items-center justify-center gap-1 mx-auto w-fit">
+                                  <AlertCircle size={11} /> Atenção (&gt;20h)
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider border border-emerald-200">
+                                  Normal
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* SEÇÃO COMPLEMENTAR: MÁQUINAS & LIDERANÇAS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Máquinas com Horas Extras */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                      <Factory size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Horas Extras por Máquina / Equipamento
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Equipamentos industriais com apontamentos
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {dashboardAnalytics.machineList.length === 0 ? (
+                    <div className="py-6 text-center text-slate-400 text-xs font-medium">
+                      Nenhuma máquina informada nos lançamentos
+                    </div>
+                  ) : (
+                    dashboardAnalytics.machineList.map((m, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                          <span className="font-black text-slate-800 text-xs">{m.machine}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-black text-slate-900 text-xs">{m.hours}h</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">{m.launches} apontamentos</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Líderes Solicitantes */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                      <User size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Supervisão / Líder Solicitante
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Volume autorizado por liderança
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {dashboardAnalytics.requesterList.length === 0 ? (
+                    <div className="py-6 text-center text-slate-400 text-xs font-medium">
+                      Nenhum líder especificado
+                    </div>
+                  ) : (
+                    dashboardAnalytics.requesterList.map((req, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-500" />
+                          <span className="font-black text-slate-800 text-xs">{req.requester}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-black text-slate-900 text-xs">{req.hours}h</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">{req.launches} solicitações</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        ) : (
+        /* ============================================================== */
+        /* TABELA DE LANÇAMENTOS */
+        /* ============================================================== */
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
@@ -1355,7 +2368,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               <p className="text-xs text-slate-500 max-w-md mx-auto">
                 Não há registros de horas extras lançadas no filtro selecionado. Clique em "Novo Lançamento" para cadastrar o apontamento com os parâmetros oficiais de turno.
               </p>
-              {canManage && (
+              {(!isReadOnly || canManage) && (
                 <button
                   onClick={handleOpenCreateModal}
                   className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-700 transition-all cursor-pointer shadow-md shadow-blue-600/20"
@@ -1366,8 +2379,40 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <>
+              <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <FileText size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                      Tabela Geral de Apontamentos de Horas Extras
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      {filteredEntries.length} lançamento(s) no ciclo selecionado
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isReadOnly) {
+                      if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura.');
+                      else alert('Usuário com perfil somente leitura.');
+                      return;
+                    }
+                    handleOpenCreateModal();
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 cursor-pointer flex items-center gap-2"
+                >
+                  <Plus size={14} />
+                  Novo Lançamento
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black">
                     <th className="px-4 py-3.5">Data</th>
@@ -1512,7 +2557,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         {/* Ações */}
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            {canManage && (
+                            {(!isReadOnly || canManage) && (
                               <>
                                 <button
                                   onClick={() => handleOpenEditModal(item)}
@@ -1538,8 +2583,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
+        )}
       </div>
 
       {/* ============================================================== */}

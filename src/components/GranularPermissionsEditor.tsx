@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Factory, BarChart3, Users, Wrench, Tv, Settings, 
-  Check, ChevronDown, ChevronRight, ShieldAlert, Sparkles, X
+  Check, ChevronDown, ChevronRight, ShieldAlert, Sparkles, X, LayoutDashboard
 } from 'lucide-react';
 import { 
   UserPermissions, 
@@ -132,7 +132,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                       norm.personnel?.training && 
                       norm.personnel?.lunch && 
                       norm.personnel?.overtime && 
+                      norm.personnel?.overtimeEntries && 
                       norm.personnel?.evaluations && 
+                      norm.personnel?.reports && 
                       norm.personnel?.manage;
     
     const newVal = !allActive;
@@ -143,7 +145,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       training: newVal,
       lunch: newVal,
       overtime: newVal,
+      overtimeEntries: newVal,
       evaluations: newVal,
+      reports: newVal,
       manage: newVal
     };
     updatePerms({ personnel: newPers });
@@ -152,13 +156,13 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   const handlePersonnelSubToggle = (key: keyof Omit<PersonnelPermissions, 'enabled'>) => {
     if (disabled) return;
     const current = norm.personnel || {
-      enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, evaluations: false, manage: false
+      enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, reports: false, manage: false
     };
     const updated = {
       ...current,
       [key]: !current[key]
     };
-    const anyActive = updated.board || updated.vacations || updated.training || updated.lunch || updated.overtime || updated.evaluations || updated.manage;
+    const anyActive = updated.board || updated.vacations || updated.training || updated.lunch || updated.overtime || updated.overtimeEntries || updated.evaluations || updated.reports || updated.manage;
     updated.enabled = anyActive;
     updatePerms({ personnel: updated });
   };
@@ -254,7 +258,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         canManagePersonnel: false,
         extrusion: { enabled: false, summary: false, charts: false, comparison: false, reports: false, stock: false, newEntry: false },
         ribbon: { enabled: false, summary: false, charts: false, comparison: false, reports: false, productivity: false, newEntry: false },
-        personnel: { enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, evaluations: false, manage: false },
+        personnel: { enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, reports: false, manage: false },
         maintenance: { enabled: false, requests: false, causes: false, newRequest: false },
         projection: { enabled: false },
         settings: { enabled: false, filters: false, goals: false, config: false, system: false, app: false }
@@ -273,7 +277,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         canManagePersonnel: false,
         extrusion: { enabled: true, summary: true, charts: true, comparison: true, reports: true, stock: true, newEntry: false },
         ribbon: { enabled: true, summary: true, charts: true, comparison: true, reports: true, productivity: true, newEntry: false },
-        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, evaluations: true, manage: false },
+        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, overtimeEntries: true, evaluations: true, reports: true, manage: false },
         maintenance: { enabled: true, requests: true, causes: true, newRequest: false },
         projection: { enabled: true },
         settings: { enabled: false, filters: false, goals: false, config: false, system: false, app: false }
@@ -292,7 +296,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         canManagePersonnel: false,
         extrusion: { enabled: true, summary: true, charts: true, comparison: false, reports: false, stock: true, newEntry: true },
         ribbon: { enabled: true, summary: true, charts: true, comparison: false, reports: false, productivity: false, newEntry: true },
-        personnel: { enabled: true, board: true, vacations: false, training: false, lunch: true, overtime: true, evaluations: false, manage: false },
+        personnel: { enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, reports: false, manage: false },
         maintenance: { enabled: true, requests: true, causes: false, newRequest: true },
         projection: { enabled: false },
         settings: { enabled: false, filters: false, goals: false, config: false, system: false, app: false }
@@ -311,7 +315,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         canManagePersonnel: true,
         extrusion: { enabled: true, summary: true, charts: true, comparison: true, reports: true, stock: true, newEntry: true },
         ribbon: { enabled: true, summary: true, charts: true, comparison: true, reports: true, productivity: true, newEntry: true },
-        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, evaluations: true, manage: true },
+        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, overtimeEntries: true, evaluations: true, reports: true, manage: true },
         maintenance: { enabled: true, requests: true, causes: true, newRequest: true },
         projection: { enabled: true },
         settings: { enabled: true, filters: true, goals: true, config: false, system: false, app: false }
@@ -330,7 +334,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         canManagePersonnel: true,
         extrusion: { enabled: true, summary: true, charts: true, comparison: true, reports: true, stock: true, newEntry: true },
         ribbon: { enabled: true, summary: true, charts: true, comparison: true, reports: true, productivity: true, newEntry: true },
-        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, evaluations: true, manage: true },
+        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, overtimeEntries: true, evaluations: true, reports: true, manage: true },
         maintenance: { enabled: true, requests: true, causes: true, newRequest: true },
         projection: { enabled: true },
         settings: { enabled: true, filters: true, goals: true, config: true, system: true, app: true }
@@ -364,7 +368,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     norm.personnel?.training,
     norm.personnel?.lunch,
     norm.personnel?.overtime,
+    norm.personnel?.overtimeEntries,
     norm.personnel?.evaluations,
+    norm.personnel?.reports,
     norm.personnel?.manage
   ].filter(Boolean).length;
 
@@ -430,6 +436,44 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
             title="Desmarcar todas as permissões"
           >
             Limpar
+          </button>
+        </div>
+      </div>
+
+      {/* 0. PAINEL GERAL / INÍCIO (PRODUÇÃO DIÁRIA) */}
+      <div className={`rounded-2xl border transition-all overflow-hidden ${
+        norm.canViewDashboard ? 'bg-white border-blue-200 shadow-xs' : 'bg-slate-50/60 border-slate-200'
+      }`}>
+        <div className="flex items-center justify-between p-3 sm:p-3.5 bg-slate-50/80 gap-2">
+          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={() => updatePerms({ canViewDashboard: !norm.canViewDashboard })}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+              norm.canViewDashboard ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-500'
+            }`}>
+              <LayoutDashboard size={16} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Início • Painel Geral de Produção Diária</span>
+                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                  norm.canViewDashboard ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  {norm.canViewDashboard ? 'Ativo' : 'Inativo'}
+                </span>
+              </div>
+              <p className="text-[8.5px] font-medium text-slate-400">Exibição do Bento Grid com produção diária consolidada, gráficos e metas de fábrica</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => updatePerms({ canViewDashboard: !norm.canViewDashboard })}
+            className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
+              norm.canViewDashboard
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {norm.canViewDashboard ? 'Ativado' : 'Desativado'}
           </button>
         </div>
       </div>
@@ -623,7 +667,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                   countPersonnel > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {countPersonnel}/7 ativas
+                  {countPersonnel}/9 ativas
                 </span>
               </div>
               <p className="text-[8.5px] font-medium text-slate-400">Sub-módulos e menus da tela de Pessoal</p>
@@ -635,14 +679,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               type="button"
               onClick={handlePersonnelMasterToggle}
               className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
-                countPersonnel === 7
+                countPersonnel === 9
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : countPersonnel > 0
                     ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countPersonnel === 7 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countPersonnel === 9 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -662,7 +706,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               { key: 'training' as const, label: 'Treinamento Operacional', desc: 'Matriz DDP e fichas de capacitação' },
               { key: 'lunch' as const, label: 'Escala de Almoço', desc: 'Horários e organização de refeições' },
               { key: 'overtime' as const, label: 'Solicitação de Hora Extra', desc: 'DOC 076 e autorizações de turno' },
+              { key: 'overtimeEntries' as const, label: 'Lançamento de Horas Extras', desc: 'Apontamento mensal e controle de horas extras' },
               { key: 'evaluations' as const, label: 'Avaliações de Desempenho', desc: 'Matriz de promoção e avaliação técnica' },
+              { key: 'reports' as const, label: 'Relatórios / PDF de Pessoal', desc: 'Emissão e download de relatórios do setor' },
               { key: 'manage' as const, label: 'Gerir Colaboradores', desc: 'Cadastrar, editar e excluir funcionários' }
             ].map(item => {
               const active = !!norm.personnel?.[item.key];

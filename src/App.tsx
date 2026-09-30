@@ -88,7 +88,7 @@ import { InteractiveBreadcrumbs } from './components/InteractiveBreadcrumbs';
 import { FloatingQuickDock } from './components/FloatingQuickDock';
 import { IndustrialBentoGrid } from './components/IndustrialBentoGrid';
 // ==================== FIM OPÇÃO 1 E 3: IMPORTS (DESFAZER) ====================
-import { normalizeUserPermissions, DEFAULT_FULL_PERMISSIONS, createPresetPermissions } from './utils/userPermissions';
+import { normalizeUserPermissions, DEFAULT_FULL_PERMISSIONS, createPresetPermissions, getInitialUserLanding } from './utils/userPermissions';
 import { SettingsPermissions } from './types';
 
 
@@ -1017,7 +1017,18 @@ export const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'extrusion' | 'ribbon' | 'personnel' | 'evaluations' | 'maintenance' | 'projection'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'extrusion' | 'ribbon' | 'personnel' | 'evaluations' | 'maintenance' | 'projection'>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        const isMaster = u.registration === '1010' || (u.role || '').toLowerCase().includes('administrador');
+        const target = getInitialUserLanding(u.permissions, isMaster);
+        return target.tab;
+      }
+    } catch (e) {}
+    return 'home';
+  });
   const [maintenanceSubTab, setMaintenanceSubTab] = useState<'requests' | 'causes'>('requests');
   const [maintenanceInitialCreateOpen, setMaintenanceInitialCreateOpen] = useState<boolean>(false);
   // Protetor de Tela (Projeção TV após 2 minutos de inatividade no computador)
@@ -1065,7 +1076,18 @@ export const App: React.FC = () => {
     };
   }, [screensaverSettings, loggedUser, activeTab, isScreensaverActive]);
 
-  const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations'>('board');
+  const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations'>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        const isMaster = u.registration === '1010' || (u.role || '').toLowerCase().includes('administrador');
+        const target = getInitialUserLanding(u.permissions, isMaster);
+        if (target.personnelSubView) return target.personnelSubView;
+      }
+    } catch (e) {}
+    return 'board';
+  });
   const [isExtrusionMenuOpen, setIsExtrusionMenuOpen] = useState(false);
   const [extrusionMenuPos, setExtrusionMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [isRibbonMenuOpen, setIsRibbonMenuOpen] = useState(false);
@@ -3434,6 +3456,18 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   };
 
+  const applyUserLanding = (user: SystemUser) => {
+    const isMasterOrAdmin = user.registration === '1010' || (user.role || '').toLowerCase().includes('administrador');
+    const target = getInitialUserLanding(user.permissions, isMasterOrAdmin);
+    setActiveTab(target.tab);
+    if (target.extrusionSubTab) setExtrusionSubTab(target.extrusionSubTab);
+    if (target.dashboardSubTab) setDashboardSubTab(target.dashboardSubTab);
+    if (target.ribbonSubTab) setRibbonSubTab(target.ribbonSubTab);
+    if (target.ribbonDashboardSubTab) setRibbonDashboardSubTab(target.ribbonDashboardSubTab);
+    if (target.personnelSubView) setPersonnelSubView(target.personnelSubView);
+    if (target.maintenanceSubTab) setMaintenanceSubTab(target.maintenanceSubTab);
+  };
+
   const handleGuestLogin = () => {
     const guestUser: SystemUser = {
       id: 'guest_visitante',
@@ -3454,6 +3488,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     recordAccessLog(guestUser, 'login');
     setLoggedUser(guestUser);
     localStorage.setItem('manupackaging_user', JSON.stringify(guestUser));
+    applyUserLanding(guestUser);
   };
 
   const handleLogin = async (matricula: string, pass: string, confirmPas?: string) => {
@@ -3479,6 +3514,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       recordAccessLog(defaultAdmin, 'login');
       setLoggedUser(defaultAdmin);
       localStorage.setItem('manupackaging_user', JSON.stringify(defaultAdmin));
+      applyUserLanding(defaultAdmin);
       return;
     }
 
@@ -3504,6 +3540,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         recordAccessLog(updated, 'login');
         setLoggedUser(updated);
         localStorage.setItem('manupackaging_user', JSON.stringify(updated));
+        applyUserLanding(updated);
 
         // Prompt for biometrics immediately after first access
         if (biometricSupported) {
@@ -3532,6 +3569,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       recordAccessLog(user, 'login');
       setLoggedUser(user);
       localStorage.setItem('manupackaging_user', JSON.stringify(user));
+      applyUserLanding(user);
       
       // Check if user should be prompted to register biometrics
       if (biometricSupported && !user.biometricId) {
@@ -3655,6 +3693,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           recordAccessLog(user, 'login');
           setLoggedUser(user);
           localStorage.setItem('manupackaging_user', JSON.stringify(user));
+          applyUserLanding(user);
           setBiometricScanStatus('success');
           setTimeout(() => {
             setIsBiometricModalOpen(false);
@@ -4110,6 +4149,53 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const canManageSettings = isAdmin || (userPerms.settings.enabled && !isReadOnlyAccount);
   const canEditProduction = isAdmin || ((userPerms.extrusion.newEntry || userPerms.ribbon.newEntry) && !isReadOnlyAccount);
   const canManagePersonnel = isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount);
+  const canViewHome = isAdmin || (userPerms.canViewDashboard && ((userPerms.extrusion.enabled && userPerms.extrusion.summary) || (userPerms.ribbon.enabled && userPerms.ribbon.summary)));
+
+  // Redireciona imediatamente o usuário caso ele caia em uma aba não permitida (ex: tela inicial 'home' para quem só tem permissão de horas extras)
+  useEffect(() => {
+    if (!loggedUser || isAdmin) return;
+    const isTabAllowed = 
+      (activeTab === 'home' && canViewHome) ||
+      (activeTab === 'extrusion' && userPerms.extrusion.enabled) ||
+      (activeTab === 'ribbon' && userPerms.ribbon.enabled) ||
+      (activeTab === 'personnel' && userPerms.personnel.enabled) ||
+      (activeTab === 'maintenance' && userPerms.maintenance.enabled) ||
+      (activeTab === 'projection' && userPerms.projection.enabled);
+
+    if (!isTabAllowed) {
+      const target = getInitialUserLanding(loggedUser.permissions, isAdmin);
+      setActiveTab(target.tab);
+      if (target.extrusionSubTab) setExtrusionSubTab(target.extrusionSubTab);
+      if (target.dashboardSubTab) setDashboardSubTab(target.dashboardSubTab);
+      if (target.ribbonSubTab) setRibbonSubTab(target.ribbonSubTab);
+      if (target.ribbonDashboardSubTab) setRibbonDashboardSubTab(target.ribbonDashboardSubTab);
+      if (target.personnelSubView) setPersonnelSubView(target.personnelSubView);
+      if (target.maintenanceSubTab) setMaintenanceSubTab(target.maintenanceSubTab);
+    }
+  }, [activeTab, userPerms, loggedUser, isAdmin, canViewHome]);
+
+  // Garante que, dentro de Pessoal, o usuário só permaneça em sub-abas que lhe foram autorizadas
+  useEffect(() => {
+    if (isAdmin || activeTab !== 'personnel') return;
+    const isSubviewAllowed = 
+      (personnelSubView === 'board' && userPerms.personnel.board) ||
+      (personnelSubView === 'vacations' && userPerms.personnel.vacations) ||
+      (personnelSubView === 'training' && userPerms.personnel.training) ||
+      (personnelSubView === 'lunch' && userPerms.personnel.lunch) ||
+      (personnelSubView === 'overtime' && userPerms.personnel.overtime) ||
+      (personnelSubView === 'overtime_entries' && userPerms.personnel.overtimeEntries) ||
+      (personnelSubView === 'evaluations' && userPerms.personnel.evaluations);
+
+    if (!isSubviewAllowed) {
+      if (userPerms.personnel.overtime) setPersonnelSubView('overtime');
+      else if (userPerms.personnel.overtimeEntries) setPersonnelSubView('overtime_entries');
+      else if (userPerms.personnel.board) setPersonnelSubView('board');
+      else if (userPerms.personnel.vacations) setPersonnelSubView('vacations');
+      else if (userPerms.personnel.training) setPersonnelSubView('training');
+      else if (userPerms.personnel.lunch) setPersonnelSubView('lunch');
+      else if (userPerms.personnel.evaluations) setPersonnelSubView('evaluations');
+    }
+  }, [activeTab, personnelSubView, userPerms, isAdmin]);
 
   // Helper de normalização e compatibilidade de máquinas do corte de fita (Ghezzi, Lintech, Wultec)
   const matchRibbonMachine = (entryMachine: string | undefined, targetKey: string) => {
@@ -11279,26 +11365,28 @@ Atenciosamente,
                   </p>
                   <div className="space-y-1">
                     {/* Início */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('home');
-                        setIsMainMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                        activeTab === 'home'
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <HomeIcon size={18} className={activeTab === 'home' ? 'text-white' : 'text-blue-600'} />
-                        <span>Início • Visão Geral</span>
-                      </div>
-                      {activeTab === 'home' && (
-                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
-                      )}
-                    </button>
+                    {(isAdmin || canViewHome) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('home');
+                          setIsMainMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          activeTab === 'home'
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                            : 'text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <HomeIcon size={18} className={activeTab === 'home' ? 'text-white' : 'text-blue-600'} />
+                          <span>Início • Visão Geral</span>
+                        </div>
+                        {activeTab === 'home' && (
+                          <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                        )}
+                      </button>
+                    )}
 
                     {/* Extrusão */}
                     {(isAdmin || userPerms.extrusion.enabled) && (
@@ -11675,22 +11763,24 @@ Atenciosamente,
                         {openMenuSections.personnel && (
                           <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1 pt-1">
                             {/* Quadro Geral */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('board');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'board'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Users size={14} className="shrink-0 text-blue-600" />
-                              <span>Quadro Geral</span>
-                            </button>
+                            {(isAdmin || userPerms.personnel.board) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('board');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'board'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Users size={14} className="shrink-0 text-blue-600" />
+                                <span>Quadro Geral</span>
+                              </button>
+                            )}
 
                             {/* Programação de Férias */}
                             {(isAdmin || userPerms.personnel.vacations) && (
@@ -11733,22 +11823,24 @@ Atenciosamente,
                             )}
 
                             {/* Escala de Almoço */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('personnel');
-                                setPersonnelSubView('lunch');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'personnel' && personnelSubView === 'lunch'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Utensils size={14} className="shrink-0 text-amber-600" />
-                              <span>Escala de Almoço</span>
-                            </button>
+                            {(isAdmin || userPerms.personnel.lunch) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('lunch');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'lunch'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Utensils size={14} className="shrink-0 text-amber-600" />
+                                <span>Escala de Almoço</span>
+                              </button>
+                            )}
 
                             {/* Horas Extras */}
                             {(isAdmin || userPerms.personnel.overtime) && (
@@ -11771,7 +11863,7 @@ Atenciosamente,
                             )}
 
                             {/* Lançamento de Horas Extras (Base Mensal) */}
-                            {(isAdmin || userPerms.personnel.overtime) && (
+                            {(isAdmin || userPerms.personnel.overtimeEntries) && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -12322,7 +12414,7 @@ Atenciosamente,
         {/* ==================== FIM OPÇÃO 3: BREADCRUMBS INTERATIVOS (DESFAZER: OPÇÃO 3) ==================== */}
 
         {/* ==================== INÍCIO OPÇÃO 1: BENTO GRID INDUSTRIAL (DESFAZER: OPÇÃO 1) ==================== */}
-        {activeTab === 'home' && (
+        {activeTab === 'home' && canViewHome && (
           <IndustrialBentoGrid
             productionData={productionData}
             ribbonEntries={ribbonEntries}
@@ -19670,10 +19762,9 @@ Atenciosamente,
               employees={employees}
               loggedUser={loggedUser}
               onClose={() => setPersonnelSubView('board')}
-              canManage={canManagePersonnel}
+              canManage={canManagePersonnel || (!isReadOnlyAccount && userPerms.personnel.overtimeEntries)}
               isReadOnly={isReadOnlyAccount}
               onBlockedAction={handleBlockedReadOnlyAction}
-              onNavigateToRequests={() => setPersonnelSubView('overtime')}
             />
           ) : personnelSubView === 'evaluations' ? (
             <EvaluationsTab
@@ -19778,7 +19869,7 @@ Atenciosamente,
                           Solicitação de Hora Extra (DOC 076)
                         </button>
                       )}
-                      {(isAdmin || userPerms.personnel.overtime) && (
+                      {(isAdmin || userPerms.personnel.overtimeEntries) && (
                         <button 
                           onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime_entries'); }}
                           className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
@@ -19893,7 +19984,7 @@ Atenciosamente,
                           </button>
                         )}
 
-                        {(isAdmin || userPerms.personnel.overtime) && (
+                        {(isAdmin || userPerms.personnel.overtimeEntries) && (
                           <button 
                             onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('overtime_entries'); }}
                             className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
@@ -21950,7 +22041,7 @@ const UserManagementModal: React.FC<{
   const [name, setName] = useState('');
   const [registration, setRegistration] = useState('');
   const [role, setRole] = useState(availableRoles[0] || '');
-  const [permissions, setPermissions] = useState<UserPermissions>(createPresetPermissions('operator'));
+  const [permissions, setPermissions] = useState<UserPermissions>(() => createPresetPermissions('clear'));
   const [userToDelete, setUserToDelete] = useState<SystemUser | null>(null);
 
   // Modo de edição completa no formulário
@@ -21976,7 +22067,7 @@ const UserManagementModal: React.FC<{
     setName('');
     setRegistration('');
     setRole(availableRoles[0] || '');
-    setPermissions(createPresetPermissions('operator'));
+    setPermissions(createPresetPermissions('clear'));
   };
 
   const handleStartEditInForm = (u: SystemUser) => {
@@ -22111,7 +22202,16 @@ const UserManagementModal: React.FC<{
 
   const filteredUsers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const sorted = [...users].sort((a,b) => (a.registration || '').localeCompare(b.registration || ''));
+    const seen = new Set<string>();
+    const uniqueUsers: SystemUser[] = [];
+    for (const u of users) {
+      const key = u.id || u.registration;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueUsers.push(u);
+      }
+    }
+    const sorted = [...uniqueUsers].sort((a,b) => (a.registration || '').localeCompare(b.registration || ''));
     if (!q) return sorted;
     return sorted.filter(u => 
       (u.name || '').toLowerCase().includes(q) || 
@@ -22253,7 +22353,7 @@ const UserManagementModal: React.FC<{
                 className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-xs"
               >
                 <option value="" disabled>Selecione uma função</option>
-                {availableRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                {Array.from(new Set(availableRoles)).map((r, i) => <option key={`${r}-${i}`} value={r}>{r}</option>)}
               </select>
             </div>
 
@@ -22340,7 +22440,7 @@ const UserManagementModal: React.FC<{
                   <p className="text-[10px] font-black uppercase tracking-widest">Nenhum usuário encontrado</p>
                 </div>
               ) : (
-                filteredUsers.map(u => {
+                filteredUsers.map((u, idx) => {
                   const isMasterAdmin = u.registration === '1010';
                   const isCurrentlyEditing = editingUser?.id === u.id;
                   const isExpandedInline = expandedUserId === u.id;
@@ -22349,7 +22449,7 @@ const UserManagementModal: React.FC<{
 
                   return (
                     <div 
-                      key={u.id} 
+                      key={`${u.id || u.registration || 'user'}-${idx}`} 
                       className={`rounded-2xl border transition-all overflow-hidden ${
                         isCurrentlyEditing 
                           ? 'bg-blue-50/40 border-blue-400 shadow-md ring-2 ring-blue-100' 
