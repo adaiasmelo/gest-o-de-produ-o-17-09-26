@@ -28,6 +28,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { db } from '../lib/firebase';
 import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
+import { INITIAL_OVERTIME_ENTRIES } from '../data/initialOvertimeEntries';
 import ConfirmDialog from './ConfirmDialog';
 import {
   PAYROLL_CUTOFF_DAY,
@@ -143,8 +144,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [displayOvertimeValue, setDisplayOvertimeValue] = useState<string>('2,00');
   const [overtimeUnit, setOvertimeUnit] = useState<'minutos' | 'horas'>('horas');
   const [overtimeHoursFormatted, setOvertimeHoursFormatted] = useState<string>('2h 00min');
-  const [overtimePercentage, setOvertimePercentage] = useState<number>(50);
-  const [equivalentHours, setEquivalentHours] = useState<number>(3);
+  const [overtimePercentage, setOvertimePercentage] = useState<number>(60);
+  const [equivalentHours, setEquivalentHours] = useState<number>(3.2);
+
+  // Estados para as melhorias de usabilidade, batch, filtros e conformidade
+  const [quickFilter, setQuickFilter] = useState<'all' | 'cycle' | 'this_week' | 'sun_holiday' | 'weekdays' | 'over_2h' | 'pending'>('all');
+  const [isBatchMode, setIsBatchMode] = useState<boolean>(false);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [batchSearchTerm, setBatchSearchTerm] = useState<string>('');
+  const [batchSectorFilter, setBatchSectorFilter] = useState<string>('all');
+  const [rejectionModalId, setRejectionModalId] = useState<string | null>(null);
+  const [rejectionReasonText, setRejectionReasonText] = useState<string>('');
 
   // Justificativa e observações
   const [reason, setReason] = useState<string>('');
@@ -152,6 +162,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isSeedingTests, setIsSeedingTests] = useState<boolean>(false);
 
   // Relação de motivos customizados gravados no sistema
   const [customReasons, setCustomReasons] = useState<string[]>(() => {
@@ -197,13 +208,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   // Escuta em tempo real no Firestore da coleção `overtime_entries`
   useEffect(() => {
     setIsLoading(true);
+    let isMounted = true;
     const unsub = onSnapshot(
       collection(db, 'overtime_entries'),
-      (snapshot) => {
+      async (snapshot) => {
+        if (!isMounted) return;
         const list = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data()
         })) as OvertimeEntry[];
+
+        if (list.length === 0) {
+          // Se não houver lançamentos no Firestore, inicializa com os 22 lançamentos oficiais de teste
+          setEntries(INITIAL_OVERTIME_ENTRIES);
+          setIsLoading(false);
+          try {
+            for (const item of INITIAL_OVERTIME_ENTRIES) {
+              await setDoc(doc(db, 'overtime_entries', item.id), item);
+            }
+          } catch (e) {
+            console.warn('Erro ao auto-semear overtime_entries:', e);
+          }
+          return;
+        }
 
         // Ordenar decrescente por data e criação
         list.sort((a, b) => {
@@ -217,11 +244,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       },
       (err) => {
         console.error('Erro ao sincronizar overtime_entries:', err);
-        setIsLoading(false);
+        if (isMounted) {
+          setEntries(INITIAL_OVERTIME_ENTRIES);
+          setIsLoading(false);
+        }
       }
     );
 
-    return () => unsub();
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, []);
 
   // Lista de colaboradores reais da fábrica para autocompletar e busca rápida
@@ -297,18 +330,91 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     };
   }, [date]);
 
-  // Atualização automática de % de HE conforme o dia da semana (Domingo/Feriado = 100%, Dias Úteis/Sábado = 50%)
-  // Apenas quando não estiver editando registro existente já gravado
+  // Atualização automática de % de HE conforme o dia da semana:
+  // Domingo e Feriados = 110%, Segunda a Sábado (Dias Úteis) = 60%
   useEffect(() => {
     if (!isFormOpen) return;
     if (editingEntry) return;
 
     if (dateDayInfo.isSunday) {
-      setOvertimePercentage(100);
+      setOvertimePercentage(110);
     } else {
-      setOvertimePercentage(50);
+      setOvertimePercentage(60);
     }
   }, [date, dateDayInfo.isSunday, isFormOpen, editingEntry]);
+
+  // Cálculo de sobreposição com horário noturno (faixa das 22h00 às 05h00)
+  const nightOverlapMinutes = useMemo(() => {
+    if (!startTime || !endTime) return 0;
+    try {
+      const startM = timeStringToMinutes(startTime);
+      let endM = timeStringToMinutes(endTime);
+      if (endM <= startM) endM += 1440;
+
+      let nightMin = 0;
+      for (let m = startM; m < endM; m++) {
+        const norm = m % 1440;
+        if (norm >= 1320 || norm < 300) {
+          nightMin++;
+        }
+      }
+      return nightMin;
+    } catch {
+      return 0;
+    }
+  }, [startTime, endTime]);
+
+  // Farol de Conformidade e Alertas de Limites (CLT / Fadiga Operacional)
+  const complianceAlerts = useMemo(() => {
+    const alerts: { type: 'warning' | 'danger' | 'info'; title: string; message: string }[] = [];
+
+    // 1. Limite Diário CLT (> 2 horas extras)
+    if (overtimeHours > 2.0) {
+      alerts.push({
+        type: 'warning',
+        title: 'Alerta de Limite Diário (CLT)',
+        message: `O apontamento prevê ${overtimeHoursFormatted} de horas extras, excedendo o limite padrão de 2h00min diárias. Exige justificativa operacional relevante.`
+      });
+    }
+
+    // 2. Fadiga / Descanso Interjornada (> 12h de permanência total)
+    if (workingHours > 12.0) {
+      alerts.push({
+        type: 'danger',
+        title: 'Alerta de Fadiga & Interjornada',
+        message: `Jornada total de permanência estendida (${workingHoursFormatted}). É obrigatório assegurar o intervalo interjornada mínimo legal de 11 horas de descanso antes do próximo turno.`
+      });
+    }
+
+    // 3. Adicional Noturno
+    if (nightOverlapMinutes > 0) {
+      const nightH = Math.floor(nightOverlapMinutes / 60);
+      const nightM = nightOverlapMinutes % 60;
+      alerts.push({
+        type: 'info',
+        title: 'Incidência de Horário Noturno',
+        message: `Foram detectados ${nightH > 0 ? `${nightH}h ` : ''}${nightM}min de trabalho na faixa noturna (22h00 às 05h00), gerando adicional noturno.`
+      });
+    }
+
+    // 4. Farol de Acúmulo no Ciclo (> 30 horas no ciclo atual)
+    if (selectedEmployeeId && formDatePayrollCycle) {
+      const pastCycleHours = entries
+        .filter(e => e.employeeId === selectedEmployeeId && e.date >= formDatePayrollCycle.startDate && e.date <= formDatePayrollCycle.endDate && (!editingEntry || e.id !== editingEntry.id))
+        .reduce((sum, e) => sum + (e.overtimeHours || 0), 0);
+
+      const totalCycleAccumulated = pastCycleHours + overtimeHours;
+      if (totalCycleAccumulated > 30) {
+        alerts.push({
+          type: 'danger',
+          title: 'Farol Crítico de Acúmulo no Ciclo',
+          message: `Este colaborador já possui ${pastCycleHours.toFixed(1)}h extras acumuladas neste ciclo da folha. Com este lançamento, atingirá ${totalCycleAccumulated.toFixed(1)}h. Recomenda-se rodízio de equipe.`
+        });
+      }
+    }
+
+    return alerts;
+  }, [overtimeHours, overtimeHoursFormatted, workingHours, workingHoursFormatted, nightOverlapMinutes, selectedEmployeeId, formDatePayrollCycle, entries, editingEntry]);
 
   // CÁLCULO AUTOMÁTICO OFICIAL DAS HORAS EXTRAS (BASEADO NO TURNO E MODALIDADE)
   useEffect(() => {
@@ -346,8 +452,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       setWorkingHours(Number((netWorkingMin / 60).toFixed(2)));
       setWorkingHoursFormatted(`${workH}h ${String(workM).padStart(2, '0')}min`);
 
-      // 3. Horas Equivalentes calculadas com a porcentagem
-      const equiv = Number((result.estimatedHours * (1 + (overtimePercentage || 50) / 100)).toFixed(2));
+      // 3. Horas Equivalentes calculadas com a porcentagem (60% ou 110%)
+      const equiv = Number((result.estimatedHours * (1 + (overtimePercentage || 60) / 100)).toFixed(2));
       setEquivalentHours(equiv);
     } catch (err) {
       // Mantém valores anteriores caso haja dado momentaneamente incompleto
@@ -817,6 +923,42 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       setDeleteConfirmId(null);
     } catch (err) {
       console.error('Erro ao excluir lançamento de hora extra:', err);
+    }
+  };
+
+  // Função para carregar ou restaurar os 22 lançamentos de teste oficiais no sistema
+  const handleLoadTestEntries = async () => {
+    if (isReadOnly) {
+      if (onBlockedAction) {
+        onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+      } else {
+        alert('Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+      }
+      return;
+    }
+
+    setIsSeedingTests(true);
+    try {
+      for (const item of INITIAL_OVERTIME_ENTRIES) {
+        await setDoc(doc(db, 'overtime_entries', item.id), item);
+      }
+      // Grava também os novos motivos na coleção overtime_reasons
+      const newReasons = [
+        'Troca emergencial de matriz e anel de ar Cast 2',
+        'Apoio no fechamento de lote para auditoria ISO 9001',
+        'Retrabalho de bobinas stretch para expedição imediata'
+      ];
+      for (const r of newReasons) {
+        const slug = r.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+        await setDoc(doc(db, 'overtime_reasons', slug), { reason: r, createdAt: new Date().toISOString() }, { merge: true });
+      }
+
+      setEntries(INITIAL_OVERTIME_ENTRIES);
+    } catch (err: any) {
+      console.error('Erro ao semear lançamentos de teste:', err);
+      setEntries(INITIAL_OVERTIME_ENTRIES);
+    } finally {
+      setIsSeedingTests(false);
     }
   };
 
@@ -1454,6 +1596,20 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleLoadTestEntries}
+            disabled={isSeedingTests}
+            className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer disabled:opacity-50"
+            title="Lançar / Restaurar os 22 lançamentos oficiais de teste com todos os turnos, opções e modalidades"
+          >
+            {isSeedingTests ? (
+              <Loader2 size={15} className="animate-spin text-indigo-600" />
+            ) : (
+              <Sparkles size={15} className="text-indigo-600" />
+            )}
+            {isSeedingTests ? 'Lançando...' : 'Lançar 22 Testes'}
+          </button>
+
           <button
             onClick={exportToCSV}
             className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
@@ -2369,13 +2525,23 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 Não há registros de horas extras lançadas no filtro selecionado. Clique em "Novo Lançamento" para cadastrar o apontamento com os parâmetros oficiais de turno.
               </p>
               {(!isReadOnly || canManage) && (
-                <button
-                  onClick={handleOpenCreateModal}
-                  className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-700 transition-all cursor-pointer shadow-md shadow-blue-600/20"
-                >
-                  <Plus size={14} />
-                  Criar Primeiro Lançamento
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-2.5 mt-3">
+                  <button
+                    onClick={handleOpenCreateModal}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-700 transition-all cursor-pointer shadow-md shadow-blue-600/20"
+                  >
+                    <Plus size={14} />
+                    Novo Lançamento
+                  </button>
+                  <button
+                    onClick={handleLoadTestEntries}
+                    disabled={isSeedingTests}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-black uppercase transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    <Sparkles size={14} className="text-indigo-600" />
+                    {isSeedingTests ? 'Lançando...' : 'Lançar 22 Testes de Exemplo'}
+                  </button>
+                </div>
               )}
             </div>
           ) : (
@@ -2394,21 +2560,33 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isReadOnly) {
-                      if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura.');
-                      else alert('Usuário com perfil somente leitura.');
-                      return;
-                    }
-                    handleOpenCreateModal();
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 cursor-pointer flex items-center gap-2"
-                >
-                  <Plus size={14} />
-                  Novo Lançamento
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLoadTestEntries}
+                    disabled={isSeedingTests}
+                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    title="Lançar / Restaurar os 22 lançamentos oficiais de teste com todos os turnos e opções"
+                  >
+                    <Sparkles size={13} className="text-indigo-600" />
+                    {isSeedingTests ? 'Lançando...' : 'Lançar 22 Testes'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isReadOnly) {
+                        if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura.');
+                        else alert('Usuário com perfil somente leitura.');
+                        return;
+                      }
+                      handleOpenCreateModal();
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 cursor-pointer flex items-center gap-2"
+                  >
+                    <Plus size={14} />
+                    Novo Lançamento
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">

@@ -559,13 +559,20 @@ export interface OvertimeEntry {
   overtimeHours: number; // Horas extras calculadas em decimal (ex: 2.00)
   overtimeMinutes: number; // Minutos de hora extra
   overtimeHoursFormatted: string; // ex: "02:00" ou "2h 00min"
-  overtimePercentage: number; // Porcentagem de HE (ex: 50 ou 100)
-  overtimePercentageLabel: string; // ex: "50%" ou "100%"
+  overtimePercentage: number; // Porcentagem de HE (padrão 60% dias normais seg a sáb, ou 110% domingos e feriados)
+  overtimePercentageLabel: string; // ex: "60%" ou "110%"
   equivalentHours?: number; // Horas ponderadas com adicional (ex: horas * (1 + %/100))
   overtimeExplanation?: string; // Explicação detalhada da regra do turno aplicada
   reason?: string; // Motivo / Justificativa
   requestedBy?: string; // Líder ou solicitante
   notes?: string;
+  status?: 'pending' | 'approved' | 'rejected'; // Fluxo de aprovação em 2 níveis
+  approvedBy?: string; // Nome de quem validou/aprovou
+  approvedAt?: string; // Data e hora da validação
+  rejectionReason?: string; // Justificativa caso rejeitado
+  isNightShiftOvertime?: boolean; // Indica se houve trecho entre 22h00 e 05h00
+  nightMinutes?: number; // Minutos noturnos apurados
+  batchGroupId?: string; // ID do lançamento em lote/equipe se aplicável
   createdAt: string;
   updatedAt: string;
   userId?: string;

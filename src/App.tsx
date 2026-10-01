@@ -75,6 +75,7 @@ import {
   JUMBO_AVG_LENGTH, 
   JUMBO_AVG_M2 
 } from './utils/ribbonGoalsUtils';
+import { generateRibbonMonthlyReportPDF, generateIntegratedMonthlyReportPDF } from './utils/monthlyReportsPdf';
 import { 
   getScreensaverSettings, 
   saveScreensaverSettings, 
@@ -8852,6 +8853,63 @@ Atenciosamente,
     });
   };
 
+  const exportRibbonMonthlyReportToPDF = async () => {
+    try {
+      const doc = await generateRibbonMonthlyReportPDF({
+        dashboardMonth,
+        ribbonEntries,
+        ribbonGoals,
+        ribbonDashboardStats,
+        loggedUser,
+        systemLogo,
+        filterOperator: ribbonFilterOperator
+      });
+      const [year, month] = dashboardMonth.split('-');
+      const formattedMonth = `${month}/${year}`;
+      const cleanPeriod = formattedMonth.replace(/\//g, '-');
+      setPdfModal({
+        isOpen: true,
+        doc,
+        filename: `Relatorio_Corte_Fita_Indicadores_${cleanPeriod}.pdf`,
+        title: `Relatório Mensal do Corte de Fita — Referência: ${formattedMonth}`
+      });
+    } catch (err) {
+      console.error('Erro ao gerar relatório do corte de fita:', err);
+      alert('Ocorreu um erro ao gerar o relatório em PDF do Corte de Fita.');
+    }
+  };
+
+  const exportIntegratedMonthlyReportToPDF = async () => {
+    try {
+      const doc = await generateIntegratedMonthlyReportPDF({
+        dashboardMonth,
+        productionData,
+        goals,
+        dashboardStats,
+        ecoBalance,
+        machineStopsDetails,
+        dashboardChartsData,
+        ribbonEntries,
+        ribbonGoals,
+        ribbonDashboardStats,
+        loggedUser,
+        systemLogo
+      });
+      const [year, month] = dashboardMonth.split('-');
+      const formattedMonth = `${month}/${year}`;
+      const cleanPeriod = formattedMonth.replace(/\//g, '-');
+      setPdfModal({
+        isOpen: true,
+        doc,
+        filename: `Relatorio_Integrado_Extrusao_e_Fita_${cleanPeriod}.pdf`,
+        title: `Relatório Integrado (Extrusão + Corte de Fita) — Referência: ${formattedMonth}`
+      });
+    } catch (err) {
+      console.error('Erro ao gerar relatório integrado:', err);
+      alert('Ocorreu um erro ao gerar o relatório em PDF Integrado.');
+    }
+  };
+
   const handleSaveTraining = async (data: Partial<TrainingRecord>) => {
     try {
       const id = data.id || doc(collection(db, 'training_records')).id;
@@ -11700,6 +11758,21 @@ Atenciosamente,
                               </button>
                             )}
 
+                            {/* Baixar Relatório PDF */}
+                            {(isAdmin || userPerms.ribbon.reports) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  exportRibbonMonthlyReportToPDF();
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer text-blue-700 hover:bg-white"
+                              >
+                                <FileText size={14} className="shrink-0 text-blue-600" />
+                                <span>Relatório Mensal (PDF)</span>
+                              </button>
+                            )}
+
                             {/* Exportar Excel */}
                             {(isAdmin || userPerms.ribbon.reports) && (
                               <button
@@ -12381,6 +12454,20 @@ Atenciosamente,
                       <button
                         type="button"
                         onClick={() => {
+                          exportRibbonMonthlyReportToPDF();
+                          setIsRibbonMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer mt-1"
+                      >
+                        <FileText className="w-4 h-4 shrink-0 text-blue-600" />
+                        <span>Relatório Mensal (PDF)</span>
+                      </button>
+                    )}
+
+                    {(isAdmin || userPerms.ribbon.reports) && (
+                      <button
+                        type="button"
+                        onClick={() => {
                           exportRibbonToExcel();
                           setIsRibbonMenuOpen(false);
                         }}
@@ -12555,16 +12642,27 @@ Atenciosamente,
 
               <div className="mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
                 <div className="text-left w-full sm:w-auto">
-                  <p className="text-xs font-bold text-white uppercase tracking-wide">Relatório de Produção e Indicadores (PDF)</p>
-                  <p className="text-[8.5px] sm:text-[9px] font-bold text-blue-100 uppercase tracking-widest mt-0.5 sm:mt-1 opacity-70">Documento oficial formatado com todos os detalhes de metas e balanços.</p>
+                  <p className="text-xs font-bold text-white uppercase tracking-wide">Relatórios de Produção e Indicadores (PDF)</p>
+                  <p className="text-[8.5px] sm:text-[9px] font-bold text-blue-100 uppercase tracking-widest mt-0.5 sm:mt-1 opacity-70">Documentos oficiais formatados com metas consolidadas, máquinas e operadores.</p>
                 </div>
-                <button
-                  onClick={exportMonthlyReportToPDF}
-                  className="w-full sm:w-auto bg-white text-blue-600 hover:bg-blue-50 text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-4 py-3 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 border border-white shrink-0 cursor-pointer"
-                >
-                  <FileText size={14} />
-                  Baixar Relatório (PDF)
-                </button>
+                <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+                  <button
+                    onClick={exportMonthlyReportToPDF}
+                    className="w-full sm:w-auto bg-white text-blue-600 hover:bg-blue-50 text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-4 py-3 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 border border-white shrink-0 cursor-pointer"
+                    title="Baixar Relatório Mensal Consolidado da Extrusão em PDF"
+                  >
+                    <FileText size={14} />
+                    Baixar Relatório Extrusão (PDF)
+                  </button>
+                  <button
+                    onClick={exportIntegratedMonthlyReportToPDF}
+                    className="w-full sm:w-auto bg-blue-500/30 hover:bg-blue-500/50 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-4 py-3 sm:px-5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 border border-white/30 shrink-0 cursor-pointer"
+                    title="Baixar Relatório Mensal Integrado: Extrusão + Corte de Fita em PDF"
+                  >
+                    <Sparkles size={14} className="text-sky-300" />
+                    Relatório Geral (Extrusão + Fita)
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -17642,7 +17740,7 @@ Atenciosamente,
                     {/* Blue Metric card with per-machine breakdown */}
                     <div className="bg-[#1e3a8a] text-white p-6 sm:p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col gap-6">
                       {/* Top Header / Consolidated Summary */}
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-white/10">
+                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-white/10">
                         <div>
                           <p className="text-[8.5px] sm:text-[10px] font-bold opacity-80 uppercase tracking-widest flex items-center gap-1">
                             DESEMPENHO
@@ -17655,16 +17753,38 @@ Atenciosamente,
                           </p>
                           <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">META MENSAL</h2>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <div className="text-right">
-                            <span className="text-[10px] font-black uppercase opacity-60 block tracking-widest">Total Geral Mês</span>
-                            <div className="flex items-baseline justify-end gap-1.5">
-                              <span className="text-2xl sm:text-3xl font-black">{formatM2(ribbonDashboardStats.month)}</span>
-                              <span className="text-sm font-bold text-sky-300">/ {((ribbonDashboardStats.month / Math.max(1, ribbonDashboardStats.goal)) * 100).toFixed(1)}%</span>
-                            </div>
+                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                          {/* Botões Oficiais de Baixar Relatório no Topo do Card de Desempenho */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={exportRibbonMonthlyReportToPDF}
+                              className="bg-white text-blue-600 hover:bg-blue-50 text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 border border-white cursor-pointer"
+                              title="Baixar Relatório Mensal Consolidado do Corte de Fita em PDF"
+                            >
+                              <FileText size={14} className="text-blue-600" />
+                              Baixar Relatório Fita (PDF)
+                            </button>
+                            <button
+                              onClick={exportIntegratedMonthlyReportToPDF}
+                              className="bg-sky-500/30 hover:bg-sky-500/50 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 border border-white/30 cursor-pointer"
+                              title="Baixar Relatório Mensal Integrado: Extrusão + Corte de Fita em PDF"
+                            >
+                              <Sparkles size={14} className="text-sky-300" />
+                              Relatório Geral (Extrusão + Fita)
+                            </button>
                           </div>
-                          <div className="w-11 h-11 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 shrink-0">
-                            <Activity size={22} />
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <span className="text-[10px] font-black uppercase opacity-60 block tracking-widest">Total Geral Mês</span>
+                              <div className="flex items-baseline justify-end gap-1.5">
+                                <span className="text-2xl sm:text-3xl font-black">{formatM2(ribbonDashboardStats.month)}</span>
+                                <span className="text-sm font-bold text-sky-300">/ {((ribbonDashboardStats.month / Math.max(1, ribbonDashboardStats.goal)) * 100).toFixed(1)}%</span>
+                              </div>
+                            </div>
+                            <div className="w-11 h-11 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 shrink-0">
+                              <Activity size={22} />
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -17794,6 +17914,34 @@ Atenciosamente,
                             <p className="text-[9px] font-black opacity-60 uppercase mb-0.5">PROJEÇÃO TOTAL</p>
                             <p className="text-sm sm:text-base font-bold text-emerald-300">{formatM2(ribbonDashboardStats.projection)}</p>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Botões Oficiais de Baixar Relatório PDF (Corte de Fita e Integrado) */}
+                      <div className="mt-2 pt-5 sm:pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+                        <div className="text-left w-full sm:w-auto">
+                          <p className="text-xs font-bold text-white uppercase tracking-wide">Relatórios de Produção e Indicadores — Corte de Fita (PDF)</p>
+                          <p className="text-[8.5px] sm:text-[9px] font-bold text-sky-200 uppercase tracking-widest mt-0.5 sm:mt-1 opacity-70">
+                            Documentos oficiais formatados com metas, máquinas (Ghezzi, Lintech, Wultec), operadores e paradas.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+                          <button
+                            onClick={exportRibbonMonthlyReportToPDF}
+                            className="w-full sm:w-auto bg-white text-blue-600 hover:bg-blue-50 text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-4 py-3 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 border border-white shrink-0 cursor-pointer"
+                            title="Baixar Relatório Mensal Consolidado do Corte de Fita em PDF"
+                          >
+                            <FileText size={14} />
+                            Baixar Relatório Fita (PDF)
+                          </button>
+                          <button
+                            onClick={exportIntegratedMonthlyReportToPDF}
+                            className="w-full sm:w-auto bg-sky-500/30 hover:bg-sky-500/50 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-4 py-3 sm:px-5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 border border-white/30 shrink-0 cursor-pointer"
+                            title="Baixar Relatório Mensal Integrado: Extrusão + Corte de Fita em PDF"
+                          >
+                            <Sparkles size={14} className="text-sky-300" />
+                            Relatório Geral (Extrusão + Fita)
+                          </button>
                         </div>
                       </div>
                     </div>
