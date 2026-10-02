@@ -86,6 +86,7 @@ import {
 import { GranularPermissionsEditor } from './components/GranularPermissionsEditor';
 import { CommandPalette } from './components/CommandPalette';
 // ==================== INÍCIO OPÇÃO 1 E 3: IMPORTS (DESFAZER) ====================
+import { TopNavbar } from './components/TopNavbar';
 import { InteractiveBreadcrumbs } from './components/InteractiveBreadcrumbs';
 import { FloatingQuickDock } from './components/FloatingQuickDock';
 import { IndustrialBentoGrid } from './components/IndustrialBentoGrid';
@@ -12624,7 +12625,7 @@ Atenciosamente,
       </div>
 
       <main className="max-w-7xl mx-auto px-3 py-2 sm:px-5 sm:py-3 space-y-2.5 sm:space-y-3.5">
-        {/* ==================== INÍCIO OPÇÃO 3: BREADCRUMBS INTERATIVOS (DESFAZER: OPÇÃO 3) ==================== */}
+        {/* ==================== TRILHA DE NAVEGAÇÃO & PAINEL CONECTADO (SEMPRE VISÍVEL NO TOPO) ==================== */}
         <InteractiveBreadcrumbs
           activeTab={activeTab}
           extrusionSubTab={extrusionSubTab}
@@ -12635,7 +12636,51 @@ Atenciosamente,
           maintenanceSubTab={maintenanceSubTab}
           onNavigateTab={handleCommandPaletteNavigate}
         />
-        {/* ==================== FIM OPÇÃO 3: BREADCRUMBS INTERATIVOS (DESFAZER: OPÇÃO 3) ==================== */}
+
+        {/* ==================== BARRA DE BOTÕES DOS MÓDULOS (VISÍVEL NO INÍCIO / SOME AO ENTRAR NOS MÓDULOS) ==================== */}
+        {activeTab === 'home' && (
+          <TopNavbar
+            activeTab={activeTab}
+            extrusionSubTab={extrusionSubTab}
+            dashboardSubTab={dashboardSubTab}
+            ribbonSubTab={ribbonSubTab}
+            ribbonDashboardSubTab={ribbonDashboardSubTab}
+            personnelSubView={personnelSubView}
+            maintenanceSubTab={maintenanceSubTab}
+            onNavigateHome={() => setActiveTab('home')}
+            onNavigateExtrusion={(subTab, dashSubTab) => {
+              setActiveTab('extrusion');
+              setExtrusionSubTab(subTab as any);
+              if (dashSubTab) setDashboardSubTab(dashSubTab as any);
+            }}
+            onNavigateRibbon={(subTab, dashSubTab) => {
+              setActiveTab('ribbon');
+              setRibbonSubTab(subTab as any);
+              if (dashSubTab) setRibbonDashboardSubTab(dashSubTab as any);
+            }}
+            onNavigatePersonnel={(subView) => {
+              setActiveTab('personnel');
+              setPersonnelSubView(subView as any);
+            }}
+            onNavigateMaintenance={(subTab) => {
+              setActiveTab('maintenance');
+              setMaintenanceSubTab(subTab as any);
+            }}
+            onNavigateProjection={() => {
+              setActiveTab('projection');
+              setIsTvProjectionActive(false);
+            }}
+            onOpenRibbonGoals={() => setIsRibbonGoalsModalOpen(true)}
+            onExportRibbonPDF={exportRibbonMonthlyReportToPDF}
+            onExportRibbonExcel={exportRibbonToExcel}
+            onOpenPersonnelFerias={() => setPersonnelStatModalType('ferias')}
+            isAdmin={isAdmin}
+            canViewHome={canViewHome}
+            userPerms={userPerms}
+            isReadOnlyAccount={isReadOnlyAccount}
+            totalFerias={totalFerias}
+          />
+        )}
 
         {/* ==================== INÍCIO OPÇÃO 1: BENTO GRID INDUSTRIAL (DESFAZER: OPÇÃO 1) ==================== */}
         {activeTab === 'home' && canViewHome && (

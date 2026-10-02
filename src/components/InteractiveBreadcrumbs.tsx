@@ -174,36 +174,41 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
   return (
     <nav
       aria-label="Trilha de Navegação"
-      className="w-full flex items-center justify-between py-0.5 sm:py-1 px-1 sm:px-1.5 text-xs select-none no-print overflow-hidden"
+      className="w-full flex items-center justify-between py-1 px-1 sm:px-1.5 text-xs select-none no-print overflow-visible mb-2"
     >
-      <ol className="flex items-center flex-wrap gap-1 sm:gap-1.5 min-w-0">
+      <ol className="flex items-center flex-wrap gap-1.5 sm:gap-2 min-w-0">
         {crumbs.map((crumb, idx) => {
           const isLast = idx === crumbs.length - 1;
+          const isHome = crumb.label === 'Início';
           return (
-            <li key={idx} className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+            <li key={idx} className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               {idx > 0 && (
-                <ChevronRight size={12} className="text-slate-300 shrink-0 select-none" />
+                <ChevronRight size={13} className="text-slate-400 shrink-0 select-none" />
               )}
               {isLast || !crumb.onClick ? (
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black tracking-tight truncate ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider truncate ${
                     isLast
-                      ? 'bg-blue-50 text-blue-800 border border-blue-200/80 shadow-2xs font-extrabold'
+                      ? 'bg-blue-50 text-blue-800 border border-blue-200/90 shadow-2xs font-extrabold'
                       : 'text-slate-600 font-bold'
                   }`}
                   aria-current={isLast ? 'page' : undefined}
                 >
-                  {crumb.icon}
+                  {isHome ? <Home size={14} className="text-blue-600 shrink-0" /> : crumb.icon}
                   <span className="truncate">{crumb.label}</span>
                 </span>
               ) : (
                 <button
                   type="button"
                   onClick={crumb.onClick}
-                  className="group inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all cursor-pointer truncate active:scale-95"
-                  title={`Ir para ${crumb.label}`}
+                  className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer truncate active:scale-95 ${
+                    isHome
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/25 border border-blue-500 hover:scale-[1.02]'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200/80 shadow-2xs'
+                  }`}
+                  title={isHome ? 'Voltar para o Início / Módulos Principais' : `Ir para ${crumb.label}`}
                 >
-                  {crumb.icon}
+                  {isHome ? <Home size={14} className="text-white shrink-0" /> : crumb.icon}
                   <span className="truncate">{crumb.label}</span>
                 </button>
               )}
@@ -212,9 +217,9 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
         })}
       </ol>
 
-      <div className="hidden sm:flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0 ml-3">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span className="hidden md:inline">Painel Conectado</span>
+      <div className="flex items-center gap-2 text-[10px] font-black text-slate-600 uppercase tracking-widest shrink-0 ml-3 bg-white/90 border border-slate-200/80 px-2.5 sm:px-3 py-1.5 rounded-xl shadow-2xs">
+        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50"></span>
+        <span>Painel Conectado</span>
       </div>
     </nav>
   );
