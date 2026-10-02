@@ -71,6 +71,18 @@ const SECTORS_LIST = [
   'Outro'
 ];
 
+export const BRAZILIAN_HOLIDAYS_MAP: Record<string, string> = {
+  '01-01': 'Ano Novo / Confraternização',
+  '04-21': 'Tiradentes',
+  '05-01': 'Dia do Trabalho',
+  '09-07': 'Independência do Brasil',
+  '10-12': 'Nossa Sra. Aparecida',
+  '11-02': 'Finados',
+  '11-15': 'Proclamação da República',
+  '11-20': 'Dia da Consciência Negra',
+  '12-25': 'Natal'
+};
+
 const QUICK_REASONS = [
   'Atendimento de demanda de produção',
   'Manutenção corretiva ou intervenção emergencial',
@@ -136,7 +148,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [startTime, setStartTime] = useState<string>('07:30');
   const [endTime, setEndTime] = useState<string>('19:18');
 
-  // Cálculos automáticos
+  // Cálculos automáticos (60% dias normais seg a sáb, 110% domingos e feriados)
   const [workingHours, setWorkingHours] = useState<number>(11.8);
   const [workingHoursFormatted, setWorkingHoursFormatted] = useState<string>('11h 48min');
   const [overtimeHours, setOvertimeHours] = useState<number>(2);
@@ -148,7 +160,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [equivalentHours, setEquivalentHours] = useState<number>(3.2);
 
   // Estados para as melhorias de usabilidade, batch, filtros e conformidade
-  const [quickFilter, setQuickFilter] = useState<'all' | 'cycle' | 'this_week' | 'sun_holiday' | 'weekdays' | 'over_2h' | 'pending'>('all');
+  const [quickFilter, setQuickFilter] = useState<'all' | 'cycle' | 'this_week' | 'sun_holiday' | 'weekdays' | 'over_2h' | 'pending' | 'fatigue'>('all');
   const [isBatchMode, setIsBatchMode] = useState<boolean>(false);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [batchSearchTerm, setBatchSearchTerm] = useState<string>('');
@@ -315,33 +327,41 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     return getPayrollCycleFromDate(date || new Date().toISOString().split('T')[0]);
   }, [date]);
 
-  // Identificação do dia da semana a partir da data informada
+  // Identificação do dia da semana e feriados nacionais a partir da data informada
   const dateDayInfo = useMemo(() => {
-    if (!date) return { dayName: '', isSunday: false, isSaturday: false };
+    if (!date) return { dayName: '', isSunday: false, isSaturday: false, isHoliday: false, holidayName: '', isSundayOrHoliday: false };
     const parts = date.split('-').map(Number);
-    if (parts.length !== 3) return { dayName: '', isSunday: false, isSaturday: false };
+    if (parts.length !== 3) return { dayName: '', isSunday: false, isSaturday: false, isHoliday: false, holidayName: '', isSundayOrHoliday: false };
     const d = new Date(parts[0], parts[1] - 1, parts[2]);
     const dayOfWeek = d.getDay(); // 0 = Domingo, 6 = Sábado
     const dayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const monthDay = `${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}`;
+    const holidayName = BRAZILIAN_HOLIDAYS_MAP[monthDay] || '';
+    const isHoliday = Boolean(holidayName);
+    const isSunday = dayOfWeek === 0;
+
     return {
       dayName: dayNames[dayOfWeek],
-      isSunday: dayOfWeek === 0,
-      isSaturday: dayOfWeek === 6
+      isSunday,
+      isSaturday: dayOfWeek === 6,
+      isHoliday,
+      holidayName,
+      isSundayOrHoliday: isSunday || isHoliday
     };
   }, [date]);
 
-  // Atualização automática de % de HE conforme o dia da semana:
-  // Domingo e Feriados = 110%, Segunda a Sábado (Dias Úteis) = 60%
+  // Atualização automática de % de HE conforme regra da fábrica:
+  // Domingo e Feriados = 110%, Segunda a Sábado (Dias Normais) = 60%
   useEffect(() => {
     if (!isFormOpen) return;
     if (editingEntry) return;
 
-    if (dateDayInfo.isSunday) {
+    if (dateDayInfo.isSundayOrHoliday) {
       setOvertimePercentage(110);
     } else {
       setOvertimePercentage(60);
     }
-  }, [date, dateDayInfo.isSunday, isFormOpen, editingEntry]);
+  }, [date, dateDayInfo.isSundayOrHoliday, isFormOpen, editingEntry]);
 
   // Cálculo de sobreposição com horário noturno (faixa das 22h00 às 05h00)
   const nightOverlapMinutes = useMemo(() => {
@@ -363,6 +383,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return 0;
     }
   }, [startTime, endTime]);
+
+  // Conversão de horário HH:MM para decimal (0 a 24)
+  const timeToDecimal = (t: string) => {
+    if (!t) return 0;
+    const parts = t.split(':').map(Number);
+    const h = isNaN(parts[0]) ? 0 : parts[0];
+    const m = isNaN(parts[1]) ? 0 : parts[1];
+    return h + m / 60;
+  };
 
   // Farol de Conformidade e Alertas de Limites (CLT / Fadiga Operacional)
   const complianceAlerts = useMemo(() => {
@@ -754,9 +783,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     setStartTime('07:30');
     setEndTime('19:18');
     
-    // Dia da semana de hoje
+    // Dia da semana e feriado de hoje (60% Seg a Sáb, 110% Dom e Feriados)
     const todayDay = new Date().getDay();
-    setOvertimePercentage(todayDay === 0 ? 100 : 50);
+    const todayMD = `${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+    const isTodayHolidayOrSun = todayDay === 0 || Boolean(BRAZILIAN_HOLIDAYS_MAP[todayMD]);
+    setOvertimePercentage(isTodayHolidayOrSun ? 110 : 60);
+
+    // Reseta modo lote
+    setIsBatchMode(false);
+    setSelectedEmployeeIds([]);
+    setBatchSearchTerm('');
+    setBatchSectorFilter('all');
 
     setReason('');
     setShowReasonDropdown(false);
@@ -773,6 +810,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return;
     }
 
+    setIsBatchMode(false);
+    setSelectedEmployeeIds([]);
     setEditingEntry(entry);
     setSelectedEmployeeId(entry.employeeId || '');
     setRegistration(entry.registration || '');
@@ -798,7 +837,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     setDate(entry.date || new Date().toISOString().split('T')[0]);
     setStartTime(entry.startTime || '07:30');
     setEndTime(entry.endTime || '19:18');
-    setOvertimePercentage(entry.overtimePercentage || 50);
+    setOvertimePercentage(entry.overtimePercentage || 60);
     setReason(entry.reason || '');
     setShowReasonDropdown(false);
     setRequestedBy(entry.requestedBy || loggedUser?.name || 'Líder de Produção');
@@ -808,7 +847,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     setIsFormOpen(true);
   };
 
-  // Salvar no Firestore
+  // Salvar no Firestore (Individual ou em Lote)
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) {
@@ -816,8 +855,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return;
     }
 
-    if (!employeeName.trim()) {
+    if (!isBatchMode && !employeeName.trim()) {
       setFormError('Por favor, selecione ou informe o nome do operador.');
+      return;
+    }
+    if (isBatchMode && selectedEmployeeIds.length === 0) {
+      setFormError('Por favor, selecione pelo menos um colaborador para o lançamento em grupo/lote.');
       return;
     }
     if (!date) {
@@ -860,6 +903,66 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
 
     try {
+      // 1. LANÇAMENTO EM LOTE (MÚLTIPLOS OPERADORES)
+      if (isBatchMode && !editingEntry) {
+        const batchGroupId = `batch_${Date.now()}`;
+        const selectedEmps = activePersonnelEmployees.filter((emp) => selectedEmployeeIds.includes(emp.id));
+
+        for (const emp of selectedEmps) {
+          const empCategory = getCanonicalShiftCategory(emp.shift, emp.sector);
+          const empShift = emp.shift || (empCategory === 'Comercial' ? 'Comercial' : empCategory);
+          
+          const batchPayload: Omit<OvertimeEntry, 'id'> = {
+            employeeId: emp.id,
+            registration: (emp.registration || '').trim(),
+            employeeName: emp.name.trim(),
+            role: (emp.role || role || '').trim(),
+            sector: (emp.sector || sector || 'Extrusão').trim(),
+            machine: machine.trim(),
+            shift: empShift,
+            date,
+            overtimeMode,
+            shiftTypeChoice,
+            isCommercialFlexible: shiftTypeChoice === 'Comercial' && isCommercialFlexible,
+            normalShiftStartTime: normalStart,
+            normalShiftEndTime: normalEnd,
+            startTime,
+            endTime,
+            workingHours,
+            workingHoursFormatted,
+            overtimeHours,
+            overtimeMinutes,
+            overtimeHoursFormatted: displayOvertimeValue ? `${displayOvertimeValue} ${overtimeUnit}` : overtimeHoursFormatted,
+            overtimePercentage: Number(overtimePercentage) || 60,
+            overtimePercentageLabel: `${overtimePercentage}%`,
+            equivalentHours,
+            overtimeExplanation: overtimeExplanation.trim(),
+            reason: reason.trim(),
+            requestedBy: requestedBy.trim(),
+            notes: notes.trim(),
+            status: 'approved',
+            batchGroupId,
+            isNightShiftOvertime: nightOverlapMinutes > 0,
+            nightMinutes: nightOverlapMinutes,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            userId: loggedUser?.id || 'anon',
+            userName: loggedUser?.name || 'Sistema'
+          };
+          await addDoc(collection(db, 'overtime_entries'), batchPayload);
+        }
+
+        if (isReasonNew && reason.trim()) {
+          await saveNewReasonToDatabase(reason.trim());
+        }
+
+        setIsFormOpen(false);
+        setIsBatchMode(false);
+        setSelectedEmployeeIds([]);
+        return;
+      }
+
+      // 2. LANÇAMENTO INDIVIDUAL (1 OPERADOR)
       const payload: Omit<OvertimeEntry, 'id'> = {
         employeeId: selectedEmployeeId || undefined,
         registration: registration.trim(),
@@ -881,13 +984,16 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         overtimeHours,
         overtimeMinutes,
         overtimeHoursFormatted: displayOvertimeValue ? `${displayOvertimeValue} ${overtimeUnit}` : overtimeHoursFormatted,
-        overtimePercentage: Number(overtimePercentage) || 50,
+        overtimePercentage: Number(overtimePercentage) || 60,
         overtimePercentageLabel: `${overtimePercentage}%`,
         equivalentHours,
         overtimeExplanation: overtimeExplanation.trim(),
         reason: reason.trim(),
         requestedBy: requestedBy.trim(),
         notes: notes.trim(),
+        status: editingEntry ? (editingEntry.status || 'approved') : 'approved',
+        isNightShiftOvertime: nightOverlapMinutes > 0,
+        nightMinutes: nightOverlapMinutes,
         createdAt: editingEntry ? editingEntry.createdAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         userId: loggedUser?.id || 'anon',
@@ -900,7 +1006,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         await addDoc(collection(db, 'overtime_entries'), payload);
       }
 
-      // Se for um novo motivo digitado que não está na relação, salva automaticamente no sistema
       if (isReasonNew && reason.trim()) {
         await saveNewReasonToDatabase(reason.trim());
       }
@@ -912,6 +1017,51 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       setFormError(`Erro ao salvar no banco de dados: ${err?.message || 'Tente novamente'}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Aprovação em 1 clique
+  const handleApproveEntry = async (entry: OvertimeEntry) => {
+    if (isReadOnly) {
+      onBlockedAction?.('Ação Bloqueada', 'Usuário com perfil somente leitura.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'overtime_entries', entry.id), {
+        status: 'approved',
+        approvedBy: loggedUser?.name || 'Supervisão de Produção',
+        approvedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Erro ao aprovar hora extra:', err);
+    }
+  };
+
+  // Rejeição com justificativa
+  const handleOpenRejectModal = (entryId: string) => {
+    if (isReadOnly) {
+      onBlockedAction?.('Ação Bloqueada', 'Usuário com perfil somente leitura.');
+      return;
+    }
+    setRejectionModalId(entryId);
+    setRejectionReasonText('');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectionModalId || !rejectionReasonText.trim()) return;
+    try {
+      await updateDoc(doc(db, 'overtime_entries', rejectionModalId), {
+        status: 'rejected',
+        rejectionReason: rejectionReasonText.trim(),
+        approvedBy: loggedUser?.name || 'Supervisão de Produção',
+        approvedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      setRejectionModalId(null);
+      setRejectionReasonText('');
+    } catch (err) {
+      console.error('Erro ao rejeitar hora extra:', err);
     }
   };
 
@@ -965,14 +1115,46 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   // Filtragem da listagem
   const filteredEntries = useMemo(() => {
     return entries.filter((item) => {
-      // 1. Filtro por Ciclo de Folha (fechamento dia 24)
+      // 1. Quick Filters de 1 Toque
+      if (quickFilter === 'cycle') {
+        const currentKey = getCurrentPayrollCycleKey();
+        if (!isDateInPayrollCycle(item.date, currentKey)) return false;
+      } else if (quickFilter === 'this_week') {
+        if (!item.date) return false;
+        const itemDate = new Date(item.date).getTime();
+        const now = Date.now();
+        const diffDays = (now - itemDate) / (1000 * 3600 * 24);
+        if (diffDays < 0 || diffDays > 7) return false;
+      } else if (quickFilter === 'sun_holiday') {
+        const parts = (item.date || '').split('-').map(Number);
+        if (parts.length === 3) {
+          const d = new Date(parts[0], parts[1] - 1, parts[2]);
+          const md = `${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}`;
+          const isSunOrHoliday = d.getDay() === 0 || Boolean(BRAZILIAN_HOLIDAYS_MAP[md]) || (item.overtimePercentage || 60) >= 100;
+          if (!isSunOrHoliday) return false;
+        }
+      } else if (quickFilter === 'weekdays') {
+        const parts = (item.date || '').split('-').map(Number);
+        if (parts.length === 3) {
+          const d = new Date(parts[0], parts[1] - 1, parts[2]);
+          const md = `${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}`;
+          const isSunOrHoliday = d.getDay() === 0 || Boolean(BRAZILIAN_HOLIDAYS_MAP[md]) || (item.overtimePercentage || 60) >= 100;
+          if (isSunOrHoliday) return false;
+        }
+      } else if (quickFilter === 'pending') {
+        if (item.status && item.status !== 'pending') return false;
+      } else if (quickFilter === 'over_2h') {
+        if ((item.overtimeHours || 0) < 2.0) return false;
+      }
+
+      // 2. Filtro por Ciclo de Folha (fechamento dia 24)
       if (filterMonth !== 'todos') {
         if (!isDateInPayrollCycle(item.date, filterMonth)) {
           return false;
         }
       }
 
-      // 2. Filtro por Setor
+      // 3. Filtro por Setor
       if (filterSector !== 'todos') {
         const itemSec = (item.sector || '').toLowerCase();
         const filtSec = filterSector.toLowerCase();
@@ -981,24 +1163,24 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         }
       }
 
-      // 3. Filtro por Turno
+      // 4. Filtro por Turno
       if (filterShift !== 'todos') {
         const itemShift = (item.shiftTypeChoice || item.shift || '').toLowerCase();
-        const isFlex = !!item.isCommercialFlexible;
+        const isFlex = Boolean(item.isCommercialFlexible);
         if (filterShift === 'Comercial Padrão' && (itemShift.includes('flex') || isFlex || !itemShift.includes('comercial'))) return false;
         if (filterShift === 'Comercial Flexível' && (!itemShift.includes('flex') && !isFlex)) return false;
         if (filterShift === 'Diurno' && !itemShift.includes('diurno')) return false;
         if (filterShift === 'Noturno' && !itemShift.includes('noturno')) return false;
       }
 
-      // 4. Filtro por Modalidade
+      // 5. Filtro por Modalidade
       if (filterMode !== 'todos') {
         if (item.overtimeMode && item.overtimeMode !== filterMode) {
           return false;
         }
       }
 
-      // 5. Busca livre por texto
+      // 6. Busca livre por texto
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
         const nameNorm = (item.employeeName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -1019,35 +1201,44 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
       return true;
     });
-  }, [entries, filterMonth, filterSector, filterShift, filterMode, searchTerm]);
+  }, [entries, filterMonth, filterSector, filterShift, filterMode, searchTerm, quickFilter]);
 
-  // Estatísticas dos Lançamentos Filtrados
+  // Estatísticas dos Lançamentos Filtrados (Oficial 60% dias normais seg a sáb, 110% domingos e feriados)
   const stats = useMemo(() => {
     let totalOvertimeHours = 0;
     let totalWorkingHours = 0;
     let totalEquivalentHours = 0;
-    let count50 = 0;
-    let count100 = 0;
-    let hours50 = 0;
-    let hours100 = 0;
+    let count60 = 0;
+    let count110 = 0;
+    let hours60 = 0;
+    let hours110 = 0;
+    let pendingCount = 0;
+    let approvedCount = 0;
     const uniqueEmp = new Set<string>();
     const sectorHoursMap: Record<string, number> = {};
 
     filteredEntries.forEach((item) => {
       const otH = Number(item.overtimeHours) || 0;
       const wkH = Number(item.workingHours) || otH;
-      const eqH = Number(item.equivalentHours) || (otH * (1 + (item.overtimePercentage || 50) / 100));
+      const is110 = (item.overtimePercentage || 60) >= 100;
+      const eqH = Number(item.equivalentHours) || (otH * (1 + (item.overtimePercentage || (is110 ? 110 : 60)) / 100));
 
       totalOvertimeHours += otH;
       totalWorkingHours += wkH;
       totalEquivalentHours += eqH;
 
-      if ((item.overtimePercentage || 50) >= 100) {
-        count100++;
-        hours100 += otH;
+      if (is110) {
+        count110++;
+        hours110 += otH;
       } else {
-        count50++;
-        hours50 += otH;
+        count60++;
+        hours60 += otH;
+      }
+
+      if (item.status === 'pending') {
+        pendingCount++;
+      } else {
+        approvedCount++;
       }
 
       const empKey = (item.registration || item.employeeName || '').trim().toLowerCase();
@@ -1072,10 +1263,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       totalEquivalentHours: Number(totalEquivalentHours.toFixed(2)),
       totalLaunches: filteredEntries.length,
       uniqueEmployees: uniqueEmp.size,
-      hours50: Number(hours50.toFixed(2)),
-      hours100: Number(hours100.toFixed(2)),
-      count50,
-      count100,
+      hours60: Number(hours60.toFixed(2)),
+      hours110: Number(hours110.toFixed(2)),
+      count60,
+      count110,
+      pendingCount,
+      approvedCount,
       topSector,
       topSectorHours: Number(topSectorHours.toFixed(2))
     };
@@ -1083,8 +1276,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
   // Inteligência de Dados e Analytics para o Dashboard de Horas Extras
   const dashboardAnalytics = useMemo(() => {
-    const dailyMap: Record<string, { date: string; dateLabel: string; dayOfWeek: string; hours50: number; hours100: number; totalHours: number; launches: number; employees: Set<string> }> = {};
-    const sectorMap: Record<string, { sector: string; hours: number; hours50: number; hours100: number; launches: number; employees: Set<string> }> = {};
+    const dailyMap: Record<string, { date: string; dateLabel: string; dayOfWeek: string; hours60: number; hours110: number; totalHours: number; launches: number; employees: Set<string> }> = {};
+    const sectorMap: Record<string, { sector: string; hours: number; hours60: number; hours110: number; launches: number; employees: Set<string> }> = {};
     const shiftMap: Record<string, { shift: string; hours: number; launches: number }> = {};
     const modeMap: Record<string, { mode: string; label: string; hours: number; launches: number }> = {
       pos_turno: { mode: 'pos_turno', label: 'Passando do Horário (Extensão)', hours: 0, launches: 0 },
@@ -1098,8 +1291,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       dayIndex: idx,
       name,
       short: dayOfWeekShort[idx],
-      hours50: 0,
-      hours100: 0,
+      hours60: 0,
+      hours110: 0,
       totalHours: 0,
       launches: 0
     }));
@@ -1111,8 +1304,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       sector: string;
       role: string;
       shift: string;
-      hours50: number;
-      hours100: number;
+      hours60: number;
+      hours110: number;
       totalHours: number;
       workingHours: number;
       equivalentHours: number;
@@ -1133,21 +1326,21 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     let totalOtHours = 0;
     let totalWkHours = 0;
     let totalEqHours = 0;
-    let sum50 = 0;
-    let sum100 = 0;
+    let sum60 = 0;
+    let sum110 = 0;
 
     filteredEntries.forEach((entry) => {
       const otH = Number(entry.overtimeHours) || 0;
       const wkH = Number(entry.workingHours) || otH;
-      const is100 = (entry.overtimePercentage || 50) >= 100;
-      const eqH = Number(entry.equivalentHours) || (otH * (is100 ? 2 : 1.5));
+      const is110 = (entry.overtimePercentage || 60) >= 100;
+      const eqH = Number(entry.equivalentHours) || (otH * (1 + (entry.overtimePercentage || (is110 ? 110 : 60)) / 100));
 
       totalOtHours += otH;
       totalWkHours += wkH;
       totalEqHours += eqH;
 
-      if (is100) sum100 += otH;
-      else sum50 += otH;
+      if (is110) sum110 += otH;
+      else sum60 += otH;
 
       const dateStr = entry.date || '';
       if (dateStr) {
@@ -1160,15 +1353,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             date: dateStr,
             dateLabel: label,
             dayOfWeek: dayName,
-            hours50: 0,
-            hours100: 0,
+            hours60: 0,
+            hours110: 0,
             totalHours: 0,
             launches: 0,
             employees: new Set<string>()
           };
         }
-        if (is100) dailyMap[dateStr].hours100 += otH;
-        else dailyMap[dateStr].hours50 += otH;
+        if (is110) dailyMap[dateStr].hours110 += otH;
+        else dailyMap[dateStr].hours60 += otH;
         dailyMap[dateStr].totalHours += otH;
         dailyMap[dateStr].launches += 1;
         if (entry.employeeName) dailyMap[dateStr].employees.add(entry.employeeName);
@@ -1177,8 +1370,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         const d = new Date(parts[0], parts[1] - 1, parts[2]);
         const dayIdx = d.getDay();
         if (weekdayMap[dayIdx]) {
-          if (is100) weekdayMap[dayIdx].hours100 += otH;
-          else weekdayMap[dayIdx].hours50 += otH;
+          if (is110) weekdayMap[dayIdx].hours110 += otH;
+          else weekdayMap[dayIdx].hours60 += otH;
           weekdayMap[dayIdx].totalHours += otH;
           weekdayMap[dayIdx].launches += 1;
         }
@@ -1186,11 +1379,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
       const sec = entry.sector || 'Outro';
       if (!sectorMap[sec]) {
-        sectorMap[sec] = { sector: sec, hours: 0, hours50: 0, hours100: 0, launches: 0, employees: new Set<string>() };
+        sectorMap[sec] = { sector: sec, hours: 0, hours60: 0, hours110: 0, launches: 0, employees: new Set<string>() };
       }
       sectorMap[sec].hours += otH;
-      if (is100) sectorMap[sec].hours100 += otH;
-      else sectorMap[sec].hours50 += otH;
+      if (is110) sectorMap[sec].hours110 += otH;
+      else sectorMap[sec].hours60 += otH;
       sectorMap[sec].launches += 1;
       if (entry.employeeName) sectorMap[sec].employees.add(entry.employeeName);
 
@@ -1253,8 +1446,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           sector: entry.sector || '-',
           role: entry.role || 'Operador',
           shift: entry.shift || entry.shiftTypeChoice || '-',
-          hours50: 0,
-          hours100: 0,
+          hours60: 0,
+          hours110: 0,
           totalHours: 0,
           workingHours: 0,
           equivalentHours: 0,
@@ -1262,8 +1455,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           dates: []
         };
       }
-      if (is100) employeeMap[empKey].hours100 += otH;
-      else employeeMap[empKey].hours50 += otH;
+      if (is110) employeeMap[empKey].hours110 += otH;
+      else employeeMap[empKey].hours60 += otH;
       employeeMap[empKey].totalHours += otH;
       employeeMap[empKey].workingHours += wkH;
       employeeMap[empKey].equivalentHours += eqH;
@@ -1277,8 +1470,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       .sort((a, b) => a.date.localeCompare(b.date))
       .map(item => ({
         ...item,
-        hours50: Number(item.hours50.toFixed(2)),
-        hours100: Number(item.hours100.toFixed(2)),
+        hours60: Number(item.hours60.toFixed(2)),
+        hours110: Number(item.hours110.toFixed(2)),
         totalHours: Number(item.totalHours.toFixed(2)),
         employeesCount: item.employees.size
       }));
@@ -1287,8 +1480,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       .map(s => ({
         sector: s.sector,
         hours: Number(s.hours.toFixed(2)),
-        hours50: Number(s.hours50.toFixed(2)),
-        hours100: Number(s.hours100.toFixed(2)),
+        hours60: Number(s.hours60.toFixed(2)),
+        hours110: Number(s.hours110.toFixed(2)),
         launches: s.launches,
         employeesCount: s.employees.size,
         percentage: totalOtHours > 0 ? Number(((s.hours / totalOtHours) * 100).toFixed(1)) : 0
@@ -1313,11 +1506,23 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       }))
       .sort((a, b) => b.hours - a.hours);
 
+    // Análise de Causa-Raiz (Pareto 80/20)
+    let cumulativeH = 0;
+    const paretoReasonList = reasonList.map((r) => {
+      cumulativeH += r.hours;
+      const cumPct = totalOtHours > 0 ? Number(((cumulativeH / totalOtHours) * 100).toFixed(1)) : 0;
+      return {
+        ...r,
+        cumulativeHours: Number(cumulativeH.toFixed(2)),
+        cumulativePercentage: Math.min(cumPct, 100)
+      };
+    });
+
     const rankedEmployees = Object.values(employeeMap)
       .map(e => ({
         ...e,
-        hours50: Number(e.hours50.toFixed(2)),
-        hours100: Number(e.hours100.toFixed(2)),
+        hours60: Number(e.hours60.toFixed(2)),
+        hours110: Number(e.hours110.toFixed(2)),
         totalHours: Number(e.totalHours.toFixed(2)),
         workingHours: Number(e.workingHours.toFixed(2)),
         equivalentHours: Number(e.equivalentHours.toFixed(2)),
@@ -1325,6 +1530,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         averagePerLaunch: e.launches > 0 ? Number((e.totalHours / e.launches).toFixed(1)) : 0
       }))
       .sort((a, b) => b.totalHours - a.totalHours);
+
+    // Contadores de alerta de fadiga (>30h e >40h no ciclo)
+    const criticalEmployeesCount = rankedEmployees.filter(e => e.totalHours >= 30).length;
+    const severeEmployeesCount = rankedEmployees.filter(e => e.totalHours >= 40).length;
 
     const machineList = Object.values(machineMap)
       .map(m => ({
@@ -1350,21 +1559,24 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       totalOtHours: Number(totalOtHours.toFixed(2)),
       totalWkHours: Number(totalWkHours.toFixed(2)),
       totalEqHours: Number(totalEqHours.toFixed(2)),
-      sum50: Number(sum50.toFixed(2)),
-      sum100: Number(sum100.toFixed(2)),
+      sum60: Number(sum60.toFixed(2)),
+      sum110: Number(sum110.toFixed(2)),
       averagePerEmployee,
       uniqueEmployeesCount: Object.keys(employeeMap).length,
+      criticalEmployeesCount,
+      severeEmployeesCount,
       timelineList,
       sectorList,
       shiftList,
       reasonList,
+      paretoReasonList,
       rankedEmployees,
       machineList,
       requesterList,
       weekdayList: weekdayMap.map(w => ({
         ...w,
-        hours50: Number(w.hours50.toFixed(2)),
-        hours100: Number(w.hours100.toFixed(2)),
+        hours60: Number(w.hours60.toFixed(2)),
+        hours110: Number(w.hours110.toFixed(2)),
         totalHours: Number(w.totalHours.toFixed(2))
       })),
       modeList: [
@@ -1413,6 +1625,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       'Horas Extras (formatado)',
       '% HE',
       'Horas Equivalentes',
+      'Status de Validação',
       'Regra / Cálculo Aplicado',
       'Motivo / Justificativa',
       'Líder Solicitante'
@@ -1429,6 +1642,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
       const modeLabel = item.overtimeMode === 'integral' ? 'Turno Extra Integral' : 'Passando do Horário';
       const normalRange = item.normalShiftStartTime && item.normalShiftEndTime ? `${item.normalShiftStartTime} às ${item.normalShiftEndTime}` : '-';
+      const statusLabel = item.status === 'approved' ? 'Aprovado' : item.status === 'rejected' ? 'Rejeitado' : 'Pendente';
 
       return [
         item.registration || '',
@@ -1445,8 +1659,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         (item.workingHours || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
         (item.overtimeHours || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
         item.overtimeHoursFormatted || '',
-        `${item.overtimePercentage || 50}%`,
+        `${item.overtimePercentage || 60}%`,
         (item.equivalentHours || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+        statusLabel,
         `"${(item.overtimeExplanation || '').replace(/"/g, '""')}"`,
         `"${(item.reason || '').replace(/"/g, '""')}"`,
         `"${(item.requestedBy || '').replace(/"/g, '""')}"`
@@ -1505,8 +1720,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       item.endTime || '-',
       item.workingHoursFormatted || `${item.workingHours}h`,
       `${item.overtimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h`,
-      `${item.overtimePercentage || 50}%`,
+      `${item.overtimePercentage || 60}%`,
       `${(item.equivalentHours || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h`,
+      item.status === 'approved' ? 'Aprovado' : item.status === 'rejected' ? 'Rejeitado' : 'Pendente',
       item.overtimeExplanation || item.reason || '-'
     ]);
 
@@ -1514,7 +1730,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       startY: 28,
       margin: { left: margin, right: margin },
       head: [
-        ['#', 'Matr.', 'Colaborador', 'Setor', 'Turno', 'Modo', 'Data', 'Início', 'Fim', 'Trabalhando', 'HE', '% HE', 'Equiv.', 'Regra / Justificativa']
+        ['#', 'Matr.', 'Colaborador', 'Setor', 'Turno', 'Modo', 'Data', 'Início', 'Fim', 'Trabalhando', 'HE', '% HE', 'Equiv.', 'Status', 'Regra / Justificativa']
       ],
       body: tableBody,
       theme: 'grid',
@@ -1596,20 +1812,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={handleLoadTestEntries}
-            disabled={isSeedingTests}
-            className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer disabled:opacity-50"
-            title="Lançar / Restaurar os 22 lançamentos oficiais de teste com todos os turnos, opções e modalidades"
-          >
-            {isSeedingTests ? (
-              <Loader2 size={15} className="animate-spin text-indigo-600" />
-            ) : (
-              <Sparkles size={15} className="text-indigo-600" />
-            )}
-            {isSeedingTests ? 'Lançando...' : 'Lançar 22 Testes'}
-          </button>
-
           <button
             onClick={exportToCSV}
             className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
@@ -1703,6 +1905,38 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       {/* CONTEÚDO PRINCIPAL (DASHBOARD OU TABELA DE LANÇAMENTOS) */}
       {/* ============================================================== */}
       <div className="p-6 sm:p-8 space-y-6">
+
+        {/* ============================================================== */}
+        {/* ATALHOS / FILTROS RÁPIDOS DE 1 TOQUE (SUGESTÃO 6) */}
+        {/* ============================================================== */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 shrink-0 mr-1">
+            <Zap size={13} className="text-amber-500" /> Atalhos:
+          </span>
+          {[
+            { id: 'all', label: 'Todos' },
+            { id: 'cycle', label: 'Ciclo Vigente (25 a 24)' },
+            { id: 'this_week', label: 'Esta Semana' },
+            { id: 'sun_holiday', label: 'Domingos e Feriados (110%)' },
+            { id: 'weekdays', label: 'Dias Normais (60%)' },
+            { id: 'pending', label: 'Pendentes de Validação' },
+            { id: 'over_2h', label: 'Acima de 2h/dia' },
+            { id: 'fatigue', label: 'Fadiga / Alerta (>30h)' },
+          ].map((pill) => (
+            <button
+              key={pill.id}
+              type="button"
+              onClick={() => setQuickFilter(pill.id as any)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer shrink-0 ${
+                quickFilter === pill.id
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              {pill.label}
+            </button>
+          ))}
+        </div>
 
         {/* ============================================================== */}
         {/* BARRA DE FILTROS & BUSCA GLOBAL */}
@@ -1831,7 +2065,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
               </div>
 
-              {/* Card 3: Horas Equivalentes */}
+              {/* Card 3: Horas Equivalentes (+60% e +110%) */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Equivalentes</span>
@@ -1844,7 +2078,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
                 <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
                   <span className="text-slate-500 font-bold">Ponderado c/ Adicional</span>
-                  <span className="text-amber-700 font-extrabold">+50% e +100%</span>
+                  <span className="text-amber-700 font-extrabold">+60% e +110%</span>
                 </div>
               </div>
 
@@ -1865,7 +2099,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
               </div>
 
-              {/* Card 5: Divisão 50% vs 100% */}
+              {/* Card 5: Divisão 60% vs 110% */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faixa de HE (% HE)</span>
@@ -1874,11 +2108,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
                 </div>
                 <div className="text-xl font-black text-slate-900 tracking-tight">
-                  <span className="text-blue-600">{stats.hours50}h</span> <span className="text-xs text-slate-400 font-medium">(50%)</span> • <span className="text-amber-600">{stats.hours100}h</span> <span className="text-xs text-slate-400 font-medium">(100%)</span>
+                  <span className="text-blue-600">{stats.hours60}h</span> <span className="text-xs text-slate-400 font-medium">(60%)</span> • <span className="text-amber-600">{stats.hours110}h</span> <span className="text-xs text-slate-400 font-medium">(110%)</span>
                 </div>
                 <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 font-bold">{stats.count50} laç. a 50%</span>
-                  <span className="text-amber-700 font-extrabold">{stats.count100} laç. a 100%</span>
+                  <span className="text-slate-500 font-bold">{stats.count60} laç. a 60% (Seg-Sáb)</span>
+                  <span className="text-amber-700 font-extrabold">{stats.count110} laç. a 110% (Dom/Fer)</span>
                 </div>
               </div>
 
@@ -1901,20 +2135,32 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
               </div>
 
-              {/* Card 7: Modalidade */}
+              {/* Card 7: Alerta de Fadiga & Sobrecarga */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modalidade Predominante</span>
-                  <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
-                    <Layers size={16} />
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alerta de Fadiga & Limites</span>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                    dashboardAnalytics.criticalEmployeesCount > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+                  }`}>
+                    <AlertTriangle size={16} />
                   </div>
                 </div>
                 <div className="text-lg font-black text-slate-800 tracking-tight truncate">
-                  {dashboardAnalytics.modeList[0].hours >= dashboardAnalytics.modeList[1].hours ? 'Passando do Horário' : 'Turno Extra Integral'}
+                  {dashboardAnalytics.criticalEmployeesCount > 0 ? (
+                    <span className="text-red-600 font-black">{dashboardAnalytics.criticalEmployeesCount} em Alerta (&gt;30h)</span>
+                  ) : (
+                    <span className="text-emerald-600 font-black">Operação Segura</span>
+                  )}
                 </div>
                 <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 font-bold">Extensão: {dashboardAnalytics.modeList[0].percentage}%</span>
-                  <span className="text-cyan-700 font-extrabold">Integral: {dashboardAnalytics.modeList[1].percentage}%</span>
+                  <span className="text-slate-500 font-bold">&gt;40h: {dashboardAnalytics.severeEmployeesCount} crítico(s)</span>
+                  <button
+                    type="button"
+                    onClick={() => setQuickFilter('fatigue')}
+                    className="text-red-700 font-black hover:underline cursor-pointer"
+                  >
+                    Filtrar Alertas
+                  </button>
                 </div>
               </div>
 
@@ -1930,11 +2176,37 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   {stats.totalLaunches}
                 </div>
                 <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 font-bold">Apontamentos</span>
-                  <span className="text-blue-600 font-extrabold">Registrados</span>
+                  <span className="text-slate-500 font-bold">{stats.pendingCount} pendente(s)</span>
+                  <span className="text-blue-600 font-extrabold">{stats.approvedCount} aprovado(s)</span>
                 </div>
               </div>
             </div>
+
+            {/* Banner de Alerta Crítico de Fadiga (Sugestão 3) */}
+            {dashboardAnalytics.criticalEmployeesCount > 0 && (
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                    <AlertTriangle size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-amber-900 uppercase">
+                      Alerta Operacional: {dashboardAnalytics.criticalEmployeesCount} colaborador(es) com acúmulo excessivo de horas extras (&gt;30h no ciclo)
+                    </h4>
+                    <p className="text-[11px] text-amber-800 font-medium">
+                      Recomenda-se aos líderes de turno realizar rodízio nas escalas e priorizar folgas para prevenir fadiga e sobrecarga de jornada.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickFilter('fatigue')}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase transition-all shadow-sm shrink-0 cursor-pointer"
+                >
+                  Ver Colaboradores
+                </button>
+              </div>
+            )}
 
             {/* Banner de Ação Rápida */}
             <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1987,10 +2259,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
                   <div className="flex items-center gap-3 text-[10px] font-bold">
                     <span className="flex items-center gap-1.5 text-blue-600">
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 50%
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 60% (Seg-Sáb)
                     </span>
                     <span className="flex items-center gap-1.5 text-amber-600">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> 100%
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> 110% (Dom/Fer)
                     </span>
                   </div>
                 </div>
@@ -2005,11 +2277,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={dashboardAnalytics.timelineList} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <defs>
-                          <linearGradient id="colorOt50" x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id="colorOt60" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
                             <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/>
                           </linearGradient>
-                          <linearGradient id="colorOt100" x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id="colorOt110" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
                             <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.05}/>
                           </linearGradient>
@@ -2025,8 +2297,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                               <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs space-y-1">
                                 <div className="font-black text-amber-300">{d.dateLabel} • {d.dayOfWeek}</div>
                                 <div className="text-[11px] text-slate-300">Total: <span className="font-bold text-white">{d.totalHours}h extras</span></div>
-                                <div className="text-[10px] text-blue-300">HE 50%: {d.hours50}h</div>
-                                <div className="text-[10px] text-amber-300">HE 100%: {d.hours100}h</div>
+                                <div className="text-[10px] text-blue-300">HE 60%: {d.hours60}h</div>
+                                <div className="text-[10px] text-amber-300">HE 110%: {d.hours110}h</div>
                                 <div className="text-[10px] text-emerald-300 pt-1 border-t border-slate-700">
                                   {d.employeesCount} colaborador(es) • {d.launches} lançamento(s)
                                 </div>
@@ -2034,8 +2306,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                             );
                           }}
                         />
-                        <Area type="monotone" dataKey="hours50" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorOt50)" name="50%" />
-                        <Area type="monotone" dataKey="hours100" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorOt100)" name="100%" />
+                        <Area type="monotone" dataKey="hours60" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorOt60)" name="60%" />
+                        <Area type="monotone" dataKey="hours110" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorOt110)" name="110%" />
                       </AreaChart>
                     </ResponsiveContainer>
                   )}
@@ -2054,7 +2326,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         Horas Extras por Setor da Fábrica
                       </h4>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        Volume acumulado por departamento
+                        Volume acumulado (Divisão 60% e 110%)
                       </p>
                     </div>
                   </div>
@@ -2083,14 +2355,14 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                               <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs space-y-1">
                                 <div className="font-black text-purple-300">{s.sector}</div>
                                 <div className="text-[11px] text-slate-300">Total: <span className="font-bold text-white">{s.hours}h ({s.percentage}%)</span></div>
-                                <div className="text-[10px] text-blue-300">50%: {s.hours50}h • 100%: {s.hours100}h</div>
+                                <div className="text-[10px] text-blue-300">60%: {s.hours60}h • 110%: {s.hours110}h</div>
                                 <div className="text-[10px] text-emerald-300">{s.employeesCount} colaboradores envolvidos</div>
                               </div>
                             );
                           }}
                         />
-                        <Bar dataKey="hours50" fill="#3b82f6" stackId="a" radius={[0, 0, 0, 0]} name="50%" />
-                        <Bar dataKey="hours100" fill="#f59e0b" stackId="a" radius={[6, 6, 0, 0]} name="100%" />
+                        <Bar dataKey="hours60" fill="#3b82f6" stackId="a" radius={[0, 0, 0, 0]} name="60%" />
+                        <Bar dataKey="hours110" fill="#f59e0b" stackId="a" radius={[6, 6, 0, 0]} name="110%" />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -2109,7 +2381,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         Distribuição por Dia da Semana (Seg a Dom)
                       </h4>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        Identificação de sobrecarga em dias úteis vs finais de semana
+                        Dias Normais 60% vs Domingos e Feriados 110%
                       </p>
                     </div>
                   </div>
@@ -2129,21 +2401,21 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                             <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs space-y-1">
                               <div className="font-black text-emerald-300">{w.name}</div>
                               <div className="text-[11px] text-slate-300">Total: <span className="font-bold text-white">{w.totalHours}h</span></div>
-                              <div className="text-[10px] text-blue-300">50%: {w.hours50}h</div>
-                              <div className="text-[10px] text-amber-300">100%: {w.hours100}h</div>
+                              <div className="text-[10px] text-blue-300">60%: {w.hours60}h</div>
+                              <div className="text-[10px] text-amber-300">110%: {w.hours110}h</div>
                               <div className="text-[10px] text-slate-400">{w.launches} lançamento(s)</div>
                             </div>
                           );
                         }}
                       />
-                      <Bar dataKey="hours50" fill="#3b82f6" stackId="w" name="50%" />
-                      <Bar dataKey="hours100" fill="#f59e0b" stackId="w" radius={[6, 6, 0, 0]} name="100%" />
+                      <Bar dataKey="hours60" fill="#3b82f6" stackId="w" name="60%" />
+                      <Bar dataKey="hours110" fill="#f59e0b" stackId="w" radius={[6, 6, 0, 0]} name="110%" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Gráfico 4: Principais Motivos / Justificativas */}
+              {/* Gráfico 4: Análise de Causa-Raiz (Pareto 80/20 de Motivos de HE) */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2.5">
@@ -2151,43 +2423,69 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <FileText size={16} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        Principais Motivos e Causas-Raiz de HE
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                          Análise de Causa-Raiz (Pareto de Motivos)
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black uppercase">
+                          Regra 80/20
+                        </span>
+                      </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        Classificação das razões geradoras de sobrejornada
+                        Causas prioritárias geradoras de sobrejornada industrial
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-3 overflow-y-auto max-h-64 pr-2">
-                  {dashboardAnalytics.reasonList.length === 0 ? (
+                  {dashboardAnalytics.paretoReasonList.length === 0 ? (
                     <div className="h-48 flex flex-col items-center justify-center text-slate-400 text-xs">
                       Sem motivos registrados
                     </div>
                   ) : (
-                    dashboardAnalytics.reasonList.map((r, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-800 truncate max-w-[260px] sm:max-w-xs" title={r.reason}>
-                            {r.reason}
-                          </span>
-                          <span className="text-[11px] font-black text-slate-700">
-                            {r.hours}h <span className="text-[9px] text-slate-400 font-semibold">({r.percentage}%)</span>
-                          </span>
+                    dashboardAnalytics.paretoReasonList.map((r, idx) => {
+                      const isVitalFew = r.cumulativePercentage <= 80;
+                      return (
+                        <div key={idx} className="p-2 rounded-xl bg-slate-50/70 border border-slate-100 space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5 truncate max-w-[260px] sm:max-w-xs">
+                              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                                isVitalFew ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'
+                              }`}>
+                                {idx + 1}
+                              </span>
+                              <span className="font-bold text-slate-800 truncate" title={r.reason}>
+                                {r.reason}
+                              </span>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="text-[11px] font-black text-slate-800">{r.hours}h</span>
+                              <span className="text-[9px] text-slate-400 font-semibold ml-1">({r.percentage}%)</span>
+                              <span className="text-[9px] text-amber-700 font-bold ml-1.5 bg-amber-50 px-1 rounded">
+                                Acum: {r.cumulativePercentage}%
+                              </span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isVitalFew ? 'bg-amber-500' : 'bg-slate-400'
+                              }`}
+                              style={{ width: `${Math.min(r.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-medium">
+                            <span>{r.launches} apontamento(s)</span>
+                            {isVitalFew && (
+                              <span className="text-amber-700 font-black flex items-center gap-0.5">
+                                ★ Causa Vital (80/20)
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div
-                            className="bg-amber-500 h-full rounded-full transition-all duration-500"
-                            style={{ width: `${Math.min(r.percentage, 100)}%` }}
-                          />
-                        </div>
-                        <div className="text-[9px] text-slate-400 font-medium">
-                          {r.launches} ocorrência(s)
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -2305,8 +2603,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <th className="px-4 py-3">Setor & Cargo</th>
                       <th className="px-4 py-3">Turno</th>
                       <th className="px-4 py-3 text-center">Lançamentos</th>
-                      <th className="px-4 py-3 text-center">HE 50%</th>
-                      <th className="px-4 py-3 text-center">HE 100%</th>
+                      <th className="px-4 py-3 text-center">HE 60% (Seg-Sáb)</th>
+                      <th className="px-4 py-3 text-center">HE 110% (Dom/Fer)</th>
                       <th className="px-4 py-3 text-center">Total HE</th>
                       <th className="px-4 py-3 text-center">Média/Lanç.</th>
                       <th className="px-4 py-3">% Fábrica</th>
@@ -2366,11 +2664,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                             </td>
 
                             <td className="px-4 py-3 text-center whitespace-nowrap font-bold text-blue-600">
-                              {emp.hours50}h
+                              {emp.hours60}h
                             </td>
 
                             <td className="px-4 py-3 text-center whitespace-nowrap font-bold text-amber-600">
-                              {emp.hours100}h
+                              {emp.hours110}h
                             </td>
 
                             <td className="px-4 py-3 text-center whitespace-nowrap">
@@ -2528,18 +2826,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 <div className="flex flex-wrap items-center justify-center gap-2.5 mt-3">
                   <button
                     onClick={handleOpenCreateModal}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-700 transition-all cursor-pointer shadow-md shadow-blue-600/20"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-700 transition-all cursor-pointer shadow-md shadow-blue-600/20"
                   >
-                    <Plus size={14} />
+                    <Plus size={15} />
                     Novo Lançamento
-                  </button>
-                  <button
-                    onClick={handleLoadTestEntries}
-                    disabled={isSeedingTests}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-black uppercase transition-all cursor-pointer shadow-sm disabled:opacity-50"
-                  >
-                    <Sparkles size={14} className="text-indigo-600" />
-                    {isSeedingTests ? 'Lançando...' : 'Lançar 22 Testes de Exemplo'}
                   </button>
                 </div>
               )}
@@ -2561,16 +2851,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleLoadTestEntries}
-                    disabled={isSeedingTests}
-                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                    title="Lançar / Restaurar os 22 lançamentos oficiais de teste com todos os turnos e opções"
-                  >
-                    <Sparkles size={13} className="text-indigo-600" />
-                    {isSeedingTests ? 'Lançando...' : 'Lançar 22 Testes'}
-                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2601,6 +2881,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     <th className="px-4 py-3.5 text-center">Horas Trabalhando</th>
                     <th className="px-4 py-3.5 text-center">Horas Extras</th>
                     <th className="px-4 py-3.5 text-center">% HE</th>
+                    <th className="px-4 py-3.5 text-center">Status / Validação</th>
                     <th className="px-4 py-3.5">Cálculo Aplicado / Motivo</th>
                     <th className="px-4 py-3.5 text-right">Ações</th>
                   </tr>
@@ -2616,8 +2897,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       dayAbbr = abbrs[d.getDay()] || '';
                     }
 
-                    const isHighPercent = (item.overtimePercentage || 50) >= 100;
+                    const isHighPercent = (item.overtimePercentage || 60) >= 100;
                     const isIntegral = item.overtimeMode === 'integral';
+
+                    // Estatísticas de horas do colaborador no ciclo para alerta de fadiga
+                    const empStats = dashboardAnalytics.rankedEmployees.find(e => 
+                      (item.registration && e.registration === item.registration) || 
+                      e.name.toLowerCase() === (item.employeeName || '').toLowerCase()
+                    );
+                    const empHours = empStats ? empStats.totalHours : 0;
 
                     return (
                       <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
@@ -2643,7 +2931,18 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         {/* Colaborador */}
                         <td className="px-4 py-3.5">
                           <div>
-                            <div className="font-black text-slate-900">{item.employeeName}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-black text-slate-900">{item.employeeName}</span>
+                              {empHours >= 40 ? (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black bg-red-100 text-red-700 border border-red-200" title={`Acúmulo crítico: ${empHours}h no ciclo`}>
+                                  🚨 Crítico ({empHours}h)
+                                </span>
+                              ) : empHours >= 30 ? (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black bg-amber-100 text-amber-800 border border-amber-200" title={`Alerta de fadiga: ${empHours}h no ciclo`}>
+                                  ⚠️ Alerta ({empHours}h)
+                                </span>
+                              ) : null}
+                            </div>
                             {item.role && (
                               <div className="text-[10px] text-slate-400 font-semibold">{item.role}</div>
                             )}
@@ -2711,13 +3010,58 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                               ? 'bg-amber-100 text-amber-800 border-amber-300'
                               : 'bg-indigo-100 text-indigo-800 border-indigo-200'
                           }`}>
-                            {item.overtimePercentage || 50}%
+                            {item.overtimePercentage || 60}%
                           </span>
                           {item.equivalentHours ? (
                             <div className="text-[9px] text-slate-400 font-bold mt-0.5" title="Horas calculadas com adicional">
                               = {item.equivalentHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h eq.
                             </div>
                           ) : null}
+                        </td>
+
+                        {/* Status / Validação */}
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                          <div className="flex flex-col items-center gap-1">
+                            {item.status === 'approved' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300" title={`Aprovado por ${item.approvedBy || 'Liderança'}`}>
+                                <Check size={11} className="text-emerald-700" />
+                                Aprovado
+                              </span>
+                            ) : item.status === 'rejected' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-800 border border-red-300" title={item.rejectionReason || 'Rejeitado pela liderança'}>
+                                <X size={11} className="text-red-700" />
+                                Rejeitado
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300">
+                                <Clock size={11} className="text-amber-700" />
+                                Pendente
+                              </span>
+                            )}
+
+                            {(!isReadOnly || canManage) && item.status !== 'approved' && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveEntry(item)}
+                                  className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-black uppercase transition-colors cursor-pointer flex items-center gap-0.5"
+                                  title="Aprovar hora extra em 1 clique"
+                                >
+                                  <Check size={10} /> Aprovar
+                                </button>
+                                {item.status !== 'rejected' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRejectModal(item.id)}
+                                    className="px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[9px] font-black uppercase transition-colors cursor-pointer flex items-center gap-0.5"
+                                    title="Rejeitar com justificativa"
+                                  >
+                                    <X size={10} /> Rejeitar
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </td>
 
                         {/* Cálculo Aplicado & Motivo */}
@@ -2806,80 +3150,217 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
               )}
 
-              {/* SEÇÃO 1: IDENTIFICAÇÃO DO COLABORADOR */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                  <User size={16} className="text-blue-600" />
-                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                    1. Identificação do Colaborador
-                  </h4>
+              {/* SEÇÃO 1: IDENTIFICAÇÃO DO COLABORADOR OU TURMA */}
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <User size={16} className="text-blue-600" />
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                      1. Identificação do Colaborador / Turma
+                    </h4>
+                  </div>
+                  {!editingEntry && (
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setIsBatchMode(false)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          !isBatchMode
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Individual
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsBatchMode(true)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isBatchMode
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Users size={12} />
+                        Em Lote / Turma
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Matrícula */}
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                      Matrícula *
-                    </label>
-                    <input
-                      type="text"
-                      value={registration}
-                      onChange={(e) => handleRegistrationChange(e.target.value)}
-                      placeholder="Ex: 0023"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
-                    />
-                    <p className="text-[9px] text-slate-400 mt-1">Ao digitar, busca operador e turno cadastrado</p>
-                  </div>
-
-                  {/* Nome do Operador com Busca / Autocomplete */}
-                  <div className="sm:col-span-2 relative">
-                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                      Nome do Operador / Colaborador *
-                    </label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                {!isBatchMode ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Matrícula */}
+                    <div>
+                      <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                        Matrícula *
+                      </label>
                       <input
                         type="text"
-                        value={employeeSearchText}
-                        onChange={(e) => {
-                          setEmployeeSearchText(e.target.value);
-                          setEmployeeName(e.target.value);
-                          setShowEmployeeDropdown(true);
-                        }}
-                        onFocus={() => setShowEmployeeDropdown(true)}
-                        placeholder="Pesquisar por nome ou matrícula..."
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                        value={registration}
+                        onChange={(e) => handleRegistrationChange(e.target.value)}
+                        placeholder="Ex: 0023"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
                       />
+                      <p className="text-[9px] text-slate-400 mt-1">Ao digitar, busca operador e turno cadastrado</p>
                     </div>
 
-                    {/* Dropdown de sugestões */}
-                    {showEmployeeDropdown && filteredEmployeeSuggestions.length > 0 && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setShowEmployeeDropdown(false)} />
-                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto z-20 py-1 divide-y divide-slate-50">
-                          {filteredEmployeeSuggestions.map((emp) => (
-                            <button
+                    {/* Nome do Operador com Busca / Autocomplete */}
+                    <div className="sm:col-span-2 relative">
+                      <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                        Nome do Operador / Colaborador *
+                      </label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          value={employeeSearchText}
+                          onChange={(e) => {
+                            setEmployeeSearchText(e.target.value);
+                            setEmployeeName(e.target.value);
+                            setShowEmployeeDropdown(true);
+                          }}
+                          onFocus={() => setShowEmployeeDropdown(true)}
+                          placeholder="Pesquisar por nome ou matrícula..."
+                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      {/* Dropdown de sugestões */}
+                      {showEmployeeDropdown && filteredEmployeeSuggestions.length > 0 && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setShowEmployeeDropdown(false)} />
+                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto z-20 py-1 divide-y divide-slate-50">
+                            {filteredEmployeeSuggestions.map((emp) => (
+                              <button
+                                key={emp.id}
+                                type="button"
+                                onClick={() => handleSelectEmployee(emp)}
+                                className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between text-xs cursor-pointer transition-colors"
+                              >
+                                <div>
+                                  <div className="font-black text-slate-800">{emp.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-semibold">
+                                    {emp.role || 'Sem cargo'} • {emp.sector || 'Extrusão'} • Turno: {emp.shift || 'Comercial'}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-mono font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                  Matr: {emp.registration || '-'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Users size={15} className="text-blue-600" />
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-tight">
+                          Seleção de Múltiplos Colaboradores ({selectedEmployeeIds.length} selecionado(s))
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const available = activePersonnelEmployees.filter(emp => 
+                              emp.status !== 'inactive' &&
+                              (batchSectorFilter === 'all' || emp.sector === batchSectorFilter)
+                            );
+                            setSelectedEmployeeIds(available.map(e => e.id));
+                          }}
+                          className="text-[10px] font-black text-blue-700 hover:bg-blue-100 px-2 py-1 rounded cursor-pointer transition-colors"
+                        >
+                          Selecionar Todos do Filtro
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEmployeeIds([])}
+                          className="text-[10px] font-black text-slate-500 hover:bg-slate-200 px-2 py-1 rounded cursor-pointer transition-colors"
+                        >
+                          Desmarcar Todos
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filtros da Turma: Setor e Busca */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                        <input
+                          type="text"
+                          value={batchSearchTerm}
+                          onChange={(e) => setBatchSearchTerm(e.target.value)}
+                          placeholder="Buscar operador na turma..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <select
+                        value={batchSectorFilter}
+                        onChange={(e) => setBatchSectorFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Todos os Setores</option>
+                        {SECTORS_LIST.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Lista com checkboxes para seleção */}
+                    <div className="max-h-48 overflow-y-auto bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 p-1">
+                      {activePersonnelEmployees
+                        .filter((emp) => {
+                          if (emp.status === 'inactive') return false;
+                          if (batchSectorFilter !== 'all' && emp.sector !== batchSectorFilter) return false;
+                          if (batchSearchTerm.trim()) {
+                            const term = batchSearchTerm.toLowerCase();
+                            return emp.name.toLowerCase().includes(term) || (emp.registration && emp.registration.includes(term));
+                          }
+                          return true;
+                        })
+                        .map((emp) => {
+                          const isSelected = selectedEmployeeIds.includes(emp.id);
+                          return (
+                            <label
                               key={emp.id}
-                              type="button"
-                              onClick={() => handleSelectEmployee(emp)}
-                              className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between text-xs cursor-pointer transition-colors"
+                              className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
+                                isSelected ? 'bg-blue-50/70 text-blue-900 font-black' : 'hover:bg-slate-50 text-slate-700'
+                              }`}
                             >
-                              <div>
-                                <div className="font-black text-slate-800">{emp.name}</div>
-                                <div className="text-[10px] text-slate-400 font-semibold">
-                                  {emp.role || 'Sem cargo'} • {emp.sector || 'Extrusão'} • Turno: {emp.shift || 'Comercial'}
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setSelectedEmployeeIds(prev => prev.filter(id => id !== emp.id));
+                                    } else {
+                                      setSelectedEmployeeIds(prev => [...prev, emp.id]);
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                                />
+                                <div>
+                                  <div className="text-xs font-black">{emp.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-semibold">
+                                    {emp.role || 'Operador'} • {emp.sector || 'Extrusão'} • {emp.shift || 'Comercial'}
+                                  </div>
                                 </div>
                               </div>
-                              <span className="text-[10px] font-mono font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                              <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                                 Matr: {emp.registration || '-'}
                               </span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                            </label>
+                          );
+                        })}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -3181,26 +3662,126 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     </div>
                   )}
 
-                  {/* SELEÇÃO RÁPIDA DE % HE */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                      Ajustar Porcentagem (% HE):
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {[50, 60, 70, 100].map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setOvertimePercentage(p)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                            overtimePercentage === p
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
-                          }`}
-                        >
-                          {p}%
-                        </button>
-                      ))}
+                  {/* SIMULADOR VISUAL DE LINHA DO TEMPO HORIZONTAL (SUGESTÃO 1) */}
+                  <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2 mt-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Clock size={13} className="text-blue-600" />
+                        <span className="text-[10.5px] font-black text-slate-800 uppercase tracking-wider">
+                          Simulador Visual da Jornada (00:00 às 24:00)
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+                        dateDayInfo.isSundayOrHoliday
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                          : 'bg-blue-100 text-blue-800 border-blue-200'
+                      }`}>
+                        {dateDayInfo.isHoliday 
+                          ? `🎉 Feriado: ${dateDayInfo.holidayName} (HE 110%)` 
+                          : dateDayInfo.isSunday 
+                            ? '☀️ Domingo Oficial (HE 110%)' 
+                            : '📅 Dia Normal (Seg a Sáb • HE 60%)'}
+                      </span>
+                    </div>
+
+                    {/* Barra da Linha do Tempo 24h */}
+                    <div className="relative w-full bg-slate-100 h-6 rounded-xl overflow-hidden border border-slate-200 flex">
+                      {/* Faixa Noturna 00:00 - 05:00 */}
+                      <div className="h-full bg-indigo-900/10 border-r border-indigo-200/50 flex items-center justify-center text-[7.5px] font-black text-indigo-500 uppercase tracking-tighter shrink-0" style={{ width: '20.83%' }} title="Adicional Noturno (00:00 - 05:00)">
+                        🌙 Noturno
+                      </div>
+                      {/* Faixa Diurna 05:00 - 22:00 */}
+                      <div className="h-full bg-slate-50 relative flex-1">
+                        {overtimeMode === 'pos_turno' ? (
+                          <>
+                            <div
+                              className="absolute top-1 bottom-1 bg-slate-300 rounded-l-md"
+                              style={{
+                                left: `${Math.max(0, Math.min(100, ((timeToDecimal(startTime) - 5) / 17) * 100))}%`,
+                                width: `${Math.max(2, Math.min(100, ((timeToDecimal(calculatedNormalEnd || '17:18') - timeToDecimal(startTime)) / 17) * 100))}%`
+                              }}
+                              title={`Jornada Normal: ${startTime} às ${calculatedNormalEnd || '17:18'}`}
+                            />
+                            <div
+                              className={`absolute top-1 bottom-1 ${dateDayInfo.isSundayOrHoliday ? 'bg-amber-500' : 'bg-blue-600'} rounded-r-md shadow-xs`}
+                              style={{
+                                left: `${Math.max(0, Math.min(100, ((timeToDecimal(calculatedNormalEnd || '17:18') - 5) / 17) * 100))}%`,
+                                width: `${Math.max(3, Math.min(100, (overtimeHours / 17) * 100))}%`
+                              }}
+                              title={`Horas Extras: +${overtimeHoursFormatted} (${overtimePercentage}%)`}
+                            />
+                          </>
+                        ) : (
+                          <div
+                            className={`absolute top-1 bottom-1 ${dateDayInfo.isSundayOrHoliday ? 'bg-amber-500' : 'bg-indigo-600'} rounded-md shadow-xs`}
+                            style={{
+                              left: `${Math.max(0, Math.min(100, ((timeToDecimal(startTime) - 5) / 17) * 100))}%`,
+                              width: `${Math.max(4, Math.min(100, (overtimeHours / 17) * 100))}%`
+                            }}
+                            title={`Plantão Extra Integral: ${startTime} às ${endTime} (${overtimeHoursFormatted})`}
+                          />
+                        )}
+                      </div>
+                      {/* Faixa Noturna 22:00 - 24:00 */}
+                      <div className="h-full bg-indigo-900/10 border-l border-indigo-200/50 flex items-center justify-center text-[7.5px] font-black text-indigo-500 uppercase tracking-tighter shrink-0" style={{ width: '8.33%' }} title="Adicional Noturno (22:00 - 24:00)">
+                        🌙
+                      </div>
+                    </div>
+
+                    {/* Legenda dos Marcadores */}
+                    <div className="flex flex-wrap items-center justify-between text-[9px] font-bold text-slate-500 pt-0.5">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded bg-slate-300 inline-block" /> Normal
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-800 font-black">
+                          <span className={`w-2.5 h-2.5 rounded ${dateDayInfo.isSundayOrHoliday ? 'bg-amber-500' : 'bg-blue-600'} inline-block`} /> HE ({overtimePercentage}%)
+                        </span>
+                        <span className="flex items-center gap-1 text-indigo-600">
+                          <span className="w-2.5 h-2.5 rounded bg-indigo-200 inline-block" /> Faixa Noturna
+                        </span>
+                      </div>
+                      <span className="font-mono text-slate-600">
+                        {startTime} ➔ {endTime} ({workingHoursFormatted} trab.)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* SELEÇÃO OFICIAL DE % HE (60% SEG A SÁB / 110% DOMINGOS E FERIADOS) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                    <div>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">
+                        Porcentagem de Hora Extra (% HE):
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-semibold">
+                        Regra oficial da empresa: 60% dias normais e 110% domingos/feriados
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOvertimePercentage(60)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                          overtimePercentage === 60
+                            ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20'
+                            : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                        }`}
+                      >
+                        <span>60%</span>
+                        <span className="text-[9px] font-semibold opacity-90">(Seg a Sáb)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOvertimePercentage(110)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                          overtimePercentage === 110
+                            ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-500/20'
+                            : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                        }`}
+                      >
+                        <span>110%</span>
+                        <span className="text-[9px] font-semibold opacity-90">(Dom / Feriado)</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -3425,6 +4006,61 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Justificativa de Rejeição */}
+      {rejectionModalId && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0 font-bold">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                  Rejeitar Apontamento de Hora Extra
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Informe o motivo da não aprovação deste lançamento.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10.5px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                Motivo da Rejeição *
+              </label>
+              <textarea
+                value={rejectionReasonText}
+                onChange={(e) => setRejectionReasonText(e.target.value)}
+                placeholder="Ex: Não autorizado previamente pela gerência / Intervalo não compatível com a escala..."
+                rows={3}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectionModalId(null);
+                  setRejectionReasonText('');
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={!rejectionReasonText.trim()}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase transition-all shadow-md shadow-red-600/20 cursor-pointer disabled:opacity-50"
+              >
+                Confirmar Rejeição
+              </button>
+            </div>
           </div>
         </div>
       )}

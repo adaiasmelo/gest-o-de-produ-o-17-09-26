@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Users, HardHat, Briefcase, UserPlus, Factory, Building2, Clock, CheckCircle2, AlertCircle, Copy, Check } from 'lucide-react';
+import { X, Search, Users, HardHat, Briefcase, UserPlus, Factory, Building2, Clock, CheckCircle2, AlertCircle, Copy, Check, Palmtree, Calendar, Edit2, UserCheck } from 'lucide-react';
 import { Employee } from '../types';
 
-export type PersonnelStatType = 'colaboradores' | 'operadores' | 'auxiliares' | 'vagas';
+export type PersonnelStatType = 'colaboradores' | 'operadores' | 'auxiliares' | 'vagas' | 'ferias';
 
 export interface VacancyDetail {
   id: string;
@@ -20,6 +20,7 @@ interface PersonnelStatModalProps {
   type: PersonnelStatType | null;
   employees: Employee[];
   vacancies: VacancyDetail[];
+  onManageVacation?: (employee: Employee) => void;
 }
 
 export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
@@ -27,7 +28,8 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
   onClose,
   type,
   employees,
-  vacancies
+  vacancies,
+  onManageVacation
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sectorFilter, setSectorFilter] = useState<string>('todos');
@@ -48,6 +50,11 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
   // Filter lists based on type
   const listData = useMemo(() => {
     if (!type) return [];
+
+    if (type === 'ferias') {
+      return employees.filter(e => normalize(e.status) === 'ferias')
+        .sort((a, b) => (a.returnDate || '9999').localeCompare(b.returnDate || '9999') || (a.name || '').localeCompare(b.name || ''));
+    }
 
     if (type === 'colaboradores') {
       return employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && isRelevantSector(e.sector))
@@ -108,6 +115,9 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
     if (type === 'vagas') {
       text = `RELAÇÃO DE VAGAS EM ABERTO (${filteredVacancies.length} vagas):\n\n` +
         filteredVacancies.map((v, i) => `${i + 1}. Setor: ${v.sector} | Máquina: ${v.machine} | Turno: ${v.shift} | Função: ${v.role} | Situação: ${v.status}${v.candidateName ? ` (${v.candidateName})` : ''}`).join('\n');
+    } else if (type === 'ferias') {
+      text = `RELAÇÃO DE COLABORADORES EM FÉRIAS (${filteredEmployees.length} registros):\n\n` +
+        filteredEmployees.map((e, i) => `${i + 1}. Nome: ${e.name} | Matrícula: ${e.registration || 'S/M'} | Cargo: ${e.role} | Setor: ${e.sector} | Máquina: ${e.machine} | Turno: ${e.shift} | Retorno Previsto: ${e.returnDate ? e.returnDate.split('-').reverse().join('/') : 'Não informado'}`).join('\n');
     } else {
       const title = type === 'colaboradores' ? 'COLABORADORES' : type === 'operadores' ? 'OPERADORES' : 'AUXILIARES';
       text = `RELAÇÃO DE ${title} (${filteredEmployees.length} registros):\n\n` +
@@ -122,6 +132,16 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
   if (!isOpen || !type) return null;
 
   const typeConfig = {
+    ferias: {
+      title: 'Relação de Colaboradores em Férias',
+      subtitle: 'Colaboradores atualmente em gozo de férias, previsão de retorno e substitutos',
+      icon: <Palmtree size={24} />,
+      colorText: 'text-amber-600',
+      colorBg: 'bg-amber-50',
+      colorBorder: 'border-amber-200',
+      colorBadge: 'bg-amber-600 text-white',
+      count: listData.length
+    },
     colaboradores: {
       title: 'Relação de Colaboradores Ativos',
       subtitle: 'Lista completa de todos os colaboradores alocados na fábrica',
@@ -224,7 +244,7 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            {['todos', 'extrusao', 'reciclagem', 'fita'].map((sec) => (
+            {['todos', 'extrusao', 'reciclagem', 'fita', 'lideranca'].map((sec) => (
               <button
                 key={sec}
                 onClick={() => setSectorFilter(sec)}
@@ -234,7 +254,7 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {sec === 'todos' ? 'Todos' : sec === 'extrusao' ? 'Extrusão' : sec === 'reciclagem' ? 'Reciclagem' : 'Fita'}
+                {sec === 'todos' ? 'Todos' : sec === 'extrusao' ? 'Extrusão' : sec === 'reciclagem' ? 'Reciclagem' : sec === 'fita' ? 'Fita' : 'Liderança'}
               </button>
             ))}
           </div>
@@ -297,8 +317,130 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
             filteredEmployees.length === 0 ? (
               <div className="text-center py-12">
                 <AlertCircle size={40} className="mx-auto text-slate-300 mb-2" />
-                <p className="text-sm font-bold text-slate-700">Nenhum colaborador encontrado</p>
-                <p className="text-xs text-slate-400">Verifique os termos de busca ou o filtro de setor.</p>
+                <p className="text-sm font-bold text-slate-700">
+                  {type === 'ferias' ? 'Nenhum colaborador em férias no momento' : 'Nenhum colaborador encontrado'}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {type === 'ferias' ? 'Todos os colaboradores estão ativos ou com outros status.' : 'Verifique os termos de busca ou o filtro de setor.'}
+                </p>
+              </div>
+            ) : type === 'ferias' ? (
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-amber-50/70 border-b border-amber-200/80 text-[10px] font-black uppercase tracking-wider text-amber-900">
+                        <th className="py-3 px-4 w-12 text-center">#</th>
+                        <th className="py-3 px-4">Colaborador em Férias</th>
+                        <th className="py-3 px-4">Posto / Alocação</th>
+                        <th className="py-3 px-4 text-center">Retorno Previsto</th>
+                        <th className="py-3 px-4">Substituto Atual</th>
+                        <th className="py-3 px-4 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {filteredEmployees.map((emp, index) => {
+                        // Find substitute in the same slot
+                        const substitute = employees.find(s => 
+                          s.id !== emp.id && 
+                          normalize(s.sector) === normalize(emp.sector) && 
+                          normalize(s.machine) === normalize(emp.machine) && 
+                          normalize(s.shift) === normalize(emp.shift) && 
+                          normalize(s.role) === normalize(emp.role) && 
+                          s.status !== 'Férias'
+                        );
+
+                        // Calculate remaining days
+                        let daysRemaining: number | null = null;
+                        if (emp.returnDate) {
+                          const parts = emp.returnDate.split('-').map(Number);
+                          if (parts.length === 3) {
+                            const target = new Date(parts[0], parts[1] - 1, parts[2]);
+                            const now = new Date();
+                            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                            daysRemaining = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                          }
+                        }
+
+                        const returnDateFormatted = emp.returnDate 
+                          ? emp.returnDate.split('-').reverse().join('/') 
+                          : 'Não definida';
+
+                        return (
+                          <tr key={emp.id} className="hover:bg-amber-50/30 transition-colors">
+                            <td className="py-3 px-4 text-center font-bold text-slate-400 text-[11px]">
+                              {index + 1}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-black text-slate-900">{emp.name}</div>
+                              <div className="text-[10px] font-mono text-slate-500 font-bold">
+                                Matr: {emp.registration || 'S/M'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-800">{emp.role}</div>
+                              <div className="text-[10px] text-slate-500">
+                                {emp.sector} &bull; {emp.machine} &bull; Turno {emp.shift}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <span className="font-black text-slate-900 block text-xs">
+                                {returnDateFormatted}
+                              </span>
+                              {daysRemaining !== null ? (
+                                daysRemaining > 0 ? (
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    Faltam {daysRemaining} dia(s)
+                                  </span>
+                                ) : daysRemaining === 0 ? (
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300">
+                                    Retorna hoje!
+                                  </span>
+                                ) : (
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black bg-red-100 text-red-800 border border-red-300">
+                                    Venceu há {Math.abs(daysRemaining)} d
+                                  </span>
+                                )
+                              ) : (
+                                <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-500">
+                                  Sem data
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {substitute ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  <UserCheck size={13} className="text-emerald-600" />
+                                  <span>{substitute.name}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-slate-400 italic">
+                                  Vaga temporária
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              {onManageVacation && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onClose();
+                                    onManageVacation(emp);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                                  title="Alterar data de retorno ou encerrar férias"
+                                >
+                                  <Edit2 size={12} />
+                                  <span>Alterar Retorno</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">

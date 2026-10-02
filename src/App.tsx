@@ -9,7 +9,7 @@ import {
   UserPlus, Download, AlertCircle, FileSpreadsheet, Scale, FileText, Menu, Fingerprint, Smartphone, Bell, Volume2, Share, ExternalLink, Mail, Copy, Filter,
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
-  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw
+  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -63,6 +63,7 @@ import { ProjectionDashboard } from './components/ProjectionDashboard';
 import { DowntimeReasonsModal } from './components/DowntimeReasonsModal';
 import { DowntimeAnalyticsModal } from './components/DowntimeAnalyticsModal';
 import { PersonnelStatModal, PersonnelStatType, VacancyDetail } from './components/PersonnelStatModal';
+import { VacationReturnModal } from './components/VacationReturnModal';
 import { Cast1CalculatorModal } from './components/Cast1CalculatorModal';
 import { Cast1CalculatorStandalone } from './components/Cast1CalculatorStandalone';
 import { RibbonMachineGoalsModal } from './components/RibbonMachineGoalsModal';
@@ -1524,6 +1525,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
   const [personnelStatModalType, setPersonnelStatModalType] = useState<PersonnelStatType | null>(null);
+  const [vacationReturnEmployee, setVacationReturnEmployee] = useState<Employee | null>(null);
+  const [vacationReturnSubstitute, setVacationReturnSubstitute] = useState<Employee | null>(null);
+  const [isVacationReturnModalOpen, setIsVacationReturnModalOpen] = useState(false);
   const [showInstallExperience, setShowInstallExperience] = useState(false);
   const [isPreviewConciliationOpen, setIsPreviewConciliationOpen] = useState(false);
   const [vacations, setVacations] = useState<Vacation[]>([]);
@@ -10139,6 +10143,111 @@ Atenciosamente,
   const totalAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && isRelevantSector(e.sector)).length;
   const totalOperadoresAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && e.role?.toLowerCase().includes('operador')).length;
   const totalAuxiliaresAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && e.role?.toLowerCase().includes('auxiliar')).length;
+  const totalFerias = employees.filter(e => normalize(e.status) === 'ferias').length;
+
+  const handleOpenVacationReturnModal = (employee: Employee, substitute?: Employee | null) => {
+    let sub = substitute;
+    if (sub === undefined) {
+      sub = employees.find(s => 
+        s.id !== employee.id &&
+        normalize(s.sector) === normalize(employee.sector) &&
+        matchPersonnelMachine(s.machine, employee.machine) &&
+        normalize(s.shift) === normalize(employee.shift) &&
+        normalize(s.role) === normalize(employee.role) &&
+        s.status !== 'Férias'
+      ) || null;
+    }
+    setVacationReturnEmployee(employee);
+    setVacationReturnSubstitute(sub || null);
+    setIsVacationReturnModalOpen(true);
+  };
+
+  const handleSaveReturnDate = async (employeeId: string, newReturnDate: string, notes?: string) => {
+    try {
+      const emp = employees.find(e => e.id === employeeId);
+      if (!emp) return;
+      const now = new Date().toISOString();
+      const oldReturnDate = emp.returnDate;
+      const docRef = doc(db, 'employees', employeeId);
+      await setDoc(docRef, { 
+        returnDate: newReturnDate, 
+        updatedAt: now,
+        userId: currentUser.uid 
+      }, { merge: true });
+
+      setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, returnDate: newReturnDate, updatedAt: now } : e));
+
+      const logId = Math.random().toString(36).substr(2, 9);
+      const detailMsg = `Retorno alterado de ${oldReturnDate ? formatDateBR(oldReturnDate) : 'Não definido'} para ${formatDateBR(newReturnDate)}${notes ? ` • Obs: ${notes}` : ''}`;
+      await setDoc(doc(db, 'personnelLogs', logId), {
+        id: logId,
+        date: now,
+        employeeName: emp.name,
+        action: 'Férias' as any,
+        details: detailMsg,
+        user: currentUser.displayName || currentUser.email || 'Admin',
+        userId: currentUser.uid
+      });
+
+      recordUserActivity({
+        user: loggedUser,
+        type: 'action',
+        screen: 'Gestão de Pessoas',
+        subScreen: 'Quadro de Funcionários',
+        action: 'Alteração de Retorno de Férias',
+        details: `${emp.name}: ${detailMsg}`
+      });
+
+      addNotification(`Data de retorno de ${emp.name} atualizada para ${formatDateBR(newReturnDate)} com sucesso!`);
+    } catch (err) {
+      console.error('Erro ao atualizar retorno de férias:', err);
+      addNotification('Erro ao salvar nova data de retorno.');
+      throw err;
+    }
+  };
+
+  const handleEndVacation = async (employeeId: string) => {
+    try {
+      const emp = employees.find(e => e.id === employeeId);
+      if (!emp) return;
+      const now = new Date().toISOString();
+      const docRef = doc(db, 'employees', employeeId);
+      await setDoc(docRef, { 
+        status: 'Ativo', 
+        returnDate: '', 
+        updatedAt: now,
+        userId: currentUser.uid 
+      }, { merge: true });
+
+      setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, status: 'Ativo', returnDate: '', updatedAt: now } : e));
+
+      const logId = Math.random().toString(36).substr(2, 9);
+      await setDoc(doc(db, 'personnelLogs', logId), {
+        id: logId,
+        date: now,
+        employeeName: emp.name,
+        action: 'Retorno Férias' as any,
+        details: `Colaborador retornou das férias e foi reativado no posto ${emp.sector} - ${emp.machine} (${emp.role})`,
+        user: currentUser.displayName || currentUser.email || 'Admin',
+        userId: currentUser.uid
+      });
+
+      recordUserActivity({
+        user: loggedUser,
+        type: 'action',
+        screen: 'Gestão de Pessoas',
+        subScreen: 'Quadro de Funcionários',
+        action: 'Encerramento de Férias',
+        details: `${emp.name} retornou ao status Ativo`
+      });
+
+      addNotification(`${emp.name} retornou das férias e foi reativado com sucesso!`);
+    } catch (err) {
+      console.error('Erro ao encerrar férias:', err);
+      addNotification('Erro ao reativar colaborador.');
+      throw err;
+    }
+  };
   
   const handleSaveVacation = async (vac: Vacation) => {
     try {
@@ -10563,14 +10672,16 @@ Atenciosamente,
     )?.isBrigadista;
 
     // Find if someone is on vacation for this slot
-    const vacationing = employees.find(e => 
+    const vacationingCandidates = employees.filter(e => 
       e.id !== emp?.id &&
       normalize(e.sector) === normalize(sector) &&
-      normalize(e.machine) === normalize(machine) &&
+      matchPersonnelMachine(e.machine, machine) &&
       normalize(e.shift) === normalize(shift) &&
-      normalize(e.role) === normalize(role || emp?.role || '') &&
       e.status === 'Férias'
     );
+    const vacationing = vacationingCandidates.find(e => 
+      normalize(e.role) === normalize(role || emp?.role || '')
+    ) || vacationingCandidates[0];
     
     return (
       <div 
@@ -10616,14 +10727,40 @@ Atenciosamente,
             )}
           </span>
           {!isVacant && vacationing && (
-            <span className="text-[10px] font-bold text-orange-600 leading-tight">
-              substituindo {formatDisplayName(vacationing.name)} férias retorna em {formatDateBR(vacationing.returnDate)}
-            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenVacationReturnModal(vacationing, emp);
+              }}
+              className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-[10px] font-black transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
+              title="Clique para ver detalhes das férias ou alterar a data de retorno"
+            >
+              <Palmtree size={11} className="text-amber-700 shrink-0" />
+              <span className="truncate max-w-[120px]">Subst. {formatDisplayName(vacationing.name)}</span>
+              <span className="text-[9px] font-bold text-amber-900 bg-white/70 px-1 rounded shrink-0">
+                {formatDateBR(vacationing.returnDate)}
+              </span>
+              <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
+            </button>
           )}
           {isVacant && vacationing && (
-            <span className="text-[10px] font-semibold text-amber-600/90 leading-tight">
-              férias: {formatDisplayName(vacationing.name)} férias retorna em {formatDateBR(vacationing.returnDate)}
-            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenVacationReturnModal(vacationing, null);
+              }}
+              className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
+              title="Clique para ver detalhes das férias ou alterar a data de retorno"
+            >
+              <Palmtree size={11} className="text-amber-600 shrink-0" />
+              <span className="truncate max-w-[120px]">Férias: {formatDisplayName(vacationing.name)}</span>
+              <span className="text-[9px] font-bold text-amber-900 bg-white/70 px-1 rounded shrink-0">
+                {formatDateBR(vacationing.returnDate)}
+              </span>
+              <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
+            </button>
           )}
           {isVacant && !vacationing && <span className="text-[9px] font-black text-slate-400/50 uppercase tracking-tighter slot-role">{label || role}</span>}
         </div>
@@ -19981,6 +20118,18 @@ Atenciosamente,
                           Baixar PDF Pessoal
                         </button>
                       )}
+                      <button 
+                        onClick={() => { setIsExtraMenuOpen(false); setPersonnelStatModalType('ferias'); }}
+                        className="w-full flex items-center justify-between px-4 py-3 text-slate-700 hover:bg-amber-50/50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Palmtree size={18} className="text-amber-600" />
+                          <span>Colaboradores em Férias</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-800">
+                          {totalFerias}
+                        </span>
+                      </button>
                       {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
                         <button 
                           onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
@@ -20084,6 +20233,16 @@ Atenciosamente,
                           </button>
                         )}
 
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelStatModalType('ferias'); }}
+                          className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-amber-50/80 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                        >
+                          <div className="p-1 rounded-lg bg-white group-hover:bg-amber-100/60 transition-colors shadow-2xs">
+                            <Palmtree size={15} className="text-amber-600" />
+                          </div>
+                          <span>Colaboradores em Férias ({totalFerias})</span>
+                        </button>
+
                         {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
                           <button 
                             onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
@@ -20175,11 +20334,12 @@ Atenciosamente,
             </div>
 
             <div ref={personnelRef} data-ref-personnel-root className="space-y-8 p-1">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-5">
                 {renderPersonnelStat('Colaboradores', totalAtivos, 'Ativos', <Users size={20} className="sm:w-6 sm:h-6"/>, 'text-blue-400', () => setPersonnelStatModalType('colaboradores'))}
                 {renderPersonnelStat('Operadores', totalOperadoresAtivos, 'Ativos', <HardHat size={20} className="sm:w-6 sm:h-6"/>, 'text-emerald-400', () => setPersonnelStatModalType('operadores'))}
                 {renderPersonnelStat('Auxiliares', totalAuxiliaresAtivos, 'Ativos', <Briefcase size={20} className="sm:w-6 sm:h-6"/>, 'text-orange-400', () => setPersonnelStatModalType('auxiliares'))}
                 {renderPersonnelStat('Vagas', totalVacancies, 'Aberto', <UserPlus size={20} className="sm:w-6 sm:h-6"/>, 'text-red-400', () => setPersonnelStatModalType('vagas'))}
+                {renderPersonnelStat('Em Férias', totalFerias, totalFerias === 1 ? 'Colaborador' : 'Colaboradores', <Palmtree size={20} className="sm:w-6 sm:h-6"/>, 'text-amber-500', () => setPersonnelStatModalType('ferias'))}
               </div>
 
             <div className="bg-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-700">
@@ -20576,6 +20736,85 @@ Atenciosamente,
                   <p className="text-sm font-bold text-slate-800 uppercase">{employeeDetailData.machine}</p>
                 </div>
               </div>
+
+              {/* Se o colaborador estiver substituindo alguém de férias, ou se ele próprio estiver de férias */}
+              {(() => {
+                const vacationingForDetail = employees.find(e => 
+                  e.id !== employeeDetailData.id &&
+                  normalize(e.sector) === normalize(employeeDetailData.sector) &&
+                  matchPersonnelMachine(e.machine, employeeDetailData.machine) &&
+                  normalize(e.shift) === normalize(employeeDetailData.shift) &&
+                  e.status === 'Férias'
+                );
+
+                if (employeeDetailData.status === 'Férias') {
+                  return (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                          <Palmtree size={18} />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">
+                            Status: Em Gozo de Férias
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            Retorno: {formatDateBR(employeeDetailData.returnDate) || 'Não definida'}
+                          </span>
+                        </div>
+                      </div>
+                      {canManagePersonnel && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDetailModalOpen(false);
+                            handleOpenVacationReturnModal(employeeDetailData, null);
+                          }}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                        >
+                          <Edit2 size={12} />
+                          <span>Alterar Retorno</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (vacationingForDetail) {
+                  return (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                          <Palmtree size={18} />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">
+                            Substituindo em Férias
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            Cobrindo {vacationingForDetail.name} (Retorno: {formatDateBR(vacationingForDetail.returnDate)})
+                          </span>
+                        </div>
+                      </div>
+                      {canManagePersonnel && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDetailModalOpen(false);
+                            handleOpenVacationReturnModal(vacationingForDetail, employeeDetailData);
+                          }}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                        >
+                          <Edit2 size={12} />
+                          <span>Alterar Retorno</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
 
               {canManagePersonnel && (
                 <button 
@@ -21108,6 +21347,21 @@ Atenciosamente,
         type={personnelStatModalType}
         employees={employees}
         vacancies={vacanciesDetailedList}
+        onManageVacation={(emp) => handleOpenVacationReturnModal(emp)}
+      />
+
+      <VacationReturnModal
+        isOpen={isVacationReturnModalOpen}
+        onClose={() => {
+          setIsVacationReturnModalOpen(false);
+          setVacationReturnEmployee(null);
+          setVacationReturnSubstitute(null);
+        }}
+        employee={vacationReturnEmployee}
+        substituteEmployee={vacationReturnSubstitute}
+        onSaveReturnDate={handleSaveReturnDate}
+        onEndVacation={handleEndVacation}
+        canManage={canManagePersonnel}
       />
 
       {/* Real-time Notifications Portal */}
