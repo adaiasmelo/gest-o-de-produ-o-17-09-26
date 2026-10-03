@@ -9,6 +9,8 @@ interface VacationReturnModalProps {
   substituteEmployee?: Employee | null;
   onSaveReturnDate: (employeeId: string, newReturnDate: string, notes?: string) => Promise<void>;
   onEndVacation: (employeeId: string) => Promise<void>;
+  onAssignSubstitute?: (substituteId: string | null) => Promise<void>;
+  availableEmployees?: Employee[];
   canManage?: boolean;
 }
 
@@ -19,6 +21,8 @@ export const VacationReturnModal: React.FC<VacationReturnModalProps> = ({
   substituteEmployee,
   onSaveReturnDate,
   onEndVacation,
+  onAssignSubstitute,
+  availableEmployees = [],
   canManage = true
 }) => {
   const [returnDate, setReturnDate] = useState<string>('');
@@ -26,6 +30,7 @@ export const VacationReturnModal: React.FC<VacationReturnModalProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmEnd, setShowConfirmEnd] = useState<boolean>(false);
+  const [isSelectingSubstitute, setIsSelectingSubstitute] = useState<boolean>(false);
 
   useEffect(() => {
     if (employee) {
@@ -173,24 +178,79 @@ export const VacationReturnModal: React.FC<VacationReturnModalProps> = ({
             </div>
 
             {/* Substituto no Posto */}
-            <div className="pt-2.5 border-t border-slate-200/60 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <UserCheck size={15} className="text-emerald-600" />
-                <span className="text-[11px] font-bold text-slate-600">
-                  Substituto Atual no Posto:
-                </span>
-              </div>
-              {substituteEmployee ? (
-                <span className="text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                  <span>{substituteEmployee.name}</span>
-                  {substituteEmployee.registration && (
-                    <span className="font-mono text-[9px] text-emerald-600">({substituteEmployee.registration})</span>
+            <div className="pt-2.5 border-t border-slate-200/60">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserCheck size={15} className="text-emerald-600" />
+                  <span className="text-[11px] font-bold text-slate-600">
+                    Substituto no Posto:
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {substituteEmployee ? (
+                    <span className="text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                      <span>{substituteEmployee.name}</span>
+                      {substituteEmployee.registration && (
+                        <span className="font-mono text-[9px] text-emerald-600">({substituteEmployee.registration})</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg">
+                      Vaga temporária sem substituto
+                    </span>
                   )}
-                </span>
-              ) : (
-                <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg">
-                  Vaga temporária sem substituto
-                </span>
+                  {canManage && onAssignSubstitute && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSelectingSubstitute(prev => !prev)}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                    >
+                      {isSelectingSubstitute ? 'Cancelar' : substituteEmployee ? 'Alterar' : '+ Definir'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Seletor de Substituto */}
+              {isSelectingSubstitute && canManage && onAssignSubstitute && (
+                <div className="mt-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 animate-in fade-in duration-150">
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                    Selecione um colaborador ativo para cobrir este posto:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <select
+                      id="vacation-substitute-select"
+                      defaultValue={substituteEmployee?.id || ''}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        await onAssignSubstitute(val || null);
+                        setIsSelectingSubstitute(false);
+                      }}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
+                    >
+                      <option value="">-- Sem substituto (manter como vaga temporária) --</option>
+                      {availableEmployees
+                        .filter(e => e.id !== employee.id && e.status === 'Ativo')
+                        .map(e => (
+                          <option key={e.id} value={e.id}>
+                            {e.name} ({e.role} • {e.sector} - {e.machine} • Turno {e.shift})
+                          </option>
+                        ))}
+                    </select>
+                    {substituteEmployee && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await onAssignSubstitute(null);
+                          setIsSelectingSubstitute(false);
+                        }}
+                        className="px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold whitespace-nowrap"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>

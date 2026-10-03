@@ -9,7 +9,7 @@ import {
   UserPlus, Download, AlertCircle, FileSpreadsheet, Scale, FileText, Menu, Fingerprint, Smartphone, Bell, Volume2, Share, ExternalLink, Mail, Copy, Filter,
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
-  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree
+  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -7799,20 +7799,51 @@ Atenciosamente,
                 doc.text(`EQUIPAMENTO: ${machine.toUpperCase()}`, 16, yPos);
                 yPos += 4;
 
+                const dismissedInGroup = employees.filter(e => 
+                    !isEmployeeSilenced(e, collaborators) &&
+                    normalize(e.sector) === normalize(sectorKey) && 
+                    matchMachinePdf(e.machine, machine) && 
+                    normalize(e.shift) === normalize(shift) && 
+                    normalize(e.status) === 'desligado'
+                ).sort((a, b) => (b.terminatedAt || b.updatedAt || '').localeCompare(a.terminatedAt || a.updatedAt || ''));
+
+                const uncoveredDismissed = dismissedInGroup.filter(d => 
+                    !machineEmps.some(e => e.replacedEmployeeId === d.id)
+                );
+
                 const slots: { name: string; role: string; status: string }[] = [];
                 
                 // Existing employees in slots
                 machineEmps.forEach(emp => {
+                    let displayName = emp.status === 'Em Contratação' ? 'VAGA EM CONTRATAÇÃO' : emp.name;
+                    if (emp.replacedEmployeeName) {
+                        displayName += ` (Subst. ${emp.replacedEmployeeName}${emp.replacedReason ? ` • Motivo: ${emp.replacedReason}` : ''})`;
+                    } else if (emp.substituteForName) {
+                        displayName += ` (Subst. ${emp.substituteForName})`;
+                    }
                     slots.push({
-                        name: emp.status === 'Em Contratação' ? 'VAGA EM CONTRATAÇÃO' : emp.name,
+                        name: displayName,
                         role: emp.role,
                         status: emp.status
                     });
                 });
 
-                // Vacancy slots up to adjustedCapacity
-                for (let i = machineEmps.length; i < adjustedCapacity; i++) {
-                    const isOpSlot = i === 0 && !machineEmps.some(e => e.role.toLowerCase().includes('operador'));
+                // Vacancy slots for uncovered dismissed employees
+                uncoveredDismissed.forEach(dis => {
+                    slots.push({
+                        name: `VAGA EM ABERTO (Subst. ${dis.name} - Desligado${dis.terminationReason ? ` • Motivo: ${dis.terminationReason}` : ''})`,
+                        role: dis.role || 'Operador / Auxiliar',
+                        status: 'Desligado'
+                    });
+                });
+
+                // Remaining generic capacity slots
+                const currentlyFilled = machineEmps.length + uncoveredDismissed.length;
+                const remainingVacant = Math.max(0, adjustedCapacity - currentlyFilled);
+                for (let i = 0; i < remainingVacant; i++) {
+                    const isOpSlot = i === 0 && 
+                        !machineEmps.some(e => e.role.toLowerCase().includes('operador')) &&
+                        !uncoveredDismissed.some(e => e.role?.toLowerCase().includes('operador'));
                     const defaultRole = isOpSlot ? 'Operador 1' : 'Auxiliar de Produção';
                     
                     slots.push({
@@ -7842,7 +7873,7 @@ Atenciosamente,
                     },
                     didParseCell: (data) => {
                         const cellText = data.row.cells[0].text[0];
-                        if (cellText && (cellText.startsWith('VAGA DISPONÍVEL') || cellText.startsWith('VAGA EM CONTRATAÇÃO'))) {
+                        if (cellText && (cellText.startsWith('VAGA DISPONÍVEL') || cellText.startsWith('VAGA EM CONTRATAÇÃO') || cellText.startsWith('VAGA EM ABERTO'))) {
                             data.cell.styles.fontStyle = 'bold';
                             data.cell.styles.textColor = [220, 38, 38];
                         }
@@ -10149,18 +10180,77 @@ Atenciosamente,
   const handleOpenVacationReturnModal = (employee: Employee, substitute?: Employee | null) => {
     let sub = substitute;
     if (sub === undefined) {
-      sub = employees.find(s => 
-        s.id !== employee.id &&
-        normalize(s.sector) === normalize(employee.sector) &&
-        matchPersonnelMachine(s.machine, employee.machine) &&
-        normalize(s.shift) === normalize(employee.shift) &&
-        normalize(s.role) === normalize(employee.role) &&
-        s.status !== 'Férias'
-      ) || null;
+      // Procura especificamente quem foi atribuído como substituto deste colaborador
+      sub = employees.find(s => s.substituteForId === employee.id && s.status !== 'Férias') || null;
     }
     setVacationReturnEmployee(employee);
     setVacationReturnSubstitute(sub || null);
     setIsVacationReturnModalOpen(true);
+  };
+
+  const handleAssignSubstitute = async (vacationingEmployeeId: string, substituteId: string | null) => {
+    try {
+      const now = new Date().toISOString();
+      const vacEmp = employees.find(e => e.id === vacationingEmployeeId);
+      if (!vacEmp) return;
+
+      // 1. Limpa qualquer substituto anterior que cobria este mesmo colaborador
+      const oldSubs = employees.filter(e => e.substituteForId === vacationingEmployeeId);
+      for (const oldSub of oldSubs) {
+        if (oldSub.id !== substituteId) {
+          const docRef = doc(db, 'employees', oldSub.id);
+          await setDoc(docRef, {
+            substituteForId: '',
+            substituteForName: '',
+            substituteReturnDate: '',
+            updatedAt: now
+          }, { merge: true });
+        }
+      }
+
+      // 2. Se foi selecionado um novo substituto
+      let newSubEmp: Employee | null = null;
+      if (substituteId) {
+        newSubEmp = employees.find(e => e.id === substituteId) || null;
+        if (newSubEmp) {
+          const docRef = doc(db, 'employees', substituteId);
+          await setDoc(docRef, {
+            substituteForId: vacEmp.id,
+            substituteForName: vacEmp.name,
+            substituteReturnDate: vacEmp.returnDate || '',
+            updatedAt: now
+          }, { merge: true });
+        }
+      }
+
+      setEmployees(prev => prev.map(e => {
+        if (e.id === substituteId && newSubEmp) {
+          return {
+            ...e,
+            substituteForId: vacEmp.id,
+            substituteForName: vacEmp.name,
+            substituteReturnDate: vacEmp.returnDate || '',
+            updatedAt: now
+          };
+        }
+        if (e.substituteForId === vacationingEmployeeId && e.id !== substituteId) {
+          return {
+            ...e,
+            substituteForId: '',
+            substituteForName: '',
+            substituteReturnDate: '',
+            updatedAt: now
+          };
+        }
+        return e;
+      }));
+
+      setVacationReturnSubstitute(newSubEmp);
+      addNotification(substituteId ? `Substituto ${newSubEmp?.name} definido para cobrir férias de ${vacEmp.name}.` : `Substituto removido para ${vacEmp.name}.`);
+    } catch (err) {
+      console.error('Erro ao definir substituto:', err);
+      addNotification('Erro ao salvar substituto.');
+    }
   };
 
   const handleSaveReturnDate = async (employeeId: string, newReturnDate: string, notes?: string) => {
@@ -10176,7 +10266,18 @@ Atenciosamente,
         userId: currentUser.uid 
       }, { merge: true });
 
-      setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, returnDate: newReturnDate, updatedAt: now } : e));
+      // Atualiza data de retorno nos substitutos vinculados
+      const subs = employees.filter(e => e.substituteForId === employeeId);
+      for (const s of subs) {
+        const sDoc = doc(db, 'employees', s.id);
+        await setDoc(sDoc, { substituteReturnDate: newReturnDate, updatedAt: now }, { merge: true });
+      }
+
+      setEmployees(prev => prev.map(e => {
+        if (e.id === employeeId) return { ...e, returnDate: newReturnDate, updatedAt: now };
+        if (e.substituteForId === employeeId) return { ...e, substituteReturnDate: newReturnDate, updatedAt: now };
+        return e;
+      }));
 
       const logId = Math.random().toString(36).substr(2, 9);
       const detailMsg = `Retorno alterado de ${oldReturnDate ? formatDateBR(oldReturnDate) : 'Não definido'} para ${formatDateBR(newReturnDate)}${notes ? ` • Obs: ${notes}` : ''}`;
@@ -10220,7 +10321,23 @@ Atenciosamente,
         userId: currentUser.uid 
       }, { merge: true });
 
-      setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, status: 'Ativo', returnDate: '', updatedAt: now } : e));
+      // Desvincula qualquer substituto que estava cobrindo este colaborador
+      const subs = employees.filter(e => e.substituteForId === employeeId);
+      for (const s of subs) {
+        const sDoc = doc(db, 'employees', s.id);
+        await setDoc(sDoc, {
+          substituteForId: '',
+          substituteForName: '',
+          substituteReturnDate: '',
+          updatedAt: now
+        }, { merge: true });
+      }
+
+      setEmployees(prev => prev.map(e => {
+        if (e.id === employeeId) return { ...e, status: 'Ativo', returnDate: '', updatedAt: now };
+        if (e.substituteForId === employeeId) return { ...e, substituteForId: '', substituteForName: '', substituteReturnDate: '', updatedAt: now };
+        return e;
+      }));
 
       const logId = Math.random().toString(36).substr(2, 9);
       await setDoc(doc(db, 'personnelLogs', logId), {
@@ -10363,136 +10480,102 @@ Atenciosamente,
     );
   };
 
-  const totalVacancies = useMemo(() => {
-    let count = 0;
-    const isOccupying = (s: string) => {
-      const n = normalize(s);
-      return ['ativo', 'atestado'].includes(n);
-    };
-    
-    // Extrusão: 24 slots (4 turns * 2 machines * 3 staff)
-    ['Cast 1', 'Cast 2'].forEach(ma => {
-      ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].forEach(sh => {
-        const occupied = employees.filter(e => normalize(e.sector) === 'extrusao' && normalize(e.machine) === normalize(ma) && normalize(e.shift) === normalize(sh) && isOccupying(e.status)).length;
-        const excluded = employees.filter(e => normalize(e.sector) === 'extrusao' && normalize(e.machine) === normalize(ma) && normalize(e.shift) === normalize(sh) && normalize(e.status) === 'vaga excluida').length;
-        count += Math.max(0, (3 - excluded) - occupied);
-      });
-    });
-    
-    // Reciclagem: 2 slots (2 turns * 1 staff)
-    ['Diurno 1', 'Diurno 2'].forEach(sh => {
-      const occupied = employees.filter(e => normalize(e.sector) === 'reciclagem' && normalize(e.machine) === 'erema 1' && normalize(e.shift) === normalize(sh) && isOccupying(e.status)).length;
-      const excluded = employees.filter(e => normalize(e.sector) === 'reciclagem' && normalize(e.machine) === 'erema 1' && normalize(e.shift) === normalize(sh) && normalize(e.status) === 'vaga excluida').length;
-      count += Math.max(0, (1 - excluded) - occupied);
-    });
-
-    // Fita:
-    ['Ghezzi', 'Lintech', 'Wultec'].forEach(ma => {
-        const isLintech = normalize(ma) === 'lintec' || normalize(ma) === 'lintech';
-        const machineShifts = isLintech ? ['Comercial'] : ['Diurno 1', 'Diurno 2'];
-        machineShifts.forEach(sh => {
-            const occupied = employees.filter(e => normalize(e.sector) === 'fita' && matchPersonnelMachine(e.machine, ma) && normalize(e.shift) === normalize(sh) && isOccupying(e.status)).length;
-            const excluded = employees.filter(e => normalize(e.sector) === 'fita' && matchPersonnelMachine(e.machine, ma) && normalize(e.shift) === normalize(sh) && normalize(e.status) === 'vaga excluida').length;
-            count += Math.max(0, (2 - excluded) - occupied);
-        });
-    });
-
-    return count;
-  }, [employees]);
-
   const vacanciesDetailedList = useMemo(() => {
     const list: VacancyDetail[] = [];
-    const isOccupying = (s: string) => {
-      const n = normalize(s);
-      return ['ativo', 'atestado'].includes(n);
-    };
 
-    // Extrusão
-    ['Cast 1', 'Cast 2'].forEach(ma => {
-      ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].forEach(sh => {
-        const machineEmps = employees.filter(e => 
-          normalize(e.sector) === 'extrusao' && 
-          normalize(e.machine) === normalize(ma) && 
-          normalize(e.shift) === normalize(sh) && 
-          ['ativo', 'atestado', 'em contratacao'].includes(normalize(e.status))
-        );
-        const excluded = employees.filter(e => 
-          normalize(e.sector) === 'extrusao' && 
-          normalize(e.machine) === normalize(ma) && 
-          normalize(e.shift) === normalize(sh) && 
-          normalize(e.status) === 'vaga excluida'
-        ).length;
-        const targetCapacity = Math.max(0, 3 - excluded);
-
-        const hiringEmps = machineEmps.filter(e => normalize(e.status) === 'em contratacao');
-        hiringEmps.forEach((h, idx) => {
-          list.push({
-            id: h.id || `ext-${ma}-${sh}-hire-${idx}`,
-            sector: 'Extrusão',
-            machine: ma,
-            shift: sh,
-            role: h.role || 'Auxiliar de Produção',
-            status: 'Em Contratação',
-            candidateName: h.name && h.name !== 'Em Contratação' ? h.name : undefined
-          });
-        });
-
-        const remainingVacant = Math.max(0, targetCapacity - machineEmps.length);
-        for (let i = 0; i < remainingVacant; i++) {
-          const hasOp = machineEmps.some(e => e.role?.toLowerCase().includes('operador'));
-          const isOpSlot = i === 0 && !hasOp;
-          list.push({
-            id: `ext-${ma}-${sh}-vac-${i}`,
-            sector: 'Extrusão',
-            machine: ma,
-            shift: sh,
-            role: isOpSlot ? 'Operador 1' : 'Auxiliar de Produção',
-            status: 'Em Aberto'
-          });
-        }
-      });
-    });
-
-    // Reciclagem
-    ['Diurno 1', 'Diurno 2'].forEach(sh => {
-      const machineEmps = employees.filter(e => 
-        normalize(e.sector) === 'reciclagem' && 
-        normalize(e.machine) === 'erema 1' && 
+    const processGroup = (sectorName: string, sectorKey: string, ma: string, sh: string, capacity: number) => {
+      const activeEmps = employees.filter(e => 
+        !isEmployeeSilenced(e, collaborators) &&
+        normalize(e.sector) === normalize(sectorKey) && 
+        matchPersonnelMachine(e.machine, ma) && 
         normalize(e.shift) === normalize(sh) && 
         ['ativo', 'atestado', 'em contratacao'].includes(normalize(e.status))
       );
       const excluded = employees.filter(e => 
-        normalize(e.sector) === 'reciclagem' && 
-        normalize(e.machine) === 'erema 1' && 
+        normalize(e.sector) === normalize(sectorKey) && 
+        matchPersonnelMachine(e.machine, ma) && 
         normalize(e.shift) === normalize(sh) && 
         normalize(e.status) === 'vaga excluida'
       ).length;
-      const targetCapacity = Math.max(0, 1 - excluded);
+      const targetCapacity = Math.max(0, capacity - excluded);
 
-      const hiringEmps = machineEmps.filter(e => normalize(e.status) === 'em contratacao');
+      // 1. Vagas em processo de contratação já criadas no posto
+      const hiringEmps = activeEmps.filter(e => normalize(e.status) === 'em contratacao');
       hiringEmps.forEach((h, idx) => {
         list.push({
-          id: h.id || `rec-erema1-${sh}-hire-${idx}`,
-          sector: 'Reciclagem',
-          machine: 'Erema 1',
+          id: h.id || `${sectorKey}-${ma}-${sh}-hire-${idx}`,
+          sector: sectorName,
+          machine: ma,
           shift: sh,
-          role: h.role || 'Operador de Reciclagem',
+          role: h.role || (sectorName === 'Extrusão' ? 'Auxiliar de Produção' : sectorName === 'Reciclagem' ? 'Operador de Reciclagem' : 'Auxiliar de Fita'),
           status: 'Em Contratação',
           candidateName: h.name && h.name !== 'Em Contratação' ? h.name : undefined
         });
       });
 
-      const remainingVacant = Math.max(0, targetCapacity - machineEmps.length);
-      for (let i = 0; i < remainingVacant; i++) {
+      // 2. Colaboradores deste posto que foram DESLIGADOS e ainda NÃO possuem substituto no turno
+      const dismissedInGroup = employees.filter(e => 
+        !isEmployeeSilenced(e, collaborators) &&
+        normalize(e.sector) === normalize(sectorKey) && 
+        matchPersonnelMachine(e.machine, ma) && 
+        normalize(e.shift) === normalize(sh) && 
+        normalize(e.status) === 'desligado'
+      ).sort((a, b) => (b.terminatedAt || b.updatedAt || '').localeCompare(a.terminatedAt || a.updatedAt || ''));
+
+      const uncoveredDismissed = dismissedInGroup.filter(d => 
+        !activeEmps.some(e => e.replacedEmployeeId === d.id)
+      );
+
+      // CADA colaborador desligado sem substituto gera uma vaga em aberto explícita por desligamento
+      uncoveredDismissed.forEach((dis) => {
         list.push({
-          id: `rec-erema1-${sh}-vac-${i}`,
-          sector: 'Reciclagem',
-          machine: 'Erema 1',
+          id: `${sectorKey}-${ma}-${sh}-dis-${dis.id}`,
+          sector: sectorName,
+          machine: ma,
           shift: sh,
-          role: 'Operador / Auxiliar Reciclagem',
+          role: dis.role || (sectorName === 'Extrusão' ? 'Auxiliar de Produção' : 'Operador 1'),
+          status: 'Em Aberto',
+          dismissedId: dis.id,
+          dismissedName: dis.name,
+          dismissedReason: dis.terminationReason
+        });
+      });
+
+      // 3. Vagas restantes genéricas para completar a capacidade nominal da máquina
+      const currentlyFilled = activeEmps.length + uncoveredDismissed.length;
+      const remainingGenericVacant = Math.max(0, targetCapacity - currentlyFilled);
+
+      for (let i = 0; i < remainingGenericVacant; i++) {
+        const hasOp = activeEmps.some(e => e.role?.toLowerCase().includes('operador')) ||
+                      uncoveredDismissed.some(e => e.role?.toLowerCase().includes('operador'));
+        const isOpSlot = i === 0 && !hasOp;
+        const defaultRole = sectorName === 'Extrusão' 
+          ? (isOpSlot ? 'Operador 1' : 'Auxiliar de Produção') 
+          : sectorName === 'Reciclagem' 
+            ? 'Operador de Reciclagem' 
+            : (isOpSlot ? 'Operador de Fita' : 'Auxiliar de Fita');
+
+        list.push({
+          id: `${sectorKey}-${ma}-${sh}-vac-${i}`,
+          sector: sectorName,
+          machine: ma,
+          shift: sh,
+          role: defaultRole,
           status: 'Em Aberto'
         });
       }
+    };
+
+    // Extrusão
+    ['Cast 1', 'Cast 2'].forEach(ma => {
+      ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].forEach(sh => {
+        processGroup('Extrusão', 'extrusao', ma, sh, 3);
+      });
+    });
+
+    // Reciclagem
+    ['Diurno 1', 'Diurno 2'].forEach(sh => {
+      processGroup('Reciclagem', 'reciclagem', 'Erema 1', sh, 1);
     });
 
     // Fita
@@ -10500,49 +10583,16 @@ Atenciosamente,
       const isLintech = normalize(ma) === 'lintec' || normalize(ma) === 'lintech';
       const machineShifts = isLintech ? ['Comercial'] : ['Diurno 1', 'Diurno 2'];
       machineShifts.forEach(sh => {
-        const machineEmps = employees.filter(e => 
-          normalize(e.sector) === 'fita' && 
-          matchPersonnelMachine(e.machine, ma) && 
-          normalize(e.shift) === normalize(sh) && 
-          ['ativo', 'atestado', 'em contratacao'].includes(normalize(e.status))
-        );
-        const excluded = employees.filter(e => 
-          normalize(e.sector) === 'fita' && 
-          matchPersonnelMachine(e.machine, ma) && 
-          normalize(e.shift) === normalize(sh) && 
-          normalize(e.status) === 'vaga excluida'
-        ).length;
-        const targetCapacity = Math.max(0, 2 - excluded);
-
-        const hiringEmps = machineEmps.filter(e => normalize(e.status) === 'em contratacao');
-        hiringEmps.forEach((h, idx) => {
-          list.push({
-            id: h.id || `fita-${ma}-${sh}-hire-${idx}`,
-            sector: 'Fita',
-            machine: ma,
-            shift: sh,
-            role: h.role || 'Auxiliar de Fita',
-            status: 'Em Contratação',
-            candidateName: h.name && h.name !== 'Em Contratação' ? h.name : undefined
-          });
-        });
-
-        const remainingVacant = Math.max(0, targetCapacity - machineEmps.length);
-        for (let i = 0; i < remainingVacant; i++) {
-          list.push({
-            id: `fita-${ma}-${sh}-vac-${i}`,
-            sector: 'Fita',
-            machine: ma,
-            shift: sh,
-            role: 'Auxiliar / Operador de Fita',
-            status: 'Em Aberto'
-          });
-        }
+        processGroup('Fita', 'fita', ma, sh, 2);
       });
     });
 
     return list;
-  }, [employees]);
+  }, [employees, collaborators]);
+
+  const totalVacancies = useMemo(() => {
+    return vacanciesDetailedList.length;
+  }, [vacanciesDetailedList]);
 
   const formatDateBR = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -10559,7 +10609,9 @@ Atenciosamente,
     targetMachine: string,
     targetShift: string,
     targetRole?: string,
-    targetEmpId?: string
+    targetEmpId?: string,
+    vacationingToSubstitute?: Employee | null,
+    dismissedToSubstitute?: Employee | null
   ) => {
     if (!draggedId || !canManagePersonnel) return;
     const draggedEmp = employees.find(x => x.id === draggedId);
@@ -10571,7 +10623,50 @@ Atenciosamente,
       normalize(draggedEmp.shift) === normalize(targetShift);
 
     if (isSameGroup) {
-      if (!targetEmpId || targetEmpId === draggedId) return;
+      if (!targetEmpId || targetEmpId === draggedId) {
+        if (vacationingToSubstitute || dismissedToSubstitute) {
+          const updatedEmp: Employee = {
+            ...draggedEmp,
+            substituteForId: vacationingToSubstitute ? vacationingToSubstitute.id : (draggedEmp.substituteForId || ''),
+            substituteForName: vacationingToSubstitute ? vacationingToSubstitute.name : (draggedEmp.substituteForName || ''),
+            substituteReturnDate: vacationingToSubstitute ? (vacationingToSubstitute.returnDate || '') : (draggedEmp.substituteReturnDate || ''),
+            replacedEmployeeId: dismissedToSubstitute ? dismissedToSubstitute.id : (draggedEmp.replacedEmployeeId || ''),
+            replacedEmployeeName: dismissedToSubstitute ? dismissedToSubstitute.name : (draggedEmp.replacedEmployeeName || ''),
+            replacedReason: dismissedToSubstitute ? (dismissedToSubstitute.terminationReason || '') : (draggedEmp.replacedReason || '')
+          };
+          setEmployees(prev => prev.map(item => item.id === draggedId ? updatedEmp : item));
+          try {
+            const docRef = doc(db, 'employees', draggedId);
+            await setDoc(docRef, cleanUndefined(updatedEmp), { merge: true });
+
+            if (dismissedToSubstitute) {
+              const logId = Math.random().toString(36).substr(2, 9);
+              const detailsLog = `${updatedEmp.name} em substituição a ${dismissedToSubstitute.name}, que foi desligado. Motivo: ${dismissedToSubstitute.terminationReason || 'Não informado'}`;
+              await setDoc(doc(db, 'personnelLogs', logId), {
+                id: logId,
+                date: new Date().toISOString(),
+                employeeName: updatedEmp.name,
+                action: 'Transferência' as any,
+                details: detailsLog,
+                user: currentUser?.displayName || currentUser?.email || 'Admin',
+                userId: currentUser?.uid || ''
+              });
+
+              recordUserActivity({
+                user: loggedUser,
+                type: 'action',
+                screen: 'Gestão de Pessoas',
+                subScreen: 'Quadro de Funcionários',
+                action: 'Alteração no Quadro',
+                details: detailsLog
+              });
+            }
+          } catch (err) {
+            console.error('Erro ao definir substituto:', err);
+          }
+        }
+        return;
+      }
 
       const cardEmps = employees.filter(x => 
         normalize(x.sector) === normalize(targetSector) && 
@@ -10646,7 +10741,13 @@ Atenciosamente,
         sector: targetSector,
         machine: targetMachine,
         shift: targetShift,
-        orderIndex: newOrderIndex
+        orderIndex: newOrderIndex,
+        substituteForId: vacationingToSubstitute ? vacationingToSubstitute.id : '',
+        substituteForName: vacationingToSubstitute ? vacationingToSubstitute.name : '',
+        substituteReturnDate: vacationingToSubstitute ? (vacationingToSubstitute.returnDate || '') : '',
+        replacedEmployeeId: dismissedToSubstitute ? dismissedToSubstitute.id : '',
+        replacedEmployeeName: dismissedToSubstitute ? dismissedToSubstitute.name : '',
+        replacedReason: dismissedToSubstitute ? (dismissedToSubstitute.terminationReason || '') : ''
       };
 
       // Atualização otimista imediata na interface
@@ -10654,17 +10755,53 @@ Atenciosamente,
 
       try {
         const docRef = doc(db, 'employees', draggedId);
-        await setDoc(docRef, updatedEmp, { merge: true });
+        await setDoc(docRef, cleanUndefined(updatedEmp), { merge: true });
+
+        const logId = Math.random().toString(36).substr(2, 9);
+        const detailsLog = dismissedToSubstitute 
+          ? `${updatedEmp.name} em substituição a ${dismissedToSubstitute.name}, que foi desligado. Motivo: ${dismissedToSubstitute.terminationReason || 'Não informado'}`
+          : `Para ${targetSector} - ${targetMachine} (${targetShift})`;
+
+        await setDoc(doc(db, 'personnelLogs', logId), {
+          id: logId,
+          date: new Date().toISOString(),
+          employeeName: updatedEmp.name,
+          action: 'Transferência' as any,
+          details: detailsLog,
+          user: currentUser?.displayName || currentUser?.email || 'Admin',
+          userId: currentUser?.uid || ''
+        });
+
+        recordUserActivity({
+          user: loggedUser,
+          type: 'action',
+          screen: 'Gestão de Pessoas',
+          subScreen: 'Quadro de Funcionários',
+          action: 'Alteração no Quadro',
+          details: `${updatedEmp.name} - Transferência (${detailsLog})`
+        });
       } catch (err) {
         console.error('Erro ao transferir colaborador no banco de dados:', err);
       }
     }
   };
 
-  const renderSlot = (sector: string, machine: string, shift: string, role: string, label: string, employee?: Employee, keySuffix?: string) => {
+  const renderSlot = (
+    sector: string, 
+    machine: string, 
+    shift: string, 
+    role: string, 
+    label: string, 
+    employee?: Employee, 
+    keySuffix?: string,
+    vacationingEmployee?: Employee,
+    dismissedEmployee?: Employee
+  ) => {
     const emp = employee;
     const isHiring = emp?.status === 'Em Contratação';
     const isVacant = !emp || isHiring;
+    const isDismissedVacant = isVacant && !!dismissedEmployee;
+    const isVacationVacant = isVacant && !!vacationingEmployee;
 
     // Determine if employee is part of the Fire Brigade
     const isBrigadista = emp && collaborators.find(c => 
@@ -10672,17 +10809,10 @@ Atenciosamente,
       (emp.registration && c.registration === emp.registration)
     )?.isBrigadista;
 
-    // Find if someone is on vacation for this slot
-    const vacationingCandidates = employees.filter(e => 
-      e.id !== emp?.id &&
-      normalize(e.sector) === normalize(sector) &&
-      matchPersonnelMachine(e.machine, machine) &&
-      normalize(e.shift) === normalize(shift) &&
-      e.status === 'Férias'
-    );
-    const vacationing = vacationingCandidates.find(e => 
-      normalize(e.role) === normalize(role || emp?.role || '')
-    ) || vacationingCandidates[0];
+    // Colaborador ativo que está cobrindo alguém em férias (somente se houver vínculo explícito)
+    const vacationingCovered = emp?.substituteForId 
+      ? employees.find(v => v.id === emp.substituteForId && v.status === 'Férias') 
+      : null;
     
     return (
       <div 
@@ -10693,7 +10823,18 @@ Atenciosamente,
               setIsDetailModalOpen(true);
             } else {
               if (!canManagePersonnel) return;
-              setSelectedSlot({ sector, machine, shift, role: isHiring ? emp.role : role });
+              setSelectedSlot({ 
+                sector, 
+                machine, 
+                shift, 
+                role: dismissedEmployee ? (dismissedEmployee.role || role) : (isHiring ? emp.role : role),
+                vacationingId: vacationingEmployee?.id,
+                vacationingName: vacationingEmployee?.name,
+                vacationingReturnDate: vacationingEmployee?.returnDate,
+                dismissedId: dismissedEmployee?.id,
+                dismissedName: dismissedEmployee?.name,
+                dismissedReason: dismissedEmployee?.terminationReason
+              });
               if (isHiring && emp) setSelectedEmployee(emp);
               setIsEmployeeModalOpen(true); 
             }
@@ -10716,62 +10857,129 @@ Atenciosamente,
           e.stopPropagation();
           const draggedId = e.dataTransfer.getData('text/plain');
           if (!draggedId || (emp && draggedId === emp.id)) return;
-          await handleMoveEmployee(draggedId, sector, machine, shift, role, emp?.id);
+          await handleMoveEmployee(draggedId, sector, machine, shift, role, emp?.id, vacationingEmployee, dismissedEmployee);
         }}
-        className={`flex items-center justify-between p-2.5 rounded-xl transition-all border cursor-pointer select-none active:opacity-60 hover:shadow-md ${isVacant ? (isHiring ? 'bg-orange-50/40 border-orange-200 hover:border-orange-300' : 'bg-red-50/10 border-dashed border-red-100 hover:border-blue-300') : 'bg-white border-slate-100 hover:border-blue-400 shadow-sm'}`}
+        className={`flex items-center justify-between p-2.5 rounded-xl transition-all border cursor-pointer select-none active:opacity-60 hover:shadow-md ${
+          isDismissedVacant 
+            ? 'bg-rose-50/60 border-rose-300 hover:border-rose-500 shadow-2xs' 
+            : isVacationVacant 
+              ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300' 
+              : isVacant 
+                ? (isHiring ? 'bg-orange-50/40 border-orange-200 hover:border-orange-300' : 'bg-red-50/10 border-dashed border-red-100 hover:border-blue-300') 
+                : 'bg-white border-slate-100 hover:border-blue-400 shadow-sm'
+        }`}
       >
-        <div className="flex flex-col gap-0.5">
-          <span className={`text-[13px] font-bold truncate max-w-[150px] slot-name flex items-center gap-1.5 ${isVacant ? (isHiring ? 'text-orange-600' : 'text-slate-400 italic') : 'text-slate-800'}`}>
-            {isHiring ? `Em Contratação` : !emp ? `(Vaga)` : formatDisplayName(emp.name)}
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-2">
+          <span className={`text-[13px] font-bold truncate max-w-[155px] slot-name flex items-center gap-1.5 ${
+            isDismissedVacant 
+              ? 'text-rose-600 font-black' 
+              : isVacationVacant 
+                ? 'text-amber-800' 
+                : isHiring 
+                  ? 'text-orange-600' 
+                  : isVacant 
+                    ? 'text-slate-400 italic' 
+                    : 'text-slate-800'
+          }`}>
+            {isDismissedVacant 
+              ? 'Vaga em Aberto'
+              : isVacationVacant 
+                ? `Substitui ${formatDisplayName(vacationingEmployee.name)}` 
+                : isHiring 
+                  ? `Em Contratação` 
+                  : !emp 
+                    ? `(Vaga)` 
+                    : formatDisplayName(emp.name)}
             {!isVacant && isBrigadista && (
               <span className="text-red-500 animate-pulse shrink-0" title="Membro da Brigada de Incêndio" style={{ animationDuration: '2s' }}>🔥</span>
             )}
           </span>
-          {!isVacant && vacationing && (
+
+          {/* 1. SE HOUVER ALGUÉM ENTRANDO NO TURNO PARA SUBSTITUIR O COLABORADOR EM FÉRIAS */}
+          {!isVacant && vacationingCovered && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                handleOpenVacationReturnModal(vacationing, emp);
+                handleOpenVacationReturnModal(vacationingCovered, emp);
               }}
               className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-[10px] font-black transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
               title="Clique para ver detalhes das férias ou alterar a data de retorno"
             >
               <Palmtree size={11} className="text-amber-700 shrink-0" />
-              <span className="truncate max-w-[120px]">Subst. {formatDisplayName(vacationing.name)}</span>
+              <span className="truncate max-w-[130px]">Em substituição a {formatDisplayName(vacationingCovered.name)}</span>
               <span className="text-[9px] font-bold text-amber-900 bg-white/70 px-1 rounded shrink-0">
-                {formatDateBR(vacationing.returnDate)}
+                {formatDateBR(vacationingCovered.returnDate || emp.substituteReturnDate)}
               </span>
               <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
             </button>
           )}
-          {isVacant && vacationing && (
+
+          {/* 2. CARD VAZIO DE QUEM ESTÁ DE FÉRIAS (SEM SUBSTITUTO NO TURNO) */}
+          {isVacationVacant && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                handleOpenVacationReturnModal(vacationing, null);
+                handleOpenVacationReturnModal(vacationingEmployee, null);
               }}
               className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
               title="Clique para ver detalhes das férias ou alterar a data de retorno"
             >
               <Palmtree size={11} className="text-amber-600 shrink-0" />
-              <span className="truncate max-w-[120px]">Férias: {formatDisplayName(vacationing.name)}</span>
-              <span className="text-[9px] font-bold text-amber-900 bg-white/70 px-1 rounded shrink-0">
-                {formatDateBR(vacationing.returnDate)}
+              <span className="text-[9px] font-bold text-amber-900">
+                Retorno: {formatDateBR(vacationingEmployee.returnDate)}
               </span>
               <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
             </button>
           )}
-          {isVacant && !vacationing && <span className="text-[9px] font-black text-slate-400/50 uppercase tracking-tighter slot-role">{label || role}</span>}
+
+          {/* 3. CARD VAZIO DE QUEM FOI DESLIGADO (APENAS VAGA EM ABERTO, NOME E STATUS DESLIGADO) */}
+          {isDismissedVacant && (
+            <div 
+              className="mt-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-100/80 border border-rose-200 text-rose-800 text-[10px] font-bold text-left max-w-full shadow-2xs"
+              title={`Colaborador desligado: ${dismissedEmployee.name}.${dismissedEmployee.terminationReason ? ` Motivo: ${dismissedEmployee.terminationReason}.` : ''} Clique para ver detalhes e alocar substituto.`}
+            >
+              <UserX size={11} className="text-rose-600 shrink-0" />
+              <span className="truncate max-w-[130px] font-bold text-rose-950">
+                {formatDisplayName(dismissedEmployee.name)}
+              </span>
+              <span className="text-[9px] font-black uppercase text-rose-700 bg-white/90 px-1 py-0.2 rounded border border-rose-200 shrink-0">
+                Desligado
+              </span>
+            </div>
+          )}
+
+          {/* 4. COLABORADOR ATIVO QUE ASSUMIU A VAGA DE ALGUÉM DESLIGADO */}
+          {!isVacant && emp?.replacedEmployeeName && (
+            <div 
+              className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-[9px] font-bold text-left max-w-full"
+              title={`Em substituição a ${emp.replacedEmployeeName} (Desligado)${emp.replacedReason ? ` • Motivo: ${emp.replacedReason}` : ''}`}
+            >
+              <UserCheck size={10} className="text-emerald-600 shrink-0" />
+              <span className="truncate max-w-[125px]">Subst. {formatDisplayName(emp.replacedEmployeeName)}</span>
+            </div>
+          )}
+
+          {isVacant && !vacationingEmployee && !dismissedEmployee && (
+            <span className="text-[9px] font-black text-slate-400/50 uppercase tracking-tighter slot-role">{label || role}</span>
+          )}
         </div>
         {!isVacant ? (
           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter shrink-0 slot-tag ${emp.role.toLowerCase().includes('operador') ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
             {emp.role.includes('Operador') ? 'OPE' : emp.role.includes('Auxiliar') ? 'AUX' : emp.role.substring(0,3).toUpperCase()}
           </span>
         ) : (
-          <div className="flex items-center gap-1.5">
-            {isHiring ? <UserPlus size={12} className="text-orange-400" /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isDismissedVacant ? (
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter bg-rose-200 text-rose-800 border border-rose-300">
+                {label || (role.toLowerCase().includes('operador') ? 'OPE' : 'AUX')}
+              </span>
+            ) : isHiring ? (
+              <UserPlus size={12} className="text-orange-400" />
+            ) : (
+              <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
+            )}
             {canManagePersonnel && (
               <button
                 onClick={(e) => {
@@ -10810,6 +11018,38 @@ Atenciosamente,
       const getRank = (r: string) => (r || '').toLowerCase().includes('operador') ? 0 : 1;
       return getRank(a.role) - getRank(b.role);
     });
+
+    // Colaboradores deste posto que estão em FÉRIAS
+    const vacationingInGroup = employees.filter(e => 
+      !isEmployeeSilenced(e, collaborators) &&
+      normalize(e.sector) === normalize(sector) && 
+      matchPersonnelMachine(e.machine, machine) && 
+      normalize(e.shift) === normalize(shift) && 
+      normalize(e.status) === 'ferias'
+    );
+
+    // Identifica quais colaboradores de férias NÃO possuem um substituto ativo cobrindo seu posto
+    const uncoveredVacationing = vacationingInGroup.filter(v => 
+      !machineEmps.some(e => e.substituteForId === v.id)
+    );
+
+    // Colaboradores deste posto que foram DESLIGADOS
+    const dismissedInGroup = employees.filter(e => 
+      !isEmployeeSilenced(e, collaborators) &&
+      normalize(e.sector) === normalize(sector) && 
+      matchPersonnelMachine(e.machine, machine) && 
+      normalize(e.shift) === normalize(shift) && 
+      normalize(e.status) === 'desligado'
+    ).sort((a, b) => {
+      const dateA = a.terminatedAt || a.updatedAt || '';
+      const dateB = b.terminatedAt || b.updatedAt || '';
+      return dateB.localeCompare(dateA);
+    });
+
+    // Identifica quais colaboradores desligados NÃO possuem substituto cobrindo sua vaga
+    const uncoveredDismissed = dismissedInGroup.filter(d => 
+      !machineEmps.some(e => e.replacedEmployeeId === d.id)
+    );
     
     const excludedCount = employees.filter(e =>
       normalize(e.sector) === normalize(sector) && 
@@ -10819,16 +11059,34 @@ Atenciosamente,
     ).length;
 
     const adjustedCapacity = Math.max(0, minCapacity - excludedCount);
-    const slots = [];
+    const slots: React.ReactNode[] = [];
     
-    // Render existing employees
+    // 1. Renderiza colaboradores ativos no posto (incluindo quem for substituto)
     machineEmps.forEach(emp => {
       slots.push(renderSlot(sector, machine, shift, emp.role, '', emp));
     });
+
+    // 2. Para cada colaborador em férias que NÃO tem substituto no turno, renderiza o slot de férias dele
+    uncoveredVacationing.forEach((vacEmp) => {
+      const isOp = (vacEmp.role || '').toLowerCase().includes('operador');
+      const label = isOp ? 'OPE' : 'AUX';
+      slots.push(renderSlot(sector, machine, shift, vacEmp.role || 'Operador 1', label, undefined, `-vacation-${vacEmp.id}`, vacEmp));
+    });
+
+    // 3. Para cada colaborador desligado que NÃO tem substituto no turno, renderiza o slot de vaga em aberto por desligamento
+    uncoveredDismissed.forEach((disEmp) => {
+      const isOp = (disEmp.role || '').toLowerCase().includes('operador');
+      const label = isOp ? 'OPE' : 'AUX';
+      slots.push(renderSlot(sector, machine, shift, disEmp.role || (isOp ? 'Operador 1' : 'Auxiliar de Produção'), label, undefined, `-dismissed-${disEmp.id}`, undefined, disEmp));
+    });
     
-    // Render remaining slots as vacancies up to adjustedCapacity
-    for (let i = machineEmps.length; i < adjustedCapacity; i++) {
-        const isOpSlot = i === 0 && !machineEmps.some(e => e.role.toLowerCase().includes('operador'));
+    // 4. Renderiza vagas restantes genéricas para completar a capacidade nominal da máquina
+    const totalFilled = machineEmps.length + uncoveredVacationing.length + uncoveredDismissed.length;
+    for (let i = totalFilled; i < adjustedCapacity; i++) {
+        const isOpSlot = i === 0 && 
+          !machineEmps.some(e => e.role.toLowerCase().includes('operador')) && 
+          !uncoveredVacationing.some(e => (e.role || '').toLowerCase().includes('operador')) &&
+          !uncoveredDismissed.some(e => (e.role || '').toLowerCase().includes('operador'));
         const defaultRole = isOpSlot ? 'Operador 1' : 'Auxiliar de Produção';
         const label = isOpSlot ? 'OPE' : 'AUX';
         slots.push(renderSlot(sector, machine, shift, defaultRole, label, undefined, `-${i}`));
@@ -20784,13 +21042,9 @@ Atenciosamente,
 
               {/* Se o colaborador estiver substituindo alguém de férias, ou se ele próprio estiver de férias */}
               {(() => {
-                const vacationingForDetail = employees.find(e => 
-                  e.id !== employeeDetailData.id &&
-                  normalize(e.sector) === normalize(employeeDetailData.sector) &&
-                  matchPersonnelMachine(e.machine, employeeDetailData.machine) &&
-                  normalize(e.shift) === normalize(employeeDetailData.shift) &&
-                  e.status === 'Férias'
-                );
+                const vacationingForDetail = employeeDetailData.substituteForId 
+                  ? employees.find(e => e.id === employeeDetailData.substituteForId && e.status === 'Férias') 
+                  : null;
 
                 if (employeeDetailData.status === 'Férias') {
                   return (
@@ -20860,6 +21114,25 @@ Atenciosamente,
 
                 return null;
               })()}
+
+              {employeeDetailData.replacedEmployeeName && (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                      <UserX size={18} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase text-rose-700 tracking-wider block">
+                        Substituição de Colaborador Desligado
+                      </span>
+                      <span className="text-xs font-bold text-slate-800">
+                        Assumiu a vaga de <strong>{employeeDetailData.replacedEmployeeName}</strong>
+                        {employeeDetailData.replacedReason ? ` • Motivo: ${employeeDetailData.replacedReason}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {canManagePersonnel && (
                 <button 
@@ -21054,31 +21327,40 @@ Atenciosamente,
             if (action === 'Contratação') {
               // Quando salva um colaborador, garante que ele existe na base central se for adicionado por nome manualmente (embora agora use seleção)
               // Mas aqui o EmployeeModal já retorna o collaboratorId se selecionado.
-              await setDoc(doc(db, 'employees', empId), { ...data, id: empId, updatedAt: now, userId: currentUser.uid });
+              await setDoc(doc(db, 'employees', empId), cleanUndefined({ ...data, id: empId, updatedAt: now, userId: currentUser.uid }));
             } else if (action === 'Exclusão') {
               await deleteDoc(doc(db, 'employees', empId));
             } else if (action === 'Desligamento') {
-              await setDoc(doc(db, 'employees', empId), { 
+              const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || 'Não informado';
+              await setDoc(doc(db, 'employees', empId), cleanUndefined({ 
                 ...data, 
-                status: 'Em Contratação', 
-                name: 'Em Contratação',
+                status: 'Desligado', 
+                name: data.name,
+                terminationReason,
+                statusDetails: terminationReason,
+                terminatedAt: data.terminatedAt || now,
                 updatedAt: now, 
                 userId: currentUser.uid 
-              }, { merge: true });
+              }), { merge: true });
             } else {
-              await setDoc(doc(db, 'employees', empId), { ...data, updatedAt: now, userId: currentUser.uid }, { merge: true });
+              await setDoc(doc(db, 'employees', empId), cleanUndefined({ ...data, updatedAt: now, userId: currentUser.uid }), { merge: true });
             }
             
             const logId = Math.random().toString(36).substr(2, 9);
-            await setDoc(doc(db, 'personnelLogs', logId), {
+            const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || '';
+            const logDetails = action === 'Desligamento' 
+              ? (terminationReason ? `Motivo: ${terminationReason}` : (details || 'Desligamento de colaborador'))
+              : (details || '');
+
+            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
               id: logId,
               date: now,
               employeeName: data.name || 'Vaga',
               action: action as any,
-              details: details || '',
+              details: logDetails,
               user: currentUser.displayName || currentUser.email || 'Admin',
               userId: currentUser.uid
-            });
+            }));
 
             recordUserActivity({
               user: loggedUser,
@@ -21086,7 +21368,7 @@ Atenciosamente,
               screen: 'Gestão de Pessoas',
               subScreen: 'Quadro de Funcionários',
               action: action === 'Contratação' ? 'Contratação de Funcionário' : action === 'Desligamento' ? 'Desligamento de Funcionário' : action === 'Exclusão' ? 'Exclusão de Funcionário' : 'Alteração no Quadro',
-              details: `${data.name || 'Vaga'} - ${action}${details ? ` (${details})` : ''}`
+              details: `${data.name || 'Vaga'} - ${action}${logDetails ? ` (${logDetails})` : ''}`
             });
 
             // Local simulate lists for the operators sync function
@@ -21096,7 +21378,14 @@ Atenciosamente,
             if (action === 'Exclusão') {
               if (empIdx >= 0) updatedEmployeesList.splice(empIdx, 1);
             } else if (action === 'Desligamento') {
-              const terminatedEmp = { ...employeeMerged, status: 'Em Contratação', name: 'Em Contratação' } as Employee;
+              const terminatedEmp = { 
+                ...employeeMerged, 
+                status: 'Desligado', 
+                name: data.name,
+                terminationReason: data.terminationReason || terminationReason,
+                statusDetails: data.terminationReason || terminationReason,
+                terminatedAt: data.terminatedAt || now
+              } as Employee;
               if (empIdx >= 0) updatedEmployeesList[empIdx] = terminatedEmp;
               else updatedEmployeesList.push(terminatedEmp);
             } else {
@@ -21221,10 +21510,10 @@ Atenciosamente,
               userId: currentUser.uid,
               updatedAt: now
             };
-            await setDoc(doc(db, 'employees', id), empData);
+            await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
             
             const logId = Math.random().toString(36).substring(2, 15);
-            await setDoc(doc(db, 'personnelLogs', logId), {
+            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
               id: logId,
               userId: currentUser.uid,
               date: now,
@@ -21232,7 +21521,7 @@ Atenciosamente,
               action: 'Contratação' as any,
               details: `Inclusão rápida via Quadro de Pessoal (${newEmp.sector} - ${newEmp.machine})`,
               user: loggedUser?.name || 'Sistema'
-            });
+            }));
             
             const simulatedEmps = [...employees, empData as Employee];
             await syncOperatorsSetting(simulatedEmps);
@@ -21266,10 +21555,10 @@ Atenciosamente,
                 userId: currentUser.uid,
                 updatedAt: now
               };
-              await setDoc(doc(db, 'employees', id), empData);
+              await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
               
               const logId = Math.random().toString(36).substring(2, 15);
-              await setDoc(doc(db, 'personnelLogs', logId), {
+              await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
                 id: logId,
                 userId: currentUser.uid,
                 date: now,
@@ -21277,7 +21566,7 @@ Atenciosamente,
                 action: 'Contratação' as any,
                 details: `Inclusão direta via Banco de Dados (${newEmp.sector} - ${newEmp.machine})`,
                 user: loggedUser?.name || 'Sistema'
-              });
+              }));
               
               const simulatedEmps = [...employees, empData as Employee];
               await syncOperatorsSetting(simulatedEmps);
@@ -21321,8 +21610,11 @@ Atenciosamente,
                 try {
                   const now = new Date().toISOString();
                   await setDoc(doc(db, 'employees', id), { 
-                    status: 'Em Contratação', 
-                    name: 'Em Contratação',
+                    status: 'Desligado', 
+                    name: name,
+                    terminationReason: 'Desligamento direto via Banco de Dados',
+                    statusDetails: 'Desligamento direto via Banco de Dados',
+                    terminatedAt: now,
                     updatedAt: now, 
                     userId: currentUser.uid 
                   }, { merge: true });
@@ -21334,11 +21626,18 @@ Atenciosamente,
                     date: now,
                     employeeName: name,
                     action: 'Desligamento' as any,
-                    details: `Desligamento via Banco de Dados (vaga aberta)`,
+                    details: `Motivo: Desligamento direto via Banco de Dados`,
                     user: loggedUser?.name || 'Sistema'
                   });
                   
-                  const simulatedEmps = employees.map(e => e.id === id ? { ...e, name: 'Em Contratação', status: 'Em Contratação' as any } : e);
+                  const simulatedEmps = employees.map(e => e.id === id ? { 
+                    ...e, 
+                    name: name, 
+                    status: 'Desligado' as any,
+                    terminationReason: 'Desligamento direto via Banco de Dados',
+                    statusDetails: 'Desligamento direto via Banco de Dados',
+                    terminatedAt: now
+                  } : e);
                   await syncOperatorsSetting(simulatedEmps);
                 } catch (err) {
                   console.error(err);
@@ -21393,6 +21692,19 @@ Atenciosamente,
         employees={employees}
         vacancies={vacanciesDetailedList}
         onManageVacation={(emp) => handleOpenVacationReturnModal(emp)}
+        onSelectVacancy={(v) => {
+          setPersonnelStatModalType(null);
+          setSelectedSlot({
+            sector: v.sector,
+            machine: v.machine,
+            shift: v.shift,
+            role: v.role,
+            dismissedId: v.dismissedId,
+            dismissedName: v.dismissedName,
+            dismissedReason: v.dismissedReason
+          });
+          setIsEmployeeModalOpen(true);
+        }}
       />
 
       <VacationReturnModal
@@ -21406,6 +21718,8 @@ Atenciosamente,
         substituteEmployee={vacationReturnSubstitute}
         onSaveReturnDate={handleSaveReturnDate}
         onEndVacation={handleEndVacation}
+        onAssignSubstitute={(subId) => vacationReturnEmployee ? handleAssignSubstitute(vacationReturnEmployee.id, subId) : Promise.resolve()}
+        availableEmployees={employees}
         canManage={canManagePersonnel}
       />
 

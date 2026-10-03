@@ -106,11 +106,19 @@ export interface Employee {
   silencedAt?: string;
   silenceReason?: string;
   orderIndex?: number;
+  substituteForId?: string; // ID do colaborador em férias que este está substituindo
+  substituteForName?: string; // Nome do colaborador em férias que este está substituindo
+  substituteReturnDate?: string; // Data prevista de retorno das férias
   inicioPeriodo?: string;
   vencPeriodo?: string;
   dataLimiteGozo?: string;
   sldVenc?: number;
   inicioGozoPrevisto?: string | number;
+  terminationReason?: string; // Motivo do desligamento apontado no momento do desligamento
+  terminatedAt?: string; // Data/hora do desligamento
+  replacedEmployeeId?: string; // ID do colaborador desligado que este substituiu
+  replacedEmployeeName?: string; // Nome do colaborador desligado que este substituiu
+  replacedReason?: string; // Motivo do desligamento do colaborador substituído
 }
 
 export interface Vacation {

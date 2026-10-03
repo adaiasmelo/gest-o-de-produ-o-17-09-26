@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Users, HardHat, Briefcase, UserPlus, Factory, Building2, Clock, CheckCircle2, AlertCircle, Copy, Check, Palmtree, Calendar, Edit2, UserCheck } from 'lucide-react';
+import { X, Search, Users, HardHat, Briefcase, UserPlus, Factory, Building2, Clock, CheckCircle2, AlertCircle, Copy, Check, Palmtree, Calendar, Edit2, UserCheck, UserX } from 'lucide-react';
 import { Employee } from '../types';
 
 export type PersonnelStatType = 'colaboradores' | 'operadores' | 'auxiliares' | 'vagas' | 'ferias';
@@ -12,6 +12,9 @@ export interface VacancyDetail {
   role: string;
   status: 'Em Aberto' | 'Em Contratação';
   candidateName?: string;
+  dismissedName?: string;
+  dismissedReason?: string;
+  dismissedId?: string;
 }
 
 interface PersonnelStatModalProps {
@@ -21,6 +24,7 @@ interface PersonnelStatModalProps {
   employees: Employee[];
   vacancies: VacancyDetail[];
   onManageVacation?: (employee: Employee) => void;
+  onSelectVacancy?: (vacancy: VacancyDetail) => void;
 }
 
 export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
@@ -29,7 +33,8 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
   type,
   employees,
   vacancies,
-  onManageVacation
+  onManageVacation,
+  onSelectVacancy
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sectorFilter, setSectorFilter] = useState<string>('todos');
@@ -114,7 +119,7 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
     let text = '';
     if (type === 'vagas') {
       text = `RELAÇÃO DE VAGAS EM ABERTO (${filteredVacancies.length} vagas):\n\n` +
-        filteredVacancies.map((v, i) => `${i + 1}. Setor: ${v.sector} | Máquina: ${v.machine} | Turno: ${v.shift} | Função: ${v.role} | Situação: ${v.status}${v.candidateName ? ` (${v.candidateName})` : ''}`).join('\n');
+        filteredVacancies.map((v, i) => `${i + 1}. Setor: ${v.sector} | Máquina: ${v.machine} | Turno: ${v.shift} | Função: ${v.role} | Situação: ${v.status}${v.candidateName ? ` (${v.candidateName})` : ''}${v.dismissedName ? ` [Substitui ${v.dismissedName} - Desligado${v.dismissedReason ? `. Motivo: ${v.dismissedReason}` : ''}]` : ''}`).join('\n');
     } else if (type === 'ferias') {
       text = `RELAÇÃO DE COLABORADORES EM FÉRIAS (${filteredEmployees.length} registros):\n\n` +
         filteredEmployees.map((e, i) => `${i + 1}. Nome: ${e.name} | Matrícula: ${e.registration || 'S/M'} | Cargo: ${e.role} | Setor: ${e.sector} | Máquina: ${e.machine} | Turno: ${e.shift} | Retorno Previsto: ${e.returnDate ? e.returnDate.split('-').reverse().join('/') : 'Não informado'}`).join('\n');
@@ -298,16 +303,39 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
                       </span>
                     </div>
 
+                    {v.dismissedName && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[10px] font-bold">
+                        <UserX size={12} className="text-rose-600 shrink-0" />
+                        <span className="truncate">Substitui {v.dismissedName} (Desligado){v.dismissedReason ? ` • Motivo: ${v.dismissedReason}` : ''}</span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-600">
                       <span className="flex items-center gap-1 font-semibold text-slate-500">
                         <Clock size={12} />
                         Turno: <strong className="text-slate-700">{v.shift}</strong>
                       </span>
-                      {v.candidateName && (
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
-                          Candidato: {v.candidateName}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {v.candidateName && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                            Candidato: {v.candidateName}
+                          </span>
+                        )}
+                        {onSelectVacancy && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onSelectVacancy(v);
+                            }}
+                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+                            title="Preencher esta vaga abrindo a seleção de colaboradores"
+                          >
+                            <UserPlus size={11} />
+                            <span>Preencher Vaga</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -340,13 +368,9 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
                       {filteredEmployees.map((emp, index) => {
-                        // Find substitute in the same slot
+                        // Find substitute specifically assigned to cover this employee
                         const substitute = employees.find(s => 
-                          s.id !== emp.id && 
-                          normalize(s.sector) === normalize(emp.sector) && 
-                          normalize(s.machine) === normalize(emp.machine) && 
-                          normalize(s.shift) === normalize(emp.shift) && 
-                          normalize(s.role) === normalize(emp.role) && 
+                          s.substituteForId === emp.id && 
                           s.status !== 'Férias'
                         );
 

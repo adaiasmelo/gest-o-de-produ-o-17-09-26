@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, UserPlus, Save, Briefcase, MapPin, UserX, Stethoscope, Plane, Trash2, Search } from 'lucide-react';
+import { X, UserPlus, Save, Briefcase, MapPin, UserX, Stethoscope, Plane, Trash2, Search, Palmtree } from 'lucide-react';
 import { Shift, Employee, Collaborator } from '../types';
 import { isCollaboratorSilenced } from '../utils/silenceUtils';
 
@@ -12,7 +12,18 @@ interface EmployeeModalProps {
   availableRoles: string[]; // Added roles prop
   collaborators: Collaborator[];
   initialData?: Employee | null;
-  slotInfo?: { sector: string; machine: string; shift: string; role: string }; // role is now string
+  slotInfo?: { 
+    sector: string; 
+    machine: string; 
+    shift: string; 
+    role: string;
+    vacationingId?: string;
+    vacationingName?: string;
+    vacationingReturnDate?: string;
+    dismissedId?: string;
+    dismissedName?: string;
+    dismissedReason?: string;
+  };
 }
 
 type ModalAction = 'update' | 'vacation' | 'medical' | 'terminate' | 'transfer' | 'create' | 'delete';
@@ -31,17 +42,53 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [roleCategoryFilter, setRoleCategoryFilter] = useState<'all' | 'operador' | 'auxiliar'>('all');
+
+  const counts = useMemo(() => {
+    const active = (collaborators || []).filter(c => c && c.name && !isCollaboratorSilenced(c));
+    const opCount = active.filter(c => (c.role || '').toLowerCase().includes('operador')).length;
+    const auxCount = active.filter(c => (c.role || '').toLowerCase().includes('auxiliar')).length;
+    return { all: active.length, operadores: opCount, auxiliares: auxCount };
+  }, [collaborators]);
 
   const filteredCollaborators = useMemo(() => {
     const active = (collaborators || []).filter(c => c && c.name && !isCollaboratorSilenced(c));
     const term = (searchTerm || '').trim().toLowerCase();
-    if (!term) return active;
-    return active.filter(c => {
-      const name = String(c?.name || '').toLowerCase();
-      const reg = c?.registration ? String(c.registration).toLowerCase() : '';
-      return name.includes(term) || reg.includes(term);
+    const targetRole = String(formData.role || slotInfo?.role || '').toLowerCase();
+    const isOpTarget = targetRole.includes('operador');
+    const isAuxTarget = targetRole.includes('auxiliar');
+
+    let list = active;
+    if (roleCategoryFilter === 'operador') {
+      list = list.filter(c => (c.role || '').toLowerCase().includes('operador'));
+    } else if (roleCategoryFilter === 'auxiliar') {
+      list = list.filter(c => (c.role || '').toLowerCase().includes('auxiliar'));
+    }
+
+    if (term) {
+      list = list.filter(c => {
+        const name = String(c?.name || '').toLowerCase();
+        const reg = c?.registration ? String(c.registration).toLowerCase() : '';
+        const r = String(c?.role || '').toLowerCase();
+        return name.includes(term) || reg.includes(term) || r.includes(term);
+      });
+    }
+
+    return [...list].sort((a, b) => {
+      const aRole = String(a.role || '').toLowerCase();
+      const bRole = String(b.role || '').toLowerCase();
+      if (isOpTarget) {
+        const aIsOp = aRole.includes('operador') ? 1 : 0;
+        const bIsOp = bRole.includes('operador') ? 1 : 0;
+        if (aIsOp !== bIsOp) return bIsOp - aIsOp;
+      } else if (isAuxTarget) {
+        const aIsAux = aRole.includes('auxiliar') ? 1 : 0;
+        const bIsAux = bRole.includes('auxiliar') ? 1 : 0;
+        if (aIsAux !== bIsAux) return bIsAux - aIsAux;
+      }
+      return (a.name || '').localeCompare(b.name || '');
     });
-  }, [collaborators, searchTerm]);
+  }, [collaborators, searchTerm, formData.role, slotInfo?.role, roleCategoryFilter]);
   
   const [extraData, setExtraData] = useState({
     reason: '',
@@ -52,6 +99,15 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
 
   useEffect(() => {
     if (isOpen) {
+      const targetRole = String(slotInfo?.role || initialData?.role || '').toLowerCase();
+      if (targetRole.includes('operador')) {
+        setRoleCategoryFilter('operador');
+      } else if (targetRole.includes('auxiliar')) {
+        setRoleCategoryFilter('auxiliar');
+      } else {
+        setRoleCategoryFilter('all');
+      }
+
       if (initialData) {
         const isLeadership = String(initialData.sector || '').toLowerCase().includes('lideran');
         let initialShift = initialData.shift || '';
@@ -68,6 +124,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
           status: initialData.status || 'Ativo',
           collaboratorId: initialData.collaboratorId || ''
         });
+        setSearchTerm(initialData.name || '');
         setActionType('update');
       } else if (slotInfo) {
         const isLeadership = String(slotInfo.sector || '').toLowerCase().includes('lideran');
@@ -81,8 +138,15 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
           sector: slotInfo.sector || '',
           machine: slotInfo.machine || '',
           shift: initialShift,
-          status: 'Ativo'
+          status: 'Ativo',
+          substituteForId: slotInfo.vacationingId || '',
+          substituteForName: slotInfo.vacationingName || '',
+          substituteReturnDate: slotInfo.vacationingReturnDate || '',
+          replacedEmployeeId: slotInfo.dismissedId || '',
+          replacedEmployeeName: slotInfo.dismissedName || '',
+          replacedReason: slotInfo.dismissedReason || ''
         });
+        setSearchTerm('');
         setActionType('create');
       }
       // Reset extra data
@@ -123,14 +187,41 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
     if (actionType === 'create') {
         actionLog = 'Contratação';
         detailsLog = `Admissão para ${formData.sector} - ${formData.machine} (${formData.role})`;
+        if (slotInfo?.vacationingId) {
+          finalData.substituteForId = slotInfo.vacationingId;
+          finalData.substituteForName = slotInfo.vacationingName;
+          finalData.substituteReturnDate = slotInfo.vacationingReturnDate;
+          detailsLog += ` (Em substituição a ${slotInfo.vacationingName})`;
+        }
+        if (slotInfo?.dismissedName) {
+          finalData.replacedEmployeeId = slotInfo.dismissedId;
+          finalData.replacedEmployeeName = slotInfo.dismissedName;
+          finalData.replacedReason = slotInfo.dismissedReason;
+          detailsLog = `${finalData.name} em substituição a ${slotInfo.dismissedName}, que foi desligado. Motivo: ${slotInfo.dismissedReason || 'Não informado'}`;
+        }
     } else if (actionType === 'update') {
         actionLog = 'Alteração';
         detailsLog = initialData?.status !== formData.status 
             ? `Status alterado de ${initialData?.status} para ${formData.status}`
             : 'Atualização de dados cadastrais';
+        if (slotInfo?.vacationingId) {
+          finalData.substituteForId = slotInfo.vacationingId;
+          finalData.substituteForName = slotInfo.vacationingName;
+          finalData.substituteReturnDate = slotInfo.vacationingReturnDate;
+          detailsLog += ` (Em substituição a ${slotInfo.vacationingName})`;
+        }
+        if (slotInfo?.dismissedName) {
+          finalData.replacedEmployeeId = slotInfo.dismissedId;
+          finalData.replacedEmployeeName = slotInfo.dismissedName;
+          finalData.replacedReason = slotInfo.dismissedReason;
+          detailsLog = `${finalData.name} em substituição a ${slotInfo.dismissedName}, que foi desligado. Motivo: ${slotInfo.dismissedReason || 'Não informado'}`;
+        }
     } else if (actionType === 'vacation') {
         finalData.status = 'Férias';
         finalData.returnDate = extraData.returnDate;
+        finalData.substituteForId = '';
+        finalData.substituteForName = '';
+        finalData.substituteReturnDate = '';
         actionLog = 'Férias';
         detailsLog = `${extraData.duration} dias. Retorno em ${new Date(extraData.returnDate).toLocaleDateString('pt-BR')}`;
     } else if (actionType === 'medical') {
@@ -141,17 +232,39 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
         detailsLog = `${extraData.duration} dias. Motivo: ${extraData.reason}`;
     } else if (actionType === 'terminate') {
         finalData.status = 'Desligado';
+        finalData.terminationReason = extraData.reason;
+        finalData.statusDetails = extraData.reason;
+        finalData.terminatedAt = new Date().toISOString();
         actionLog = 'Desligamento';
         detailsLog = `Motivo: ${extraData.reason}`;
     } else if (actionType === 'transfer') {
         actionLog = 'Transferência';
         detailsLog = `Para ${formData.machine} - ${formData.shift}`;
+        if (slotInfo?.vacationingId) {
+          finalData.substituteForId = slotInfo.vacationingId;
+          finalData.substituteForName = slotInfo.vacationingName;
+          finalData.substituteReturnDate = slotInfo.vacationingReturnDate;
+          detailsLog += ` (Em substituição a ${slotInfo.vacationingName})`;
+        }
+        if (slotInfo?.dismissedName) {
+          finalData.replacedEmployeeId = slotInfo.dismissedId;
+          finalData.replacedEmployeeName = slotInfo.dismissedName;
+          finalData.replacedReason = slotInfo.dismissedReason;
+          detailsLog = `${finalData.name} em substituição a ${slotInfo.dismissedName}, que foi desligado. Motivo: ${slotInfo.dismissedReason || 'Não informado'}`;
+        }
     } else if (actionType === 'delete') {
         actionLog = 'Exclusão';
         detailsLog = 'Remoção definitiva de colaborador e vaga.';
     }
 
-    onSave(finalData, actionLog, detailsLog);
+    const sanitizedData: any = {};
+    for (const [k, v] of Object.entries(finalData)) {
+      if (v !== undefined) {
+        sanitizedData[k] = v;
+      }
+    }
+
+    onSave(sanitizedData, actionLog, detailsLog);
     onClose();
   };
 
@@ -206,68 +319,201 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
           
+          {/* Banner de Substituição em Férias */}
+          {(slotInfo?.vacationingName || formData.substituteForName) && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-xs text-amber-900 font-bold animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Palmtree size={18} />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">
+                    Entrando em Substituição no Posto
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    Cobrindo <strong>{slotInfo?.vacationingName || formData.substituteForName}</strong> em férias
+                    {(slotInfo?.vacationingReturnDate || formData.substituteReturnDate) ? ` • Retorno em ${(slotInfo?.vacationingReturnDate || formData.substituteReturnDate || '').split('-').reverse().join('/')}` : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Banner Detalhado de Vaga em Aberto por Desligamento */}
+          {(slotInfo?.dismissedName || formData.replacedEmployeeName) && (
+            <div className="p-4 bg-rose-50/90 border border-rose-200 rounded-2xl space-y-2.5 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200">
+                    <UserX size={18} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-rose-800 tracking-wider block">
+                      Vaga em Aberto &bull; Substituição
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      Alocação: {slotInfo?.sector || formData.sector} &bull; {slotInfo?.machine || formData.machine} ({slotInfo?.shift || formData.shift})
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-200 text-rose-800 border border-rose-300">
+                  Desligado
+                </span>
+              </div>
+
+              <div className="bg-white p-3 rounded-xl border border-rose-100 space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Colaborador Desligado:</span>
+                  <strong className="text-slate-800 font-bold">{slotInfo?.dismissedName || formData.replacedEmployeeName}</strong>
+                </div>
+                {(slotInfo?.dismissedReason || formData.replacedReason) && (
+                  <div className="pt-2 border-t border-rose-100/70 flex items-start gap-1.5 text-xs text-rose-950">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-600 shrink-0">Motivo:</span>
+                    <span className="font-semibold">{slotInfo?.dismissedReason || formData.replacedReason}</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Selecione o operador ou auxiliar abaixo para assumir este posto em substituição ao colaborador desligado.
+              </p>
+            </div>
+          )}
+
           {/* Dados Básicos (Update / Create / Transfer) */}
           {(actionType === 'update' || actionType === 'create' || actionType === 'transfer') && (
             <div className="space-y-4 animate-in fade-in slide-in-from-left-4">
                 <div className="relative">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 flex items-center gap-2">Nome Completo</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">Colaborador / Função</label>
+                    {actionType === 'create' && (
+                      <span className="text-[9px] font-bold text-slate-400 uppercase">
+                        Vaga: <strong className="text-slate-700">{slotInfo?.role || formData.role || 'Operador/Auxiliar'}</strong>
+                      </span>
+                    )}
+                  </div>
                   
                   {actionType === 'create' ? (
-                    <div className="relative">
-                      <div className="relative">
-                        <input 
-                          type="text" 
-                          value={searchTerm} 
-                          onChange={e => {
-                            setSearchTerm(e.target.value);
-                            setIsDropdownOpen(true);
-                          }}
-                          onFocus={() => setIsDropdownOpen(true)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 pr-12 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner" 
-                          placeholder="Pesquisar colaborador..." 
-                        />
-                        <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <div className="space-y-3">
+                      {/* Filtro de Categoria: Todos / Operadores / Auxiliares */}
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setRoleCategoryFilter('all')}
+                          className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${
+                            roleCategoryFilter === 'all' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Todos ({counts.all})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRoleCategoryFilter('operador')}
+                          className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${
+                            roleCategoryFilter === 'operador' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Operadores ({counts.operadores})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRoleCategoryFilter('auxiliar')}
+                          className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${
+                            roleCategoryFilter === 'auxiliar' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Auxiliares ({counts.auxiliares})
+                        </button>
                       </div>
 
-                      {isDropdownOpen && (
-                        <>
-                          <div className="fixed inset-0 z-10" onClick={() => setIsDropdownOpen(false)}></div>
-                          <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 max-h-60 overflow-y-auto custom-scrollbar">
+                      {formData.name && formData.name !== 'Em Contratação' ? (
+                        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between animate-in fade-in">
+                          <div>
+                            <span className="text-[9px] font-black uppercase text-blue-700 tracking-wider block">
+                              Colaborador Selecionado
+                            </span>
+                            <p className="text-sm font-black text-slate-800">{formData.name}</p>
+                            <p className="text-[10px] font-bold text-slate-500 flex items-center gap-2 mt-0.5">
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${
+                                (formData.role || '').toLowerCase().includes('operador') ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                              }`}>
+                                {formData.role}
+                              </span>
+                              <span>Matrícula: #{formData.registration || 'S/M'}</span>
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, name: '', collaboratorId: '', registration: '' });
+                              setSearchTerm('');
+                              setIsDropdownOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-white border border-blue-200 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl shadow-2xs transition-all"
+                          >
+                            Trocar
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <div className="relative">
+                            <input 
+                              type="text" 
+                              value={searchTerm} 
+                              onChange={e => {
+                                setSearchTerm(e.target.value);
+                                setIsDropdownOpen(true);
+                              }}
+                              onFocus={() => setIsDropdownOpen(true)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 pr-12 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner" 
+                              placeholder={roleCategoryFilter === 'operador' ? "Pesquisar operador por nome ou matrícula..." : roleCategoryFilter === 'auxiliar' ? "Pesquisar auxiliar por nome ou matrícula..." : "Pesquisar colaborador por nome ou matrícula..."} 
+                            />
+                            <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                          </div>
+
+                          <div className="mt-2 bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden max-h-56 overflow-y-auto custom-scrollbar">
                             {filteredCollaborators.length > 0 ? (
-                              filteredCollaborators.map(c => (
-                                <button
-                                  key={c.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData({
-                                      ...formData, 
-                                      name: c.name, 
-                                      collaboratorId: c.id, 
-                                      registration: c.registration,
-                                      role: formData.role && formData.role !== 'Novo Slot' ? formData.role : (c.role || 'Operador 1')
-                                    });
-                                    setSearchTerm(c.name);
-                                    setIsDropdownOpen(false);
-                                  }}
-                                  className="w-full text-left px-5 py-3.5 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
-                                >
-                                  <div className="flex justify-between items-center">
+                              filteredCollaborators.map(c => {
+                                const isOp = (c.role || '').toLowerCase().includes('operador');
+                                return (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData({
+                                        ...formData, 
+                                        name: c.name, 
+                                        collaboratorId: c.id, 
+                                        registration: c.registration,
+                                        role: formData.role && formData.role !== 'Novo Slot' ? formData.role : (c.role || (isOp ? 'Operador 1' : 'Auxiliar de Produção'))
+                                      });
+                                      setSearchTerm(c.name);
+                                      setIsDropdownOpen(false);
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0 flex items-center justify-between"
+                                  >
                                     <div>
-                                      <p className="text-sm font-black text-slate-700">{c.name}</p>
-                                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{c.role}</p>
+                                      <p className="text-xs font-black text-slate-800">{c.name}</p>
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{c.role}</p>
                                     </div>
-                                    <span className="text-[10px] font-black text-blue-500 font-mono">#{c.registration}</span>
-                                  </div>
-                                </button>
-                              ))
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                                        isOp ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                                      }`}>
+                                        {isOp ? 'OPE' : 'AUX'}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-400 font-mono">#{c.registration}</span>
+                                    </div>
+                                  </button>
+                                );
+                              })
                             ) : (
                               <div className="px-5 py-8 text-center bg-slate-50/50">
-                                <p className="text-xs font-bold text-slate-400 italic">Nenhum colaborador encontrado.</p>
+                                <p className="text-xs font-bold text-slate-400 italic">Nenhum colaborador encontrado com este filtro.</p>
                                 <p className="text-[10px] font-black text-blue-500 uppercase mt-2">Cadastre no Menu Extra primeiro.</p>
                               </div>
                             )}
                           </div>
-                        </>
+                        </div>
                       )}
                     </div>
                   ) : (
