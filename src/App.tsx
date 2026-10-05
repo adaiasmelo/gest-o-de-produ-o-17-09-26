@@ -60,6 +60,7 @@ import { LunchSchedule } from './components/LunchSchedule';
 import { OvertimeRequests } from './components/OvertimeRequests';
 import { OvertimeEntries } from './components/OvertimeEntries';
 import { ProjectionDashboard } from './components/ProjectionDashboard';
+import { ExternalOperatorExtrusion } from './components/ExternalOperatorExtrusion';
 import { DowntimeReasonsModal } from './components/DowntimeReasonsModal';
 import { DowntimeAnalyticsModal } from './components/DowntimeAnalyticsModal';
 import { PersonnelStatModal, PersonnelStatType, VacancyDetail } from './components/PersonnelStatModal';
@@ -745,16 +746,63 @@ const isExternalTvRoute = (): boolean => {
   }
 };
 
+// Helper para detectar acesso externo do Operador de Extrusão (celular / chão de fábrica)
+const isExternalOperatorRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const rawPath = (window.location.pathname || '').toLowerCase();
+    const search = (window.location.search || '').toLowerCase();
+    const hash = (window.location.hash || '').toLowerCase();
+
+    const isOperatorUrl = (
+      rawPath === '/lancamento' ||
+      rawPath === '/lancamento/' ||
+      rawPath.startsWith('/lancamento/') ||
+      rawPath.includes('lancamento.html') ||
+      rawPath === '/extrusao' ||
+      rawPath === '/extrusao/' ||
+      rawPath.startsWith('/extrusao/') ||
+      rawPath.includes('extrusao.html') ||
+      rawPath === '/operador' ||
+      rawPath === '/operador/' ||
+      rawPath.startsWith('/operador/') ||
+      rawPath === '/apontamento' ||
+      rawPath === '/apontamento/' ||
+      rawPath.startsWith('/apontamento/') ||
+      hash === '#lancamento' ||
+      hash.startsWith('#/lancamento') ||
+      hash === '#extrusao' ||
+      hash.startsWith('#/extrusao') ||
+      hash === '#operador' ||
+      hash.startsWith('#/operador') ||
+      hash === '#apontamento' ||
+      hash.startsWith('#/apontamento') ||
+      search.includes('page=lancamento') ||
+      search.includes('lancamento=true') ||
+      search.includes('page=extrusao') ||
+      search.includes('extrusao=true') ||
+      search.includes('page=operador') ||
+      search.includes('operador=true')
+    );
+
+    return isOperatorUrl;
+  } catch (e) {
+    return false;
+  }
+};
+
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExternalCalculatorView, setIsExternalCalculatorView] = useState(() => isExternalCalculatorRoute());
   const [isExternalTvView, setIsExternalTvView] = useState(() => isExternalTvRoute());
+  const [isExternalOperatorView, setIsExternalOperatorView] = useState(() => isExternalOperatorRoute());
 
   useEffect(() => {
     const handleLocationChange = () => {
       setIsExternalCalculatorView(isExternalCalculatorRoute());
       setIsExternalTvView(isExternalTvRoute());
+      setIsExternalOperatorView(isExternalOperatorRoute());
     };
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);
@@ -11284,6 +11332,93 @@ Atenciosamente,
           isStandaloneTv={true}
         />
       </div>
+    );
+  }
+
+  // Acesso Externo do Operador de Extrusão (Chão de fábrica via celular / smartphone)
+  if (isExternalOperatorView) {
+    return (
+      <ExternalOperatorExtrusion
+        systemName={systemName}
+        systemLogo={systemLogo}
+        collaborators={collaborators}
+        employees={employees}
+        systemUsers={systemUsers}
+        activeMachines={activeMachines}
+        availableShifts={availableShifts}
+        vacations={vacations}
+        dashboardMonth={dashboardMonth}
+        productionEntries={productionData}
+        ribbonEntries={ribbonEntries}
+        onSave={async (e) => {
+          try {
+            const id = Math.random().toString(36).substr(2, 9);
+            const entry = {
+              ...e,
+              id,
+              userId: currentUser?.uid || 'operador_externo',
+              updatedAt: new Date().toISOString()
+            };
+            await setDoc(doc(db, 'productionEntries', id), entry);
+
+            logAuditEvent({
+              action: 'CREATE',
+              module: 'Extrusão',
+              targetTitle: `Extrusão Mobile - ${entry.machine || 'Máquina'} - ${entry.date} (${entry.operator})`,
+              targetId: id,
+              userName: entry.operator || 'Operador Mobile',
+              userRole: 'Operador',
+              newState: entry as any,
+            });
+
+            triggerHaptic('success');
+
+            recordUserActivity({
+              user: {
+                id: 'operador_externo',
+                name: entry.operator || 'Operador',
+                registration: (entry as any).registration || '',
+                role: 'Operador'
+              },
+              type: 'action',
+              screen: 'Extrusão',
+              subScreen: 'Lançamentos (Mobile)',
+              action: 'Novo lançamento mobile de produção',
+              details: `${entry.machine} - ${entry.materialType || 'LC3'} (${entry.operator})`
+            });
+
+            addNotification(`Novo lançamento mobile realizado por ${entry.operator} na ${entry.machine}`);
+
+            // Dispara notificações push se configurado
+            try {
+              const tokensSnap = await getDocs(collection(db, 'fcm_tokens'));
+              const tokens = tokensSnap.docs.map(d => d.data().token);
+              const title = `Novo Lançamento Mobile: ${entry.machine}`;
+              const body = `${entry.operator} lançou produção para ${entry.materialType || 'Extrusão'}.`;
+
+              for (const token of tokens) {
+                fetch('/api/send-notification', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ token, title, body })
+                }).catch(err => console.error('Push failed for token', token, err));
+              }
+            } catch (err) {
+              console.error("Error triggering push notifications:", err);
+            }
+          } catch (error) {
+            console.error("Erro ao salvar lançamento mobile:", error);
+            alert("Ocorreu um erro ao salvar o lançamento.");
+            throw error;
+          }
+        }}
+        onExitToMainApp={() => {
+          try {
+            window.history.pushState({}, '', '/');
+          } catch {}
+          setIsExternalOperatorView(false);
+        }}
+      />
     );
   }
 

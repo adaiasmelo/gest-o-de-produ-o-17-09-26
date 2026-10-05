@@ -1144,6 +1144,41 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                 </button>
               </div>
             )}
+
+            {(isAdmin || userPerms.extrusion.enabled) && (
+              <div className="bg-gradient-to-br from-emerald-950 via-teal-950 to-slate-900 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-emerald-950/30 border border-emerald-500/30 group">
+                <div
+                  onClick={() => {
+                    window.location.hash = '#lancamento';
+                  }}
+                  className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
+                >
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-emerald-500/20 text-emerald-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Smartphone className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" />
+                  </div>
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">
+                    Lançamento Extrusão (Celular)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    let link = 'https://gest-o-de-produ-o-2026.pages.dev/lancamento';
+                    if (
+                      typeof window !== 'undefined' &&
+                      window.location.origin
+                    ) {
+                      link = `${window.location.origin}/lancamento`;
+                    }
+                    copyToClipboard(link, 'op_mobile', 'Lançamento Celular');
+                  }}
+                  className="w-full py-1.5 px-2 bg-white/10 hover:bg-white/20 text-emerald-200 hover:text-white rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-tight sm:tracking-wider flex items-center justify-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
+                >
+                  <Copy size={11} />
+                  <span>{copiedLink === 'op_mobile' ? 'Copiado!' : 'Copiar Link Operador'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

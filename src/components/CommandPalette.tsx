@@ -28,6 +28,7 @@ import {
   Layers,
   Flame,
   Home,
+  Smartphone,
   Briefcase,
   ExternalLink,
   Award
@@ -216,6 +217,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => {
           onClose();
           onNavigateTab('projection');
+        }
+      },
+      {
+        id: 'action-operator-portal',
+        category: 'actions',
+        title: 'Abrir Lançamento Externo (Operador Celular)',
+        subtitle: 'Acesso externo para operador apontar na máquina com matrícula e senha',
+        badge: 'Link Externo',
+        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        icon: <Smartphone size={18} />,
+        iconBg: 'bg-emerald-500/10 text-emerald-600',
+        iconColor: 'text-emerald-600',
+        keywords: ['operador', 'lancamento', 'extrusao', 'celular', 'mobile', 'apontamento', 'link externo'],
+        action: () => {
+          onClose();
+          window.location.hash = '#lancamento';
         }
       },
       {

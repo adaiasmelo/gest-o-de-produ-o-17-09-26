@@ -80,6 +80,13 @@ interface LaunchModalProps {
   productionEntries?: ProductionEntry[];
   ribbonEntries?: RibbonCuttingEntry[];
   isStandaloneDowntimeInitial?: boolean;
+  presetOperator?: string;
+  presetShift?: string;
+  presetMachine?: string;
+  presetDate?: string;
+  isExternalOperatorMode?: boolean;
+  operatorRegistration?: string;
+  onOperatorLogout?: () => void;
 }
 
 interface StopItem {
@@ -172,7 +179,9 @@ const PRESET_INFRACTIONS = [
 
 const LaunchModal: React.FC<LaunchModalProps> = ({ 
   isOpen, onClose, onSave, collaborators, employees, vacations = [], activeMachines, availableShifts, initialData, dashboardMonth,
-  productionEntries = [], ribbonEntries = [], isStandaloneDowntimeInitial = false
+  productionEntries = [], ribbonEntries = [], isStandaloneDowntimeInitial = false,
+  presetOperator, presetShift, presetMachine, presetDate, isExternalOperatorMode = false,
+  operatorRegistration, onOperatorLogout
 }) => {
   const [downtimeVersion, setDowntimeVersion] = useState(0);
 
@@ -606,11 +615,16 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       } else {
         setSelectedPresetInfraction(PRESET_INFRACTIONS[0]);
         setCustomInfractionText('');
+        const initialOperator = presetOperator || '';
+        const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
+        const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
+        const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
+
         setFormData({
-          date: getDefaultDateForMonth(dashboardMonth),
-          operator: '',
-          machine: activeMachines.length > 0 ? activeMachines[0] : '',
-          shift: availableShifts.length > 0 ? availableShifts[0].name : '',
+          date: initialDate,
+          operator: initialOperator,
+          machine: initialMachine,
+          shift: initialShift,
           grossWeight: 0,
           tara: 0,
           netWeight: 0,
@@ -649,9 +663,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           deductionValue: 500,
           penaltyReason: '',
         });
+
+        if (initialOperator) {
+          setOpSearchTerm(initialOperator);
+        }
       }
     }
-  }, [isOpen, initialData, activeMachines, availableShifts, dashboardMonth, isStandaloneDowntimeInitial]);
+  }, [isOpen, initialData, activeMachines, availableShifts, dashboardMonth, isStandaloneDowntimeInitial, presetOperator, presetShift, presetMachine, presetDate]);
 
   useEffect(() => {
     if (isErema) {
@@ -1209,15 +1227,43 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         {/* Header Bar */}
         <div className="bg-[#1e293b] text-white px-3 md:px-5 py-2 flex items-center justify-between shrink-0 shadow-md z-20 border-b border-slate-700">
           <div className="flex items-center gap-2 min-w-0">
-            <button 
-              type="button" 
-              onClick={onClose} 
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-slate-600/50 cursor-pointer shrink-0"
-              title="Voltar"
-            >
-              <ArrowLeft size={16} />
-              <span className="hidden sm:inline uppercase text-[10px]">Voltar</span>
-            </button>
+            {isExternalOperatorMode ? (
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {onOperatorLogout && (
+                  <button 
+                    type="button" 
+                    onClick={onOperatorLogout} 
+                    className="flex items-center gap-1 bg-red-950/60 hover:bg-red-900/80 text-red-200 hover:text-white px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-red-700/50 cursor-pointer shrink-0"
+                    title="Sair / Trocar Operador"
+                  >
+                    <ArrowLeft size={15} />
+                    <span className="uppercase text-[9px] sm:text-[10px]">Sair</span>
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5 bg-blue-950/60 border border-blue-500/40 px-2 py-1 rounded-lg max-w-[200px] sm:max-w-none truncate">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-200 truncate">
+                    Operador: <strong className="text-white">{presetOperator || formData.operator || 'Identificado'}</strong>
+                    {operatorRegistration && <span className="text-blue-300 ml-1 hidden sm:inline">({operatorRegistration})</span>}
+                  </span>
+                  {presetShift && (
+                    <span className="hidden md:inline-block text-[9px] bg-blue-500/30 text-blue-200 font-bold px-1.5 py-0.5 rounded">
+                      {presetShift}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-slate-600/50 cursor-pointer shrink-0"
+                title="Voltar"
+              >
+                <ArrowLeft size={16} />
+                <span className="hidden sm:inline uppercase text-[10px]">Voltar</span>
+              </button>
+            )}
             <div className="h-5 w-px bg-slate-700 mx-0.5 hidden sm:block"></div>
             <div className="flex items-center gap-1.5 min-w-0 truncate">
               {initialData ? <Edit2 size={16} className="text-blue-400 shrink-0" /> : <Save size={16} className="text-blue-400 shrink-0" />}
@@ -1266,9 +1312,22 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
               capture="environment"
               className="hidden" 
             />
-            <button onClick={onClose} className="hover:bg-slate-700 p-1 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer" title="Fechar">
-              <X size={18} />
-            </button>
+            {!isExternalOperatorMode ? (
+              <button onClick={onClose} className="hover:bg-slate-700 p-1 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer" title="Fechar">
+                <X size={18} />
+              </button>
+            ) : (
+              onOperatorLogout && (
+                <button 
+                  type="button" 
+                  onClick={onOperatorLogout} 
+                  className="hover:bg-red-800/60 p-1 text-red-300 hover:text-white rounded-lg transition-colors cursor-pointer" 
+                  title="Sair do Lançamento"
+                >
+                  <X size={18} />
+                </button>
+              )
+            )}
           </div>
         </div>
 
