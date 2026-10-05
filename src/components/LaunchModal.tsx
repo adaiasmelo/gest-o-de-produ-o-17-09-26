@@ -3,33 +3,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap } from 'lucide-react';
 import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation } from '../types';
 import { extractProductionData } from '../services/aiService';
-import { extractDowntimeMotives, ECO_B_REASONS_PRESETS } from '../constants/downtimeReasons';
+import { extractDowntimeMotives } from '../constants/downtimeReasons';
 import { StopItemCard } from './StopItemCard';
+import { ReasonInputWithSave, saveReasonToLibrary } from './ReasonInputWithSave';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet } from '../utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from '../utils/vacationUtils';
-
-const toggleEcoBReason = (currentText: string, reasonToToggle: string): string => {
-  if (!currentText || !currentText.trim()) {
-    return reasonToToggle;
-  }
-  
-  let parts = currentText.split(/ • |;|,/).map(p => p.trim()).filter(Boolean);
-  const existingIdx = parts.findIndex(p => p.toLowerCase() === reasonToToggle.toLowerCase());
-  
-  if (existingIdx >= 0) {
-    parts.splice(existingIdx, 1);
-  } else {
-    parts.push(reasonToToggle);
-  }
-  
-  return parts.join(' • ');
-};
-
-const isEcoBReasonSelected = (currentText: string, reason: string): boolean => {
-  if (!currentText) return false;
-  const parts = currentText.split(/ • |;|,/).map(p => p.trim().toLowerCase());
-  return parts.includes(reason.toLowerCase());
-};
 
 interface EcoBReasonCardProps {
   label: string;
@@ -40,6 +18,7 @@ interface EcoBReasonCardProps {
   categoryGroups?: { groupName: string; reasons: string[] }[];
   onWeightChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onMotivoChange: (fieldName: 'ecoBPMotivo' | 'ecoBMMotivo', newValue: string) => void;
+  loggedUserName?: string;
 }
 
 const EcoBReasonCard: React.FC<EcoBReasonCardProps> = ({
@@ -48,35 +27,14 @@ const EcoBReasonCard: React.FC<EcoBReasonCardProps> = ({
   motivoName,
   weightValue,
   motivoValue,
-  categoryGroups,
   onWeightChange,
   onMotivoChange,
+  loggedUserName = 'Sistema'
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const selectedReasons = useMemo(() => {
-    if (!motivoValue) return [];
-    return motivoValue.split(/ • |;|,/).map(p => p.trim()).filter(Boolean);
-  }, [motivoValue]);
-
-  const totalReasonsCount = useMemo(() => {
-    if (categoryGroups && categoryGroups.length > 0) {
-      return categoryGroups.reduce((acc, g) => acc + g.reasons.length, 0);
-    }
-    return ECO_B_REASONS_PRESETS.length;
-  }, [categoryGroups]);
-
   return (
-    <div className="bg-white p-2 rounded-xl border border-orange-200/70 space-y-1.5 shadow-2xs">
+    <div className="bg-white p-2.5 rounded-xl border border-orange-200/80 space-y-2 shadow-2xs">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <label className="text-[10px] font-black text-orange-600 uppercase tracking-wider">{label}</label>
-          {selectedReasons.length > 0 && (
-            <span className="text-[8px] font-black bg-orange-100 text-orange-800 px-1.5 py-0.2 rounded-full border border-orange-200">
-              {selectedReasons.length} {selectedReasons.length === 1 ? 'motivo' : 'motivos'}
-            </span>
-          )}
-        </div>
+        <label className="text-[10px] font-black text-orange-600 uppercase tracking-wider">{label}</label>
         <div className="flex items-center gap-1">
           <input
             type="number"
@@ -91,154 +49,16 @@ const EcoBReasonCard: React.FC<EcoBReasonCardProps> = ({
       </div>
 
       {weightValue > 0 && (
-        <div className="pt-1.5 border-t border-dashed border-orange-150 space-y-1.5">
-          {/* Quick Dropdown Picker */}
-          <div className="flex items-center gap-1.5">
-            <select
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  onMotivoChange(motivoName, toggleEcoBReason(motivoValue, e.target.value));
-                  e.target.value = '';
-                }
-              }}
-              className="w-full bg-orange-50/60 text-slate-800 border border-orange-200 rounded-lg px-2 py-1 text-[10px] font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 cursor-pointer shadow-2xs h-7"
-            >
-              <option value="">📋 Adicionar motivo padronizado de Eco B...</option>
-              {categoryGroups && categoryGroups.length > 0 ? (
-                categoryGroups.map((group, gIdx) => (
-                  <optgroup key={gIdx} label={group.groupName}>
-                    {group.reasons.map((reason, rIdx) => {
-                      const selected = isEcoBReasonSelected(motivoValue, reason);
-                      return (
-                        <option key={rIdx} value={reason}>
-                          {selected ? '✓ ' : '+ '}{reason}
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                ))
-              ) : (
-                ECO_B_REASONS_PRESETS.map((reason, idx) => {
-                  const selected = isEcoBReasonSelected(motivoValue, reason);
-                  return (
-                    <option key={idx} value={reason}>
-                      {selected ? '✓ ' : '+ '}{reason}
-                    </option>
-                  );
-                })
-              )}
-            </select>
-
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-800 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer h-7"
-            >
-              {isExpanded ? 'Ocultar' : `Opções (${totalReasonsCount})`}
-            </button>
-          </div>
-
-          {/* Interactive Multi-Select Pills */}
-          {isExpanded && (
-            <div className="p-2 bg-slate-50 border border-orange-200/80 rounded-lg space-y-1.5">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
-                <span>⚡ Seleção Múltipla:</span>
-                <span className="text-[8px] text-orange-600 font-bold">Marcar/desmarcar</span>
-              </p>
-              <div className="space-y-1.5 pr-1">
-                {categoryGroups && categoryGroups.length > 0 ? (
-                  categoryGroups.map((group, gIdx) => (
-                    <div key={gIdx} className="space-y-0.5">
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-wider">{group.groupName}</p>
-                      <div className="flex flex-wrap gap-1">
-                        {group.reasons.map((reason, rIdx) => {
-                          const active = isEcoBReasonSelected(motivoValue, reason);
-                          return (
-                            <button
-                              key={rIdx}
-                              type="button"
-                              onClick={() => onMotivoChange(motivoName, toggleEcoBReason(motivoValue, reason))}
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all text-left flex items-center gap-1 cursor-pointer ${
-                                active
-                                  ? 'bg-orange-600 text-white font-extrabold shadow-2xs border border-orange-600'
-                                  : 'bg-white text-slate-700 hover:bg-orange-100/70 border border-slate-200'
-                              }`}
-                            >
-                              <span className="text-[10px] font-black">{active ? '✓' : '＋'}</span>
-                              <span>{reason}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {ECO_B_REASONS_PRESETS.map((reason, idx) => {
-                      const active = isEcoBReasonSelected(motivoValue, reason);
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => onMotivoChange(motivoName, toggleEcoBReason(motivoValue, reason))}
-                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all text-left flex items-center gap-1 cursor-pointer ${
-                            active
-                              ? 'bg-orange-600 text-white font-extrabold shadow-2xs border border-orange-600'
-                              : 'bg-white text-slate-700 hover:bg-orange-100/70 border border-slate-200'
-                          }`}
-                        >
-                          <span className="text-[10px] font-black">{active ? '✓' : '＋'}</span>
-                          <span>{reason}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Selected Active Badges Chips */}
-          {selectedReasons.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-0.5">
-              {selectedReasons.map((reason, rIdx) => (
-                <span
-                  key={rIdx}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-bold bg-orange-100 text-orange-900 border border-orange-200 shadow-2xs"
-                >
-                  <span>{reason}</span>
-                  <button
-                    type="button"
-                    onClick={() => onMotivoChange(motivoName, toggleEcoBReason(motivoValue, reason))}
-                    className="hover:text-red-600 font-extrabold ml-0.5 text-[10px] cursor-pointer"
-                    title="Remover motivo"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <button
-                type="button"
-                onClick={() => onMotivoChange(motivoName, '')}
-                className="text-[8px] font-black text-red-500 hover:text-red-700 underline px-1 cursor-pointer"
-              >
-                Limpar
-              </button>
-            </div>
-          )}
-
-          {/* Custom Editable Text Box */}
-          <div>
-            <input
-              type="text"
-              name={motivoName}
-              value={motivoValue || ''}
-              onChange={(e) => onMotivoChange(motivoName, e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-1 focus:ring-orange-400 outline-none"
-              placeholder="Justificar perda de Eco B (digite ou selecione acima)..."
-            />
-          </div>
+        <div className="pt-1.5 border-t border-dashed border-orange-150">
+          <ReasonInputWithSave
+            category={motivoName === 'ecoBPMotivo' ? 'extrusao_ecobp' : 'extrusao_ecobm'}
+            value={motivoValue || ''}
+            onChange={(val) => onMotivoChange(motivoName, val)}
+            placeholder={`Justificar perda de ${label} ou selecione da relação...`}
+            loggedUserName={loggedUserName}
+            hideLabel={true}
+            inputClassName="!py-1.5 !text-[11px]"
+          />
         </div>
       )}
     </div>
@@ -1018,10 +838,21 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     if (pendingEntries.length > 0) {
       pendingEntries.forEach((entry, idx) => {
         const targetData = idx === currentIndex ? formData : entry;
-        onSave(compileEntry(targetData));
+        const compiled = compileEntry(targetData);
+        if (compiled.ecoBPMotivo) saveReasonToLibrary('extrusao_ecobp', compiled.ecoBPMotivo, compiled.operator);
+        if (compiled.ecoBMMotivo) saveReasonToLibrary('extrusao_ecobm', compiled.ecoBMMotivo, compiled.operator);
+        if (compiled.ecoAMotivo) saveReasonToLibrary('extrusao_ecoa', compiled.ecoAMotivo, compiled.operator);
+        if (compiled.borraTotalMotivo) saveReasonToLibrary('extrusao_borra', compiled.borraTotalMotivo, compiled.operator);
+        onSave(compiled);
       });
     } else {
-      onSave(initialData ? { ...compileEntry(formData), id: initialData.id } : compileEntry(formData));
+      const compiled = compileEntry(formData);
+      if (compiled.ecoBPMotivo) saveReasonToLibrary('extrusao_ecobp', compiled.ecoBPMotivo, compiled.operator);
+      if (compiled.ecoBMMotivo) saveReasonToLibrary('extrusao_ecobm', compiled.ecoBMMotivo, compiled.operator);
+      if (compiled.ecoAMotivo) saveReasonToLibrary('extrusao_ecoa', compiled.ecoAMotivo, compiled.operator);
+      if (compiled.borraTotalMotivo) saveReasonToLibrary('extrusao_borra', compiled.borraTotalMotivo, compiled.operator);
+      if (activeStoppageReason) saveReasonToLibrary('paradas_extrusao', activeStoppageReason, compiled.operator);
+      onSave(initialData ? { ...compiled, id: initialData.id } : compiled);
     }
     onClose();
   };
@@ -1704,45 +1535,18 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Motivo e Justificativa */}
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-black text-amber-950 uppercase tracking-wider block">
-                        Motivo / Justificativa por Escrito:
-                      </label>
-                      <textarea
+                    {/* Motivo e Justificativa com salvamento na relação */}
+                    <div className="space-y-1.5 pt-1">
+                      <ReasonInputWithSave
+                        label="Motivo / Justificativa da Parada"
                         value={activeStoppageReason}
-                        onChange={(e) => handleStandaloneReasonChange(e.target.value)}
-                        rows={3}
-                        placeholder="Descreva detalhadamente a justificativa para este tempo de parada avulsa (ex: Manutenção corretiva de grande porte, troca de fuso e rosca, paralisação programada...)"
-                        className="w-full bg-white border border-amber-200 focus:border-amber-500 rounded-xl p-2 text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none resize-none shadow-2xs"
+                        onChange={(val) => handleStandaloneReasonChange(val)}
+                        category={`paradas_${activeStoppageCategory}`}
+                        placeholder="Descreva a justificativa desta parada ou selecione da relação cadastrada..."
+                        multiline={true}
+                        rows={2}
+                        loggedUserName={formData.operator || 'Sistema'}
                       />
-
-                      {/* Sugestões de motivos comuns */}
-                      <div className="space-y-1">
-                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">
-                          Sugestões Frequentes (Clique para aplicar):
-                        </span>
-                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1 bg-amber-50/50 rounded-lg border border-amber-100">
-                          {(activeStoppageCategory === 'manutencao'
-                            ? downtimeSuggestions.manutencao
-                            : activeStoppageCategory === 'processo'
-                            ? downtimeSuggestions.processo
-                            : downtimeSuggestions.outros
-                          ).slice(0, 8).map((suggestion, sIdx) => (
-                            <button
-                              key={sIdx}
-                              type="button"
-                              onClick={() => {
-                                const current = activeStoppageReason ? `${activeStoppageReason} • ${suggestion}` : suggestion;
-                                handleStandaloneReasonChange(current);
-                              }}
-                              className="px-1.5 py-0.5 bg-white hover:bg-amber-100 border border-amber-200 text-slate-700 text-[9px] font-bold rounded cursor-pointer transition-colors text-left"
-                            >
-                              + {suggestion}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1979,36 +1783,54 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
               {!isErema && (
                 <div className="space-y-2">
                   {/* Card Eco A */}
-                  <div className="p-2 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1 shrink-0">
-                    <div className="flex items-center gap-1.5 text-indigo-800 font-black text-[10px] uppercase tracking-widest">
-                      <Layers size={13} className="text-indigo-600" /> Envio Eco A (Sede Curitiba) (Kg)
-                    </div>
-                    <div className="bg-white p-1.5 rounded-lg border border-indigo-200/60 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="text-[9px] font-black text-indigo-700 uppercase">Eco A (kg)</label>
-                        <input type="number" name="ecoA" value={formData.ecoA || ''} onChange={handleChange} className="w-20 bg-slate-50 border border-indigo-200 rounded-lg px-2 py-0.5 text-xs font-bold text-right h-6" placeholder="0" />
+                  {/* Card Eco A */}
+                  <div className="p-2.5 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2 shrink-0">
+                    <div className="flex items-center justify-between gap-2 text-indigo-800 font-black text-[10px] uppercase tracking-widest">
+                      <div className="flex items-center gap-1.5">
+                        <Layers size={13} className="text-indigo-600" /> Envio Eco A (Sede)
                       </div>
-                      {formData.ecoA > 0 && (
-                        <div className="pt-1 border-t border-dashed border-slate-150">
-                          <input type="text" name="ecoAMotivo" value={formData.ecoAMotivo || ''} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 text-[10px] font-medium placeholder-slate-300 focus:bg-white" placeholder="Justificar perda Eco A..." />
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          name="ecoA"
+                          value={formData.ecoA || ''}
+                          onChange={handleChange}
+                          className="w-20 bg-white border border-indigo-200 rounded-lg px-2 py-0.5 text-xs font-bold text-right h-6"
+                          placeholder="0"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400">Kg</span>
+                      </div>
                     </div>
+                    {formData.ecoA > 0 && (
+                      <div className="pt-1.5 border-t border-dashed border-indigo-200">
+                        <ReasonInputWithSave
+                          category="extrusao_ecoa"
+                          value={formData.ecoAMotivo || ''}
+                          onChange={(val) => setFormData((prev) => ({ ...prev, ecoAMotivo: val }))}
+                          placeholder="Justificar perda Eco A ou selecione da relação..."
+                          loggedUserName={formData.operator || 'Sistema'}
+                          hideLabel={true}
+                          inputClassName="!py-1.5 !text-[11px]"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Card Eco B (Reciclagem) */}
-                  <div className="p-2 bg-orange-50/50 border border-orange-100 rounded-xl space-y-1.5 shrink-0">
-                    <div className="flex items-center gap-1.5 text-orange-700 font-black text-[10px] uppercase tracking-widest"><Layers size={13} /> Reciclagem (Kg)</div>
-                    <div className="space-y-1.5">
+                  <div className="p-2.5 bg-orange-50/50 border border-orange-100 rounded-xl space-y-2 shrink-0">
+                    <div className="flex items-center gap-1.5 text-orange-700 font-black text-[10px] uppercase tracking-widest">
+                      <Layers size={13} /> Reciclagem Eco B (Kg)
+                    </div>
+                    <div className="space-y-2">
                       <EcoBReasonCard
                         label="Eco B (P)"
                         weightName="ecoBP"
                         motivoName="ecoBPMotivo"
                         weightValue={formData.ecoBP || 0}
                         motivoValue={formData.ecoBPMotivo || ''}
-                        categoryGroups={downtimeSuggestions.allGroups}
                         onWeightChange={handleChange}
                         onMotivoChange={handleMotivoChange}
+                        loggedUserName={formData.operator || 'Sistema'}
                       />
 
                       <EcoBReasonCard
@@ -2017,22 +1839,40 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                         motivoName="ecoBMMotivo"
                         weightValue={formData.ecoBM || 0}
                         motivoValue={formData.ecoBMMotivo || ''}
-                        categoryGroups={downtimeSuggestions.allGroups}
                         onWeightChange={handleChange}
                         onMotivoChange={handleMotivoChange}
+                        loggedUserName={formData.operator || 'Sistema'}
                       />
                     </div>
                   </div>
 
                   {/* Card Borra Total */}
-                  <div className="p-2 bg-red-50/50 border border-red-100 rounded-xl space-y-1 shrink-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-[9px] font-black text-red-700 uppercase tracking-widest block">🗑️ Borra Total (Kg)</label>
-                      <input type="number" name="borraTotal" value={formData.borraTotal || ''} onChange={handleChange} className="w-20 bg-white border border-red-200 rounded-lg px-2 py-0.5 text-xs font-black text-red-600 text-right h-6" placeholder="0" />
+                  <div className="p-2.5 bg-red-50/50 border border-red-100 rounded-xl space-y-2 shrink-0">
+                    <div className="flex items-center justify-between gap-2 text-red-700 font-black text-[10px] uppercase tracking-widest">
+                      <label className="text-[10px] font-black text-red-700 uppercase tracking-widest block">🗑️ Borra Total</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          name="borraTotal"
+                          value={formData.borraTotal || ''}
+                          onChange={handleChange}
+                          className="w-20 bg-white border border-red-200 rounded-lg px-2 py-0.5 text-xs font-black text-red-600 text-right h-6"
+                          placeholder="0"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400">Kg</span>
+                      </div>
                     </div>
                     {formData.borraTotal > 0 && (
-                      <div className="pt-1 border-t border-dashed border-red-150">
-                        <input type="text" name="borraTotalMotivo" value={formData.borraTotalMotivo || ''} onChange={handleChange} className="w-full bg-white/80 border border-red-200 rounded-lg px-2 py-0.5 text-[10px] font-medium placeholder-red-400 focus:bg-white text-red-700" placeholder="Justificar perda de Borra..." />
+                      <div className="pt-1.5 border-t border-dashed border-red-150">
+                        <ReasonInputWithSave
+                          category="extrusao_borra"
+                          value={formData.borraTotalMotivo || ''}
+                          onChange={(val) => setFormData((prev) => ({ ...prev, borraTotalMotivo: val }))}
+                          placeholder="Justificar perda de Borra ou selecione da relação..."
+                          loggedUserName={formData.operator || 'Sistema'}
+                          hideLabel={true}
+                          inputClassName="!py-1.5 !text-[11px]"
+                        />
                       </div>
                     )}
                   </div>

@@ -69,7 +69,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   onExportRibbonExcel,
   onOpenPersonnelFerias,
   isAdmin,
-  canViewHome: _canViewHome,
+  canViewHome,
   userPerms,
   isReadOnlyAccount,
   totalFerias = 0,
@@ -727,54 +727,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                         {totalFerias} {totalFerias === 1 ? 'pessoa' : 'pessoas'}
                       </span>
                     )}
-                  </button>
-                )}
-
-                {(isAdmin || userPerms.personnel.schedule) && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectOption(() => onNavigatePersonnel('schedule'))}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
-                      activeTab === 'personnel' && personnelSubView === 'schedule'
-                        ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
-                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeTab === 'personnel' && personnelSubView === 'schedule'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'
-                      }`}>
-                        <Calendar size={14} />
-                      </div>
-                      <span>Escala de Folga 6x2</span>
-                    </div>
-                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-emerald-600" />
-                  </button>
-                )}
-
-                {(isAdmin || userPerms.personnel.schedule) && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectOption(() => onNavigatePersonnel('sunday_schedule'))}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
-                      activeTab === 'personnel' && personnelSubView === 'sunday_schedule'
-                        ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
-                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeTab === 'personnel' && personnelSubView === 'sunday_schedule'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'
-                      }`}>
-                        <Calendar size={14} />
-                      </div>
-                      <span>Escala de Folga Domingo</span>
-                    </div>
-                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-600" />
                   </button>
                 )}
 

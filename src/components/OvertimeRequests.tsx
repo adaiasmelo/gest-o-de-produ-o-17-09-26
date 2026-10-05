@@ -12,6 +12,7 @@ import autoTable from 'jspdf-autotable';
 import { db } from '../lib/firebase';
 import { Employee, OvertimeRequest, SystemUser } from '../types';
 import ConfirmDialog from './ConfirmDialog';
+import { ReasonInputWithSave } from './ReasonInputWithSave';
 import { getFormattedFileDate } from '../utils/outlookEml';
 import {
   COMMERCIAL_DURATION_MINUTES,
@@ -2540,11 +2541,12 @@ ${htmlBody}
       {/* MODAL DE LANÇAMENTO / EDIÇÃO DA SOLICITAÇÃO (DOC 076) */}
       {/* ============================================================== */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-6 bg-slate-900/75 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
-          <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] w-full max-w-4xl lg:max-w-5xl shadow-2xl border border-slate-200 overflow-hidden my-4 sm:my-8 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-900/80 backdrop-blur-xs animate-in fade-in duration-200 overflow-hidden">
+          <div className="absolute inset-0" onClick={() => setIsFormOpen(false)} />
+          <div className="relative bg-white rounded-[2rem] sm:rounded-[2.5rem] w-full max-w-5xl xl:max-w-6xl max-h-[92vh] sm:max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150 z-10">
             
-            {/* Topo do Formulário */}
-            <div className="px-6 sm:px-8 py-5 sm:py-6 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+            {/* Topo do Formulário: FIXO NO TOPO */}
+            <div className="shrink-0 px-6 sm:px-8 py-4 sm:py-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 z-10">
               <div className="flex items-center gap-3.5">
                 <div className="w-11 h-11 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0">
                   <Clock size={22} />
@@ -2560,6 +2562,7 @@ ${htmlBody}
               </div>
 
               <button
+                type="button"
                 onClick={() => setIsFormOpen(false)}
                 className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
                 title="Fechar formulário"
@@ -2568,15 +2571,15 @@ ${htmlBody}
               </button>
             </div>
 
-            {/* Formulário com Scroll */}
-            <form onSubmit={handleSaveAndGeneratePDF} className="p-6 sm:p-8 space-y-6 max-h-[82vh] overflow-y-auto">
-              
-              {formError && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-700 text-xs font-bold">
-                  <AlertCircle size={18} className="shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
+            {/* Formulário com Scroll Interno e Rodapé Fixo */}
+            <form onSubmit={handleSaveAndGeneratePDF} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar overscroll-contain">
+                {formError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-700 text-xs font-bold">
+                    <AlertCircle size={18} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
 
               {/* SEÇÃO 1: IDENTIFICAÇÃO DO COLABORADOR */}
               <div className="space-y-4">
@@ -3318,16 +3321,15 @@ ${htmlBody}
                   </div>
 
                   <div className="lg:col-span-7">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider min-h-[20px] flex items-center mb-1.5">
-                      Justificativa Operacional Detalhada *
-                    </label>
-                    <textarea
-                      rows={2}
+                    <ReasonInputWithSave
+                      label="Justificativa Operacional Detalhada"
                       value={reasonDetails}
-                      onChange={(e) => setReasonDetails(e.target.value)}
-                      placeholder="Digite com clareza o motivo e a necessidade operacional para a realização da hora extra..."
+                      onChange={(val) => setReasonDetails(val)}
+                      category="overtime"
+                      placeholder="Digite o motivo da hora extra ou selecione da relação..."
+                      loggedUserName={loggedUser?.name || 'Sistema'}
+                      multiline={false}
                       required
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white resize-none shadow-sm"
                     />
                     <p className="text-[9px] text-slate-400 font-medium mt-1">
                       Conforme DOC 076: Toda hora extra deve possuir necessidade, responsável, aprovação, registro e justificativa.
@@ -3442,33 +3444,48 @@ ${htmlBody}
                 </div>
               </div>
 
-              {/* BOTÕES DE AÇÃO DO FORMULÁRIO */}
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  Cancelar
-                </button>
+              </div>
 
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      Gravando e Gerando PDF...
-                    </>
+              {/* BOTÕES DE AÇÃO DO FORMULÁRIO: FIXO NO FUNDO */}
+              <div className="shrink-0 px-6 sm:px-8 py-3.5 sm:py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 z-10">
+                <div className="text-xs">
+                  {estimatedHours > 0 ? (
+                    <span className="font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-[11px] inline-flex items-center gap-1.5">
+                      <Clock size={13} className="text-amber-600" />
+                      Estimativa: <strong>{Number(estimatedHours).toFixed(2)}h</strong> extras
+                    </span>
                   ) : (
-                    <>
-                      <FileText size={16} />
-                      Salvar e Gerar Solicitação (DOC 076)
-                    </>
+                    <span className="text-slate-400 text-[11px]">Preencha os horários do turno</span>
                   )}
-                </button>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormOpen(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-amber-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Gravando e Gerando PDF...
+                      </>
+                    ) : (
+                      <>
+                        <FileText size={16} />
+                        Salvar e Gerar Solicitação (DOC 076)
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -3479,9 +3496,10 @@ ${htmlBody}
       {/* MODAL DO GUIA OFICIAL DOC 076 */}
       {/* ============================================================== */}
       {isDocInfoModalOpen && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in zoom-in-95 duration-200">
-            <div className="px-8 py-6 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs animate-in fade-in duration-200 overflow-hidden">
+          <div className="absolute inset-0" onClick={() => setIsDocInfoModalOpen(false)} />
+          <div className="relative bg-white rounded-[2rem] sm:rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150 z-10">
+            <div className="shrink-0 px-6 sm:px-8 py-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
                   <Info size={20} />
@@ -3497,14 +3515,16 @@ ${htmlBody}
               </div>
 
               <button
+                type="button"
                 onClick={() => setIsDocInfoModalOpen(false)}
                 className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                title="Fechar"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 sm:p-8 space-y-5 max-h-[75vh] overflow-y-auto text-xs text-slate-600 font-medium leading-relaxed">
+            <div className="flex-1 p-6 sm:p-8 space-y-5 overflow-y-auto custom-scrollbar text-xs text-slate-600 font-medium leading-relaxed">
               <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200">
                 <h4 className="font-black text-slate-900 uppercase text-xs mb-1">
                   1. Objetivo e Regra Geral (DOC 076)

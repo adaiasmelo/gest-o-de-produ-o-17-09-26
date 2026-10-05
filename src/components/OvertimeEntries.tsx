@@ -30,6 +30,7 @@ import { db } from '../lib/firebase';
 import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
 import { INITIAL_OVERTIME_ENTRIES } from '../data/initialOvertimeEntries';
 import ConfirmDialog from './ConfirmDialog';
+import { ReasonInputWithSave } from './ReasonInputWithSave';
 import {
   PAYROLL_CUTOFF_DAY,
   COMMERCIAL_DURATION_MINUTES,
@@ -167,6 +168,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [batchSectorFilter, setBatchSectorFilter] = useState<string>('all');
   const [rejectionModalId, setRejectionModalId] = useState<string | null>(null);
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('');
+
+  // Seleção de lançamentos para Exclusão Geral e Ações em Massa
+  const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
+  const [bulkDeleteScope, setBulkDeleteScope] = useState<'selected' | 'filtered'>('selected');
+  const [isDeletingBulk, setIsDeletingBulk] = useState<boolean>(false);
 
   // Justificativa e observações
   const [reason, setReason] = useState<string>('');
@@ -1065,11 +1072,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
   };
 
-  // Exclusão
+  // Exclusão Individual
   const handleDeleteEntry = async () => {
     if (!deleteConfirmId || isReadOnly) return;
     try {
       await deleteDoc(doc(db, 'overtime_entries', deleteConfirmId));
+      setSelectedEntryIds((prev) => prev.filter((id) => id !== deleteConfirmId));
       setDeleteConfirmId(null);
     } catch (err) {
       console.error('Erro ao excluir lançamento de hora extra:', err);
@@ -1202,6 +1210,60 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return true;
     });
   }, [entries, filterMonth, filterSector, filterShift, filterMode, searchTerm, quickFilter]);
+
+  // Helpers de Seleção Múltipla e Exclusão Geral
+  const isAllSelected = useMemo(() => {
+    if (filteredEntries.length === 0) return false;
+    return filteredEntries.every((item) => selectedEntryIds.includes(item.id));
+  }, [filteredEntries, selectedEntryIds]);
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedEntryIds([]);
+    } else {
+      setSelectedEntryIds(filteredEntries.map((item) => item.id));
+    }
+  };
+
+  const toggleSelectEntry = (id: string) => {
+    setSelectedEntryIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const entryToDelete = useMemo(() => {
+    return entries.find((item) => item.id === deleteConfirmId);
+  }, [entries, deleteConfirmId]);
+
+  // Exclusão Geral (Selecionados ou Todos os Filtrados)
+  const handleConfirmBulkDelete = async () => {
+    if (isReadOnly) {
+      onBlockedAction?.('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para excluir lançamentos.');
+      return;
+    }
+
+    const idsToDelete = bulkDeleteScope === 'selected'
+      ? selectedEntryIds
+      : filteredEntries.map((item) => item.id);
+
+    if (idsToDelete.length === 0) {
+      setIsBulkDeleteModalOpen(false);
+      return;
+    }
+
+    setIsDeletingBulk(true);
+    try {
+      for (const id of idsToDelete) {
+        await deleteDoc(doc(db, 'overtime_entries', id));
+      }
+      setSelectedEntryIds([]);
+      setIsBulkDeleteModalOpen(false);
+    } catch (err) {
+      console.error('Erro ao realizar exclusão geral:', err);
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
 
   // Estatísticas dos Lançamentos Filtrados (Oficial 60% dias normais seg a sáb, 110% domingos e feriados)
   const stats = useMemo(() => {
@@ -1789,72 +1851,115 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     <div className="bg-slate-50 border border-slate-200 rounded-[2.5rem] w-full flex flex-col overflow-hidden shadow-xl animate-in fade-in duration-500 text-slate-800">
       
       {/* ============================================================== */}
-      {/* CABEÇALHO SUPERIOR */}
+      {/* CABEÇALHO SUPERIOR ORGANIZADO */}
       {/* ============================================================== */}
-      <div className="px-6 sm:px-8 py-6 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 border border-blue-200 shadow-sm shrink-0">
-            <Clock size={28} />
+      <div className="px-6 sm:px-8 py-5 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 border border-blue-200 shadow-xs shrink-0">
+            <Clock size={24} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-tight">
                 Lançamento de Horas Extras
               </h2>
-              <span className="px-2.5 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider border border-blue-200">
-                Base Mensal • Regras de Turno
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider border border-blue-200">
+                Folha: Fechamento Dia 24
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider border border-slate-200">
+                {filterMonth === 'todos' ? 'Todos os Períodos' : activePayrollCycle.shortLabel}
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.15em] mt-0.5">
-              Apontamento Oficial de Horas Extras Efetivas • Parâmetros de Turno (Comercial, Flexível, Diurno, Noturno e Integral)
+            <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+              Apontamento mensal, apuração oficial e controle de horas extras conforme regras de turno.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={exportToCSV}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
-            title="Exportar dados para Excel (.CSV)"
-          >
-            <FileSpreadsheet size={15} className="text-emerald-600" />
-            Excel (CSV)
-          </button>
+        {/* GRUPO DE BOTÕES DE AÇÃO: ORGANIZADOS E PADRONIZADOS */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          {/* Grupo de Exportação (Excel + Relatório PDF) */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80 shadow-2xs">
+            <button
+              type="button"
+              onClick={exportToCSV}
+              className="px-3.5 py-2 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 rounded-xl transition-all flex items-center gap-1.5 text-xs font-black uppercase tracking-wider shadow-2xs border border-transparent hover:border-emerald-200 cursor-pointer active:scale-95"
+              title="Exportar dados da planilha para Excel (.CSV)"
+            >
+              <FileSpreadsheet size={15} className="text-emerald-600 shrink-0" />
+              <span>Excel (CSV)</span>
+            </button>
 
-          <button
-            onClick={exportToPDF}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer"
-            title="Exportar relatório consolidado em PDF"
-          >
-            <Printer size={15} className="text-blue-600" />
-            Relatório PDF
-          </button>
+            <button
+              type="button"
+              onClick={exportToPDF}
+              className="px-3.5 py-2 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-800 rounded-xl transition-all flex items-center gap-1.5 text-xs font-black uppercase tracking-wider shadow-2xs border border-transparent hover:border-blue-200 cursor-pointer active:scale-95 ml-1"
+              title="Exportar relatório consolidado oficial em PDF"
+            >
+              <Printer size={15} className="text-blue-600 shrink-0" />
+              <span>Relatório PDF</span>
+            </button>
+          </div>
 
-          <button
-            onClick={() => {
-              if (isReadOnly) {
-                if (onBlockedAction) {
-                  onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+          {/* Botão Exclusão Geral */}
+          {(!isReadOnly || canManage) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedEntryIds.length > 0) {
+                  setBulkDeleteScope('selected');
                 } else {
-                  alert('Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                  setBulkDeleteScope('filtered');
                 }
-                return;
-              }
-              handleOpenCreateModal();
-            }}
-            className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-wider px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-md shadow-blue-600/20 transition-all cursor-pointer shrink-0"
-            title="Cadastrar Novo Lançamento de Hora Extra"
-          >
-            <Plus size={15} />
-            Novo Lançamento
-          </button>
+                setIsBulkDeleteModalOpen(true);
+              }}
+              disabled={filteredEntries.length === 0}
+              className={`px-3.5 py-2.5 rounded-2xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed ${
+                selectedEntryIds.length > 0
+                  ? 'bg-rose-600 text-white border-rose-700 shadow-md shadow-rose-600/20 hover:bg-rose-700'
+                  : 'bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border-rose-200'
+              }`}
+              title="Exclusão geral de apontamentos (selecionados ou todos os filtrados)"
+            >
+              <Trash2 size={15} className={selectedEntryIds.length > 0 ? 'text-white' : 'text-rose-600'} />
+              <span>Exclusão Geral</span>
+              {selectedEntryIds.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-white/30 text-[10px] font-black">
+                  {selectedEntryIds.length}
+                </span>
+              )}
+            </button>
+          )}
 
+          {/* Botão Novo Lançamento (Ação Primária Principal) */}
+          {(!isReadOnly || canManage) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (isReadOnly) {
+                  if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                  else alert('Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                  return;
+                }
+                handleOpenCreateModal();
+              }}
+              className="px-4.5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-black uppercase tracking-wider rounded-2xl flex items-center gap-2 shadow-md shadow-blue-600/20 transition-all cursor-pointer shrink-0"
+              title="Cadastrar Novo Lançamento de Hora Extra"
+            >
+              <Plus size={16} />
+              <span>Novo Lançamento</span>
+            </button>
+          )}
+
+          {/* Botão Voltar */}
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-xl transition-all cursor-pointer flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-sm"
+            className="px-3.5 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-2xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-black uppercase tracking-wider shadow-2xs active:scale-95"
+            title="Voltar ao Quadro Geral de Pessoal"
           >
             <ArrowLeft size={15} />
-            Voltar
+            <span>Voltar</span>
           </button>
         </div>
       </div>
@@ -1874,7 +1979,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             }`}
           >
             <BarChart3 size={15} />
-            Dashboard & Análise de Dados
+            Indicadores & Dashboard
           </button>
           <button
             type="button"
@@ -1892,8 +1997,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-[10px] font-black uppercase border border-blue-200">
-            <Calendar size={13} className="text-blue-600" />
-            <span>Ciclo: {filterMonth === 'todos' ? 'Todos os Períodos' : activePayrollCycle.fullLabel}</span>
+            <Clock size={13} className="text-blue-600" />
+            <span>Total Filtrado: {stats.totalOvertimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h extras</span>
           </div>
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">
             {filteredEntries.length} lançamento(s)
@@ -1907,52 +2012,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       <div className="p-6 sm:p-8 space-y-6">
 
         {/* ============================================================== */}
-        {/* ATALHOS / FILTROS RÁPIDOS DE 1 TOQUE (SUGESTÃO 6) */}
+        {/* BARRA DE FILTROS & BUSCA INTEGRADA E COMPACTA */}
         {/* ============================================================== */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 shrink-0 mr-1">
-            <Zap size={13} className="text-amber-500" /> Atalhos:
-          </span>
-          {[
-            { id: 'all', label: 'Todos' },
-            { id: 'cycle', label: 'Ciclo Vigente (25 a 24)' },
-            { id: 'this_week', label: 'Esta Semana' },
-            { id: 'sun_holiday', label: 'Domingos e Feriados (110%)' },
-            { id: 'weekdays', label: 'Dias Normais (60%)' },
-            { id: 'pending', label: 'Pendentes de Validação' },
-            { id: 'over_2h', label: 'Acima de 2h/dia' },
-            { id: 'fatigue', label: 'Fadiga / Alerta (>30h)' },
-          ].map((pill) => (
-            <button
-              key={pill.id}
-              type="button"
-              onClick={() => setQuickFilter(pill.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                quickFilter === pill.id
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-              }`}
-            >
-              {pill.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ============================================================== */}
-        {/* BARRA DE FILTROS & BUSCA GLOBAL */}
-        {/* ============================================================== */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Input de Busca */}
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por operador, matrícula, turno ou regra..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                placeholder="Buscar por colaborador, matrícula, cargo ou motivo..."
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
 
             {/* Filtro de Ciclo de Folha (Fechamento dia 24) */}
@@ -2003,23 +2085,52 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               </select>
             </div>
 
-            {/* Filtro de Modalidade */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-              <Clock size={14} className="text-slate-500 shrink-0" />
-              <select
-                value={filterMode}
-                onChange={(e) => setFilterMode(e.target.value)}
-                className="bg-transparent text-xs font-black text-slate-700 focus:outline-none cursor-pointer"
+            {/* Botão Limpar Filtros se houver algum ativo */}
+            {(searchTerm || filterSector !== 'todos' || filterShift !== 'todos' || quickFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setFilterSector('todos');
+                  setFilterShift('todos');
+                  setQuickFilter('all');
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
               >
-                <option value="todos">Todas Modalidades</option>
-                <option value="pos_turno">Passando do Horário (Extensão)</option>
-                <option value="integral">Turno Extra Integral</option>
-              </select>
-            </div>
+                <X size={12} />
+                <span>Limpar Filtros</span>
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-black text-slate-400">
-            <span>{filteredEntries.length} lançamento(s)</span>
+          {/* Atalhos Rápidos de Filtro */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-100 no-scrollbar">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 shrink-0 mr-1">
+              <Zap size={13} className="text-amber-500" /> Atalhos:
+            </span>
+            {[
+              { id: 'all', label: 'Todos' },
+              { id: 'cycle', label: 'Ciclo Vigente (25 a 24)' },
+              { id: 'this_week', label: 'Esta Semana' },
+              { id: 'sun_holiday', label: 'Domingos / Feriados (110%)' },
+              { id: 'weekdays', label: 'Dias Normais (60%)' },
+              { id: 'pending', label: 'Pendentes' },
+              { id: 'over_2h', label: 'Acima de 2h/dia' },
+              { id: 'fatigue', label: 'Alerta Fadiga (>30h)' },
+            ].map((pill) => (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => setQuickFilter(pill.id as any)}
+                className={`px-3 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer shrink-0 ${
+                  quickFilter === pill.id
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -2593,7 +2704,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </span>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black">
@@ -2836,58 +2947,110 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             </div>
           ) : (
             <>
-              <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                    <FileText size={16} />
+              {/* BARRA DE AÇÃO EM LOTE SELECIONADOS */}
+              {selectedEntryIds.length > 0 ? (
+                <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-inner">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-black uppercase tracking-wider">
+                      {selectedEntryIds.length} {selectedEntryIds.length === 1 ? 'lançamento selecionado' : 'lançamentos selecionados'}
+                    </span>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                      Tabela Geral de Apontamentos de Horas Extras
-                    </h4>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {filteredEntries.length} lançamento(s) no ciclo selecionado
-                    </p>
+                  <div className="flex items-center gap-2">
+                    {(!isReadOnly || canManage) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkDeleteScope('selected');
+                          setIsBulkDeleteModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        title="Excluir lançamentos selecionados"
+                      >
+                        <Trash2 size={13} />
+                        <span>Excluir Selecionados ({selectedEntryIds.length})</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEntryIds([])}
+                      className="px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Desmarcar Todos
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isReadOnly) {
-                        if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura.');
-                        else alert('Usuário com perfil somente leitura.');
-                        return;
-                      }
-                      handleOpenCreateModal();
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 cursor-pointer flex items-center gap-2"
-                  >
-                    <Plus size={14} />
-                    Novo Lançamento
-                  </button>
-                </div>
-              </div>
+              ) : (
+                <div className="px-6 py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/60">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                      <FileText size={15} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Relação Oficial de Apontamentos de Horas Extras
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        {filteredEntries.length} lançamento(s) exibido(s) no filtro ativo
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
+                    >
+                      {isAllSelected ? 'Desmarcar Todos' : `Selecionar Todos (${filteredEntries.length})`}
+                    </button>
 
-              <div className="overflow-x-auto">
+                    {(!isReadOnly || canManage) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkDeleteScope('filtered');
+                          setIsBulkDeleteModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title="Excluir todos os registros que estão filtrados na tela"
+                      >
+                        <Trash2 size={12} className="text-rose-600" />
+                        <span>Exclusão Geral</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black">
+                    <th className="px-3.5 py-3.5 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                        title="Selecionar / Desmarcar todos os visíveis"
+                      />
+                    </th>
                     <th className="px-4 py-3.5">Data</th>
                     <th className="px-4 py-3.5">Matrícula</th>
                     <th className="px-4 py-3.5">Colaborador / Operador</th>
                     <th className="px-4 py-3.5">Setor & Turno</th>
                     <th className="px-4 py-3.5 text-center">Modalidade & Horários</th>
-                    <th className="px-4 py-3.5 text-center">Horas Trabalhando</th>
+                    <th className="px-4 py-3.5 text-center">Horas Trab.</th>
                     <th className="px-4 py-3.5 text-center">Horas Extras</th>
                     <th className="px-4 py-3.5 text-center">% HE</th>
-                    <th className="px-4 py-3.5 text-center">Status / Validação</th>
-                    <th className="px-4 py-3.5">Cálculo Aplicado / Motivo</th>
-                    <th className="px-4 py-3.5 text-right">Ações</th>
+                    <th className="px-4 py-3.5 text-center">Status</th>
+                    <th className="px-4 py-3.5">Cálculo & Motivo</th>
+                    <th className="px-4 py-3.5 text-right">Ações (Editar / Excluir)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredEntries.map((item) => {
+                    const isSelected = selectedEntryIds.includes(item.id);
                     const dateFormatted = item.date ? item.date.split('-').reverse().join('/') : '-';
                     const parts = (item.date || '').split('-').map(Number);
                     let dayAbbr = '';
@@ -2908,7 +3071,23 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     const empHours = empStats ? empStats.totalHours : 0;
 
                     return (
-                      <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                      <tr
+                        key={item.id}
+                        className={`transition-colors ${
+                          isSelected ? 'bg-blue-50/50 hover:bg-blue-50/80' : 'hover:bg-blue-50/30'
+                        }`}
+                      >
+                        {/* Checkbox de seleção */}
+                        <td className="px-3.5 py-3.5 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectEntry(item.id)}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                            title="Selecionar este apontamento"
+                          />
+                        </td>
+
                         {/* Data */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
@@ -3076,24 +3255,28 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                           </div>
                         </td>
 
-                        {/* Ações */}
+                        {/* Ações (Editar e Excluir) */}
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
                             {(!isReadOnly || canManage) && (
                               <>
                                 <button
+                                  type="button"
                                   onClick={() => handleOpenEditModal(item)}
-                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                                  title="Editar lançamento"
+                                  className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition-all text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs"
+                                  title="Editar informações deste lançamento de hora extra"
                                 >
-                                  <Edit2 size={14} />
+                                  <Edit2 size={12} className="text-blue-600" />
+                                  <span>Editar</span>
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => setDeleteConfirmId(item.id)}
-                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="Excluir lançamento"
+                                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition-all text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs"
+                                  title="Excluir este lançamento individualmente"
                                 >
-                                  <Trash2 size={14} />
+                                  <Trash2 size={12} className="text-rose-600" />
+                                  <span>Excluir</span>
                                 </button>
                               </>
                             )}
@@ -3115,40 +3298,46 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       {/* MODAL DE NOVO LANÇAMENTO / EDIÇÃO (COM OS PARÂMETROS DA SOLICITAÇÃO) */}
       {/* ============================================================== */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-3xl w-full border border-slate-200 shadow-2xl overflow-hidden my-6">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-0 sm:p-4 md:p-6 overflow-hidden animate-in fade-in duration-200">
+          {/* Backdrop click to close */}
+          <div className="absolute inset-0" onClick={() => setIsFormOpen(false)} />
+
+          <div className="relative bg-white rounded-none sm:rounded-[2rem] max-w-5xl xl:max-w-6xl w-full h-full sm:h-auto sm:max-h-[92vh] flex flex-col border-0 sm:border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 z-10">
             
-            {/* Cabeçalho do Modal */}
-            <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                  <Clock size={20} />
+            {/* Cabeçalho do Modal: FIXO NO TOPO */}
+            <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/95 backdrop-blur-xs">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0 shadow-xs border border-blue-200">
+                  <Clock className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                  <h3 className="text-base sm:text-xl font-black text-slate-900 uppercase tracking-tight">
                     {editingEntry ? 'Editar Lançamento de Hora Extra' : 'Novo Lançamento de Hora Extra'}
                   </h3>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider">
                     Apontamento Direto • Base Mensal • Parâmetros Oficiais de Turno
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setIsFormOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-10 h-10 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                title="Fechar (Esc)"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
 
-            {/* Formulário */}
-            <form onSubmit={handleSaveEntry} className="p-6 space-y-6">
-              {formError && (
-                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle size={16} className="shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
+            {/* Formulário com Área Rolável e Rodapé Fixo */}
+            <form onSubmit={handleSaveEntry} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 custom-scrollbar overscroll-contain">
+                {formError && (
+                  <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
 
               {/* SEÇÃO 1: IDENTIFICAÇÃO DO COLABORADOR OU TURMA */}
               <div className="space-y-4">
@@ -3189,10 +3378,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
 
                 {!isBatchMode ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     {/* Matrícula */}
-                    <div>
-                      <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                    <div className="md:col-span-1">
+                      <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1.5">
                         Matrícula *
                       </label>
                       <input
@@ -3200,18 +3389,18 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         value={registration}
                         onChange={(e) => handleRegistrationChange(e.target.value)}
                         placeholder="Ex: 0023"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
+                        className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono shadow-2xs"
                       />
-                      <p className="text-[9px] text-slate-400 mt-1">Ao digitar, busca operador e turno cadastrado</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Busca automática por matrícula</p>
                     </div>
 
                     {/* Nome do Operador com Busca / Autocomplete */}
-                    <div className="sm:col-span-2 relative">
-                      <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                    <div className="md:col-span-3 relative">
+                      <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1.5">
                         Nome do Operador / Colaborador *
                       </label>
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input
                           type="text"
                           value={employeeSearchText}
@@ -3222,7 +3411,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                           }}
                           onFocus={() => setShowEmployeeDropdown(true)}
                           placeholder="Pesquisar por nome ou matrícula..."
-                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-2xs"
                         />
                       </div>
 
@@ -3230,21 +3419,21 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       {showEmployeeDropdown && filteredEmployeeSuggestions.length > 0 && (
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setShowEmployeeDropdown(false)} />
-                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto z-20 py-1 divide-y divide-slate-50">
+                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-56 overflow-y-auto z-20 py-1.5 divide-y divide-slate-100">
                             {filteredEmployeeSuggestions.map((emp) => (
                               <button
                                 key={emp.id}
                                 type="button"
                                 onClick={() => handleSelectEmployee(emp)}
-                                className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between text-xs cursor-pointer transition-colors"
+                                className="w-full px-4 py-2.5 text-left hover:bg-blue-50 flex items-center justify-between text-xs cursor-pointer transition-colors"
                               >
                                 <div>
-                                  <div className="font-black text-slate-800">{emp.name}</div>
-                                  <div className="text-[10px] text-slate-400 font-semibold">
+                                  <div className="font-black text-slate-800 text-sm">{emp.name}</div>
+                                  <div className="text-[11px] text-slate-500 font-semibold">
                                     {emp.role || 'Sem cargo'} • {emp.sector || 'Extrusão'} • Turno: {emp.shift || 'Comercial'}
                                   </div>
                                 </div>
-                                <span className="text-[10px] font-mono font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                <span className="text-xs font-mono font-black text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
                                   Matr: {emp.registration || '-'}
                                 </span>
                               </button>
@@ -3362,15 +3551,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1.5">
                       Setor Cadastrado *
                     </label>
                     <select
                       value={sector}
                       onChange={(e) => setSector(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white cursor-pointer"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white cursor-pointer shadow-2xs"
                     >
                       {SECTORS_LIST.map((s) => (
                         <option key={s} value={s}>{s}</option>
@@ -3379,10 +3568,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                       <span>Data da Realização *</span>
                       {dateDayInfo.dayName && (
-                        <span className={`text-[10px] font-black ${
+                        <span className={`text-[11px] font-black ${
                           dateDayInfo.isSunday ? 'text-amber-600' : 'text-blue-600'
                         }`}>
                           {dateDayInfo.dayName}
@@ -3394,7 +3583,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       value={date}
                       onChange={(e) => setDate(e.target.value)}
                       required
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-2xs"
                     />
                   </div>
                 </div>
@@ -3552,7 +3741,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 {/* HORÁRIOS: INÍCIO E TÉRMINO EFETIVO */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1.5">
                       {overtimeMode === 'pos_turno' ? 'Início do Expediente *' : 'Horário de Entrada *'}
                     </label>
                     <input
@@ -3565,9 +3754,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         }
                       }}
                       required
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono shadow-2xs"
                     />
-                    <p className="text-[9px] text-slate-400 font-medium mt-1">
+                    <p className="text-[10px] text-slate-400 font-medium mt-1">
                       {overtimeMode === 'pos_turno' 
                         ? (isCommercialFlexible ? 'Entrada flexível (jornada de 10h a partir deste horário)' : 'Início da jornada normal')
                         : 'Início do plantão extraordinário'}
@@ -3575,7 +3764,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1.5">
                       {overtimeMode === 'pos_turno' ? 'Saída Efetiva (Passando) *' : 'Horário de Término *'}
                     </label>
                     <input
@@ -3583,7 +3772,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
                       required
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono shadow-2xs"
                     />
                     {/* Botões de ajuste rápido */}
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -3596,7 +3785,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                           const newM = totalM % 60;
                           setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
                         }}
-                        className="text-[9px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer"
+                        className="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg cursor-pointer"
                         title="Acrescentar 30 minutos de saída"
                       >
                         +30m
@@ -3610,7 +3799,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                           const newM = totalM % 60;
                           setEndTime(`${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
                         }}
-                        className="text-[9px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer"
+                        className="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg cursor-pointer"
                         title="Acrescentar 1 hora de saída"
                       >
                         +1h
@@ -3788,34 +3977,35 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               </div>
 
               {/* SEÇÃO 3: MOTIVO E OBSERVAÇÕES */}
-              <div className="space-y-3 pt-1">
+              <div className="space-y-4 pt-1">
                 <div className="relative">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
-                      Motivo / Atividade Realizada *
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <FileText size={16} className="text-blue-600" />
+                      <span>Motivo / Atividade Realizada *</span>
                     </label>
-                    <span className="text-[10px] font-semibold text-slate-400">
+                    <span className="text-xs font-semibold text-slate-400">
                       {isReasonNew && reason.trim().length > 0 ? (
-                        <span className="text-amber-600 font-bold flex items-center gap-1">
-                          <Sparkles size={11} /> Novo motivo
+                        <span className="text-amber-600 font-bold flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
+                          <Sparkles size={13} /> Novo motivo
                         </span>
                       ) : (
-                        'Escreva ou selecione da lista'
+                        'Escreva detalhadamente ou selecione da relação'
                       )}
                     </span>
                   </div>
 
                   <div className="relative">
-                    <input
-                      type="text"
+                    <textarea
+                      rows={3}
                       value={reason}
                       onChange={(e) => {
                         setReason(e.target.value);
                         setShowReasonDropdown(true);
                       }}
                       onFocus={() => setShowReasonDropdown(true)}
-                      placeholder="Escreva o motivo da hora extra ou busque na relação..."
-                      className={`w-full pl-3 pr-20 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all ${
+                      placeholder="Descreva com clareza a atividade realizada ou o motivo da convocação para a hora extra (ou clique na seta ao lado para escolher na relação cadastrada)..."
+                      className={`w-full pl-4 pr-24 py-3 bg-slate-50 border rounded-2xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all shadow-2xs resize-none ${
                         isReasonNew && reason.trim().length > 0
                           ? 'border-amber-400 bg-amber-50/20'
                           : 'border-slate-200'
@@ -3823,7 +4013,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     />
 
                     {/* Botões de ação rápida à direita do input */}
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <div className="absolute right-3 top-3 flex items-center gap-1.5">
                       {reason && (
                         <button
                           type="button"
@@ -3831,16 +4021,16 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                             setReason('');
                             setShowReasonDropdown(true);
                           }}
-                          className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200/80 transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/80 transition-colors"
                           title="Limpar texto"
                         >
-                          <X size={13} />
+                          <X size={15} />
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={() => setShowReasonDropdown((prev) => !prev)}
-                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        className={`p-2 rounded-xl border transition-all cursor-pointer shadow-xs ${
                           showReasonDropdown
                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                             : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
@@ -3848,7 +4038,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         title="Ver relação de motivos disponíveis"
                       >
                         <ChevronDown
-                          size={14}
+                          size={15}
                           className={`transition-transform duration-200 ${
                             showReasonDropdown ? 'rotate-180' : ''
                           }`}
@@ -3859,11 +4049,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
                   {/* Informação sobre novo motivo a ser salvo */}
                   {isReasonNew && reason.trim().length > 0 && (
-                    <div className="mt-1.5 p-2.5 bg-amber-50/90 border border-amber-200/80 rounded-xl flex items-center justify-between gap-2 text-[11px] text-amber-900">
-                      <div className="flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-amber-600 shrink-0" />
-                        <span>
-                          <strong>Novo motivo:</strong> Ao salvar o lançamento, este motivo será registrado na relação para aparecer nas próximas buscas.
+                    <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-amber-900 animate-in fade-in duration-150">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-amber-600 shrink-0" />
+                        <span className="leading-snug">
+                          <strong>Novo motivo identificado:</strong> Deseja registrar agora na relação oficial para sugestões futuras?
                         </span>
                       </div>
                       <button
@@ -3871,10 +4061,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         onClick={async () => {
                           await saveNewReasonToDatabase(reason.trim());
                         }}
-                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 transition-all cursor-pointer shadow-sm"
+                        className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider shrink-0 transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1"
                         title="Salvar agora na relação de motivos"
                       >
-                        Salvar na Relação
+                        <Plus size={13} />
+                        <span>Salvar na Relação</span>
                       </button>
                     </div>
                   )}
@@ -3886,26 +4077,26 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         className="fixed inset-0 z-10"
                         onClick={() => setShowReasonDropdown(false)}
                       />
-                      <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto z-20 py-1 divide-y divide-slate-100">
+                      <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-64 overflow-y-auto z-20 py-1.5 divide-y divide-slate-100 custom-scrollbar">
                         {/* Se o usuário digitou algo novo, opção explícita no topo */}
                         {isReasonNew && reason.trim().length > 0 && (
                           <button
                             type="button"
                             onClick={() => setShowReasonDropdown(false)}
-                            className="w-full px-3 py-2 text-left bg-amber-50/80 hover:bg-amber-100/80 flex items-center justify-between text-xs cursor-pointer transition-colors border-b border-amber-100"
+                            className="w-full px-4 py-2.5 text-left bg-amber-50 hover:bg-amber-100 flex items-center justify-between text-xs cursor-pointer transition-colors border-b border-amber-100"
                           >
-                            <div className="flex items-center gap-2 pr-2">
-                              <Sparkles size={14} className="text-amber-600 shrink-0" />
+                            <div className="flex items-center gap-2.5 pr-2">
+                              <Sparkles size={15} className="text-amber-600 shrink-0" />
                               <div>
-                                <div className="font-black text-amber-900">
+                                <div className="font-black text-amber-900 text-xs">
                                   Usar novo motivo: "{reason.trim()}"
                                 </div>
-                                <div className="text-[10px] text-amber-700">
+                                <div className="text-[10.5px] text-amber-700">
                                   Será salvo na relação e sugerido nas próximas vezes
                                 </div>
                               </div>
                             </div>
-                            <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-amber-200 text-amber-800 rounded-md shrink-0">
+                            <span className="text-[9.5px] font-black uppercase px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md shrink-0">
                               Novo
                             </span>
                           </button>
@@ -3925,15 +4116,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                                   setReason(item);
                                   setShowReasonDropdown(false);
                                 }}
-                                className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs cursor-pointer transition-colors ${
+                                className={`w-full px-4 py-2.5 text-left flex items-center justify-between text-xs cursor-pointer transition-colors ${
                                   isSelected
                                     ? 'bg-blue-50 text-blue-900 font-black'
-                                    : 'hover:bg-slate-50 text-slate-700'
+                                    : 'hover:bg-slate-50 text-slate-700 font-medium'
                                 }`}
                               >
-                                <div className="flex items-center gap-2 pr-2">
+                                <div className="flex items-center gap-2.5 pr-2 min-w-0">
                                   <span
-                                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    className={`w-2 h-2 rounded-full shrink-0 ${
                                       isSelected
                                         ? 'bg-blue-600'
                                         : isDefault
@@ -3973,37 +4164,58 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Ex: Cobriu turno do operador Pedro / Conclusão de setup prioritário"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                    className="w-full px-4 py-3 sm:py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all shadow-2xs"
                   />
                 </div>
               </div>
 
-              {/* Botões do Rodapé do Modal */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase transition-all cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-blue-600/20 flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      <span>Salvando...</span>
-                    </>
+              </div>
+
+              {/* Botões do Rodapé do Modal: FIXO NO FUNDO */}
+              <div className="shrink-0 px-4 sm:px-8 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 bg-slate-50/95 backdrop-blur-xs z-10">
+                <div className="text-xs sm:text-sm font-bold text-slate-600 text-center sm:text-left">
+                  {isBatchMode && !editingEntry ? (
+                    <span className="flex items-center justify-center sm:justify-start gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                      Lote: <strong>{selectedEmployeeIds.length}</strong> colaborador(es) selecionado(s)
+                    </span>
                   ) : (
-                    <>
-                      <Check size={16} />
-                      <span>{editingEntry ? 'Atualizar Lançamento' : 'Salvar Lançamento'}</span>
-                    </>
+                    <span>
+                      Total Calculado:{' '}
+                      <strong className="text-blue-700 font-black">
+                        {overtimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h
+                      </strong>{' '}
+                      extras ({overtimePercentage}%)
+                    </span>
                   )}
-                </button>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormOpen(false)}
+                    className="flex-1 sm:flex-none px-5 py-3 sm:py-3.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl text-xs sm:text-sm font-black uppercase transition-all cursor-pointer text-center"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="flex-1 sm:flex-none px-7 py-3 sm:py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Salvando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={18} />
+                        <span>{editingEntry ? 'Atualizar Lançamento' : 'Salvar Lançamento'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -4012,8 +4224,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
       {/* Modal de Justificativa de Rejeição */}
       {rejectionModalId && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-in fade-in duration-150">
+          <div className="absolute inset-0" onClick={() => {
+            setRejectionModalId(null);
+            setRejectionReasonText('');
+          }} />
+          <div className="relative bg-white rounded-3xl max-w-md w-full max-h-[90vh] flex flex-col border border-slate-200 shadow-2xl p-6 space-y-4 overflow-y-auto custom-scrollbar z-10 animate-in zoom-in-95 duration-150">
             <div className="flex items-center gap-3 text-red-600">
               <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0 font-bold">
                 <AlertCircle size={20} />
@@ -4029,15 +4245,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             </div>
 
             <div>
-              <label className="block text-[10.5px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                Motivo da Rejeição *
-              </label>
-              <textarea
+              <ReasonInputWithSave
+                label="Motivo da Rejeição"
                 value={rejectionReasonText}
-                onChange={(e) => setRejectionReasonText(e.target.value)}
+                onChange={(val) => setRejectionReasonText(val)}
+                category="motivo_rejeicao_hora_extra"
                 placeholder="Ex: Não autorizado previamente pela gerência / Intervalo não compatível com a escala..."
+                multiline={true}
                 rows={3}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white"
+                required={true}
               />
             </div>
 
@@ -4065,12 +4281,146 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         </div>
       )}
 
-      {/* Confirmação de Exclusão */}
+      {/* ============================================================== */}
+      {/* MODAL DE EXCLUSÃO GERAL (SELECIONADOS OU FILTRADOS) */}
+      {/* ============================================================== */}
+      {isBulkDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-in fade-in duration-150">
+          <div className="absolute inset-0" onClick={() => !isDeletingBulk && setIsBulkDeleteModalOpen(false)} />
+          <div className="relative bg-white rounded-3xl max-w-md w-full max-h-[90vh] flex flex-col border border-slate-200 shadow-2xl p-6 space-y-5 overflow-y-auto custom-scrollbar z-10 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200 shadow-xs">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                  Exclusão Geral de Horas Extras
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Selecione o escopo da exclusão abaixo. Os lançamentos serão excluídos definitivamente do sistema.
+                </p>
+              </div>
+            </div>
+
+            {/* Opções de Escopo */}
+            <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <label
+                className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                  bulkDeleteScope === 'selected'
+                    ? 'bg-rose-50 border-rose-300 text-rose-950 font-bold'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                } ${selectedEntryIds.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="bulkScope"
+                    value="selected"
+                    disabled={selectedEntryIds.length === 0}
+                    checked={bulkDeleteScope === 'selected'}
+                    onChange={() => setBulkDeleteScope('selected')}
+                    className="text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <span className="text-xs font-black uppercase">Excluir Lançamentos Selecionados</span>
+                    <span className="text-[11px] block text-slate-500 font-medium">
+                      {selectedEntryIds.length > 0 ? `${selectedEntryIds.length} item(ns) marcados na tabela` : 'Nenhum item marcado'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800">
+                  {selectedEntryIds.length}
+                </span>
+              </label>
+
+              <label
+                className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                  bulkDeleteScope === 'filtered'
+                    ? 'bg-rose-50 border-rose-300 text-rose-950 font-bold'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="bulkScope"
+                    value="filtered"
+                    checked={bulkDeleteScope === 'filtered'}
+                    onChange={() => setBulkDeleteScope('filtered')}
+                    className="text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <span className="text-xs font-black uppercase">Excluir Todos os Filtrados</span>
+                    <span className="text-[11px] block text-slate-500 font-medium">
+                      {filteredEntries.length} lançamento(s) exibidos na tela ({filterMonth === 'todos' ? 'Todos os Períodos' : activePayrollCycle.shortLabel})
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800">
+                  {filteredEntries.length}
+                </span>
+              </label>
+            </div>
+
+            <div className="p-3 bg-rose-50/80 border border-rose-200/80 rounded-xl text-[11px] font-bold text-rose-800 flex items-center gap-2">
+              <AlertCircle size={15} className="shrink-0 text-rose-600" />
+              <span>
+                Total a excluir permanentemente:{' '}
+                <strong>
+                  {bulkDeleteScope === 'selected' ? selectedEntryIds.length : filteredEntries.length} registro(s)
+                </strong>
+                . Esta ação é irreversível.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                disabled={isDeletingBulk}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBulkDelete}
+                disabled={
+                  isDeletingBulk ||
+                  (bulkDeleteScope === 'selected' && selectedEntryIds.length === 0) ||
+                  filteredEntries.length === 0
+                }
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-rose-600/25 cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeletingBulk ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Confirmar Exclusão Geral</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmação de Exclusão Individual */}
       <ConfirmDialog
         isOpen={!!deleteConfirmId}
-        title="Excluir Lançamento de Hora Extra"
-        message="Tem certeza que deseja excluir permanentemente este lançamento de hora extra? Esta ação não pode ser desfeita."
-        confirmText="Sim, Excluir"
+        title="Excluir Lançamento Individual"
+        message={
+          entryToDelete
+            ? `Tem certeza que deseja excluir permanentemente o lançamento de "${entryToDelete.employeeName}" do dia ${
+                entryToDelete.date ? entryToDelete.date.split('-').reverse().join('/') : ''
+              } (${entryToDelete.overtimeHoursFormatted || `${entryToDelete.overtimeHours}h`})? Esta ação não pode ser desfeita.`
+            : 'Tem certeza que deseja excluir permanentemente este lançamento de hora extra? Esta ação não pode ser desfeita.'
+        }
+        confirmText="Sim, Excluir Lançamento"
         cancelText="Cancelar"
         confirmVariant="danger"
         onConfirm={handleDeleteEntry}

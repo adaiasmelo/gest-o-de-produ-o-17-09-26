@@ -67,6 +67,7 @@ import { VacationReturnModal } from './components/VacationReturnModal';
 import { Cast1CalculatorModal } from './components/Cast1CalculatorModal';
 import { Cast1CalculatorStandalone } from './components/Cast1CalculatorStandalone';
 import { RibbonMachineGoalsModal } from './components/RibbonMachineGoalsModal';
+import { ReasonInputWithSave, saveReasonToLibrary } from './components/ReasonInputWithSave';
 import { 
   getRibbonMachineGoal, 
   getRibbonTotalGoal, 
@@ -5537,6 +5538,14 @@ Atenciosamente,
       outrosMotivo: ribbonOutrosStops.length > 0 ? JSON.stringify(ribbonOutrosStops) : '',
     };
 
+    // Grava motivos preenchidos na biblioteca de motivos de fita
+    [...ribbonManutencaoStops, ...ribbonProcessoStops, ...ribbonOutrosStops].forEach((stop) => {
+      const text = (stop.explicacao || stop.motivo || '').trim();
+      if (text) {
+        saveReasonToLibrary('paradas_fita', text, ribbonOperator || loggedUser?.name || 'Sistema');
+      }
+    });
+
     try {
       await setDoc(doc(db, 'ribbon_cutting_entries', entryId), cleanUndefined(payload));
       recordUserActivity({
@@ -7704,7 +7713,7 @@ Atenciosamente,
     };
 
     // 1. Liderança
-    const liderança = employees.filter(e => normalize(e.sector) === 'lideranca' && isEmployed(e.status) && e.status !== 'Férias').sort(sortByRole);
+    const liderança = employees.filter(e => normalize(e.sector) === 'lideranca' && isEmployed(e.status) && e.status !== 'Férias' && !isEmployeeSilenced(e, collaborators)).sort(sortByRole);
     if (liderança.length > 0) {
         addSectionTable('LIDERANÇA E GESTÃO', liderança.map(e => {
             let displayShift = e.shift;
@@ -7719,15 +7728,8 @@ Atenciosamente,
         }));
     }
 
-    // Função para renderizar setor agrupado por turno e máquina
+    // Função para renderizar setor agrupado por turno e máquina fiel ao Quadro Geral
     const addGroupedSector = (sectorTitle: string, sectorKey: string, machines: string[], shifts: string[], minCapacity: number) => {
-        const sectorEmps = employees.filter(e => normalize(e.sector) === normalize(sectorKey));
-        
-        const isVisible = (statusStr: string) => {
-            const n = normalize(statusStr);
-            return ['ativo', 'atestado', 'em contratacao'].includes(n);
-        };
-
         if (yPos > 240) { doc.addPage(); yPos = 20; }
 
         doc.setFillColor(30, 41, 59);
@@ -7758,38 +7760,67 @@ Atenciosamente,
             doc.text(`TURNO: ${shift.toUpperCase()}`, 105, yPos + 6, { align: 'center' });
             yPos += 12;
 
-            const matchMachinePdf = (empMach?: string, targetMach?: string) => {
-                const em = normalize(empMach);
-                const tm = normalize(targetMach);
-                if (em === tm) return true;
-                if (tm === 'gehl' || tm === 'ghezzi') return em === 'gehl' || em === 'ghezzi' || em.includes('ghez');
-                if (tm === 'lintec' || tm === 'lintech') return em === 'lintec' || em === 'lintech';
-                if (tm === 'ultech' || tm === 'wutec') return em === 'ultech' || em === 'wutec' || em === 'ultec';
-                return false;
-            };
-
             validMachines.forEach(machine => {
+                const isVisible = (statusStr: string) => {
+                    const n = normalize(statusStr);
+                    return ['ativo', 'atestado', 'em contratacao'].includes(n);
+                };
+
                 const machineEmps = employees.filter(e => 
+                    !isEmployeeSilenced(e, collaborators) &&
                     normalize(e.sector) === normalize(sectorKey) && 
-                    matchMachinePdf(e.machine, machine) && 
+                    matchPersonnelMachine(e.machine, machine) && 
                     normalize(e.shift) === normalize(shift) && 
                     isVisible(e.status)
                 ).sort((a, b) => {
+                    if (a.orderIndex !== undefined && b.orderIndex !== undefined) {
+                        return a.orderIndex - b.orderIndex;
+                    }
+                    if (a.orderIndex !== undefined) return -1;
+                    if (b.orderIndex !== undefined) return 1;
                     const getRank = (r: string) => (r || '').toLowerCase().includes('operador') ? 0 : 1;
                     return getRank(a.role) - getRank(b.role);
                 });
+
+                const vacationingInGroup = employees.filter(e => 
+                    !isEmployeeSilenced(e, collaborators) &&
+                    normalize(e.sector) === normalize(sectorKey) && 
+                    matchPersonnelMachine(e.machine, machine) && 
+                    normalize(e.shift) === normalize(shift) && 
+                    normalize(e.status) === 'ferias'
+                );
+
+                const uncoveredVacationing = vacationingInGroup.filter(v => 
+                    !machineEmps.some(e => e.substituteForId === v.id)
+                );
+
+                const dismissedInGroup = employees.filter(e => 
+                    !isEmployeeSilenced(e, collaborators) &&
+                    normalize(e.sector) === normalize(sectorKey) && 
+                    matchPersonnelMachine(e.machine, machine) && 
+                    normalize(e.shift) === normalize(shift) && 
+                    normalize(e.status) === 'desligado'
+                ).sort((a, b) => {
+                    const dateA = a.terminatedAt || a.updatedAt || '';
+                    const dateB = b.terminatedAt || b.updatedAt || '';
+                    return dateB.localeCompare(dateA);
+                });
+
+                const uncoveredDismissed = dismissedInGroup.filter(d => 
+                    !machineEmps.some(e => e.replacedEmployeeId === d.id)
+                );
                 
                 const excludedCount = employees.filter(e =>
                     normalize(e.sector) === normalize(sectorKey) && 
-                    matchMachinePdf(e.machine, machine) && 
+                    matchPersonnelMachine(e.machine, machine) && 
                     normalize(e.shift) === normalize(shift) && 
                     normalize(e.status) === 'vaga excluida'
                 ).length;
 
                 const adjustedCapacity = Math.max(0, minCapacity - excludedCount);
 
-                // If no capacity and no active employees, skip this machine for this shift
-                if (adjustedCapacity === 0 && machineEmps.length === 0) return;
+                // If no capacity and no employees/vacancies, skip
+                if (adjustedCapacity === 0 && machineEmps.length === 0 && uncoveredVacationing.length === 0 && uncoveredDismissed.length === 0) return;
 
                 if (yPos > 260) { doc.addPage(); yPos = 20; }
 
@@ -7799,57 +7830,60 @@ Atenciosamente,
                 doc.text(`EQUIPAMENTO: ${machine.toUpperCase()}`, 16, yPos);
                 yPos += 4;
 
-                const dismissedInGroup = employees.filter(e => 
-                    !isEmployeeSilenced(e, collaborators) &&
-                    normalize(e.sector) === normalize(sectorKey) && 
-                    matchMachinePdf(e.machine, machine) && 
-                    normalize(e.shift) === normalize(shift) && 
-                    normalize(e.status) === 'desligado'
-                ).sort((a, b) => (b.terminatedAt || b.updatedAt || '').localeCompare(a.terminatedAt || a.updatedAt || ''));
-
-                const uncoveredDismissed = dismissedInGroup.filter(d => 
-                    !machineEmps.some(e => e.replacedEmployeeId === d.id)
-                );
-
                 const slots: { name: string; role: string; status: string }[] = [];
                 
-                // Existing employees in slots
+                // 1. Colaboradores ativos no posto (ou em contratação)
                 machineEmps.forEach(emp => {
-                    let displayName = emp.status === 'Em Contratação' ? 'VAGA EM CONTRATAÇÃO' : emp.name;
-                    if (emp.replacedEmployeeName) {
-                        displayName += ` (Subst. ${emp.replacedEmployeeName}${emp.replacedReason ? ` • Motivo: ${emp.replacedReason}` : ''})`;
+                    let displayName = emp.name;
+                    let displayStatus = emp.status;
+
+                    if (emp.status === 'Em Contratação' || emp.name === 'Em Contratação') {
+                        displayName = 'VAGA EM CONTRATAÇÃO';
+                        displayStatus = 'Em Contratação';
+                    } else if (emp.replacedEmployeeName) {
+                        displayName += ` (Subst. ${emp.replacedEmployeeName})`;
                     } else if (emp.substituteForName) {
                         displayName += ` (Subst. ${emp.substituteForName})`;
                     }
                     slots.push({
                         name: displayName,
-                        role: emp.role,
-                        status: emp.status
+                        role: emp.role || 'Operador / Auxiliar',
+                        status: displayStatus
                     });
                 });
 
-                // Vacancy slots for uncovered dismissed employees
+                // 2. Colaboradores em férias sem substituto
+                uncoveredVacationing.forEach(vac => {
+                    slots.push({
+                        name: `VAGA EM ABERTO - FÉRIAS (Subst. ${vac.name})`,
+                        role: vac.role || 'Operador / Auxiliar',
+                        status: 'Férias'
+                    });
+                });
+
+                // 3. Vagas em aberto por desligamento de colaboradores
                 uncoveredDismissed.forEach(dis => {
                     slots.push({
-                        name: `VAGA EM ABERTO (Subst. ${dis.name} - Desligado${dis.terminationReason ? ` • Motivo: ${dis.terminationReason}` : ''})`,
+                        name: `VAGA EM ABERTO (${dis.name})`,
                         role: dis.role || 'Operador / Auxiliar',
                         status: 'Desligado'
                     });
                 });
 
-                // Remaining generic capacity slots
-                const currentlyFilled = machineEmps.length + uncoveredDismissed.length;
+                // 4. Vagas restantes genéricas para completar a capacidade nominal
+                const currentlyFilled = machineEmps.length + uncoveredVacationing.length + uncoveredDismissed.length;
                 const remainingVacant = Math.max(0, adjustedCapacity - currentlyFilled);
                 for (let i = 0; i < remainingVacant; i++) {
                     const isOpSlot = i === 0 && 
                         !machineEmps.some(e => e.role.toLowerCase().includes('operador')) &&
-                        !uncoveredDismissed.some(e => e.role?.toLowerCase().includes('operador'));
+                        !uncoveredVacationing.some(e => (e.role || '').toLowerCase().includes('operador')) &&
+                        !uncoveredDismissed.some(e => (e.role || '').toLowerCase().includes('operador'));
                     const defaultRole = isOpSlot ? 'Operador 1' : 'Auxiliar de Produção';
                     
                     slots.push({
-                        name: 'VAGA DISPONÍVEL',
+                        name: 'VAGA EM ABERTO',
                         role: defaultRole,
-                        status: 'Disponível'
+                        status: 'Em Aberto'
                     });
                 }
 
@@ -7872,10 +7906,25 @@ Atenciosamente,
                         2: { cellWidth: 30, halign: 'center' }
                     },
                     didParseCell: (data) => {
-                        const cellText = data.row.cells[0].text[0];
-                        if (cellText && (cellText.startsWith('VAGA DISPONÍVEL') || cellText.startsWith('VAGA EM CONTRATAÇÃO') || cellText.startsWith('VAGA EM ABERTO'))) {
-                            data.cell.styles.fontStyle = 'bold';
-                            data.cell.styles.textColor = [220, 38, 38];
+                        const cellText = data.row.cells[0]?.text?.[0] || '';
+                        const statusText = data.row.cells[2]?.text?.[0] || '';
+                        if (cellText && (cellText.startsWith('VAGA') || statusText === 'Desligado' || statusText === 'Férias' || statusText === 'Em Contratação' || statusText === 'Em Aberto')) {
+                            if (data.column.index === 0) {
+                                data.cell.styles.fontStyle = 'bold';
+                                data.cell.styles.textColor = [220, 38, 38];
+                            }
+                            if (data.column.index === 2) {
+                                data.cell.styles.fontStyle = 'bold';
+                                if (statusText === 'Férias') {
+                                    data.cell.styles.textColor = [217, 119, 6];
+                                } else if (statusText === 'Desligado') {
+                                    data.cell.styles.textColor = [220, 38, 38];
+                                } else if (statusText === 'Em Contratação') {
+                                    data.cell.styles.textColor = [234, 88, 12];
+                                } else {
+                                    data.cell.styles.textColor = [220, 38, 38];
+                                }
+                            }
                         }
                     },
                     margin: { left: 14, right: 14 },
@@ -10870,99 +10919,95 @@ Atenciosamente,
         }`}
       >
         <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-2">
-          <span className={`text-[13px] font-bold truncate max-w-[155px] slot-name flex items-center gap-1.5 ${
-            isDismissedVacant 
-              ? 'text-rose-600 font-black' 
-              : isVacationVacant 
-                ? 'text-amber-800' 
-                : isHiring 
-                  ? 'text-orange-600' 
-                  : isVacant 
-                    ? 'text-slate-400 italic' 
-                    : 'text-slate-800'
-          }`}>
-            {isDismissedVacant 
-              ? 'Vaga em Aberto'
-              : isVacationVacant 
-                ? `Substitui ${formatDisplayName(vacationingEmployee.name)}` 
-                : isHiring 
-                  ? `Em Contratação` 
-                  : !emp 
-                    ? `(Vaga)` 
-                    : formatDisplayName(emp.name)}
-            {!isVacant && isBrigadista && (
-              <span className="text-red-500 animate-pulse shrink-0" title="Membro da Brigada de Incêndio" style={{ animationDuration: '2s' }}>🔥</span>
-            )}
-          </span>
-
-          {/* 1. SE HOUVER ALGUÉM ENTRANDO NO TURNO PARA SUBSTITUIR O COLABORADOR EM FÉRIAS */}
-          {!isVacant && vacationingCovered && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenVacationReturnModal(vacationingCovered, emp);
-              }}
-              className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-[10px] font-black transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
-              title="Clique para ver detalhes das férias ou alterar a data de retorno"
-            >
-              <Palmtree size={11} className="text-amber-700 shrink-0" />
-              <span className="truncate max-w-[130px]">Em substituição a {formatDisplayName(vacationingCovered.name)}</span>
-              <span className="text-[9px] font-bold text-amber-900 bg-white/70 px-1 rounded shrink-0">
-                {formatDateBR(vacationingCovered.returnDate || emp.substituteReturnDate)}
+          {isDismissedVacant ? (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-black uppercase text-rose-600 tracking-tight">
+                Vaga em aberto
               </span>
-              <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
-            </button>
-          )}
-
-          {/* 2. CARD VAZIO DE QUEM ESTÁ DE FÉRIAS (SEM SUBSTITUTO NO TURNO) */}
-          {isVacationVacant && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenVacationReturnModal(vacationingEmployee, null);
-              }}
-              className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
-              title="Clique para ver detalhes das férias ou alterar a data de retorno"
-            >
-              <Palmtree size={11} className="text-amber-600 shrink-0" />
-              <span className="text-[9px] font-bold text-amber-900">
-                Retorno: {formatDateBR(vacationingEmployee.returnDate)}
+              <span className="text-[13px] font-extrabold text-slate-800 truncate" title={dismissedEmployee?.name}>
+                {formatDisplayName(dismissedEmployee?.name)}
               </span>
-              <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
-            </button>
-          )}
-
-          {/* 3. CARD VAZIO DE QUEM FOI DESLIGADO (APENAS VAGA EM ABERTO, NOME E STATUS DESLIGADO) */}
-          {isDismissedVacant && (
-            <div 
-              className="mt-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-100/80 border border-rose-200 text-rose-800 text-[10px] font-bold text-left max-w-full shadow-2xs"
-              title={`Colaborador desligado: ${dismissedEmployee.name}.${dismissedEmployee.terminationReason ? ` Motivo: ${dismissedEmployee.terminationReason}.` : ''} Clique para ver detalhes e alocar substituto.`}
-            >
-              <UserX size={11} className="text-rose-600 shrink-0" />
-              <span className="truncate max-w-[130px] font-bold text-rose-950">
-                {formatDisplayName(dismissedEmployee.name)}
-              </span>
-              <span className="text-[9px] font-black uppercase text-rose-700 bg-white/90 px-1 py-0.2 rounded border border-rose-200 shrink-0">
+              <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded border border-rose-200 w-fit">
                 Desligado
               </span>
             </div>
-          )}
+          ) : (
+            <>
+              <span className={`text-[13px] font-bold truncate max-w-[155px] slot-name flex items-center gap-1.5 ${
+                isVacationVacant 
+                  ? 'text-amber-800' 
+                  : isHiring 
+                    ? 'text-orange-600' 
+                    : isVacant 
+                      ? 'text-slate-400 italic' 
+                      : 'text-slate-800'
+              }`}>
+                {isVacationVacant 
+                  ? `Substitui ${formatDisplayName(vacationingEmployee.name)}` 
+                  : isHiring 
+                    ? `Em Contratação` 
+                    : !emp 
+                      ? `(Vaga)` 
+                      : formatDisplayName(emp.name)}
+                {!isVacant && isBrigadista && (
+                  <span className="text-red-500 animate-pulse shrink-0" title="Membro da Brigada de Incêndio" style={{ animationDuration: '2s' }}>🔥</span>
+                )}
+              </span>
 
-          {/* 4. COLABORADOR ATIVO QUE ASSUMIU A VAGA DE ALGUÉM DESLIGADO */}
-          {!isVacant && emp?.replacedEmployeeName && (
-            <div 
-              className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-[9px] font-bold text-left max-w-full"
-              title={`Em substituição a ${emp.replacedEmployeeName} (Desligado)${emp.replacedReason ? ` • Motivo: ${emp.replacedReason}` : ''}`}
-            >
-              <UserCheck size={10} className="text-emerald-600 shrink-0" />
-              <span className="truncate max-w-[125px]">Subst. {formatDisplayName(emp.replacedEmployeeName)}</span>
-            </div>
-          )}
+              {/* 1. SE HOUVER ALGUÉM ENTRANDO NO TURNO PARA SUBSTITUIR O COLABORADOR EM FÉRIAS */}
+              {!isVacant && vacationingCovered && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenVacationReturnModal(vacationingCovered, emp);
+                  }}
+                  className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-[10px] font-black transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
+                  title="Clique para ver detalhes das férias ou alterar a data de retorno"
+                >
+                  <Palmtree size={11} className="text-amber-700 shrink-0" />
+                  <span className="truncate max-w-[130px]">Em substituição a {formatDisplayName(vacationingCovered.name)}</span>
+                  <span className="text-[9px] font-bold text-amber-900 bg-white/70 px-1 rounded shrink-0">
+                    {formatDateBR(vacationingCovered.returnDate || emp.substituteReturnDate)}
+                  </span>
+                  <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
+                </button>
+              )}
 
-          {isVacant && !vacationingEmployee && !dismissedEmployee && (
-            <span className="text-[9px] font-black text-slate-400/50 uppercase tracking-tighter slot-role">{label || role}</span>
+              {/* 2. CARD VAZIO DE QUEM ESTÁ DE FÉRIAS (SEM SUBSTITUTO NO TURNO) */}
+              {isVacationVacant && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenVacationReturnModal(vacationingEmployee, null);
+                  }}
+                  className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold transition-all cursor-pointer shadow-2xs hover:scale-[1.02] text-left"
+                  title="Clique para ver detalhes das férias ou alterar a data de retorno"
+                >
+                  <Palmtree size={11} className="text-amber-600 shrink-0" />
+                  <span className="text-[9px] font-bold text-amber-900">
+                    Retorno: {formatDateBR(vacationingEmployee.returnDate)}
+                  </span>
+                  <Edit2 size={10} className="text-amber-700 shrink-0 ml-0.5" />
+                </button>
+              )}
+
+              {/* 4. COLABORADOR ATIVO QUE ASSUMIU A VAGA DE ALGUÉM DESLIGADO */}
+              {!isVacant && emp?.replacedEmployeeName && (
+                <div 
+                  className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-[9px] font-bold text-left max-w-full"
+                  title={`Em substituição a ${emp.replacedEmployeeName} (Desligado)${emp.replacedReason ? ` • Motivo: ${emp.replacedReason}` : ''}`}
+                >
+                  <UserCheck size={10} className="text-emerald-600 shrink-0" />
+                  <span className="truncate max-w-[125px]">Subst. {formatDisplayName(emp.replacedEmployeeName)}</span>
+                </div>
+              )}
+
+              {isVacant && !vacationingEmployee && !dismissedEmployee && (
+                <span className="text-[9px] font-black text-slate-400/50 uppercase tracking-tighter slot-role">{label || role}</span>
+              )}
+            </>
           )}
         </div>
         {!isVacant ? (
@@ -17306,7 +17351,7 @@ Atenciosamente,
             {/* Painel de Cadastro (Modal Overlay) */}
             <AnimatePresence>
               {showRibbonForm && canEditProduction && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-6 overflow-hidden">
                   {/* Backdrop */}
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -17323,21 +17368,21 @@ Atenciosamente,
                       setRibbonJumboType('');
                       setShowRibbonForm(false);
                     }}
-                    className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer"
+                    className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs cursor-pointer"
                   />
 
-                  {/* Modal Container */}
+                  {/* Modal Container - Full visible area on mobile, spacious and comfortable layout */}
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    initial={{ opacity: 0, scale: 0.98, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                    exit={{ opacity: 0, scale: 0.98, y: 10 }}
                     transition={{ duration: 0.2 }}
-                    className="relative bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto z-10 flex flex-col"
+                    className="relative bg-white border-0 sm:border border-slate-200 shadow-2xl rounded-none sm:rounded-3xl w-full max-w-5xl h-full sm:h-auto sm:max-h-[94vh] flex flex-col z-10 overflow-hidden"
                   >
-                    <form onSubmit={handleSaveRibbonEntry} className="p-6 md:p-8 space-y-6">
-                      <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-                        <h4 className="text-sm font-black uppercase text-indigo-950 flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
+                    <form onSubmit={handleSaveRibbonEntry} className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 flex flex-col min-h-0">
+                      <div className="border-b border-slate-100 pb-4 flex items-center justify-between shrink-0">
+                        <h4 className="text-base sm:text-lg font-black uppercase text-indigo-950 flex items-center gap-2.5">
+                          <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse"></span>
                           {editingRibbonId ? '✏️ Editar Lançamento (Corte de Fita)' : '📝 Novo Registro Diário (Corte de Fita)'}
                         </h4>
                         <button
@@ -17353,19 +17398,23 @@ Atenciosamente,
                             setRibbonJumboType('');
                             setShowRibbonForm(false);
                           }}
-                          className="rounded-lg p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all font-black text-sm"
+                          className="rounded-xl p-2 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all font-black text-base cursor-pointer"
                           title="Voltar / Fechar"
                         >
                           ✕
                         </button>
                       </div>
 
-                    <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-200/50 space-y-4">
-                      <h5 className="text-xs font-black uppercase text-slate-700">1. Informações Gerais</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* 1. Informações Gerais */}
+                    <div className="bg-slate-50/70 rounded-2xl sm:rounded-3xl p-5 sm:p-7 border border-slate-200/80 space-y-5 sm:space-y-6 shadow-xs">
+                      <h5 className="text-sm sm:text-base font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                        1. Informações Gerais
+                      </h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
                         {/* Data */}
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-black uppercase text-slate-500 block">Data do Lançamento</label>
+                        <div className="space-y-2">
+                          <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Data do Lançamento</label>
                           <input
                             type="date"
                             value={ribbonDate}
@@ -17373,13 +17422,13 @@ Atenciosamente,
                               setRibbonDate(e.target.value);
                             }}
                             required
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                            className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           />
                         </div>
 
                         {/* Máquina */}
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-black uppercase text-slate-500 block">Máquina</label>
+                        <div className="space-y-2">
+                          <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Máquina</label>
                           <select
                             value={ribbonMachine}
                             onChange={(e) => {
@@ -17400,7 +17449,7 @@ Atenciosamente,
                               }
                             }}
                             required
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                            className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           >
                             <option value="">Selecione a Máquina...</option>
                             <option value="Ghezzi">Ghezzi</option>
@@ -17410,11 +17459,11 @@ Atenciosamente,
                         </div>
 
                         {/* Operador */}
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-black uppercase text-slate-500 block">Operador</label>
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Operador</label>
                             {ribbonMachine && (
-                              <span className="text-[9px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">
+                              <span className="text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md">
                                 {ribbonMachine}
                               </span>
                             )}
@@ -17423,7 +17472,7 @@ Atenciosamente,
                             value={ribbonOperator}
                             onChange={(e) => setRibbonOperator(e.target.value)}
                             required
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                            className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           >
                             <option value="">
                               {ribbonModalOperators.length === 0 
@@ -17437,13 +17486,13 @@ Atenciosamente,
                         </div>
 
                         {/* Turno */}
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-black uppercase text-slate-500 block">Turno</label>
+                        <div className="space-y-2">
+                          <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Turno</label>
                           <select
                             value={ribbonShift}
                             onChange={(e) => setRibbonShift(e.target.value)}
                             required
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                            className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           >
                             <option value="">Selecione...</option>
                             {availableShifts.length > 0 ? (
@@ -17460,22 +17509,28 @@ Atenciosamente,
                       </div>
                     </div>
 
-                    <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-200/50 space-y-4">
-                      <h5 className="text-xs font-black uppercase text-slate-700">2. Jumbos Processados nesta Ficha</h5>
-                      <p className="text-[10px] text-slate-500 block">
-                        Se houve consumo de mais de um jumbo ou jumbos diferentes no mesmo dia e máquina, utilize o botão abaixo para adicioná-los. Os totais serão calculados e resumidos automaticamente.
-                      </p>
+                    {/* 2. Jumbos Processados */}
+                    <div className="bg-slate-50/70 rounded-2xl sm:rounded-3xl p-5 sm:p-7 border border-slate-200/80 space-y-5 sm:space-y-6 shadow-xs">
+                      <div className="space-y-1">
+                        <h5 className="text-sm sm:text-base font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                          2. Jumbos Processados nesta Ficha
+                        </h5>
+                        <p className="text-xs sm:text-sm text-slate-500 block leading-relaxed">
+                          Se houve consumo de mais de um jumbo ou jumbos diferentes no mesmo dia e máquina, utilize o formulário abaixo para adicioná-los. Os totais serão calculados e resumidos automaticamente.
+                        </p>
+                      </div>
                       
                       {/* Sub-form item */}
-                      <div className="bg-white p-5 border border-indigo-100/70 rounded-2xl space-y-4 shadow-xs">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div className="bg-white p-5 sm:p-7 border border-indigo-100 rounded-2xl space-y-5 sm:space-y-6 shadow-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
                           {/* Tipo do Jumbo */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-indigo-950 block">Tipo do Jumbo</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-indigo-950 block">Tipo do Jumbo</label>
                             <select
                               value={tempJumboType}
                               onChange={(e) => setTempJumboType(e.target.value)}
-                              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 bg-white"
+                              className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-2xs"
                             >
                               <option value="">Selecione...</option>
                               <option value="AR9">AR9 (45 micras)</option>
@@ -17486,104 +17541,104 @@ Atenciosamente,
                           </div>
 
                           {/* Número do Pedido (OP) */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-slate-500 block">Número do Pedido (OP)</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Número do Pedido (OP)</label>
                             <input
                               type="text"
                               placeholder="Ex: 10452"
                               value={tempOrderNumber}
                               onChange={(e) => setTempOrderNumber(e.target.value)}
-                              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                              className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-2xs"
                             />
                           </div>
 
                           {/* Utilizado (m²) */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-indigo-700 block">Utilizado m² (Auto)</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-indigo-700 block">Utilizado m² (Auto)</label>
                             <input
                               type="text"
                               placeholder="Cálculo Automático"
                               value={tempJumboM2 ? `${Number(tempJumboM2).toLocaleString('pt-BR')} m²` : 'Calculando...'}
                               readOnly
-                              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-black text-indigo-900 bg-indigo-50/50 cursor-not-allowed"
+                              className="w-full px-4 py-3 sm:py-3.5 border border-indigo-200 rounded-xl text-sm sm:text-base font-black text-indigo-950 bg-indigo-50/70 cursor-not-allowed shadow-2xs"
                             />
                           </div>
 
                           {/* Lixo Peso (Kg) */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-slate-400 block">Lixo Peso (Kg)</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-500 block">Lixo Peso (Kg)</label>
                             <input
                               type="number"
                               step="0.1"
                               placeholder="Ex: 15"
                               value={tempWasteWeight}
                               onChange={(e) => setTempWasteWeight(e.target.value)}
-                              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                              className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-2xs"
                             />
                           </div>
                         </div>
 
                         {/* Configuração de Rolos e Dimensões por Jumbo */}
-                        <div className="border-t border-slate-100 pt-3">
-                          <span className="text-[10px] font-black uppercase text-indigo-900 block mb-2">Especificação de Rolos do Jumbo</span>
-                          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-black uppercase text-slate-500 block">Largura (mm)</label>
+                        <div className="border-t border-slate-100 pt-5 space-y-3.5">
+                          <span className="text-xs sm:text-sm font-black uppercase text-indigo-950 block">Especificação de Rolos do Jumbo</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3.5 sm:gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-slate-500 block">Largura (mm)</label>
                               <input
                                 type="number"
                                 placeholder="45"
                                 value={tempRollWidth}
                                 onChange={(e) => setTempRollWidth(e.target.value)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                               />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-black uppercase text-slate-500 block">Metragem Rolo (m)</label>
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-slate-500 block">Metragem Rolo (m)</label>
                               <input
                                 type="number"
                                 placeholder="100"
                                 value={tempRollLength}
                                 onChange={(e) => setTempRollLength(e.target.value)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                               />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-black uppercase text-slate-500 block">Rolos Produzidos</label>
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-slate-500 block">Rolos Produzidos</label>
                               <input
                                 type="number"
                                 placeholder="Ex: 500"
                                 value={tempRollsCount}
                                 onChange={(e) => setTempRollsCount(e.target.value)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                               />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-black uppercase text-amber-600 block">Ñ. Conf. Tipo 1 (Rolos)</label>
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-amber-600 block">Ñ. Conf. Tipo 1 (Rolos)</label>
                               <input
                                 type="number"
                                 placeholder="Ex: 5"
                                 value={tempRollsTipo1}
                                 onChange={(e) => setTempRollsTipo1(e.target.value)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-amber-500"
                               />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-black uppercase text-orange-600 block">Ñ. Conf. Tipo 2 (Rolos)</label>
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-orange-600 block">Ñ. Conf. Tipo 2 (Rolos)</label>
                               <input
                                 type="number"
                                 placeholder="Ex: 8"
                                 value={tempRollsTipo2}
                                 onChange={(e) => setTempRollsTipo2(e.target.value)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-orange-500"
                               />
                             </div>
                           </div>
                         </div>
 
                         {/* Visualização m2 calculados */}
-                        <div className="bg-slate-50 rounded-xl p-3 grid grid-cols-1 md:grid-cols-4 gap-2 text-[10px] font-semibold text-slate-500">
+                        <div className="bg-slate-50 rounded-2xl p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 text-xs sm:text-sm font-semibold text-slate-600 border border-slate-200/60">
                           <div>
-                            M² Produzido Auto: <strong className="text-slate-850">{tempProducedM2 ? `${tempProducedM2} m²` : '-'}</strong>
+                            M² Produzido Auto: <strong className="text-slate-900">{tempProducedM2 ? `${tempProducedM2} m²` : '-'}</strong>
                           </div>
                           <div>
                             M² Tipo 1 Auto: <strong className="text-amber-700">{tempM2Tipo1 ? `${tempM2Tipo1} m²` : '-'}</strong>
@@ -17591,12 +17646,12 @@ Atenciosamente,
                           <div>
                             M² Tipo 2 Auto: <strong className="text-orange-700">{tempM2Tipo2 ? `${tempM2Tipo2} m²` : '-'}</strong>
                           </div>
-                          <div className="text-right">
+                          <div className="text-left sm:text-right">
                             Total Rejeitado: <strong className="text-red-650">{tempRejectedM2 ? `${tempRejectedM2} m²` : '0 m²'}</strong>
                           </div>
                         </div>
 
-                        <div className="flex justify-end pt-1">
+                        <div className="flex justify-end pt-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -17640,7 +17695,7 @@ Atenciosamente,
                               setTempM2Tipo1('');
                               setTempM2Tipo2('');
                             }}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
+                            className="w-full sm:w-auto px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-sm uppercase rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer"
                           >
                             + Incluir Jumbo na Ficha
                           </button>
@@ -17649,54 +17704,54 @@ Atenciosamente,
 
                       {/* Lista do Detalhamento das Execuções */}
                       {ribbonJumboItems.length > 0 ? (
-                        <div className="bg-indigo-50/40 rounded-xl p-3 border border-indigo-100">
+                        <div className="bg-indigo-50/40 rounded-2xl p-4 border border-indigo-100">
                           <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse text-[10px]">
+                            <table className="w-full text-left border-collapse text-xs">
                               <thead>
                                 <tr className="border-b border-indigo-100 text-slate-500 uppercase font-black tracking-wider">
-                                  <th className="py-2 px-1">OP / Tipo Jumbo</th>
-                                  <th className="py-2 px-1 text-right">Utilizado (m²)</th>
-                                  <th className="py-3 px-1 text-center">Rolos Prod. (m²)</th>
-                                  <th className="py-3 px-1 text-center text-amber-700">Tipo 1 (m²)</th>
-                                  <th className="py-3 px-1 text-center text-orange-700">Tipo 2 (m²)</th>
-                                  <th className="py-2 px-1 text-right">Lixo Peso</th>
-                                  <th className="py-2 px-1 text-right">Lixo Perdido (m²)</th>
-                                  <th className="py-2 px-1 text-center">Remover</th>
+                                  <th className="py-2.5 px-2">OP / Tipo Jumbo</th>
+                                  <th className="py-2.5 px-2 text-right">Utilizado (m²)</th>
+                                  <th className="py-2.5 px-2 text-center">Rolos Prod. (m²)</th>
+                                  <th className="py-2.5 px-2 text-center text-amber-700">Tipo 1 (m²)</th>
+                                  <th className="py-2.5 px-2 text-center text-orange-700">Tipo 2 (m²)</th>
+                                  <th className="py-2.5 px-2 text-right">Lixo Peso</th>
+                                  <th className="py-2.5 px-2 text-right">Lixo Perdido (m²)</th>
+                                  <th className="py-2.5 px-2 text-center">Remover</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {ribbonJumboItems.map((item) => (
                                   <tr key={item.id} className="border-b border-indigo-50/50 font-bold text-slate-700">
-                                    <td className="py-2 px-1 text-indigo-700 uppercase">
+                                    <td className="py-2.5 px-2 text-indigo-700 uppercase">
                                       <div className="font-black text-indigo-900">#{item.orderNumber || '-'}</div>
-                                      <div className="text-[9px] text-slate-400">{item.jumboType}</div>
+                                      <div className="text-[10px] text-slate-400">{item.jumboType}</div>
                                     </td>
-                                    <td className="py-2 px-1 text-right">{item.jumboM2.toLocaleString('pt-BR')} m²</td>
-                                    <td className="py-2 px-1 text-center text-slate-800">
+                                    <td className="py-2.5 px-2 text-right">{item.jumboM2.toLocaleString('pt-BR')} m²</td>
+                                    <td className="py-2.5 px-2 text-center text-slate-800">
                                       <div>{item.rollsCount ? `${item.rollsCount.toLocaleString('pt-BR')} un` : '-'}</div>
-                                      <div className="text-[8px] text-slate-400">{(item.producedM2 || 0).toLocaleString('pt-BR')} m²</div>
+                                      <div className="text-[9px] text-slate-400">{(item.producedM2 || 0).toLocaleString('pt-BR')} m²</div>
                                     </td>
-                                    <td className="py-2 px-1 text-center text-amber-900">
+                                    <td className="py-2.5 px-2 text-center text-amber-900">
                                       {item.rollsTipo1 ? (
                                         <div>
                                           <div>{item.rollsTipo1} un</div>
-                                          <div className="text-[8px] text-amber-500">{(item.m2Tipo1 || 0).toLocaleString('pt-BR')} m²</div>
+                                          <div className="text-[9px] text-amber-500">{(item.m2Tipo1 || 0).toLocaleString('pt-BR')} m²</div>
                                         </div>
                                       ) : <span className="text-slate-400">-</span>}
                                     </td>
-                                    <td className="py-2 px-1 text-center text-orange-900">
+                                    <td className="py-2.5 px-2 text-center text-orange-900">
                                       {item.rollsTipo2 ? (
                                         <div>
                                           <div>{item.rollsTipo2} un</div>
-                                          <div className="text-[8px] text-orange-500">{(item.m2Tipo2 || 0).toLocaleString('pt-BR')} m²</div>
+                                          <div className="text-[9px] text-orange-500">{(item.m2Tipo2 || 0).toLocaleString('pt-BR')} m²</div>
                                         </div>
                                       ) : <span className="text-slate-400">-</span>}
                                     </td>
-                                    <td className="py-2 px-1 text-right text-slate-600">{formatWeight(item.wasteWeight)}</td>
-                                    <td className="py-2 px-1 text-right text-red-650">
+                                    <td className="py-2.5 px-2 text-right text-slate-600">{formatWeight(item.wasteWeight)}</td>
+                                    <td className="py-2.5 px-2 text-right text-red-650">
                                       {item.wasteWeight > 0 ? `${calculateLostM2(item.wasteWeight, item.jumboType).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²` : '-'}
                                     </td>
-                                    <td className="py-2 px-1 text-center">
+                                    <td className="py-2.5 px-2 text-center">
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -17710,7 +17765,7 @@ Atenciosamente,
                                             setRibbonJumboType('');
                                           }
                                         }}
-                                        className="text-red-500 hover:text-red-700 uppercase font-black text-[9px]"
+                                        className="text-red-500 hover:text-red-700 uppercase font-black text-[10px] cursor-pointer"
                                       >
                                         Remover
                                       </button>
@@ -17722,17 +17777,19 @@ Atenciosamente,
                           </div>
                         </div>
                       ) : (
-                        <div className="text-[10px] text-amber-700 font-bold bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-100">
+                        <div className="text-xs text-amber-700 font-bold bg-amber-50 rounded-2xl px-5 py-3.5 border border-amber-200/60 leading-relaxed">
                           Nenhum jumbo adicionado à lista. Você pode usar os campos acima para preenchimento manual simples de apenas 1 jumbo, ou adicionar jumbos múltiplos ao apontamento clicando em "+ Incluir Jumbo na Ficha" acima.
                         </div>
                       )}
 
                       {/* Totais do Form */}
-                      <div className="border-t border-slate-100 pt-4">
-                        <span className="text-[10px] font-black uppercase text-slate-400 block mb-3">Resumo dos Totais (Calculado Automático caso haja itens adicionados)</span>
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-black uppercase text-slate-500 block">Total Jumbos (m²)</label>
+                      <div className="border-t border-slate-200/80 pt-5 space-y-3.5">
+                        <span className="text-xs sm:text-sm font-black uppercase text-slate-500 block">
+                          Resumo dos Totais (Calculado Automático caso haja itens adicionados)
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 sm:gap-5">
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Total Jumbos (m²)</label>
                             <input
                               type="number"
                               step="0.01"
@@ -17740,20 +17797,20 @@ Atenciosamente,
                               onChange={(e) => setRibbonJumboM2(e.target.value)}
                               required
                               disabled={ribbonJumboItems.length > 0}
-                              className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-blue-500 ${
+                              className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
                               }`}
                             />
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-black uppercase text-slate-500 block">Tipo Jumbo Base</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Tipo Jumbo Base</label>
                             <select
                               value={ribbonJumboType}
                               onChange={(e) => setRibbonJumboType(e.target.value)}
                               required
                               disabled={ribbonJumboItems.length > 0}
-                              className={`w-full px-3 py-2 border rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 ${
+                              className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
                               }`}
                             >
@@ -17765,8 +17822,8 @@ Atenciosamente,
                             </select>
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-black uppercase text-slate-500 block">Total M² Produzido</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Total M² Produzido</label>
                             <input
                               type="number"
                               step="0.01"
@@ -17774,40 +17831,40 @@ Atenciosamente,
                               onChange={(e) => setRibbonProducedM2(e.target.value)}
                               required
                               disabled={ribbonJumboItems.length > 0}
-                              className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-blue-500 ${
+                              className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
                               }`}
                             />
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-black uppercase text-slate-500 block">Total M² Ñ Conf.</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Total M² Ñ Conf.</label>
                             <input
                               type="number"
                               step="0.01"
                               value={ribbonRejectedM2}
                               onChange={(e) => setRibbonRejectedM2(e.target.value)}
                               disabled={ribbonJumboItems.length > 0}
-                              className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-blue-500 ${
+                              className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
                               }`}
                             />
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-black uppercase text-slate-500 block">Total Lixo Peso (Kg)</label>
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Total Lixo Peso (Kg)</label>
                             <input
                               type="number"
                               step="0.1"
                               value={ribbonWasteWeight}
                               onChange={(e) => setRibbonWasteWeight(e.target.value)}
                               disabled={ribbonJumboItems.length > 0}
-                              className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-blue-500 ${
+                              className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
                               }`}
                             />
                             {ribbonWasteWeight && ribbonJumboType && (
-                              <span className="text-[9px] text-red-500 font-bold block mt-1">
+                              <span className="text-xs text-red-500 font-bold block mt-1">
                                 Perda total aproximada: {calculateLostM2(parseFloat(ribbonWasteWeight), ribbonJumboType).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²
                               </span>
                             )}
@@ -17817,307 +17874,265 @@ Atenciosamente,
                     </div>
 
                     {/* 3. Paradas de Máquina (Opcional) */}
-                    <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4 space-y-4 shadow-inner">
-                      <div className="flex items-center gap-2 text-slate-700 font-black text-[10px] uppercase tracking-widest border-b border-slate-200 pb-2">
-                        <Clock size={14} /> 3. Paradas de Máquina (Opcional)
+                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl sm:rounded-3xl p-5 sm:p-7 space-y-5 sm:space-y-6 shadow-inner">
+                      <div className="flex items-center gap-2 text-slate-800 font-black text-xs sm:text-sm uppercase tracking-wider border-b border-slate-200 pb-3">
+                        <Clock size={16} /> 3. Paradas de Máquina (Opcional)
                       </div>
-                      <div className="space-y-4">
+                      <div className="space-y-5">
                         
                         {/* Seção Manutenção */}
-                        <div className="p-3 bg-white border border-slate-100 rounded-2xl space-y-3 shadow-sm">
-                          <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                            <div className="flex items-center gap-1.5 text-orange-600 font-black text-[10px] uppercase tracking-widest">
-                              <Wrench size={13} /> Manutenção
+                        <div className="p-4 sm:p-5 bg-white border border-slate-100 rounded-2xl space-y-4 shadow-sm">
+                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2 text-orange-600 font-black text-xs sm:text-sm uppercase tracking-wider">
+                              <Wrench size={16} /> Manutenção
                             </div>
                             <button
                               type="button"
                               onClick={() => handleAddRibbonStop('manutencao')}
-                              className="inline-flex items-center gap-1 text-[9px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 px-2.5 py-1 rounded-lg transition-all"
+                              className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
                             >
-                              <Plus size={10} /> Add Horário
+                              <Plus size={13} /> Add Horário
                             </button>
                           </div>
                           
                           {ribbonManutencaoStops.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 italic text-center py-2">Nenhuma parada de manutenção registrada</p>
+                            <p className="text-xs font-bold text-slate-400 italic text-center py-3">Nenhuma parada de manutenção registrada</p>
                           ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-3.5">
                               {ribbonManutencaoStops.map((stop) => {
                                 const min = getDiffMinutes(stop.de, stop.ate);
                                 return (
-                                  <div key={stop.id} className="p-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-2 shadow-2xs">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex items-center gap-1.5 flex-1">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase">Horário:</span>
+                                  <div key={stop.id} className="p-4 bg-slate-50/90 border border-slate-200/80 rounded-2xl space-y-3 shadow-2xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-black text-slate-500 uppercase">Horário:</span>
                                         <input
                                           type="time"
                                           value={stop.de}
                                           onChange={(e) => handleUpdateRibbonStop('manutencao', stop.id, 'de', e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                                         />
-                                        <span className="text-[10px] font-black text-slate-400">às</span>
+                                        <span className="text-xs font-black text-slate-400">às</span>
                                         <input
                                           type="time"
                                           value={stop.ate}
                                           onChange={(e) => handleUpdateRibbonStop('manutencao', stop.id, 'ate', e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                                         />
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-md">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="text-xs font-black text-slate-700 bg-slate-200/80 px-2.5 py-1 rounded-lg">
                                           {min > 0 ? `${min} min` : '0 min'}
                                         </span>
                                         <button
                                           type="button"
                                           onClick={() => handleRemoveRibbonStop('manutencao', stop.id)}
-                                          className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                                           title="Remover parada"
                                         >
-                                          <Trash2 size={13} />
+                                          <Trash2 size={16} />
                                         </button>
                                       </div>
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                      <div>
-                                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Motivo Padronizado:</label>
-                                        <select
-                                          value={stop.motivo}
-                                          onChange={(e) => handleUpdateRibbonStop('manutencao', stop.id, 'motivo', e.target.value)}
-                                          className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer shadow-2xs"
-                                        >
-                                          <option value="">📋 Selecionar motivo padronizado...</option>
-                                          {downtimeSuggestions.allGroups.map((group, gIdx) => (
-                                            <optgroup key={gIdx} label={group.groupName}>
-                                              {group.reasons.map((mReason, idx) => (
-                                                <option key={idx} value={mReason}>{mReason}</option>
-                                              ))}
-                                            </optgroup>
-                                          ))}
-                                        </select>
-                                      </div>
-
-                                      <div>
-                                        <input
-                                          type="text"
-                                          value={stop.explicacao || ''}
-                                          onChange={(e) => handleUpdateRibbonStop('manutencao', stop.id, 'explicacao', e.target.value)}
-                                          placeholder="Explicação / Detalhamento do problema (opcional)..."
-                                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-                                        />
-                                      </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <ReasonInputWithSave
+                                        label="Motivo / Justificativa da Parada"
+                                        value={stop.explicacao || stop.motivo || ''}
+                                        onChange={(val) => {
+                                          handleUpdateRibbonStop('manutencao', stop.id, 'motivo', val);
+                                          handleUpdateRibbonStop('manutencao', stop.id, 'explicacao', val);
+                                        }}
+                                        category="paradas_fita"
+                                        placeholder="Digite a justificativa da parada ou selecione da relação..."
+                                        multiline={false}
+                                        inputClassName="!py-3 sm:!py-3.5 !text-sm sm:!text-base font-semibold rounded-xl"
+                                        loggedUserName={loggedUser?.name || 'Sistema'}
+                                      />
                                     </div>
                                   </div>
                                 );
                               })}
                             </div>
                           )}
-                          <div className="flex justify-between items-center pt-2 border-t border-slate-50 px-1 text-[9px] font-black text-slate-400 uppercase">
+                          <div className="flex justify-between items-center pt-2.5 border-t border-slate-100 px-1 text-xs font-black text-slate-500 uppercase">
                             <span>Subtotal Manutenção</span>
-                            <span className="text-slate-700 font-bold">{calcTotalMinutes(ribbonManutencaoStops)} min</span>
+                            <span className="text-slate-800 font-bold">{calcTotalMinutes(ribbonManutencaoStops)} min</span>
                           </div>
                         </div>
 
                         {/* Seção Processo */}
-                        <div className="p-3 bg-white border border-slate-100 rounded-2xl space-y-3 shadow-sm">
-                          <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                            <div className="flex items-center gap-1.5 text-blue-600 font-black text-[10px] uppercase tracking-widest">
-                              <Layers size={13} /> Processo
+                        <div className="p-4 sm:p-5 bg-white border border-slate-100 rounded-2xl space-y-4 shadow-sm">
+                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2 text-blue-600 font-black text-xs sm:text-sm uppercase tracking-wider">
+                              <Layers size={16} /> Processo
                             </div>
                             <button
                               type="button"
                               onClick={() => handleAddRibbonStop('processo')}
-                              className="inline-flex items-center gap-1 text-[9px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 px-2.5 py-1 rounded-lg transition-all"
+                              className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
                             >
-                              <Plus size={10} /> Add Horário
+                              <Plus size={13} /> Add Horário
                             </button>
                           </div>
                           
                           {ribbonProcessoStops.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 italic text-center py-2">Nenhuma parada de processo registrada</p>
+                            <p className="text-xs font-bold text-slate-400 italic text-center py-3">Nenhuma parada de processo registrada</p>
                           ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-3.5">
                               {ribbonProcessoStops.map((stop) => {
                                 const min = getDiffMinutes(stop.de, stop.ate);
                                 return (
-                                  <div key={stop.id} className="p-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-2 shadow-2xs">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex items-center gap-1.5 flex-1">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase">Horário:</span>
+                                  <div key={stop.id} className="p-4 bg-slate-50/90 border border-slate-200/80 rounded-2xl space-y-3 shadow-2xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-black text-slate-500 uppercase">Horário:</span>
                                         <input
                                           type="time"
                                           value={stop.de}
                                           onChange={(e) => handleUpdateRibbonStop('processo', stop.id, 'de', e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                                         />
-                                        <span className="text-[10px] font-black text-slate-400">às</span>
+                                        <span className="text-xs font-black text-slate-400">às</span>
                                         <input
                                           type="time"
                                           value={stop.ate}
                                           onChange={(e) => handleUpdateRibbonStop('processo', stop.id, 'ate', e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                                         />
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-md">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="text-xs font-black text-slate-700 bg-slate-200/80 px-2.5 py-1 rounded-lg">
                                           {min > 0 ? `${min} min` : '0 min'}
                                         </span>
                                         <button
                                           type="button"
                                           onClick={() => handleRemoveRibbonStop('processo', stop.id)}
-                                          className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                                           title="Remover parada"
                                         >
-                                          <Trash2 size={13} />
+                                          <Trash2 size={16} />
                                         </button>
                                       </div>
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                      <div>
-                                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Motivo Padronizado:</label>
-                                        <select
-                                          value={stop.motivo}
-                                          onChange={(e) => handleUpdateRibbonStop('processo', stop.id, 'motivo', e.target.value)}
-                                          className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer shadow-2xs"
-                                        >
-                                          <option value="">📋 Selecionar motivo padronizado...</option>
-                                          {downtimeSuggestions.allGroups.map((group, gIdx) => (
-                                            <optgroup key={gIdx} label={group.groupName}>
-                                              {group.reasons.map((mReason, idx) => (
-                                                <option key={idx} value={mReason}>{mReason}</option>
-                                              ))}
-                                            </optgroup>
-                                          ))}
-                                        </select>
-                                      </div>
-
-                                      <div>
-                                        <input
-                                          type="text"
-                                          value={stop.explicacao || ''}
-                                          onChange={(e) => handleUpdateRibbonStop('processo', stop.id, 'explicacao', e.target.value)}
-                                          placeholder="Explicação / Detalhamento do problema (opcional)..."
-                                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-                                        />
-                                      </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <ReasonInputWithSave
+                                        label="Motivo / Justificativa da Parada"
+                                        value={stop.explicacao || stop.motivo || ''}
+                                        onChange={(val) => {
+                                          handleUpdateRibbonStop('processo', stop.id, 'motivo', val);
+                                          handleUpdateRibbonStop('processo', stop.id, 'explicacao', val);
+                                        }}
+                                        category="paradas_fita"
+                                        placeholder="Digite a justificativa da parada ou selecione da relação..."
+                                        multiline={false}
+                                        inputClassName="!py-3 sm:!py-3.5 !text-sm sm:!text-base font-semibold rounded-xl"
+                                        loggedUserName={loggedUser?.name || 'Sistema'}
+                                      />
                                     </div>
                                   </div>
                                 );
                               })}
                             </div>
                           )}
-                          <div className="flex justify-between items-center pt-2 border-t border-slate-50 px-1 text-[9px] font-black text-slate-400 uppercase">
+                          <div className="flex justify-between items-center pt-2.5 border-t border-slate-100 px-1 text-xs font-black text-slate-500 uppercase">
                             <span>Subtotal Processo</span>
-                            <span className="text-slate-700 font-bold">{calcTotalMinutes(ribbonProcessoStops)} min</span>
+                            <span className="text-slate-800 font-bold">{calcTotalMinutes(ribbonProcessoStops)} min</span>
                           </div>
                         </div>
 
                         {/* Seção Outros */}
-                        <div className="p-3 bg-white border border-slate-100 rounded-2xl space-y-3 shadow-sm">
-                          <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                            <div className="flex items-center gap-1.5 text-slate-600 font-black text-[10px] uppercase tracking-widest">
-                              <Package size={13} /> Outros
+                        <div className="p-4 sm:p-5 bg-white border border-slate-100 rounded-2xl space-y-4 shadow-sm">
+                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2 text-slate-700 font-black text-xs sm:text-sm uppercase tracking-wider">
+                              <Package size={16} /> Outros
                             </div>
                             <button
                               type="button"
                               onClick={() => handleAddRibbonStop('outros')}
-                              className="inline-flex items-center gap-1 text-[9px] font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 px-2.5 py-1 rounded-lg transition-all"
+                              className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 uppercase bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
                             >
-                              <Plus size={10} /> Add Horário
+                              <Plus size={13} /> Add Horário
                             </button>
                           </div>
                           
                           {ribbonOutrosStops.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 italic text-center py-2">Nenhuma outra parada registrada</p>
+                            <p className="text-xs font-bold text-slate-400 italic text-center py-3">Nenhuma outra parada registrada</p>
                           ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-3.5">
                               {ribbonOutrosStops.map((stop) => {
                                 const min = getDiffMinutes(stop.de, stop.ate);
                                 return (
-                                  <div key={stop.id} className="p-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-2 shadow-2xs">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex items-center gap-1.5 flex-1">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase">Horário:</span>
+                                  <div key={stop.id} className="p-4 bg-slate-50/90 border border-slate-200/80 rounded-2xl space-y-3 shadow-2xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-black text-slate-500 uppercase">Horário:</span>
                                         <input
                                           type="time"
                                           value={stop.de}
                                           onChange={(e) => handleUpdateRibbonStop('outros', stop.id, 'de', e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                                         />
-                                        <span className="text-[10px] font-black text-slate-400">às</span>
+                                        <span className="text-xs font-black text-slate-400">às</span>
                                         <input
                                           type="time"
                                           value={stop.ate}
                                           onChange={(e) => handleUpdateRibbonStop('outros', stop.id, 'ate', e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                                         />
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-md">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="text-xs font-black text-slate-700 bg-slate-200/80 px-2.5 py-1 rounded-lg">
                                           {min > 0 ? `${min} min` : '0 min'}
                                         </span>
                                         <button
                                           type="button"
                                           onClick={() => handleRemoveRibbonStop('outros', stop.id)}
-                                          className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                                           title="Remover parada"
                                         >
-                                          <Trash2 size={13} />
+                                          <Trash2 size={16} />
                                         </button>
                                       </div>
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                      <div>
-                                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Motivo Padronizado:</label>
-                                        <select
-                                          value={stop.motivo}
-                                          onChange={(e) => handleUpdateRibbonStop('outros', stop.id, 'motivo', e.target.value)}
-                                          className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer shadow-2xs"
-                                        >
-                                          <option value="">📋 Selecionar motivo padronizado...</option>
-                                          {downtimeSuggestions.allGroups.map((group, gIdx) => (
-                                            <optgroup key={gIdx} label={group.groupName}>
-                                              {group.reasons.map((mReason, idx) => (
-                                                <option key={idx} value={mReason}>{mReason}</option>
-                                              ))}
-                                            </optgroup>
-                                          ))}
-                                        </select>
-                                      </div>
-
-                                      <div>
-                                        <input
-                                          type="text"
-                                          value={stop.explicacao || ''}
-                                          onChange={(e) => handleUpdateRibbonStop('outros', stop.id, 'explicacao', e.target.value)}
-                                          placeholder="Explicação / Detalhamento do problema (opcional)..."
-                                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-                                        />
-                                      </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <ReasonInputWithSave
+                                        label="Motivo / Justificativa da Parada"
+                                        value={stop.explicacao || stop.motivo || ''}
+                                        onChange={(val) => {
+                                          handleUpdateRibbonStop('outros', stop.id, 'motivo', val);
+                                          handleUpdateRibbonStop('outros', stop.id, 'explicacao', val);
+                                        }}
+                                        category="paradas_fita"
+                                        placeholder="Digite a justificativa da parada ou selecione da relação..."
+                                        multiline={false}
+                                        inputClassName="!py-3 sm:!py-3.5 !text-sm sm:!text-base font-semibold rounded-xl"
+                                        loggedUserName={loggedUser?.name || 'Sistema'}
+                                      />
                                     </div>
                                   </div>
                                 );
                               })}
                             </div>
                           )}
-                          <div className="flex justify-between items-center pt-2 border-t border-slate-50 px-1 text-[9px] font-black text-slate-400 uppercase">
+                          <div className="flex justify-between items-center pt-2.5 border-t border-slate-100 px-1 text-xs font-black text-slate-500 uppercase">
                             <span>Subtotal Outros</span>
-                            <span className="text-slate-700 font-bold">{calcTotalMinutes(ribbonOutrosStops)} min</span>
+                            <span className="text-slate-800 font-bold">{calcTotalMinutes(ribbonOutrosStops)} min</span>
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-slate-200 flex justify-between items-center px-1">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Parado Geral</span>
-                          <span className="text-sm font-black text-slate-800 font-mono">
+                        <div className="pt-3 border-t border-slate-200 flex justify-between items-center px-1">
+                          <span className="text-xs sm:text-sm font-black text-slate-500 uppercase tracking-wider">Total Parado Geral</span>
+                          <span className="text-base sm:text-lg font-black text-slate-900 font-mono">
                             {calcTotalMinutes(ribbonManutencaoStops) + calcTotalMinutes(ribbonProcessoStops) + calcTotalMinutes(ribbonOutrosStops)} min
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex justify-end gap-3 border-t border-slate-50 pt-5">
+                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-slate-100 pt-5 mt-auto">
                       <button
                         type="button"
                         onClick={() => {
@@ -18146,16 +18161,16 @@ Atenciosamente,
                           setRibbonJumboItems([]);
                           setShowRibbonForm(false);
                         }}
-                        className="px-5 py-2.5 border border-slate-200 text-slate-600 text-xs font-bold uppercase rounded-xl transition-all"
+                        className="w-full sm:w-auto px-6 py-3.5 border border-slate-200 text-slate-600 text-sm font-bold uppercase rounded-xl transition-all hover:bg-slate-50 text-center cursor-pointer"
                       >
                         Limpar / Fechar
                       </button>
 
                       <button
                         type="submit"
-                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+                        className="w-full sm:w-auto px-7 py-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-black uppercase rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        <ShieldCheck className="w-4 h-4" />
+                        <ShieldCheck className="w-5 h-5" />
                         {editingRibbonId ? 'Salvar Edição' : 'Salvar Registro'}
                       </button>
                     </div>

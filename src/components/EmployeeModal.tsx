@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, UserPlus, Save, Briefcase, MapPin, UserX, Stethoscope, Plane, Trash2, Search, Palmtree } from 'lucide-react';
 import { Shift, Employee, Collaborator } from '../types';
 import { isCollaboratorSilenced } from '../utils/silenceUtils';
+import { ReasonInputWithSave } from './ReasonInputWithSave';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -372,6 +373,12 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                     <span className="font-semibold">{slotInfo?.dismissedReason || formData.replacedReason}</span>
                   </div>
                 )}
+                <div className="pt-2 border-t border-rose-100/70 flex items-center justify-between text-xs text-rose-950">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Função a Assumir:</span>
+                  <span className="font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 text-[11px]">
+                    {slotInfo?.role || formData.role || 'Operador / Auxiliar'} &bull; Compatível com a função
+                  </span>
+                </div>
               </div>
               <p className="text-[10px] text-slate-500 font-medium">
                 Selecione o operador ou auxiliar abaixo para assumir este posto em substituição ao colaborador desligado.
@@ -649,8 +656,15 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                     <p className="text-xs text-red-800 font-medium">Atenção: Esta ação removerá o colaborador do quadro ativo e liberará a vaga para nova contratação. O histórico será preservado.</p>
                  </div>
                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5">Motivo do Desligamento</label>
-                    <textarea value={extraData.reason} onChange={e => setExtraData({...extraData, reason: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold outline-none resize-none h-24" placeholder="Descreva o motivo..." />
+                    <ReasonInputWithSave
+                      label="Motivo do Desligamento"
+                      value={extraData.reason || ''}
+                      onChange={(val) => setExtraData({ ...extraData, reason: val })}
+                      category="motivo_desligamento"
+                      placeholder="Descreva o motivo do desligamento ou selecione da relação..."
+                      multiline={true}
+                      rows={3}
+                    />
                  </div>
              </div>
           )}

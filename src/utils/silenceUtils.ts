@@ -11,6 +11,20 @@ export const normalizeText = (val?: string | null): string => {
     .trim();
 };
 
+export const isGenericPlaceholder = (text?: string | null): boolean => {
+  if (!text) return false;
+  const n = normalizeText(text);
+  return (
+    n === 'em contratacao' ||
+    n === 'vaga em contratacao' ||
+    n === 'vaga em aberto' ||
+    n === 'vaga disponivel' ||
+    n === 'vaga' ||
+    n === 'novo slot' ||
+    n === 'vaga aberta'
+  );
+};
+
 /**
  * Verifica se um colaborador está silenciado no sistema
  */
@@ -44,12 +58,17 @@ export const isEmployeeSilenced = (
   const nameNorm = normalizeText(emp.name);
   if (nameNorm.includes('silenciad')) return true;
 
+  // Vagas em contratação e placeholders de sistema nunca devem ser silenciados por coincidência de nome
+  if (isGenericPlaceholder(emp.name) || statusNorm === 'em contratacao') {
+    return false;
+  }
+
   // Cruza com a lista de colaboradores da base de dados se fornecida
   if (collaborators && Array.isArray(collaborators) && collaborators.length > 0) {
     const matchedCol = collaborators.find(c => {
       if (emp.collaboratorId && c.id === emp.collaboratorId) return true;
       if (emp.registration && c.registration && emp.registration === c.registration) return true;
-      if (emp.name && c.name && normalizeText(emp.name) === normalizeText(c.name)) return true;
+      if (emp.name && c.name && !isGenericPlaceholder(emp.name) && !isGenericPlaceholder(c.name) && normalizeText(emp.name) === normalizeText(c.name)) return true;
       return false;
     });
 

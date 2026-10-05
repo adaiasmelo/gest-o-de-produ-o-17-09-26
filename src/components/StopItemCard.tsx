@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Trash2, Clock, Zap, Plus } from 'lucide-react';
 import { StopItem } from '../types';
+import { ReasonInputWithSave } from './ReasonInputWithSave';
 
 interface StopItemCardProps {
   stop: StopItem;
@@ -224,26 +225,20 @@ export const StopItemCard: React.FC<StopItemCardProps> = ({
         </div>
       )}
 
-      {/* Motivo / Justificativa por Escrito (Único campo de motivo) */}
+      {/* Motivo / Justificativa por Escrito com salvamento na relação */}
       <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-            <span>Motivo / Justificativa por Escrito da Parada:</span>
-          </label>
-        </div>
-        <textarea
-          rows={2}
+        <ReasonInputWithSave
+          label="Motivo / Justificativa da Parada"
           value={stop.explicacao || stop.justification || stop.motivo || ''}
-          onChange={(e) => {
-            const val = e.target.value;
+          onChange={(val) => {
             onUpdate(stop.id, 'explicacao', val);
             onUpdate(stop.id, 'justification', val);
             onUpdate(stop.id, 'motivo', val);
             onUpdate(stop.id, 'keyword', '');
           }}
-          placeholder="Digite o motivo por escrito da parada (ex: Troca de faca, manutenção no motor, ajuste de temperatura, limpeza)..."
-          className="w-full bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none shadow-2xs resize-none"
+          category={`paradas_${type}`}
+          placeholder="Digite o motivo da parada ou selecione da relação..."
+          multiline={false}
         />
       </div>
     </div>
