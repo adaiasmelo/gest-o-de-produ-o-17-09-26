@@ -8,6 +8,7 @@ import { StopItemCard } from './StopItemCard';
 import { ReasonInputWithSave, saveReasonToLibrary } from './ReasonInputWithSave';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet } from '../utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from '../utils/vacationUtils';
+import { triggerHaptic } from '../utils/haptics';
 
 interface EcoBReasonCardProps {
   label: string;
@@ -720,14 +721,17 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.operator && !formData.isNoWorkDay) {
+      triggerHaptic('warning');
       alert('Por favor, selecione um operador.');
       return;
     }
     if (!formData.machine) {
+      triggerHaptic('warning');
       alert('Nenhuma máquina ativa selecionada.');
       return;
     }
     if (!formData.shift) {
+      triggerHaptic('warning');
       alert('Por favor, selecione um turno.');
       return;
     }
@@ -854,6 +858,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       if (activeStoppageReason) saveReasonToLibrary('paradas_extrusao', activeStoppageReason, compiled.operator);
       onSave(initialData ? { ...compiled, id: initialData.id } : compiled);
     }
+    triggerHaptic('success');
     onClose();
   };
 

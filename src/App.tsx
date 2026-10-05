@@ -68,6 +68,10 @@ import { Cast1CalculatorModal } from './components/Cast1CalculatorModal';
 import { Cast1CalculatorStandalone } from './components/Cast1CalculatorStandalone';
 import { RibbonMachineGoalsModal } from './components/RibbonMachineGoalsModal';
 import { ReasonInputWithSave, saveReasonToLibrary } from './components/ReasonInputWithSave';
+import { AuditTrailModal } from './components/AuditTrailModal';
+import { logAuditEvent } from './services/auditLogger';
+import { triggerHaptic } from './utils/haptics';
+import { AnimatedCounter } from './components/AnimatedCounter';
 import { 
   getRibbonMachineGoal, 
   getRibbonTotalGoal, 
@@ -837,6 +841,7 @@ export const App: React.FC = () => {
   const [isDowntimeAnalyticsModalOpen, setIsDowntimeAnalyticsModalOpen] = useState(false);
   const [isCast1CalculatorOpen, setIsCast1CalculatorOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isAuditTrailOpen, setIsAuditTrailOpen] = useState(false);
   const [downtimeReasonsVersion, setDowntimeReasonsVersion] = useState(0);
   const [stopsSearchTerm, setStopsSearchTerm] = useState<string>('');
 
@@ -5485,6 +5490,7 @@ Atenciosamente,
     if (!canEditProduction) return;
 
     if (!ribbonOperator || !ribbonShift) {
+      triggerHaptic('warning');
       alert('Por favor, preencha todos os campos obrigatórios!');
       return;
     }
@@ -5547,7 +5553,20 @@ Atenciosamente,
     });
 
     try {
+      const oldEntry = editingRibbonId ? ribbonEntries.find(r => r.id === editingRibbonId) : null;
       await setDoc(doc(db, 'ribbon_cutting_entries', entryId), cleanUndefined(payload));
+      logAuditEvent({
+        action: editingRibbonId ? 'UPDATE' : 'CREATE',
+        module: 'Corte de Fita',
+        targetTitle: `Corte de Fita - ${payload.machine || 'Máquina'} - ${payload.date} (${payload.operator})`,
+        targetId: entryId,
+        userName: loggedUser?.name || 'Operador',
+        userId: currentUser?.uid,
+        userRole: loggedUser?.role,
+        oldState: oldEntry as any,
+        newState: payload as any,
+      });
+      triggerHaptic('success');
       recordUserActivity({
         user: loggedUser,
         type: 'action',
@@ -12550,6 +12569,25 @@ Atenciosamente,
                       </button>
                     )}
 
+                    {/* Trilha de Auditoria (ISO 9001) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('selection');
+                        setIsAuditTrailOpen(true);
+                        setIsMainMenuOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <History size={18} className="text-blue-600 shrink-0" />
+                        <span>Trilha de Auditoria (ISO 9001)</span>
+                      </div>
+                      <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-black uppercase">
+                        Tempo Real
+                      </span>
+                    </button>
+
                     {/* Tela Cheia */}
                     <button
                       type="button"
@@ -18233,8 +18271,12 @@ Atenciosamente,
                             <div className="text-right">
                               <span className="text-[10px] font-black uppercase opacity-60 block tracking-widest">Total Geral Mês</span>
                               <div className="flex items-baseline justify-end gap-1.5">
-                                <span className="text-2xl sm:text-3xl font-black">{formatM2(ribbonDashboardStats.month)}</span>
-                                <span className="text-sm font-bold text-sky-300">/ {((ribbonDashboardStats.month / Math.max(1, ribbonDashboardStats.goal)) * 100).toFixed(1)}%</span>
+                                <span className="text-2xl sm:text-3xl font-black">
+                                  <AnimatedCounter value={ribbonDashboardStats.month} suffix=" m²" />
+                                </span>
+                                <span className="text-sm font-bold text-sky-300">
+                                  / <AnimatedCounter value={(ribbonDashboardStats.month / Math.max(1, ribbonDashboardStats.goal)) * 100} decimals={1} suffix="%" />
+                                </span>
                               </div>
                             </div>
                             <div className="w-11 h-11 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 shrink-0">
@@ -18268,8 +18310,12 @@ Atenciosamente,
                               {/* M² e Porcentagem */}
                               <div className="flex items-baseline justify-between mb-4">
                                 <div className="flex items-baseline gap-1.5">
-                                  <span className="text-2xl sm:text-3xl font-black text-white">{formatM2(m.month)}</span>
-                                  <span className="text-xs font-bold text-sky-300">/ {m.percent.toFixed(1)}%</span>
+                                  <span className="text-2xl sm:text-3xl font-black text-white">
+                                    <AnimatedCounter value={m.month} suffix=" m²" />
+                                  </span>
+                                  <span className="text-xs font-bold text-sky-300">
+                                    / <AnimatedCounter value={m.percent} decimals={1} suffix="%" />
+                                  </span>
                                 </div>
                                 <span className="text-[9px] font-black opacity-70 uppercase tracking-wider">
                                   Meta: {formatM2(m.goal)}
@@ -21295,7 +21341,21 @@ Atenciosamente,
           const isNew = !editingEntry;
           const id = editingEntry ? editingEntry.id : Math.random().toString(36).substr(2, 9);
           const entry = { ...e, id, userId: currentUser.uid, updatedAt: new Date().toISOString() };
+          const oldEntry = editingEntry ? productionData.find(x => x.id === editingEntry.id) : null;
           await setDoc(doc(db, 'productionEntries', id), entry);
+
+          logAuditEvent({
+            action: isNew ? 'CREATE' : 'UPDATE',
+            module: 'Extrusão',
+            targetTitle: `Extrusão - ${entry.machine || 'Máquina'} - ${entry.date} (${entry.operator})`,
+            targetId: id,
+            userName: loggedUser?.name || entry.operator || 'Operador',
+            userId: currentUser?.uid,
+            userRole: loggedUser?.role,
+            oldState: oldEntry as any,
+            newState: entry as any,
+          });
+          triggerHaptic('success');
 
           recordUserActivity({
             user: loggedUser,
@@ -21914,6 +21974,12 @@ Atenciosamente,
         onFilterEmployee={handleCommandPaletteFilterEmployee}
       />
 
+      {/* Trilha de Auditoria & Rastreabilidade Operacional (ISO 9001) */}
+      <AuditTrailModal
+        isOpen={isAuditTrailOpen}
+        onClose={() => setIsAuditTrailOpen(false)}
+      />
+
       {/* ==================== INÍCIO OPÇÃO 3: MINI DOCK FLUTUANTE (DESFAZER: OPÇÃO 3) ==================== */}
       <FloatingQuickDock
         onOpenProductionModal={() => {
@@ -21926,6 +21992,7 @@ Atenciosamente,
         }}
         onOpenCast1Calculator={() => setIsCast1CalculatorOpen(true)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onOpenAuditTrail={() => setIsAuditTrailOpen(true)}
         isOnline={isOnline}
         isSyncing={productionSyncStatus.isSyncing}
       />

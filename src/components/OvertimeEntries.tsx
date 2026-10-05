@@ -31,6 +31,8 @@ import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
 import { INITIAL_OVERTIME_ENTRIES } from '../data/initialOvertimeEntries';
 import ConfirmDialog from './ConfirmDialog';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
+import { triggerHaptic } from '../utils/haptics';
+import { logAuditEvent } from '../services/auditLogger';
 import {
   PAYROLL_CUTOFF_DAY,
   COMMERCIAL_DURATION_MINUTES,
@@ -858,31 +860,38 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) {
+      triggerHaptic('error');
       onBlockedAction?.('Ação Bloqueada', 'Sua conta está em modo Somente Leitura.');
       return;
     }
 
     if (!isBatchMode && !employeeName.trim()) {
+      triggerHaptic('warning');
       setFormError('Por favor, selecione ou informe o nome do operador.');
       return;
     }
     if (isBatchMode && selectedEmployeeIds.length === 0) {
+      triggerHaptic('warning');
       setFormError('Por favor, selecione pelo menos um colaborador para o lançamento em grupo/lote.');
       return;
     }
     if (!date) {
+      triggerHaptic('warning');
       setFormError('Por favor, selecione a data do lançamento.');
       return;
     }
     if (!startTime || !endTime) {
+      triggerHaptic('warning');
       setFormError('Por favor, informe os horários de início e término.');
       return;
     }
     if (overtimeHours <= 0) {
+      triggerHaptic('warning');
       setFormError('Os horários informados não geram horas extras conforme a regra do turno.');
       return;
     }
     if (!reason.trim()) {
+      triggerHaptic('warning');
       setFormError('Por favor, informe ou selecione o motivo / atividade realizada.');
       return;
     }
@@ -1009,9 +1018,32 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
       if (editingEntry) {
         await updateDoc(doc(db, 'overtime_entries', editingEntry.id), payload);
+        logAuditEvent({
+          action: 'UPDATE',
+          module: 'Horas Extras',
+          targetTitle: `Hora Extra - ${payload.employeeName} (${payload.overtimeHours}h)`,
+          targetId: editingEntry.id,
+          userName: loggedUser?.name || 'Sistema',
+          userRole: loggedUser?.role,
+          oldState: editingEntry,
+          newState: { ...payload, id: editingEntry.id },
+          reason: payload.notes || payload.reason,
+        });
       } else {
-        await addDoc(collection(db, 'overtime_entries'), payload);
+        const docRef = await addDoc(collection(db, 'overtime_entries'), payload);
+        logAuditEvent({
+          action: 'CREATE',
+          module: 'Horas Extras',
+          targetTitle: `Hora Extra - ${payload.employeeName} (${payload.overtimeHours}h)`,
+          targetId: docRef.id,
+          userName: loggedUser?.name || 'Sistema',
+          userRole: loggedUser?.role,
+          newState: { ...payload, id: docRef.id },
+          reason: payload.notes || payload.reason,
+        });
       }
+
+      triggerHaptic('success');
 
       if (isReasonNew && reason.trim()) {
         await saveNewReasonToDatabase(reason.trim());

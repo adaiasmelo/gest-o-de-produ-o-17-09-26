@@ -10,7 +10,8 @@ import {
   ChevronUp,
   Sparkles,
   Tv,
-  Layers
+  Layers,
+  History
 } from 'lucide-react';
 
 export interface FloatingQuickDockProps {
@@ -18,6 +19,7 @@ export interface FloatingQuickDockProps {
   onNavigateOvertime: () => void;
   onOpenCast1Calculator: () => void;
   onOpenCommandPalette: () => void;
+  onOpenAuditTrail?: () => void;
   isOnline: boolean;
   isSyncing?: boolean;
 }
@@ -27,6 +29,7 @@ export const FloatingQuickDock: React.FC<FloatingQuickDockProps> = ({
   onNavigateOvertime,
   onOpenCast1Calculator,
   onOpenCommandPalette,
+  onOpenAuditTrail,
   isOnline,
   isSyncing = false
 }) => {
@@ -114,6 +117,19 @@ export const FloatingQuickDock: React.FC<FloatingQuickDockProps> = ({
               <Calculator size={14} className="text-purple-400" />
               <span>Calc CAST 1</span>
             </button>
+
+            {/* Botão Trilha de Auditoria ISO */}
+            {onOpenAuditTrail && (
+              <button
+                type="button"
+                onClick={onOpenAuditTrail}
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-slate-800/90 hover:bg-emerald-600 hover:text-white text-slate-200 rounded-full font-black text-[11px] uppercase tracking-wide transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                title="Trilha de Auditoria & ISO 9001 (Quem Alterou o Quê)"
+              >
+                <History size={14} className="text-emerald-400" />
+                <span>Auditoria</span>
+              </button>
+            )}
 
             {/* Separador vertical sutil */}
             <div className="w-[1px] h-5 bg-slate-700/80 mx-0.5 sm:mx-1 shrink-0" />
