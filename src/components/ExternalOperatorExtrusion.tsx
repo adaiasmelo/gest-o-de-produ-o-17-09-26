@@ -21,7 +21,7 @@ import {
   KeyRound,
   ArrowLeft
 } from 'lucide-react';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { SystemUser, Employee, Collaborator, Vacation, Shift, ProductionEntry, RibbonCuttingEntry } from '../types';
 import LaunchModal from './LaunchModal';
@@ -43,8 +43,8 @@ interface ExternalOperatorExtrusionProps {
   onExitToMainApp?: () => void;
 }
 
-// Lista oficial dos operadores autorizados da Extrusão informados expressamente pela fábrica
-const OFFICIAL_EXTRUSION_OPERATORS = [
+// Lista oficial dos operadores de Extrusão (Cast 1 e Cast 2) informados pela fábrica
+const OFFICIAL_CAST_OPERATORS = [
   'adriano',
   'carlos felipe',
   'christian',
@@ -54,6 +54,13 @@ const OFFICIAL_EXTRUSION_OPERATORS = [
   'endrik',
   'joao augusto',
   'marcelo'
+];
+
+// Operadores conhecidos da Erema (Setor de Reciclagem)
+const OFFICIAL_EREMA_OPERATORS = [
+  'fabio andre',
+  'gilcimar',
+  'jocelan'
 ];
 
 const normalizeText = (text: string = ''): string => {
@@ -69,8 +76,8 @@ const normalizeText = (text: string = ''): string => {
  * Turno Diurno: 06:00 às 18:00
  * Turno Noturno: 18:00 às 06:00 (do dia seguinte)
  *
- * Exemplo prático: O turno da noite do dia 4 acessa a tela na manhã do dia 5 (ex: 06:30).
- * O lançamento pertence à noite do dia 4, portanto a data deve ser do dia 4 e o turno Noturno!
+ * Exemplo prático: O plantão noturno do dia 4 acessa na manhã do dia 5 (ex: 06:30).
+ * O lançamento pertence à noite do dia 4, portanto a data de produção é o dia 4 e o turno Noturno!
  */
 export const calculateExtrusion12x36 = (empShift?: string) => {
   const now = new Date();
@@ -91,25 +98,31 @@ export const calculateExtrusion12x36 = (empShift?: string) => {
 
   if (currentHour < 12) {
     // Período da manhã (00:00 até 11:59):
-    // O operador que acabou de sair da máquina de madrugada/manhã trabalhou na noite do dia anterior.
-    // Lançamento do dia anterior (dia 4) no turno Noturno.
+    // Operadores da noite que acessam pela manhã apontam a produção do plantão iniciado ontem à noite.
     date = yesterdayStr;
     shift = isRegisteredDiurno ? 'Diurno' : 'Noturno';
   } else if (currentHour >= 12 && currentHour < 18) {
     // Período da tarde (12:00 até 17:59):
-    // Turno Diurno em andamento ou finalização no próprio dia de hoje.
+    // Turno Diurno em andamento no próprio dia de hoje.
     date = todayStr;
     shift = 'Diurno';
   } else {
     // Período da noite (18:00 até 23:59):
-    // Se o operador for Diurno (saiu às 18h), é Diurno de Hoje.
-    // Se o operador for Noturno (começou às 18h), é Noturno de Hoje.
+    // Diurno recém-saído às 18h ou Noturno recém-iniciado às 18h.
     date = todayStr;
     shift = isRegisteredNoturno ? 'Noturno' : 'Diurno';
   }
 
   return { date, shift };
 };
+
+interface OperatorCheckResult {
+  authorized: boolean;
+  operatorName: string;
+  isEremaOperator: boolean;
+  empRecord?: Employee;
+  reason?: string;
+}
 
 export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps> = ({
   systemName,
@@ -131,6 +144,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
     name: string;
     registration: string;
     role: string;
+    isEremaOperator: boolean;
   } | null>(() => {
     try {
       const saved = localStorage.getItem('manupackaging_operator_portal_user');
@@ -173,62 +187,117 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
   const [isLoading, setIsLoading] = useState(false);
   const [saveSuccessToast, setSaveSuccessToast] = useState<string | null>(null);
 
-  // Lista dos colaboradores oficiais de Extrusão
-  const isAuthorizedExtrusionOperator = (mat: string, name?: string): { authorized: boolean; operatorName: string; empRecord?: Employee } => {
+  // Verificação estrita de autorização de operadores (Extrusão Cast vs Reciclagem Erema)
+  const checkOperatorAuthorization = (mat: string): OperatorCheckResult => {
     const cleanMat = mat.trim();
-    if (!cleanMat) return { authorized: false, operatorName: '' };
+    if (!cleanMat) return { authorized: false, operatorName: '', isEremaOperator: false };
 
     // Admin master 1010
     if (cleanMat === '1010') {
-      return { authorized: true, operatorName: 'Administrador / Supervisor' };
+      return {
+        authorized: true,
+        operatorName: 'Supervisor / Operador Master',
+        isEremaOperator: false
+      };
     }
 
-    // 1. Busca por matrícula em employees
-    const empByMat = employees.find(e => e.registration === cleanMat);
-    if (empByMat) {
-      const empNorm = normalizeText(empByMat.name);
-      const isOfficial = OFFICIAL_EXTRUSION_OPERATORS.some(op => empNorm.includes(normalizeText(op)));
-      const roleNorm = normalizeText(empByMat.role);
-      const isOpRole = roleNorm.includes('operador') && !roleNorm.includes('auxiliar');
-      const sectorNorm = normalizeText(empByMat.sector);
-      const machNorm = normalizeText(empByMat.machine);
-      const isExtrusao = sectorNorm.includes('extrus') || machNorm.includes('cast') || machNorm.includes('erema');
-      const isNotFita = !sectorNorm.includes('fita') && !machNorm.includes('ghezzi') && !machNorm.includes('lintech') && !machNorm.includes('wultec');
+    // 1. Busca no cadastro de funcionários (employees)
+    const emp = employees.find(e => e.registration === cleanMat);
+    if (emp) {
+      const empNorm = normalizeText(emp.name);
+      const roleNorm = normalizeText(emp.role);
+      const sectorNorm = normalizeText(emp.sector);
+      const machNorm = normalizeText(emp.machine);
 
-      if (isOfficial || (isOpRole && isExtrusao && isNotFita)) {
-        return { authorized: true, operatorName: empByMat.name, empRecord: empByMat };
+      // Bloqueia expressamente funcionários de Corte de Fita
+      const isFita = sectorNorm.includes('fita') || machNorm.includes('ghezzi') || machNorm.includes('lintech') || machNorm.includes('wultec') || roleNorm.includes('fita');
+      if (isFita) {
+        return {
+          authorized: false,
+          operatorName: emp.name,
+          isEremaOperator: false,
+          reason: 'Acesso restrito: Funcionários do setor de Corte de Fita não realizam lançamentos de Extrusão ou Reciclagem.'
+        };
+      }
+
+      // Verificação de EREMA (Setor Reciclagem)
+      const isErema = (
+        sectorNorm.includes('recicla') ||
+        machNorm.includes('erema') ||
+        roleNorm.includes('erema') ||
+        OFFICIAL_EREMA_OPERATORS.some(op => empNorm.includes(normalizeText(op)))
+      );
+
+      // Verificação de CAST (Setor Extrusão)
+      const isCastOfficial = OFFICIAL_CAST_OPERATORS.some(op => empNorm.includes(normalizeText(op)));
+      const isCast = isCastOfficial || sectorNorm.includes('extrus') || machNorm.includes('cast');
+
+      if (isErema) {
+        return {
+          authorized: true,
+          operatorName: emp.name,
+          isEremaOperator: true,
+          empRecord: emp
+        };
+      }
+
+      if (isCast) {
+        return {
+          authorized: true,
+          operatorName: emp.name,
+          isEremaOperator: false,
+          empRecord: emp
+        };
       }
     }
 
-    // 2. Busca por matrícula em collaborators
-    const collabByMat = collaborators.find(c => c.registration === cleanMat);
-    if (collabByMat) {
-      const collabNorm = normalizeText(collabByMat.name);
-      if (OFFICIAL_EXTRUSION_OPERATORS.some(op => collabNorm.includes(normalizeText(op)))) {
-        return { authorized: true, operatorName: collabByMat.name };
+    // 2. Busca em collaborators
+    const collab = collaborators.find(c => c.registration === cleanMat);
+    if (collab) {
+      const collabNorm = normalizeText(collab.name);
+      const isErema = OFFICIAL_EREMA_OPERATORS.some(op => collabNorm.includes(normalizeText(op)));
+      const isCast = OFFICIAL_CAST_OPERATORS.some(op => collabNorm.includes(normalizeText(op)));
+
+      if (isErema) {
+        return { authorized: true, operatorName: collab.name, isEremaOperator: true };
+      }
+      if (isCast) {
+        return { authorized: true, operatorName: collab.name, isEremaOperator: false };
       }
     }
 
     // 3. Busca em system_users
-    const userByMat = systemUsers.find(u => u.registration === cleanMat);
-    if (userByMat) {
-      const userNorm = normalizeText(userByMat.name);
-      if (OFFICIAL_EXTRUSION_OPERATORS.some(op => userNorm.includes(normalizeText(op)))) {
-        return { authorized: true, operatorName: userByMat.name };
+    const user = systemUsers.find(u => u.registration === cleanMat);
+    if (user) {
+      const userNorm = normalizeText(user.name);
+      const isErema = OFFICIAL_EREMA_OPERATORS.some(op => userNorm.includes(normalizeText(op)));
+      const isCast = OFFICIAL_CAST_OPERATORS.some(op => userNorm.includes(normalizeText(op)));
+
+      if (isErema) {
+        return { authorized: true, operatorName: user.name, isEremaOperator: true };
+      }
+      if (isCast) {
+        return { authorized: true, operatorName: user.name, isEremaOperator: false };
       }
     }
 
-    return { authorized: false, operatorName: '' };
+    return {
+      authorized: false,
+      operatorName: '',
+      isEremaOperator: false,
+      reason: 'Matrícula não autorizada. O portal mobile é exclusivo para operadores de Extrusão (Cast 1 e Cast 2) e Reciclagem (Erema).'
+    };
   };
 
   // Pré-identificação amigável enquanto o operador digita a matrícula
   const detectedCandidate = useMemo(() => {
     const cleanMat = matricula.trim();
     if (!cleanMat || cleanMat.length < 2) return null;
-    const check = isAuthorizedExtrusionOperator(cleanMat);
+    const check = checkOperatorAuthorization(cleanMat);
     if (check.authorized) {
       return {
         name: check.operatorName,
+        isErema: check.isEremaOperator,
         emp: check.empRecord
       };
     }
@@ -255,13 +324,11 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
       return;
     }
 
-    // 1. Validação estrita de operador de Extrusão
-    const authCheck = isAuthorizedExtrusionOperator(cleanMat);
+    // 1. Validação estrita de autorização
+    const authCheck = checkOperatorAuthorization(cleanMat);
     if (!authCheck.authorized) {
       triggerHaptic('error');
-      setErrorMsg(
-        'Acesso não autorizado: Esta matrícula não pertence a um operador da Extrusão. O acesso é exclusivo para: Adriano, Carlos Felipe, Christian, Sidnei, Deives, Pedrilso, Endrik, João Augusto e Marcelo.'
-      );
+      setErrorMsg(authCheck.reason || 'Acesso não autorizado: Matrícula não cadastrada para este portal.');
       return;
     }
 
@@ -296,7 +363,8 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
         const session = {
           name: 'Supervisor / Operador Master',
           registration: '1010',
-          role: 'Administrador'
+          role: 'Administrador',
+          isEremaOperator: false
         };
         setOperatorSession(session);
         localStorage.setItem('manupackaging_operator_portal_user', JSON.stringify(session));
@@ -332,7 +400,8 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
       const session = {
         name: authCheck.operatorName || existingSystemUser?.name || 'Operador',
         registration: cleanMat,
-        role: existingSystemUser?.role || 'Operador'
+        role: existingSystemUser?.role || 'Operador',
+        isEremaOperator: authCheck.isEremaOperator
       };
 
       setOperatorSession(session);
@@ -371,7 +440,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
     setIsLoading(true);
 
     try {
-      const authCheck = isAuthorizedExtrusionOperator(cleanMat);
+      const authCheck = checkOperatorAuthorization(cleanMat);
       const existingUser = systemUsers.find(u => u.registration === cleanMat);
       const userId = existingUser?.id || `user_${cleanMat}`;
       const operatorName = authCheck.operatorName || existingUser?.name || 'Operador';
@@ -399,7 +468,8 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
       const session = {
         name: operatorName,
         registration: cleanMat,
-        role: 'Operador'
+        role: 'Operador',
+        isEremaOperator: authCheck.isEremaOperator
       };
 
       setOperatorSession(session);
@@ -441,12 +511,12 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
       await onSave(entry);
       triggerHaptic('success');
       const mach = entry.machine || selectedMachine || 'Extrusão';
-      setSaveSuccessToast(`Lançamento da ${mach} salvo com sucesso no sistema da Extrusão!`);
+      setSaveSuccessToast(`Lançamento da ${mach} salvo com sucesso no sistema!`);
       setTimeout(() => {
         setSaveSuccessToast(null);
       }, 5000);
 
-      // Retorna para a tela geral de seleção de máquina após o salvamento
+      // Retorna para a tela de seleção de máquina após o salvamento
       setCurrentStep('select_machine');
     } catch (err) {
       console.error('Erro ao salvar:', err);
@@ -456,7 +526,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
   };
 
   // ==========================================
-  // ETAPA 4: FORMULÁRIO DE LANÇAMENTO DA EXTRUSÃO
+  // ETAPA 4: FORMULÁRIO DE LANÇAMENTO OFICIAL
   // ==========================================
   if (currentStep === 'launch_form' && operatorSession && selectedMachine) {
     return (
@@ -502,10 +572,13 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
     );
   }
 
-  // ==========================================
-  // ETAPA 3: TELA GERAL DE SELEÇÃO DE MÁQUINA
+  // =========================================================================
+  // ETAPA 3: TELA GERAL DE SELEÇÃO DE MÁQUINA (CAST 1/2 vs EREMA RESTRITO)
   // ==========================================
   if (currentStep === 'select_machine' && operatorSession) {
+    const isEremaOp = operatorSession.isEremaOperator;
+    const isMaster = operatorSession.registration === '1010';
+
     return (
       <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col justify-between overflow-y-auto p-4 sm:p-6 z-[99999]">
         {/* Header do Operador Autenticado */}
@@ -523,8 +596,12 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
               </div>
             )}
             <div className="min-w-0 truncate">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                Operador Conectado
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block flex items-center gap-1">
+                {isEremaOp ? (
+                  <span className="text-emerald-400 font-black">♻️ Operador de Reciclagem</span>
+                ) : (
+                  <span className="text-blue-400 font-black">🏭 Operador de Extrusão</span>
+                )}
               </span>
               <h2 className="text-sm sm:text-base font-black text-white truncate">
                 {operatorSession.name}
@@ -559,8 +636,8 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
               <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
                 <Clock size={12} /> Turno & Data (Regra 12x36)
               </span>
-              <span className="text-[9px] bg-blue-500/20 text-blue-300 font-bold px-2 py-0.5 rounded-full">
-                Extrusão
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isEremaOp ? 'bg-emerald-500/20 text-emerald-300' : 'bg-blue-500/20 text-blue-300'}`}>
+                {isEremaOp ? 'Reciclagem' : 'Extrusão'}
               </span>
             </div>
 
@@ -624,77 +701,98 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
           {/* Título de Instrução */}
           <div className="text-center sm:text-left space-y-1 px-1">
             <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
-              Em qual máquina você vai fazer o lançamento?
+              {isEremaOp
+                ? 'Lançamento da Recicladora Erema'
+                : 'Selecione a Extrusora para o Lançamento:'}
             </h3>
             <p className="text-xs text-slate-400">
-              Selecione a máquina abaixo para abrir o formulário completo de produção:
+              {isEremaOp
+                ? 'Você está autenticado no setor de Reciclagem. Toque abaixo para abrir o formulário da Erema:'
+                : 'Você está autenticado no setor de Extrusão. Escolha entre Cast 1 ou Cast 2:'}
             </p>
           </div>
 
-          {/* Grade de Seleção de Máquina: Cast 1, Cast 2 e Erema */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* Opção CAST 1 */}
-            <button
-              type="button"
-              onClick={() => handleSelectMachineToLaunch('Cast 1')}
-              className="bg-gradient-to-br from-blue-900/60 via-slate-900 to-slate-900 hover:from-blue-800/80 hover:via-blue-950 hover:to-slate-900 border-2 border-blue-500/40 hover:border-blue-400 p-5 rounded-3xl text-left transition-all active:scale-[0.98] group cursor-pointer shadow-xl relative overflow-hidden"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 rounded-2xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 group-hover:scale-110 transition-transform">
-                  <Factory size={26} />
-                </div>
-                <div className="flex items-center gap-1 bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase">
-                  <span>Abrir</span>
-                  <ChevronRight size={14} />
-                </div>
-              </div>
-              <h4 className="text-xl font-black text-white uppercase tracking-tight">CAST 1</h4>
-              <p className="text-xs text-slate-400 mt-1 leading-snug">
-                Extrusora de filme stretch Cast 1 • Lançamento de peso bruto, tara, paradas e aparas.
-              </p>
-            </button>
+          {/* ========================================================================= */}
+          {/* SELEÇÃO CONDICIONAL DE MÁQUINA:                                          */}
+          {/* - Operador da Extrusão: VÊ SOMENTE CAST 1 E CAST 2 (NUNCA VÊ EREMA)      */}
+          {/* - Operador da Erema: VÊ SOMENTE EREMA (NUNCA VÊ CAST 1 OU CAST 2)         */}
+          {/* - Supervisor Master (1010): Vê todas para fins de gestão                  */}
+          {/* ========================================================================= */}
+          <div className={`grid gap-3.5 ${isEremaOp ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
+            {/* Opções CAST 1 e CAST 2 (Apenas para operadores de Cast ou Master 1010) */}
+            {(!isEremaOp || isMaster) && (
+              <>
+                {/* Opção CAST 1 */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectMachineToLaunch('Cast 1')}
+                  className="bg-gradient-to-br from-blue-900/60 via-slate-900 to-slate-900 hover:from-blue-800/80 hover:via-blue-950 hover:to-slate-900 border-2 border-blue-500/40 hover:border-blue-400 p-5 rounded-3xl text-left transition-all active:scale-[0.98] group cursor-pointer shadow-xl relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 group-hover:scale-110 transition-transform">
+                      <Factory size={26} />
+                    </div>
+                    <div className="flex items-center gap-1 bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase">
+                      <span>Abrir</span>
+                      <ChevronRight size={14} />
+                    </div>
+                  </div>
+                  <h4 className="text-xl font-black text-white uppercase tracking-tight">CAST 1</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-snug">
+                    Extrusora de filme stretch Cast 1 • Lançamento de peso bruto, tara, paradas e aparas.
+                  </p>
+                </button>
 
-            {/* Opção CAST 2 */}
-            <button
-              type="button"
-              onClick={() => handleSelectMachineToLaunch('Cast 2')}
-              className="bg-gradient-to-br from-indigo-900/60 via-slate-900 to-slate-900 hover:from-indigo-800/80 hover:via-indigo-950 hover:to-slate-900 border-2 border-indigo-500/40 hover:border-indigo-400 p-5 rounded-3xl text-left transition-all active:scale-[0.98] group cursor-pointer shadow-xl relative overflow-hidden"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 group-hover:scale-110 transition-transform">
-                  <Factory size={26} />
-                </div>
-                <div className="flex items-center gap-1 bg-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase">
-                  <span>Abrir</span>
-                  <ChevronRight size={14} />
-                </div>
-              </div>
-              <h4 className="text-xl font-black text-white uppercase tracking-tight">CAST 2</h4>
-              <p className="text-xs text-slate-400 mt-1 leading-snug">
-                Extrusora de filme stretch Cast 2 • Lançamento de peso bruto, tara, paradas e aparas.
-              </p>
-            </button>
+                {/* Opção CAST 2 */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectMachineToLaunch('Cast 2')}
+                  className="bg-gradient-to-br from-indigo-900/60 via-slate-900 to-slate-900 hover:from-indigo-800/80 hover:via-indigo-950 hover:to-slate-900 border-2 border-indigo-500/40 hover:border-indigo-400 p-5 rounded-3xl text-left transition-all active:scale-[0.98] group cursor-pointer shadow-xl relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 group-hover:scale-110 transition-transform">
+                      <Factory size={26} />
+                    </div>
+                    <div className="flex items-center gap-1 bg-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase">
+                      <span>Abrir</span>
+                      <ChevronRight size={14} />
+                    </div>
+                  </div>
+                  <h4 className="text-xl font-black text-white uppercase tracking-tight">CAST 2</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-snug">
+                    Extrusora de filme stretch Cast 2 • Lançamento de peso bruto, tara, paradas e aparas.
+                  </p>
+                </button>
+              </>
+            )}
 
-            {/* Opção EREMA */}
-            <button
-              type="button"
-              onClick={() => handleSelectMachineToLaunch('Erema')}
-              className="sm:col-span-2 bg-gradient-to-br from-emerald-950/60 via-slate-900 to-slate-900 hover:from-emerald-900/80 hover:via-emerald-950 hover:to-slate-900 border-2 border-emerald-500/40 hover:border-emerald-400 p-5 rounded-3xl text-left transition-all active:scale-[0.98] group cursor-pointer shadow-xl relative overflow-hidden"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-11 h-11 rounded-2xl bg-emerald-600/30 border border-emerald-400/40 flex items-center justify-center text-emerald-300 group-hover:scale-110 transition-transform">
-                  <RefreshCw size={24} />
+            {/* Opção EREMA (Apenas para operadores da Erema ou Master 1010) */}
+            {(isEremaOp || isMaster) && (
+              <button
+                type="button"
+                onClick={() => handleSelectMachineToLaunch('Erema')}
+                className="bg-gradient-to-br from-emerald-950/70 via-slate-900 to-slate-900 hover:from-emerald-900/90 hover:via-emerald-950 hover:to-slate-900 border-2 border-emerald-500/50 hover:border-emerald-400 p-6 rounded-3xl text-left transition-all active:scale-[0.98] group cursor-pointer shadow-xl relative overflow-hidden w-full"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-600/30 border border-emerald-400/40 flex items-center justify-center text-emerald-300 group-hover:scale-110 transition-transform">
+                    <RefreshCw size={28} />
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-full text-xs font-black uppercase">
+                    <span>Lançar Produção</span>
+                    <ChevronRight size={14} />
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase">
-                  <span>Abrir</span>
-                  <ChevronRight size={14} />
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block">
+                    Setor de Reciclagem
+                  </span>
+                  <h4 className="text-2xl font-black text-white uppercase tracking-tight">EREMA</h4>
                 </div>
-              </div>
-              <h4 className="text-lg font-black text-white uppercase tracking-tight">EREMA (RECICLAGEM)</h4>
-              <p className="text-xs text-slate-400 mt-0.5 leading-snug">
-                Linha de reciclagem de aparas e recuperação • Apontamento de pesagens de pellets.
-              </p>
-            </button>
+                <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                  Linha de recuperação e reciclagem de resíduos plásticos • Apontamento de pesagens e horas de operação.
+                </p>
+              </button>
+            )}
           </div>
         </div>
 
@@ -801,7 +899,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
                   <span>Salvando Senha...</span>
                 ) : (
                   <>
-                    <span>Cadastrar Senha e Acessar Máquinas</span>
+                    <span>Cadastrar Senha e Acessar</span>
                     <ArrowRight size={16} />
                   </>
                 )}
@@ -837,7 +935,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
               {systemName || 'CONTROLE DE PRODUÇÃO'}
             </h1>
             <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1">
-              <Factory size={11} /> Chão de Fábrica • Extrusão
+              <Factory size={11} /> Chão de Fábrica • Apontamento
             </p>
           </div>
         </div>
@@ -862,10 +960,10 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
                 <Smartphone size={12} /> Acesso Mobile Operador
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                Lançamento de Extrusão
+                Lançamento de Produção
               </h2>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Digite sua matrícula funcional para selecionar a máquina e realizar o lançamento de produção pelo celular.
+                Digite sua matrícula funcional para acessar a sua máquina e realizar o apontamento direto pelo celular.
               </p>
             </div>
 
@@ -909,12 +1007,15 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
               {detectedCandidate && (
                 <div className="bg-blue-950/40 border border-blue-800/50 rounded-2xl p-3 space-y-1 animate-in fade-in duration-200">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400 font-medium">Operador da Extrusão:</span>
+                    <span className="text-slate-400 font-medium">Operador Reconhecido:</span>
                     <span className="font-black text-white">{detectedCandidate.name}</span>
                   </div>
-                  <p className="text-[10px] text-blue-300 font-medium">
-                    ✓ Matrícula autorizada para apontamento de Cast 1, Cast 2 e Erema.
-                  </p>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-400 font-medium">Setor de Atuação:</span>
+                    <span className={`font-black uppercase tracking-wider ${detectedCandidate.isErema ? 'text-emerald-400' : 'text-blue-300'}`}>
+                      {detectedCandidate.isErema ? 'Reciclagem (Erema)' : 'Extrusão (Cast 1 e Cast 2)'}
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -943,7 +1044,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
                   </button>
                 </div>
                 <p className="text-[9.5px] text-slate-500">
-                  Se for seu primeiro acesso, digite sua matrícula e confirme para criar sua senha.
+                  Se for seu primeiro acesso, digite sua matrícula para cadastrar sua nova senha.
                 </p>
               </div>
 
@@ -967,7 +1068,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
             {/* Aviso informativo de chão de fábrica */}
             <div className="pt-2 border-t border-slate-800 text-center">
               <p className="text-[10px] text-slate-500 leading-normal">
-                Acesso restrito exclusivamente aos operadores de Extrusão cadastrados no sistema.
+                Acesso restrito exclusivamente aos operadores de Extrusão (Cast 1 e 2) e Reciclagem (Erema).
               </p>
             </div>
           </div>
