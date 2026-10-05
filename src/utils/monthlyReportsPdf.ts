@@ -327,17 +327,23 @@ export const generateRibbonMonthlyReportPDF = async ({
   yPos += 4;
 
   const machinesStats = (ribbonDashboardStats?.machines || []).map((m: any) => {
-    // Busca resíduos e paradas da máquina no mês
+    // Busca resíduos, perdas e paradas da máquina no mês
     let wasteKg = 0;
     let stopsMin = 0;
+    let rejectedM2 = 0;
     currentMonthEntries.filter(e => isMachineMatch(e.machine, m.key === 'ghezze' ? 'ghezzi' : m.key)).forEach(e => {
       wasteKg += (e.wasteWeight || 0);
+      rejectedM2 += (e.rejectedM2 || 0);
       stopsMin += (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
     });
+
+    const monthGross = m.month + rejectedM2;
 
     return {
       name: m.label,
       monthProd: m.month,
+      rejectedM2,
+      monthGross,
       goal: m.goal,
       percent: m.percent,
       falta: m.falta,
@@ -349,20 +355,22 @@ export const generateRibbonMonthlyReportPDF = async ({
     };
   });
 
-  const macTableHead = [['MÁQUINA', 'PROD. REALIZADA (M²)', 'META (M²)', 'ATING. (%)', 'FALTA (M²)', 'MÉDIA NEC./DIA', 'PROJEÇÃO (M²)', 'JUMBOS USADOS', 'LIXO (KG)', 'PARADAS']];
+  const macTableHead = [['MÁQUINA', 'PROD. BRUTA (M²)', 'NÃO CONFORME (M²)', 'PROD. LÍQUIDA (M²)', 'META (M²)', 'ATING. (%)', 'FALTA (M²)', 'JUMBOS USADOS', 'LIXO (KG)', 'PARADAS']];
   const macTableBody = machinesStats.map((m: any) => [
     m.name.toUpperCase(),
+    formatM2(m.monthGross),
+    formatM2(m.rejectedM2),
     formatM2(m.monthProd),
     formatM2(m.goal),
     `${m.percent.toFixed(1)}%`,
     formatM2(m.falta),
-    `${formatM2(m.avgReq)}/dia`,
-    formatM2(m.projection),
     m.jumbos,
     `${m.wasteKg.toLocaleString('pt-BR')} Kg`,
     formatHours(m.stopsMin)
   ]);
 
+  const totalMacGross = machinesStats.reduce((a: number, b: any) => a + b.monthGross, 0);
+  const totalMacRej = machinesStats.reduce((a: number, b: any) => a + b.rejectedM2, 0);
   const totalMacProd = machinesStats.reduce((a: number, b: any) => a + b.monthProd, 0);
   const totalMacGoal = machinesStats.reduce((a: number, b: any) => a + b.goal, 0);
   const totalMacFalta = Math.max(0, totalMacGoal - totalMacProd);
@@ -371,12 +379,12 @@ export const generateRibbonMonthlyReportPDF = async ({
 
   const macTableFoot = [[
     'TOTAL GERAL',
+    formatM2(totalMacGross),
+    formatM2(totalMacRej),
     formatM2(totalMacProd),
     formatM2(totalMacGoal),
     `${totalMacGoal > 0 ? ((totalMacProd / totalMacGoal) * 100).toFixed(1) : 0}%`,
     formatM2(totalMacFalta),
-    '-',
-    formatM2(ribbonDashboardStats?.projection || 0),
     formatJumboUnits(calcJumboUnits(totalMacProd)),
     `${totalMacWaste.toLocaleString('pt-BR')} Kg`,
     formatHours(totalMacStops)
@@ -391,40 +399,50 @@ export const generateRibbonMonthlyReportPDF = async ({
     headStyles: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
-      fontSize: 7.5,
+      fontSize: 7,
       fontStyle: 'bold',
       halign: 'center'
     },
     footStyles: {
       fillColor: [241, 245, 249],
       textColor: [30, 41, 59],
-      fontSize: 7.5,
+      fontSize: 7,
       fontStyle: 'bold',
       halign: 'center'
     },
     styles: {
-      fontSize: 7,
-      cellPadding: 3,
+      fontSize: 6.8,
+      cellPadding: 2.5,
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'left', cellWidth: 26 },
-      1: { fontStyle: 'bold', textColor: [37, 99, 235] },
-      3: { fontStyle: 'bold' }
+      0: { fontStyle: 'bold', halign: 'left', cellWidth: 22 },
+      1: { fontStyle: 'bold', textColor: [71, 85, 105] },
+      2: { textColor: [220, 38, 38] },
+      3: { fontStyle: 'bold', textColor: [37, 99, 235] },
+      5: { fontStyle: 'bold' }
     }
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 8;
+  yPos = (doc as any).lastAutoTable.finalY + 4;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`* Identificação de Produção: Volume Bruto (${formatM2(totalMacGross)}) inclui perdas operacionais e não conformidades (${formatM2(totalMacRej)}). Produção Líquida final: ${formatM2(totalMacProd)}.`, 14, yPos);
+  yPos += 5;
 
   // 3. DESEMPENHO POR TURNO NO CORTE DE FITA
-  const shiftMap: Record<string, { name: string; prod: number; rejected: number; waste: number; stops: number }> = {};
+  const shiftMap: Record<string, { name: string; prod: number; rejected: number; gross: number; waste: number; stops: number }> = {};
   currentMonthEntries.forEach(e => {
     const sName = (e.shift || 'Não Informado').trim();
     if (!shiftMap[sName]) {
-      shiftMap[sName] = { name: sName, prod: 0, rejected: 0, waste: 0, stops: 0 };
+      shiftMap[sName] = { name: sName, prod: 0, rejected: 0, gross: 0, waste: 0, stops: 0 };
     }
-    shiftMap[sName].prod += (e.producedM2 || 0);
-    shiftMap[sName].rejected += (e.rejectedM2 || 0);
+    const pNet = (e.producedM2 || 0);
+    const pRej = (e.rejectedM2 || 0);
+    shiftMap[sName].prod += pNet;
+    shiftMap[sName].rejected += pRej;
+    shiftMap[sName].gross += pNet + pRej;
     shiftMap[sName].waste += (e.wasteWeight || 0);
     shiftMap[sName].stops += (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
   });
@@ -438,25 +456,28 @@ export const generateRibbonMonthlyReportPDF = async ({
     doc.text(`${roman[secIdx++]}. DESEMPENHO POR TURNO OPERACIONAL`, 14, yPos);
     yPos += 4;
 
-    const shiftTableHead = [['TURNO OPERACIONAL', 'PRODUÇÃO REALIZADA (M²)', 'PARTICIPAÇÃO (%)', 'NÃO CONFORME (M²)', 'LIXO / RESÍDUO (KG)', 'PARADA TOTAL']];
+    const shiftTableHead = [['TURNO OPERACIONAL', 'PROD. BRUTA (M²)', 'NÃO CONFORME (M²)', 'PROD. LÍQUIDA (M²)', 'PARTICIPAÇÃO (%)', 'LIXO / RESÍDUO (KG)', 'PARADA TOTAL']];
     const shiftTableBody = shiftList.map(s => [
       s.name.toUpperCase(),
+      formatM2(s.gross),
+      formatM2(s.rejected),
       formatM2(s.prod),
       totalMonthProd > 0 ? `${((s.prod / totalMonthProd) * 100).toFixed(1)}%` : '0%',
-      formatM2(s.rejected),
       `${s.waste.toLocaleString('pt-BR')} Kg`,
       formatHours(s.stops)
     ]);
 
+    const totalShiftGross = shiftList.reduce((a, b) => a + b.gross, 0);
     const totalShiftRejected = shiftList.reduce((a, b) => a + b.rejected, 0);
     const totalShiftWaste = shiftList.reduce((a, b) => a + b.waste, 0);
     const totalShiftStops = shiftList.reduce((a, b) => a + b.stops, 0);
 
     const shiftTableFoot = [[
       'TOTAL GERAL',
+      formatM2(totalShiftGross),
+      formatM2(totalShiftRejected),
       formatM2(totalMonthProd),
       '100.0%',
-      formatM2(totalShiftRejected),
       `${totalShiftWaste.toLocaleString('pt-BR')} Kg`,
       formatHours(totalShiftStops)
     ]];
@@ -487,8 +508,10 @@ export const generateRibbonMonthlyReportPDF = async ({
         halign: 'center'
       },
       columnStyles: {
-        0: { fontStyle: 'bold', halign: 'left', cellWidth: 50 },
-        1: { fontStyle: 'bold', textColor: [37, 99, 235] }
+        0: { fontStyle: 'bold', halign: 'left', cellWidth: 45 },
+        1: { fontStyle: 'bold', textColor: [71, 85, 105] },
+        2: { textColor: [220, 38, 38] },
+        3: { fontStyle: 'bold', textColor: [37, 99, 235] }
       }
     });
 
@@ -500,6 +523,7 @@ export const generateRibbonMonthlyReportPDF = async ({
     name: string;
     prod: number;
     rejected: number;
+    gross: number;
     waste: number;
     jumbo: number;
     rolls: number;
@@ -516,6 +540,7 @@ export const generateRibbonMonthlyReportPDF = async ({
         name: opName,
         prod: 0,
         rejected: 0,
+        gross: 0,
         waste: 0,
         jumbo: 0,
         rolls: 0,
@@ -526,8 +551,11 @@ export const generateRibbonMonthlyReportPDF = async ({
       };
     }
     const op = opMap[opName];
-    op.prod += (e.producedM2 || 0);
-    op.rejected += (e.rejectedM2 || 0);
+    const pNet = (e.producedM2 || 0);
+    const pRej = (e.rejectedM2 || 0);
+    op.prod += pNet;
+    op.rejected += pRej;
+    op.gross += pNet + pRej;
     op.waste += (e.wasteWeight || 0);
     op.jumbo += (e.jumboM2 || 0);
     op.rolls += (e.rollsCount || 0);
@@ -546,12 +574,13 @@ export const generateRibbonMonthlyReportPDF = async ({
     doc.text(`${roman[secIdx++]}. INDICADORES DETALHADOS POR OPERADOR — CORTE DE FITA`, 14, yPos);
     yPos += 4;
 
-    const opTableHead = [['OPERADOR', 'PROD. LÍQUIDA (M²)', 'PART. (%)', 'NÃO CONF. (M²)', 'LIXO (KG)', 'JUMBOS (M²)', 'ROLOS CORTADOS', 'MANUT. (MIN)', 'PROC. (MIN)', 'OUTROS (MIN)', 'TOTAL STOP']];
+    const opTableHead = [['OPERADOR', 'PROD. BRUTA (M²)', 'NÃO CONF. (M²)', 'PROD. LÍQUIDA (M²)', 'PART. (%)', 'LIXO (KG)', 'JUMBOS (M²)', 'ROLOS', 'MANUT.', 'PROC.', 'OUTROS', 'TOTAL STOP']];
     const opTableBody = opList.map(op => [
       op.name,
+      formatM2(op.gross),
+      formatM2(op.rejected),
       formatM2(op.prod),
       totalMonthProd > 0 ? `${((op.prod / totalMonthProd) * 100).toFixed(1)}%` : '0%',
-      formatM2(op.rejected),
       `${op.waste.toLocaleString('pt-BR')} Kg`,
       formatM2(op.jumbo),
       op.rolls.toLocaleString('pt-BR'),
@@ -561,6 +590,7 @@ export const generateRibbonMonthlyReportPDF = async ({
       `${op.stops} min`
     ]);
 
+    const totalOpGross = opList.reduce((a, b) => a + b.gross, 0);
     const totalOpProd = opList.reduce((a, b) => a + b.prod, 0);
     const totalOpRej = opList.reduce((a, b) => a + b.rejected, 0);
     const totalOpWaste = opList.reduce((a, b) => a + b.waste, 0);
@@ -573,9 +603,10 @@ export const generateRibbonMonthlyReportPDF = async ({
 
     const opTableFoot = [[
       'TOTAL GERAL',
+      formatM2(totalOpGross),
+      formatM2(totalOpRej),
       formatM2(totalOpProd),
       '100.0%',
-      formatM2(totalOpRej),
       `${totalOpWaste.toLocaleString('pt-BR')} Kg`,
       formatM2(totalOpJumbo),
       totalOpRolls.toLocaleString('pt-BR'),
@@ -845,37 +876,118 @@ export const generateIntegratedMonthlyReportPDF = async ({
   doc.rect(14, yPos, pageWidth - 28, 24, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(30, 41, 59);
-  doc.text('PAINEL CONSOLIDADO DA PLANTA FABRIL • EXTRUSÃO & CORTE DE FITA', 18, yPos + 6);
+  doc.text('PAINEL CONSOLIDADO • EXTRUSÃO & CORTE DE FITA', 18, yPos + 6);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
   doc.text(`Unidade: Manupackaging Fitasa & Amazônia • Todos os Setores Industriais`, 18, yPos + 12);
   doc.text(`Emitido por: ${loggedUser?.name || 'Acesso Direto'} - ${loggedUser?.role || 'Função'} em ${nowFull}`, 18, yPos + 17);
 
-  // Performance dos dois setores
+  // Performance dos setores industriais
   const extGoal = dashboardStats?.goal || 0;
-  const extProd = dashboardStats?.month || 0;
+  const extProd = dashboardStats?.month || 0; // Só Cast 1 + 2 (905.142 Kg em setembro)
   const extPct = extGoal > 0 ? ((extProd / extGoal) * 100).toFixed(1) : '0';
 
+  const eremaMonthNet = dashboardStats?.eremaMonth || 0; // Reciclagem Erema (72.286 Kg em setembro)
+
   const ribGoal = ribbonDashboardStats?.goal || getRibbonTotalGoal(ribbonGoals, dashboardMonth);
-  const ribProd = ribbonDashboardStats?.month || 0;
+
+  // Conversão padronizada de quilos para m² da fita conforme micragem do jumbo
+  const getJumboMicras = (jumboType: string): number => {
+    if (!jumboType) return 40;
+    const clean = jumboType.toUpperCase().replace(/\s+/g, '').trim();
+    if (clean.includes('AR9')) return 45;
+    if (clean.includes('AA38') || clean.includes('AA40')) return 38;
+    if (clean.includes('AS50')) return 50;
+    if (clean.includes('HOTMALT') || clean.includes('HOTMAILT')) return 38;
+    return 40;
+  };
+
+  const calcRibbonWasteM2 = (weightKg: number, jumboType: string): number => {
+    if (!weightKg) return 0;
+    const micras = getJumboMicras(jumboType) || 40;
+    const gr = micras * 0.92;
+    return (weightKg * 1000) / gr;
+  };
+
+  const getEntryWasteM2 = (e: any): number => {
+    if (e.jumboItems && e.jumboItems.length > 0) {
+      return e.jumboItems.reduce((acc: number, it: any) => {
+        const w = Number(it.wasteWeight || 0);
+        const jt = it.jumboType || e.jumboType || '';
+        return acc + calcRibbonWasteM2(w, jt);
+      }, 0);
+    }
+    return calcRibbonWasteM2(Number(e.wasteWeight || 0), e.jumboType || '');
+  };
+
+  // Volume Consolidado de Corte de Fita (calculado com a mesma regra de matching do dashboard)
+  const currentMonthRibbonEntries = ribbonEntries.filter(e => e && typeof e.date === 'string' && e.date.startsWith(dashboardMonth));
+  const ribMacMap: Record<string, any> = {
+    'Ghezzi': { name: 'Ghezzi', prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0, rolls: 0, stops: 0 },
+    'Lintech': { name: 'Lintech', prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0, rolls: 0, stops: 0 },
+    'Wultec': { name: 'Wultec', prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0, rolls: 0, stops: 0 }
+  };
+
+  const matchRibMachine = (entryMachine: string | undefined, targetKey: 'ghezze' | 'lintech' | 'wutec') => {
+    const m = (entryMachine || '').toLowerCase().trim();
+    if (targetKey === 'ghezze') return m.includes('gehl') || m.includes('ghezze') || m.includes('ghezzi') || m.includes('giese') || m.includes('geze');
+    if (targetKey === 'lintech') return m.includes('lintec') || m.includes('lintech');
+    if (targetKey === 'wutec') return m.includes('wultec') || m.includes('ultech') || m.includes('ultec') || m.includes('wutec') || m.includes('utec') || m.includes('uteck');
+    return false;
+  };
+
+  currentMonthRibbonEntries.forEach(e => {
+    let mKey = '';
+    if (matchRibMachine(e.machine, 'ghezze')) mKey = 'Ghezzi';
+    else if (matchRibMachine(e.machine, 'lintech')) mKey = 'Lintech';
+    else if (matchRibMachine(e.machine, 'wutec')) mKey = 'Wultec';
+    else {
+      // Se não tiver máquina explícita definida na entrada, atribui à Ghezzi (principal) para garantir que toda a produção dos turnos esteja presente
+      mKey = 'Ghezzi';
+    }
+
+    if (mKey && ribMacMap[mKey]) {
+      const pNet = (e.producedM2 || 0);
+      const pRej = (e.rejectedM2 || 0);
+      const wM2 = getEntryWasteM2(e);
+      ribMacMap[mKey].prodNet += pNet;
+      ribMacMap[mKey].rejected += pRej;
+      ribMacMap[mKey].prodGross += pNet + pRej;
+      ribMacMap[mKey].waste += (e.wasteWeight || 0);
+      ribMacMap[mKey].wasteM2 += wM2;
+      ribMacMap[mKey].rolls += (e.rollsCount || 0);
+      ribMacMap[mKey].stops += (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
+    }
+  });
+
+  const totalRibMacNet = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.prodNet, 0);
+  const totalRibMacRej = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.rejected, 0);
+  const totalRibMacGross = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.prodGross, 0);
+  const totalRibMacRolls = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.rolls, 0);
+  const totalRibMacWaste = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.waste, 0);
+  const totalRibMacWasteM2 = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.wasteM2, 0);
+  const totalRibMacStops = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.stops, 0);
+
+  const ribProd = totalRibMacNet; // Líquido Conforme apurado
   const ribPct = ribGoal > 0 ? ((ribProd / ribGoal) * 100).toFixed(1) : '0';
+  const ribGrossPct = ribGoal > 0 ? ((totalRibMacGross / ribGoal) * 100).toFixed(1) : '-';
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(37, 99, 235);
-  doc.text(`Extrusão: ${extPct}%  |  Fita: ${ribPct}%`, pageWidth - 18, yPos + 12, { align: 'right' });
+  doc.text(`Extrusão: ${extPct}%  |  Fita: ${ribPct}%  |  Erema: ${formatWeight(eremaMonthNet)}`, pageWidth - 18, yPos + 17, { align: 'right' });
 
   yPos += 30;
 
-  // Quadro Executivo Dual (Extrusão vs Fita)
+  // Quadro Executivo Consolidado por Setor Fabril (Extrusão Cast, Reciclagem Erema, Corte de Fita Líquido)
   const execTableHead = [['SETOR INDUSTRIAL', 'OBJETIVO / META', 'PRODUÇÃO REALIZADA', 'ATINGIMENTO (%)', 'FALTA', 'PROJEÇÃO ESTIMADA']];
   const execTableBody = [
     [
-      'SETOR EXTRUSÃO & RECICLAGEM',
+      'EXTRUSÃO (CAST 1 & CAST 2)',
       formatWeight(extGoal),
       formatWeight(extProd),
       `${extPct}%`,
@@ -883,12 +995,20 @@ export const generateIntegratedMonthlyReportPDF = async ({
       formatWeight(dashboardStats?.projection || 0)
     ],
     [
-      'SETOR CORTE DE FITA (CONVERSÃO)',
+      'RECICLAGEM (EREMA 1)',
+      '100.000 Kg',
+      formatWeight(eremaMonthNet),
+      `${(eremaMonthNet > 0 ? ((eremaMonthNet / 100000) * 100).toFixed(1) : '0')}%`,
+      formatWeight(Math.max(0, 100000 - eremaMonthNet)),
+      formatWeight(eremaMonthNet)
+    ],
+    [
+      'CORTE DE FITA (LÍQUIDO)',
       formatM2(ribGoal),
       formatM2(ribProd),
       `${ribPct}%`,
       formatM2(Math.max(0, ribGoal - ribProd)),
-      formatM2(ribbonDashboardStats?.projection || 0)
+      formatM2(ribProd)
     ]
   ];
 
@@ -900,22 +1020,22 @@ export const generateIntegratedMonthlyReportPDF = async ({
     headStyles: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
-      fontSize: 8,
+      fontSize: 7.5,
       fontStyle: 'bold',
       halign: 'center'
     },
     styles: {
-      fontSize: 8,
-      cellPadding: 4,
+      fontSize: 7.5,
+      cellPadding: 3.5,
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'left', cellWidth: 62 },
+      0: { fontStyle: 'bold', halign: 'left', cellWidth: 64 },
       1: { cellWidth: 26 },
       2: { fontStyle: 'bold', textColor: [37, 99, 235], cellWidth: 30 },
       3: { fontStyle: 'bold', cellWidth: 22 },
       4: { textColor: [220, 38, 38], cellWidth: 22 },
-      5: { cellWidth: 20 }
+      5: { cellWidth: 24, fontSize: 7 }
     }
   });
 
@@ -988,56 +1108,79 @@ export const generateIntegratedMonthlyReportPDF = async ({
       3: { fontStyle: 'bold', cellWidth: 36 }
     },
     didParseCell: function(data) {
-      if (data.section === 'body' && data.column.index === 3) {
-        const valStr = String(data.cell.raw);
-        if (valStr.startsWith('-')) data.cell.styles.textColor = [220, 38, 38];
-        else if (valStr.startsWith('+')) data.cell.styles.textColor = [16, 185, 129];
+      if (data.section === 'body') {
+        // Linhas de Meta (índice 0: Meta Extrusão; índice 3: Meta Corte de Fita) recebem cinza suave
+        if (data.row.index === 0 || data.row.index === 3) {
+          data.cell.styles.fillColor = [241, 245, 249]; // Slate-100 (cinza bem suave e elegante)
+          data.cell.styles.fontStyle = 'bold';
+        }
+
+        if (data.column.index === 3) {
+          const valStr = String(data.cell.raw);
+          if (valStr.startsWith('-')) data.cell.styles.textColor = [220, 38, 38];
+          else if (valStr.startsWith('+')) data.cell.styles.textColor = [16, 185, 129];
+        }
       }
     }
   });
 
   yPos = (doc as any).lastAutoTable.finalY + 8;
 
-  // 2. EQUIPAMENTOS DE EXTRUSÃO & RECICLAGEM
+  // 2. EQUIPAMENTOS DE EXTRUSÃO (CAST 1 & CAST 2)
   checkYPage(35);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(30, 41, 59);
-  doc.text(`${roman[secIdx++]}. DESEMPENHO POR EQUIPAMENTO — EXTRUSÃO & RECICLAGEM`, 14, yPos);
+  doc.text(`${roman[secIdx++]}. DESEMPENHO POR EQUIPAMENTO — EXTRUSÃO (CAST 1 & CAST 2)`, 14, yPos);
   yPos += 4;
 
   const currentMonthProdData = productionData.filter(e => e && typeof e.date === 'string' && e.date.startsWith(dashboardMonth));
-  const extMacMap: Record<string, any> = {
+  
+  // Cast 1 e Cast 2 (Exclusivo Extrusão)
+  const castMacMap: Record<string, any> = {
     'Cast 1': { name: 'Cast 1', net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, stops: 0 },
-    'Cast 2': { name: 'Cast 2', net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, stops: 0 },
-    'Erema': { name: 'Erema', net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, stops: 0 }
+    'Cast 2': { name: 'Cast 2', net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, stops: 0 }
+  };
+  // Erema (Setor Reciclagem - Separado)
+  const eremaMacMap: Record<string, any> = {
+    'Erema 1': { name: 'Erema 1', net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, stops: 0 }
   };
 
   currentMonthProdData.forEach(e => {
-    let mKey = '';
-    if (e.machine.toLowerCase().includes('cast 1')) mKey = 'Cast 1';
-    else if (e.machine.toLowerCase().includes('cast 2')) mKey = 'Cast 2';
-    else if (e.machine.toLowerCase().includes('erema')) mKey = 'Erema';
-
-    if (mKey && extMacMap[mKey]) {
-      extMacMap[mKey].net += (e.netWeight || 0);
-      extMacMap[mKey].borra += (e.borraTotal || 0);
-      extMacMap[mKey].ecoA += (e.ecoA || 0);
-      extMacMap[mKey].ecoBP += (e.ecoBP || 0);
-      extMacMap[mKey].ecoBM += (e.ecoBM || 0);
-      extMacMap[mKey].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
+    const m = (e.machine || '').toLowerCase();
+    if (m.includes('cast 1')) {
+      castMacMap['Cast 1'].net += (e.netWeight || 0);
+      castMacMap['Cast 1'].borra += (e.borraTotal || 0);
+      castMacMap['Cast 1'].ecoA += (e.ecoA || 0);
+      castMacMap['Cast 1'].ecoBP += (e.ecoBP || 0);
+      castMacMap['Cast 1'].ecoBM += (e.ecoBM || 0);
+      castMacMap['Cast 1'].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
+    } else if (m.includes('cast 2')) {
+      castMacMap['Cast 2'].net += (e.netWeight || 0);
+      castMacMap['Cast 2'].borra += (e.borraTotal || 0);
+      castMacMap['Cast 2'].ecoA += (e.ecoA || 0);
+      castMacMap['Cast 2'].ecoBP += (e.ecoBP || 0);
+      castMacMap['Cast 2'].ecoBM += (e.ecoBM || 0);
+      castMacMap['Cast 2'].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
+    } else if (m.includes('erema')) {
+      eremaMacMap['Erema 1'].net += (e.netWeight || 0);
+      eremaMacMap['Erema 1'].borra += (e.borraTotal || 0);
+      eremaMacMap['Erema 1'].ecoA += (e.ecoA || 0);
+      eremaMacMap['Erema 1'].ecoBP += (e.ecoBP || 0);
+      eremaMacMap['Erema 1'].ecoBM += (e.ecoBM || 0);
+      eremaMacMap['Erema 1'].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
     }
   });
 
-  const totalExtMacNet = Object.values(extMacMap).reduce((a: number, b: any) => a + b.net, 0);
-  const totalExtMacBorra = Object.values(extMacMap).reduce((a: number, b: any) => a + b.borra, 0);
-  const totalExtMacEcoA = Object.values(extMacMap).reduce((a: number, b: any) => a + b.ecoA, 0);
-  const totalExtMacEcoBP = Object.values(extMacMap).reduce((a: number, b: any) => a + b.ecoBP, 0);
-  const totalExtMacEcoBM = Object.values(extMacMap).reduce((a: number, b: any) => a + b.ecoBM, 0);
-  const totalExtMacStops = Object.values(extMacMap).reduce((a: number, b: any) => a + b.stops, 0);
+  const totalCastNet = castMacMap['Cast 1'].net + castMacMap['Cast 2'].net;
+  const totalCastBorra = castMacMap['Cast 1'].borra + castMacMap['Cast 2'].borra;
+  const totalCastEcoA = castMacMap['Cast 1'].ecoA + castMacMap['Cast 2'].ecoA;
+  const totalCastEcoBP = castMacMap['Cast 1'].ecoBP + castMacMap['Cast 2'].ecoBP;
+  const totalCastEcoBM = castMacMap['Cast 1'].ecoBM + castMacMap['Cast 2'].ecoBM;
+  const totalCastStops = castMacMap['Cast 1'].stops + castMacMap['Cast 2'].stops;
 
-  const extMacHead = [['MÁQUINA', 'PROD. LÍQUIDA', 'BORRA (PERDA)', 'ECO A', 'ECO B (PROD)', 'ECO B (MANUT)', 'PARADA TOTAL']];
-  const extMacBody = Object.values(extMacMap).map((m: any) => [
+  const extMacHead = [['EXTRUSORA', 'PROD. LÍQUIDA', 'BORRA (PERDA)', 'ECO A', 'ECO B (PROD)', 'ECO B (MANUT)', 'PARADA TOTAL']];
+  const extMacBody = Object.values(castMacMap).map((m: any) => [
     m.name,
     formatWeight(m.net),
     formatWeight(m.borra),
@@ -1047,13 +1190,13 @@ export const generateIntegratedMonthlyReportPDF = async ({
     formatHours(m.stops)
   ]);
   const extMacFoot = [[
-    'TOTAL GERAL',
-    formatWeight(totalExtMacNet),
-    formatWeight(totalExtMacBorra),
-    formatWeight(totalExtMacEcoA),
-    formatWeight(totalExtMacEcoBP),
-    formatWeight(totalExtMacEcoBM),
-    formatHours(totalExtMacStops)
+    'TOTAL',
+    formatWeight(totalCastNet),
+    formatWeight(totalCastBorra),
+    formatWeight(totalCastEcoA),
+    formatWeight(totalCastEcoBP),
+    formatWeight(totalCastEcoBM),
+    formatHours(totalCastStops)
   ]];
 
   autoTable(doc, {
@@ -1087,7 +1230,80 @@ export const generateIntegratedMonthlyReportPDF = async ({
     }
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 8;
+  yPos = (doc as any).lastAutoTable.finalY + 5;
+
+  // Subtabela Separada para a Reciclagem (Erema 1)
+  checkYPage(24);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(5, 150, 105);
+  doc.text('SETOR DE RECICLAGEM — MÁQUINA RECUPERADORA EREMA 1', 14, yPos);
+  yPos += 3.5;
+
+  const eremaNet = eremaMacMap['Erema 1'].net;
+  const eremaBorra = eremaMacMap['Erema 1'].borra;
+  const eremaEcoA = eremaMacMap['Erema 1'].ecoA;
+  const eremaEcoBP = eremaMacMap['Erema 1'].ecoBP;
+  const eremaEcoBM = eremaMacMap['Erema 1'].ecoBM;
+  const eremaStops = eremaMacMap['Erema 1'].stops;
+
+  const eremaMacHead = [['MÁQUINA RECICLADORA', 'PELLETS RECICLADOS', 'BORRA (PERDA)', 'ECO A', 'ECO B (PROD)', 'ECO B (MANUT)', 'PARADA TOTAL']];
+  const eremaMacBody = [[
+    'Erema 1 (Reciclagem)',
+    formatWeight(eremaNet),
+    formatWeight(eremaBorra),
+    formatWeight(eremaEcoA),
+    formatWeight(eremaEcoBP),
+    formatWeight(eremaEcoBM),
+    formatHours(eremaStops)
+  ]];
+  const eremaMacFoot = [[
+    'TOTAL',
+    formatWeight(eremaNet),
+    formatWeight(eremaBorra),
+    formatWeight(eremaEcoA),
+    formatWeight(eremaEcoBP),
+    formatWeight(eremaEcoBM),
+    formatHours(eremaStops)
+  ]];
+
+  autoTable(doc, {
+    startY: yPos,
+    head: eremaMacHead,
+    body: eremaMacBody,
+    foot: eremaMacFoot,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [5, 150, 105],
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'center'
+    },
+    footStyles: {
+      fillColor: [236, 253, 245],
+      textColor: [6, 95, 70],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'center'
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 3,
+      halign: 'center'
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', halign: 'left' },
+      1: { fontStyle: 'bold', textColor: [5, 150, 105] }
+    }
+  });
+
+  yPos = (doc as any).lastAutoTable.finalY + 3;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`* Conciliação Fabril: Extrusão Primária (Cast 1 + Cast 2) totaliza ${formatWeight(totalCastNet)}. Reciclagem Erema totaliza ${formatWeight(eremaNet)}. Total integrado: ${formatWeight(totalCastNet + eremaNet)}.`, 14, yPos);
+  yPos += 7;
 
   // 3. EQUIPAMENTOS DE CORTE DE FITA
   checkYPage(35);
@@ -1097,48 +1313,31 @@ export const generateIntegratedMonthlyReportPDF = async ({
   doc.text(`${roman[secIdx++]}. DESEMPENHO POR EQUIPAMENTO — CORTE DE FITA`, 14, yPos);
   yPos += 4;
 
-  const currentMonthRibbonEntries = ribbonEntries.filter(e => e && typeof e.date === 'string' && e.date.startsWith(dashboardMonth));
-  const ribMacMap: Record<string, any> = {
-    'Ghezzi': { name: 'Ghezzi', prod: 0, waste: 0, rolls: 0, stops: 0 },
-    'Lintech': { name: 'Lintech', prod: 0, waste: 0, rolls: 0, stops: 0 },
-    'Wultec': { name: 'Wultec', prod: 0, waste: 0, rolls: 0, stops: 0 }
+  const formatJumboNumberOnly = (units: number): string => {
+    return units.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
   };
 
-  currentMonthRibbonEntries.forEach(e => {
-    let mKey = '';
-    const m = (e.machine || '').toLowerCase();
-    if (m.includes('ghez')) mKey = 'Ghezzi';
-    else if (m.includes('lintec')) mKey = 'Lintech';
-    else if (m.includes('wutec') || m.includes('wultec') || m.includes('utec')) mKey = 'Wultec';
-
-    if (mKey && ribMacMap[mKey]) {
-      ribMacMap[mKey].prod += (e.producedM2 || 0);
-      ribMacMap[mKey].waste += (e.wasteWeight || 0);
-      ribMacMap[mKey].rolls += (e.rollsCount || 0);
-      ribMacMap[mKey].stops += (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
-    }
-  });
-
-  const totalRibMacProd = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.prod, 0);
-  const totalRibMacRolls = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.rolls, 0);
-  const totalRibMacWaste = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.waste, 0);
-  const totalRibMacStops = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.stops, 0);
-
-  const ribMacHead = [['MÁQUINA', 'PROD. REALIZADA (M²)', 'ROLOS CORTADOS', 'JUMBOS EQUIV.', 'LIXO / PERDA (KG)', 'PARADA TOTAL']];
+  const ribMacHead = [['MÁQUINA', 'PROD. BRUTA (M²)', 'NÃO CONFORME (M²)', 'PROD. LÍQUIDA (M²)', 'REND. (%)', 'ROLOS CORTADOS', 'JUMBOS EQUIV.', 'LIXO (M²)', 'PARADA TOTAL']];
   const ribMacBody = Object.values(ribMacMap).map((m: any) => [
     m.name.toUpperCase(),
-    formatM2(m.prod),
+    formatM2(m.prodGross),
+    formatM2(m.rejected),
+    formatM2(m.prodNet),
+    m.prodGross > 0 ? `${((m.prodNet / m.prodGross) * 100).toFixed(1)}%` : '100%',
     m.rolls.toLocaleString('pt-BR'),
-    formatJumboUnits(calcJumboUnits(m.prod)),
-    `${m.waste.toLocaleString('pt-BR')} Kg`,
+    formatJumboNumberOnly(calcJumboUnits(m.prodNet)),
+    formatM2(m.wasteM2),
     formatHours(m.stops)
   ]);
   const ribMacFoot = [[
-    'TOTAL GERAL',
-    formatM2(totalRibMacProd),
+    'TOTAL',
+    formatM2(totalRibMacGross),
+    formatM2(totalRibMacRej),
+    formatM2(totalRibMacNet),
+    totalRibMacGross > 0 ? `${((totalRibMacNet / totalRibMacGross) * 100).toFixed(1)}%` : '100%',
     totalRibMacRolls.toLocaleString('pt-BR'),
-    formatJumboUnits(calcJumboUnits(totalRibMacProd)),
-    `${totalRibMacWaste.toLocaleString('pt-BR')} Kg`,
+    formatJumboNumberOnly(calcJumboUnits(totalRibMacNet)),
+    formatM2(totalRibMacWasteM2),
     formatHours(totalRibMacStops)
   ]];
 
@@ -1151,29 +1350,37 @@ export const generateIntegratedMonthlyReportPDF = async ({
     headStyles: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
-      fontSize: 7.5,
+      fontSize: 7,
       fontStyle: 'bold',
       halign: 'center'
     },
     footStyles: {
       fillColor: [241, 245, 249],
       textColor: [30, 41, 59],
-      fontSize: 7.5,
+      fontSize: 7,
       fontStyle: 'bold',
       halign: 'center'
     },
     styles: {
-      fontSize: 7.5,
-      cellPadding: 3,
+      fontSize: 6.8,
+      cellPadding: 2.5,
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'left' },
-      1: { fontStyle: 'bold', textColor: [37, 99, 235] }
+      0: { fontStyle: 'bold', halign: 'left', cellWidth: 22 },
+      1: { fontStyle: 'bold', textColor: [71, 85, 105] },
+      2: { textColor: [220, 38, 38] },
+      3: { fontStyle: 'bold', textColor: [37, 99, 235] },
+      4: { fontStyle: 'bold' }
     }
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 8;
+  yPos = (doc as any).lastAutoTable.finalY + 4;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`* Identificação de Volume: A Produção Bruta (${formatM2(totalRibMacGross)}) contempla o volume total processado incluindo perdas. Descontando os ${formatM2(totalRibMacRej)} de não conformidade, a Produção Líquida Conforme é ${formatM2(totalRibMacNet)}.`, 14, yPos);
+  yPos += 6;
 
   // 4. DESEMPENHO POR TURNO OPERACIONAL (EXTRUSÃO E CORTE DE FITA)
   checkYPage(35);
@@ -1183,40 +1390,46 @@ export const generateIntegratedMonthlyReportPDF = async ({
   doc.text(`${roman[secIdx++]}. DESEMPENHO POR TURNO OPERACIONAL (EXTRUSÃO & CORTE DE FITA)`, 14, yPos);
   yPos += 4;
 
-  // Turnos Extrusão
+  // Turnos Extrusão (Apenas Cast 1 e Cast 2)
   const extShifts: Record<string, number> = {};
   currentMonthProdData.forEach(e => {
     if (!e || e.isNoWorkDay || e.isMaintenanceEntry) return;
+    if ((e.machine || '').toLowerCase().includes('erema')) return; // Exclui estritamente Erema
     const s = (e.shift || 'Não Informado').trim().toUpperCase();
     extShifts[s] = (extShifts[s] || 0) + (e.netWeight || 0);
   });
   const extShiftsList = Object.entries(extShifts).map(([name, net]) => ({ name, net })).sort((a, b) => b.net - a.net);
 
-  // Turnos Fita
-  const ribShifts: Record<string, { prod: number; rejected: number; waste: number }> = {};
+  // Turnos Fita (Com Bruto, Não Conforme e Líquido)
+  const ribShifts: Record<string, { prodNet: number; rejected: number; prodGross: number; waste: number; wasteM2: number }> = {};
   currentMonthRibbonEntries.forEach(e => {
     const s = (e.shift || 'Não Informado').trim().toUpperCase();
-    if (!ribShifts[s]) ribShifts[s] = { prod: 0, rejected: 0, waste: 0 };
-    ribShifts[s].prod += (e.producedM2 || 0);
-    ribShifts[s].rejected += (e.rejectedM2 || 0);
+    if (!ribShifts[s]) ribShifts[s] = { prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0 };
+    const pNet = (e.producedM2 || 0);
+    const pRej = (e.rejectedM2 || 0);
+    const wM2 = getEntryWasteM2(e);
+    ribShifts[s].prodNet += pNet;
+    ribShifts[s].rejected += pRej;
+    ribShifts[s].prodGross += pNet + pRej;
     ribShifts[s].waste += (e.wasteWeight || 0);
+    ribShifts[s].wasteM2 += wM2;
   });
-  const ribShiftsList = Object.entries(ribShifts).map(([name, data]) => ({ name, ...data })).sort((a, b) => b.prod - a.prod);
+  const ribShiftsList = Object.entries(ribShifts).map(([name, data]) => ({ name, ...data })).sort((a, b) => b.prodNet - a.prodNet);
 
   // Tabela lado a lado ou duas tabelas limpas
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(51, 65, 85);
-  doc.text('TURNO — EXTRUSÃO & RECICLAGEM', 14, yPos);
+  doc.text('TURNO — EXTRUSÃO (CAST 1 & CAST 2)', 14, yPos);
   yPos += 3.5;
 
   const extShiftHead = [['TURNO', 'PRODUÇÃO LÍQUIDA (KG)', 'PARTICIPAÇÃO (%)']];
   const extShiftBody = extShiftsList.map(s => [
     s.name,
     formatWeight(s.net),
-    extProd > 0 ? `${((s.net / extProd) * 100).toFixed(1)}%` : '0%'
+    totalCastNet > 0 ? `${((s.net / totalCastNet) * 100).toFixed(1)}%` : '0%'
   ]);
-  const extShiftFoot = [['TOTAL GERAL', formatWeight(extProd), '100.0%']];
+  const extShiftFoot = [['TOTAL', formatWeight(totalCastNet), '100.0%']];
 
   autoTable(doc, {
     startY: yPos,
@@ -1239,20 +1452,22 @@ export const generateIntegratedMonthlyReportPDF = async ({
   doc.text('TURNO — CORTE DE FITA (CONVERSÃO)', 14, yPos);
   yPos += 3.5;
 
-  const ribShiftHead = [['TURNO', 'PRODUÇÃO REALIZADA (M²)', 'PARTICIPAÇÃO (%)', 'NÃO CONFORME (M²)', 'LIXO (KG)']];
+  const ribShiftHead = [['TURNO', 'PROD. BRUTA (M²)', 'NÃO CONFORME (M²)', 'PROD. LÍQUIDA (M²)', 'PARTICIPAÇÃO (%)', 'LIXO (M²)']];
   const ribShiftBody = ribShiftsList.map(s => [
     s.name,
-    formatM2(s.prod),
-    ribProd > 0 ? `${((s.prod / ribProd) * 100).toFixed(1)}%` : '0%',
+    formatM2(s.prodGross),
     formatM2(s.rejected),
-    `${s.waste.toLocaleString('pt-BR')} Kg`
+    formatM2(s.prodNet),
+    totalRibMacNet > 0 ? `${((s.prodNet / totalRibMacNet) * 100).toFixed(1)}%` : '0%',
+    formatM2(s.wasteM2)
   ]);
   const ribShiftFoot = [[
-    'TOTAL GERAL',
-    formatM2(ribProd),
-    '100.0%',
+    'TOTAL',
+    formatM2(ribShiftsList.reduce((a, b) => a + b.prodGross, 0)),
     formatM2(ribShiftsList.reduce((a, b) => a + b.rejected, 0)),
-    `${ribShiftsList.reduce((a, b) => a + b.waste, 0).toLocaleString('pt-BR')} Kg`
+    formatM2(ribShiftsList.reduce((a, b) => a + b.prodNet, 0)),
+    '100.0%',
+    formatM2(ribShiftsList.reduce((a, b) => a + b.wasteM2, 0))
   ]];
 
   autoTable(doc, {
@@ -1318,7 +1533,7 @@ export const generateIntegratedMonthlyReportPDF = async ({
       formatHours(op.stops)
     ]);
     const extOpFoot = [[
-      'TOTAL GERAL',
+      'TOTAL',
       formatWeight(totalExtOpNet),
       '100.0%',
       formatWeight(totalExtOpBorra),
@@ -1390,7 +1605,7 @@ export const generateIntegratedMonthlyReportPDF = async ({
       formatHours(op.stops)
     ]);
     const eremaOpFoot = [[
-      'TOTAL GERAL',
+      'TOTAL',
       formatWeight(totalEremaNet),
       '100.0%',
       formatWeight(totalEremaBorra),
@@ -1435,18 +1650,23 @@ export const generateIntegratedMonthlyReportPDF = async ({
   }
 
   // 6. RANKING DE OPERADORES - CORTE DE FITA
-  const ribOps: Record<string, { name: string; prod: number; rejected: number; waste: number; rolls: number; stops: number }> = {};
+  const ribOps: Record<string, { name: string; prodNet: number; rejected: number; prodGross: number; waste: number; wasteM2: number; rolls: number; stops: number }> = {};
   currentMonthRibbonEntries.forEach(e => {
     const op = (e.operator || 'Sem Nome').trim().toUpperCase();
-    if (!ribOps[op]) ribOps[op] = { name: op, prod: 0, rejected: 0, waste: 0, rolls: 0, stops: 0 };
-    ribOps[op].prod += (e.producedM2 || 0);
-    ribOps[op].rejected += (e.rejectedM2 || 0);
+    if (!ribOps[op]) ribOps[op] = { name: op, prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0, rolls: 0, stops: 0 };
+    const pNet = (e.producedM2 || 0);
+    const pRej = (e.rejectedM2 || 0);
+    const wM2 = getEntryWasteM2(e);
+    ribOps[op].prodNet += pNet;
+    ribOps[op].rejected += pRej;
+    ribOps[op].prodGross += pNet + pRej;
     ribOps[op].waste += (e.wasteWeight || 0);
+    ribOps[op].wasteM2 += wM2;
     ribOps[op].rolls += (e.rollsCount || 0);
     ribOps[op].stops += (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
   });
 
-  const ribOpsList = Object.values(ribOps).sort((a, b) => b.prod - a.prod);
+  const ribOpsList = Object.values(ribOps).sort((a, b) => b.prodNet - a.prodNet);
   if (ribOpsList.length > 0) {
     checkYPage(30);
     doc.setFont('helvetica', 'bold');
@@ -1455,28 +1675,31 @@ export const generateIntegratedMonthlyReportPDF = async ({
     doc.text(`${roman[secIdx++]}. INDICADORES DETALHADOS POR OPERADOR — CORTE DE FITA`, 14, yPos);
     yPos += 4;
 
-    const totalRibOpProd = ribOpsList.reduce((a, b) => a + b.prod, 0);
+    const totalRibOpGross = ribOpsList.reduce((a, b) => a + b.prodGross, 0);
+    const totalRibOpNet = ribOpsList.reduce((a, b) => a + b.prodNet, 0);
     const totalRibOpRej = ribOpsList.reduce((a, b) => a + b.rejected, 0);
-    const totalRibOpWaste = ribOpsList.reduce((a, b) => a + b.waste, 0);
+    const totalRibOpWasteM2 = ribOpsList.reduce((a, b) => a + b.wasteM2, 0);
     const totalRibOpRolls = ribOpsList.reduce((a, b) => a + b.rolls, 0);
     const totalRibOpStops = ribOpsList.reduce((a, b) => a + b.stops, 0);
 
-    const ribOpHead = [['OPERADOR', 'PROD. LÍQUIDA (M²)', 'PART. (%)', 'NÃO CONF. (M²)', 'LIXO (KG)', 'ROLOS CORTADOS', 'PARADA TOTAL']];
+    const ribOpHead = [['OPERADOR', 'PROD. BRUTA (M²)', 'NÃO CONF. (M²)', 'PROD. LÍQUIDA (M²)', 'PART. (%)', 'LIXO (M²)', 'ROLOS CORTADOS', 'PARADA TOTAL']];
     const ribOpBody = ribOpsList.map(op => [
       op.name,
-      formatM2(op.prod),
-      totalRibOpProd > 0 ? `${((op.prod / totalRibOpProd) * 100).toFixed(1)}%` : '0%',
+      formatM2(op.prodGross),
       formatM2(op.rejected),
-      `${op.waste.toLocaleString('pt-BR')} Kg`,
+      formatM2(op.prodNet),
+      totalRibOpNet > 0 ? `${((op.prodNet / totalRibOpNet) * 100).toFixed(1)}%` : '0%',
+      formatM2(op.wasteM2),
       op.rolls.toLocaleString('pt-BR'),
       formatHours(op.stops)
     ]);
     const ribOpFoot = [[
-      'TOTAL GERAL',
-      formatM2(totalRibOpProd),
-      '100.0%',
+      'TOTAL',
+      formatM2(totalRibOpGross),
       formatM2(totalRibOpRej),
-      `${totalRibOpWaste.toLocaleString('pt-BR')} Kg`,
+      formatM2(totalRibOpNet),
+      '100.0%',
+      formatM2(totalRibOpWasteM2),
       totalRibOpRolls.toLocaleString('pt-BR'),
       formatHours(totalRibOpStops)
     ]];
@@ -1507,54 +1730,72 @@ export const generateIntegratedMonthlyReportPDF = async ({
         halign: 'center'
       },
       columnStyles: {
-        0: { fontStyle: 'bold', halign: 'left', cellWidth: 45 },
-        1: { fontStyle: 'bold', textColor: [16, 185, 129] }
+        0: { fontStyle: 'bold', halign: 'left', cellWidth: 42 },
+        1: { fontStyle: 'bold', textColor: [71, 85, 105] },
+        2: { textColor: [220, 38, 38] },
+        3: { fontStyle: 'bold', textColor: [16, 185, 129] }
       }
     });
 
     yPos = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  // 7. GESTÃO E BALANÇO CONSOLIDADO DE RESÍDUOS & PERDAS DA PLANTA
-  checkYPage(30);
+  // 7. GESTÃO E BALANÇO DE RESÍDUOS, PERDAS E CIRCULARIDADE POR SETOR
+  checkYPage(35);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(30, 41, 59);
-  doc.text(`${roman[secIdx++]}. GESTÃO DE RESÍDUOS, PERDAS E CIRCULARIDADE — PLANTA FABRIL`, 14, yPos);
+  doc.text(`${roman[secIdx++]}. GESTÃO DE RESÍDUOS, PERDAS E CIRCULARIDADE`, 14, yPos);
   yPos += 4;
 
-  const totalWastePlantKg = totalExtMacBorra + totalExtMacEcoBP + totalExtMacEcoBM + totalRibMacWaste;
-  const currentEcoBal = ecoBalance && ecoBalance[dashboardMonth];
+  // Cálculo de bags / pallets de pellets gerados na Erema (Padrão: 1.100 Kg por bag/palete)
+  const eremaPalletsCount = eremaNet > 0 ? (eremaNet / 1100).toFixed(1) : '0';
+  const eremaVolumeFormat = `${formatWeight(eremaNet)} (${eremaPalletsCount} pallets)`;
 
-  const wasteSummaryHead = [['SETOR / TIPO DE RESÍDUO', 'ORIGEM', 'VOLUME TOTAL', 'DESTINAÇÃO OPERACIONAL']];
-  const wasteSummaryBody = [
-    ['BORRA DE PROCESSO', 'Cast 1 & Cast 2 (Extrusão)', formatWeight(totalExtMacBorra), 'Descarte / Classificação Industrial'],
-    ['REFUGO ECO A', 'Extrusão (Aparas de Borda)', formatWeight(totalExtMacEcoA), 'Rebobinamento / Reprocesso'],
-    ['RESÍDUO ECO B (PRODUÇÃO & MANUTENÇÃO)', 'Extrusão (Sobras Operacionais)', formatWeight(totalExtMacEcoBP + totalExtMacEcoBM), 'Alimentação Erema (Reciclagem Interna)'],
-    ['PELLETS RECICLADOS GERADOS', 'Máquina Erema', formatWeight(dashboardStats?.eremaMonth || 0), 'Retorno em Blend para Cast 1 e Cast 2'],
-    ['LIXO / RESÍDUO DE CORTE DE FITA', 'Ghezzi, Lintech e Wultec', `${totalRibMacWaste.toLocaleString('pt-BR')} Kg`, 'Descarte Controlado / Fardo'],
-    ['FITA NÃO CONFORME (REJEITO FÍSICO)', 'Conversão de Fitas', formatM2(ribShiftsList.reduce((a, b) => a + b.rejected, 0)), 'Desbobinamento e Segregação']
+  // Detalhamento de Fita: Não Conforme Tipo 1 / Tipo 2 / Total (m²)
+  let ribTotalM2Tipo1 = 0;
+  let ribTotalM2Tipo2 = 0;
+  currentMonthRibbonEntries.forEach(e => {
+    ribTotalM2Tipo1 += (e.m2Tipo1 || 0);
+    ribTotalM2Tipo2 += (e.m2Tipo2 || 0);
+  });
+
+  const wasteSummaryHead = [['SETOR', 'TIPO DE RESÍDUO / MATERIAL', 'ORIGEM', 'VOLUME APURADO', 'DESTINAÇÃO OPERACIONAL']];
+  const wasteSummaryBody: any[] = [
+    // 1. SETOR EXTRUSÃO — SEPARADO CAST 1 E CAST 2 (SEM APARAS DE BORDA; COAR E ECO B)
+    ['EXTRUSÃO', 'COAR', 'Cast 1', formatWeight(castMacMap['Cast 1'].borra), 'Descarte / Classificação Industrial'],
+    ['EXTRUSÃO', 'ECO B PRODUÇÃO E MANUTENÇÃO', 'Cast 1', formatWeight(castMacMap['Cast 1'].ecoBP + castMacMap['Cast 1'].ecoBM), 'Alimentação Erema (Reciclagem Interna)'],
+    ['EXTRUSÃO', 'COAR', 'Cast 2', formatWeight(castMacMap['Cast 2'].borra), 'Descarte / Classificação Industrial'],
+    ['EXTRUSÃO', 'ECO B PRODUÇÃO E MANUTENÇÃO', 'Cast 2', formatWeight(castMacMap['Cast 2'].ecoBP + castMacMap['Cast 2'].ecoBM), 'Alimentação Erema (Reciclagem Interna)'],
+
+    // 2. SETOR RECICLAGEM — SOMENTE EREMA (SEM PERDAS)
+    ['RECICLAGEM', 'PELLETS RECICLADOS GERADOS', 'Erema 1', eremaVolumeFormat, 'Retorno em Blend para Cast 1 e Cast 2 (Erema não gera perda)'],
+
+    // 3. SETOR CORTE DE FITA — SEPARADO POR MÁQUINA EM M² (SEM QUILOS)
+    ['CORTE DE FITA', 'LIXO DE CORTE', 'Ghezzi', formatM2(ribMacMap['Ghezzi'].wasteM2), 'Descarte Controlado / Enfarfamento'],
+    ['CORTE DE FITA', 'LIXO DE CORTE', 'Lintech', formatM2(ribMacMap['Lintech'].wasteM2), 'Descarte Controlado / Enfarfamento'],
+    ['CORTE DE FITA', 'LIXO DE CORTE', 'Wultec / Ultratec', formatM2(ribMacMap['Wultec'].wasteM2), 'Descarte Controlado / Enfarfamento']
   ];
-  const wasteSummaryFoot = [
-    ['TOTAL CONSOLIDADO DE RESÍDUOS', 'Toda a Planta Fabril', `${totalWastePlantKg.toLocaleString('pt-BR')} Kg`, 'Gestão e Balanço de Circularidade']
-  ];
+
+  if (ribTotalM2Tipo1 > 0 || ribTotalM2Tipo2 > 0) {
+    if (ribTotalM2Tipo1 > 0) {
+      wasteSummaryBody.push(['CORTE DE FITA', 'NÃO CONFORME TIPO 1', 'Corte de Fita', formatM2(ribTotalM2Tipo1), 'Segregação Operacional / Segunda Linha']);
+    }
+    if (ribTotalM2Tipo2 > 0) {
+      wasteSummaryBody.push(['CORTE DE FITA', 'NÃO CONFORME TIPO 2', 'Corte de Fita', formatM2(ribTotalM2Tipo2), 'Segregação Operacional / Segunda Linha']);
+    }
+  } else if (totalRibMacRej > 0) {
+    wasteSummaryBody.push(['CORTE DE FITA', 'NÃO CONFORME (TIPO 1 & 2)', 'Corte de Fita', formatM2(totalRibMacRej), 'Segregação Operacional / Segunda Linha']);
+  }
 
   autoTable(doc, {
     startY: yPos,
     head: wasteSummaryHead,
     body: wasteSummaryBody,
-    foot: wasteSummaryFoot,
     theme: 'grid',
     headStyles: {
       fillColor: [249, 115, 22], // Orange-500
       textColor: [255, 255, 255],
-      fontSize: 7.5,
-      fontStyle: 'bold',
-      halign: 'center'
-    },
-    footStyles: {
-      fillColor: [241, 245, 249],
-      textColor: [30, 41, 59],
       fontSize: 7.5,
       fontStyle: 'bold',
       halign: 'center'
@@ -1565,32 +1806,48 @@ export const generateIntegratedMonthlyReportPDF = async ({
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'left', cellWidth: 55 },
-      1: { cellWidth: 42 },
-      2: { fontStyle: 'bold', textColor: [194, 65, 12] }
+      0: { fontStyle: 'bold', halign: 'center', cellWidth: 26 },
+      1: { fontStyle: 'bold', halign: 'left', cellWidth: 50 },
+      2: { cellWidth: 30 },
+      3: { fontStyle: 'bold', textColor: [194, 65, 12], cellWidth: 36 },
+      4: { cellWidth: 40, fontSize: 6.8 }
+    },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        if (data.row.index >= 0 && data.row.index <= 3) {
+          data.cell.styles.fillColor = [248, 250, 252]; // Extrusão
+        } else if (data.row.index === 4) {
+          data.cell.styles.fillColor = [236, 253, 245]; // Reciclagem Erema
+        } else {
+          data.cell.styles.fillColor = [255, 255, 255]; // Corte de Fita
+        }
+      }
     }
   });
 
   yPos = (doc as any).lastAutoTable.finalY + 8;
 
-  // 8. RESUMO CONSOLIDADO DE PARADAS DA PLANTA
-  checkYPage(30);
+  // 8. RESUMO INTEGRADO DE PARADAS
+  checkYPage(35);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(30, 41, 59);
-  doc.text(`${roman[secIdx++]}. RESUMO INTEGRADO DE PARADAS — PLANTA FABRIL`, 14, yPos);
+  doc.text(`${roman[secIdx++]}. RESUMO INTEGRADO DE PARADAS`, 14, yPos);
   yPos += 4;
 
-  const totalExtStops = Object.values(extMacMap).reduce((a: number, b: any) => a + b.stops, 0);
-  const totalRibStops = Object.values(ribMacMap).reduce((a: number, b: any) => a + b.stops, 0);
+  const totalAllPlantStops = totalCastStops + eremaStops + totalRibMacStops;
 
-  const stopsSummaryHead = [['SETOR / LINHA', 'PARADA TOTAL (HORAS)', 'PARTICIPAÇÃO NO TEMPO PARADO']];
+  const stopsSummaryHead = [['SETOR', 'MÁQUINA / EQUIPAMENTO', 'PARADA TOTAL (HORAS)', 'PARTICIPAÇÃO NO TEMPO PARADO']];
   const stopsSummaryBody = [
-    ['EXTRUSÃO & RECICLAGEM (CAST 1, CAST 2, EREMA)', formatHours(totalExtStops), `${(totalExtStops + totalRibStops) > 0 ? ((totalExtStops / (totalExtStops + totalRibStops)) * 100).toFixed(1) : 0}%`],
-    ['CORTE DE FITA (GHEZZI, LINTECH, WULTEC)', formatHours(totalRibStops), `${(totalExtStops + totalRibStops) > 0 ? ((totalRibStops / (totalExtStops + totalRibStops)) * 100).toFixed(1) : 0}%`]
+    ['EXTRUSÃO', 'Cast 1', formatHours(castMacMap['Cast 1'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 1'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['EXTRUSÃO', 'Cast 2', formatHours(castMacMap['Cast 2'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 2'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['RECICLAGEM', 'Erema 1', formatHours(eremaStops), `${totalAllPlantStops > 0 ? ((eremaStops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['CORTE DE FITA', 'Ghezzi', formatHours(ribMacMap['Ghezzi'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Ghezzi'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['CORTE DE FITA', 'Lintech', formatHours(ribMacMap['Lintech'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Lintech'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['CORTE DE FITA', 'Wultec / Ultratec', formatHours(ribMacMap['Wultec'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Wultec'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`]
   ];
   const stopsSummaryFoot = [
-    ['TOTAL CONSOLIDADO DA FÁBRICA', formatHours(totalExtStops + totalRibStops), '100.0%']
+    ['TOTAL', 'Todas as Máquinas', formatHours(totalAllPlantStops), '100.0%']
   ];
 
   autoTable(doc, {
@@ -1615,11 +1872,25 @@ export const generateIntegratedMonthlyReportPDF = async ({
     },
     styles: {
       fontSize: 7.5,
-      cellPadding: 3.5,
+      cellPadding: 3.2,
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'left', cellWidth: 95 }
+      0: { fontStyle: 'bold', halign: 'center', cellWidth: 38 },
+      1: { fontStyle: 'bold', halign: 'left', cellWidth: 54 },
+      2: { fontStyle: 'bold', cellWidth: 45 },
+      3: { cellWidth: 45 }
+    },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        if (data.row.index >= 0 && data.row.index <= 1) {
+          data.cell.styles.fillColor = [248, 250, 252]; // Extrusão
+        } else if (data.row.index === 2) {
+          data.cell.styles.fillColor = [236, 253, 245]; // Reciclagem Erema
+        } else {
+          data.cell.styles.fillColor = [255, 255, 255]; // Corte de Fita
+        }
+      }
     }
   });
 

@@ -4799,6 +4799,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     const currentGoal = getRibbonTotalGoal(ribbonGoals, dashboardMonth);
     const res = { 
       month: 0, 
+      monthGross: 0,
+      monthRejected: 0,
       yesterday: 0, 
       goal: currentGoal, 
       projection: 0, 
@@ -4853,11 +4855,13 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     const machines = machineKeys.map(({ key, label, subLabel }) => {
       let monthProd = 0;
+      let monthRejected = 0;
       let prevMonthProd = 0;
       let yesterdayProd = 0;
 
       activePeriodEntries.filter(e => matchMachine(e.machine, key)).forEach(e => {
         monthProd += (e.producedM2 || 0);
+        monthRejected += (e.rejectedM2 || 0);
       });
 
       ribbonEntries.filter(e => e && typeof e.date === 'string' && e.date.startsWith(prevMonthStr) && matchMachine(e.machine, key)).forEach(e => {
@@ -4867,6 +4871,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       ribbonEntries.filter(e => e && typeof e.date === 'string' && e.date === yesterdayStr && matchMachine(e.machine, key)).forEach(e => {
         yesterdayProd += (e.producedM2 || 0);
       });
+
+      const monthGross = monthProd + monthRejected;
 
       // Machine individual goal defined per machine (Ghezze, Lintech, Wutec)
       const machineGoal = getRibbonMachineGoal(ribbonGoals, dashboardMonth, key);
@@ -4883,6 +4889,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         label,
         subLabel,
         month: monthProd,
+        rejected: monthRejected,
+        monthGross,
         prevMonthTotal: prevMonthProd,
         yesterday: yesterdayProd,
         goal: machineGoal,
@@ -4899,6 +4907,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     activePeriodEntries.forEach(e => {
       res.month += (e.producedM2 || 0);
+      res.monthRejected += (e.rejectedM2 || 0);
       res.totWaste += (e.wasteWeight || 0);
       res.totJumbo += (e.jumboM2 || 0);
       res.stoppedMinutes += (e.stoppedMinutes || 0);
@@ -4919,8 +4928,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       }
     });
 
-    res.yieldPercent = res.month > 0 ? ((res.month - res.totWaste) / res.month) * 100 : 100;
-    res.lossPercent = res.month > 0 ? (res.totWaste / res.month) * 100 : 0;
+    res.monthGross = res.month + res.monthRejected;
+    res.yieldPercent = res.monthGross > 0 ? (res.month / res.monthGross) * 100 : (res.month > 0 ? ((res.month - res.totWaste) / res.month) * 100 : 100);
+    res.lossPercent = res.monthGross > 0 ? (res.monthRejected / res.monthGross) * 100 : 0;
 
     res.projection = (res.month / Math.max(1, currentDay)) * totalDaysInMonth;
     res.avgReq = Math.max(0, (res.goal - res.month) / Math.max(1, totalDaysInMonth - currentDay));
@@ -8280,67 +8290,63 @@ Atenciosamente,
       yPos = (doc as any).lastAutoTable.finalY + 8;
     }
 
-    // 2. DESEMPENHO POR EQUIPAMENTO (Cast 1, Cast 2, Erema)
-    const machinesGrouped: Record<string, any> = {};
-    const machineList = ['Cast 1', 'Cast 2', 'Erema'];
-    
-    machineList.forEach(m => {
-      machinesGrouped[m] = {
-        name: m,
-        net: 0,
-        gross: 0,
-        tara: 0,
-        borra: 0,
-        ecoA: 0,
-        ecoBP: 0,
-        ecoBM: 0,
-        manut: 0,
-        proc: 0,
-        outros: 0,
-        stops: 0
-      };
-    });
+    // 2. DESEMPENHO POR EQUIPAMENTO (Separado: Extrusão Cast vs Reciclagem Erema)
+    const castMachinesGrouped: Record<string, any> = {
+      'Cast 1': { name: 'Cast 1', net: 0, gross: 0, tara: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, manut: 0, proc: 0, outros: 0, stops: 0 },
+      'Cast 2': { name: 'Cast 2', net: 0, gross: 0, tara: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, manut: 0, proc: 0, outros: 0, stops: 0 }
+    };
+    const eremaMachineGrouped: Record<string, any> = {
+      'Erema 1': { name: 'Erema 1 (Reciclagem)', net: 0, gross: 0, tara: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, manut: 0, proc: 0, outros: 0, stops: 0 }
+    };
 
     filteredDashboardData.forEach(e => {
-      let mKey = '';
-      if (e.machine.toLowerCase().includes('cast 1')) mKey = 'Cast 1';
-      else if (e.machine.toLowerCase().includes('cast 2')) mKey = 'Cast 2';
-      else if (e.machine.toLowerCase().includes('erema')) mKey = 'Erema';
+      const m = (e.machine || '').toLowerCase();
+      let target: Record<string, any> | null = null;
+      let targetKey = '';
 
-      if (mKey && machinesGrouped[mKey]) {
-        machinesGrouped[mKey].net += (e.netWeight || 0);
-        machinesGrouped[mKey].gross += (e.grossWeight || 0);
-        machinesGrouped[mKey].tara += (e.tara || 0);
-        machinesGrouped[mKey].borra += (e.borraTotal || 0);
-        machinesGrouped[mKey].ecoA += (e.ecoA || 0);
-        machinesGrouped[mKey].ecoBP += (e.ecoBP || 0);
-        machinesGrouped[mKey].ecoBM += (e.ecoBM || 0);
-        machinesGrouped[mKey].manut += (e.manutencaoMin || 0);
-        machinesGrouped[mKey].proc += (e.processoMin || 0);
-        machinesGrouped[mKey].outros += (e.outrosMin || 0);
-        machinesGrouped[mKey].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
+      if (m.includes('cast 1')) { target = castMachinesGrouped; targetKey = 'Cast 1'; }
+      else if (m.includes('cast 2')) { target = castMachinesGrouped; targetKey = 'Cast 2'; }
+      else if (m.includes('erema')) { target = eremaMachineGrouped; targetKey = 'Erema 1'; }
+
+      if (target && targetKey && target[targetKey]) {
+        target[targetKey].net += (e.netWeight || 0);
+        target[targetKey].gross += (e.grossWeight || 0);
+        target[targetKey].tara += (e.tara || 0);
+        target[targetKey].borra += (e.borraTotal || 0);
+        target[targetKey].ecoA += (e.ecoA || 0);
+        target[targetKey].ecoBP += (e.ecoBP || 0);
+        target[targetKey].ecoBM += (e.ecoBM || 0);
+        target[targetKey].manut += (e.manutencaoMin || 0);
+        target[targetKey].proc += (e.processoMin || 0);
+        target[targetKey].outros += (e.outrosMin || 0);
+        target[targetKey].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
       }
     });
 
     // Injeção de minutos de máquina parada do Cast 2 de 01/06 a 25/06 (junho/2026)
     if (!isDaily && dashboardMonth === '2026-06') {
-      if (machinesGrouped['Cast 2']) {
-        // Cast 2 começou a produzir apenas no dia 25/06. Do dia 01/06 ao dia 25/06 (24 dias completos), a máquina ficou parada.
-        // 24 dias * 24 horas/dia * 60 min/hora = 34560 minutos de inatividade pré-operação
-        machinesGrouped['Cast 2'].outros += 34560;
-        machinesGrouped['Cast 2'].stops += 34560;
+      if (castMachinesGrouped['Cast 2']) {
+        castMachinesGrouped['Cast 2'].outros += 34560;
+        castMachinesGrouped['Cast 2'].stops += 34560;
       }
     }
 
-    checkYPage(10);
+    const totalCastNet = castMachinesGrouped['Cast 1'].net + castMachinesGrouped['Cast 2'].net;
+    const totalCastBorra = castMachinesGrouped['Cast 1'].borra + castMachinesGrouped['Cast 2'].borra;
+    const totalCastEcoA = castMachinesGrouped['Cast 1'].ecoA + castMachinesGrouped['Cast 2'].ecoA;
+    const totalCastEcoBP = castMachinesGrouped['Cast 1'].ecoBP + castMachinesGrouped['Cast 2'].ecoBP;
+    const totalCastEcoBM = castMachinesGrouped['Cast 1'].ecoBM + castMachinesGrouped['Cast 2'].ecoBM;
+    const totalCastStops = castMachinesGrouped['Cast 1'].stops + castMachinesGrouped['Cast 2'].stops;
+
+    checkYPage(12);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(30, 41, 59);
-    doc.text(`${roman[secIdx++]}. DESEMPENHO CONSOLIDADO POR EQUIPAMENTO`, 14, yPos);
+    doc.text(`${roman[secIdx++]}. DESEMPENHO POR EQUIPAMENTO — EXTRUSÃO (CAST 1 & 2)`, 14, yPos);
     yPos += 4;
 
-    const machineTableHead = [['MÁQUINA', 'PROD. LÍQUIDA', 'BORRA TOTAL', 'PERDA ECO A', 'ECO B (P)', 'ECO B (M)', 'PARADA MANUT.', 'PARADA PROC.', 'PARADA OUTROS', 'PARADA TOTAL']];
-    const machineTableBody = Object.values(machinesGrouped).map((m: any) => [
+    const machineTableHead = [['EXTRUSORA', 'PROD. LÍQUIDA', 'BORRA TOTAL', 'PERDA ECO A', 'ECO B (P)', 'ECO B (M)', 'PARADA MANUT.', 'PARADA PROC.', 'PARADA OUTROS', 'PARADA TOTAL']];
+    const machineTableBody = Object.values(castMachinesGrouped).map((m: any) => [
       m.name,
       formatWeight(m.net),
       formatWeight(m.borra),
@@ -8352,30 +8358,124 @@ Atenciosamente,
       `${m.outros} min`,
       `${m.stops} min`
     ]);
+    const machineTableFoot = [[
+      'TOTAL EXTRUSÃO',
+      formatWeight(totalCastNet),
+      formatWeight(totalCastBorra),
+      formatWeight(totalCastEcoA),
+      formatWeight(totalCastEcoBP),
+      formatWeight(totalCastEcoBM),
+      `${castMachinesGrouped['Cast 1'].manut + castMachinesGrouped['Cast 2'].manut} min`,
+      `${castMachinesGrouped['Cast 1'].proc + castMachinesGrouped['Cast 2'].proc} min`,
+      `${castMachinesGrouped['Cast 1'].outros + castMachinesGrouped['Cast 2'].outros} min`,
+      `${totalCastStops} min`
+    ]];
 
     autoTable(doc, {
       startY: yPos,
       head: machineTableHead,
       body: machineTableBody,
+      foot: machineTableFoot,
       theme: 'grid',
       headStyles: {
         fillColor: [30, 41, 59],
         textColor: [255, 255, 255],
-        fontSize: 8,
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      footStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [30, 41, 59],
+        fontSize: 7.5,
         fontStyle: 'bold',
         halign: 'center'
       },
       styles: {
-        fontSize: 7.5,
-        cellPadding: 3,
+        fontSize: 7,
+        cellPadding: 2.8,
         halign: 'center'
       },
       columnStyles: {
-        0: { fontStyle: 'bold', halign: 'left' }
+        0: { fontStyle: 'bold', halign: 'left' },
+        1: { fontStyle: 'bold', textColor: [37, 99, 235] }
       }
     });
 
-    yPos = (doc as any).lastAutoTable.finalY + 8;
+    yPos = (doc as any).lastAutoTable.finalY + 5;
+
+    // Tabela Reciclagem Erema Separada
+    checkYPage(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(5, 150, 105);
+    doc.text('SETOR DE RECICLAGEM — MÁQUINA RECUPERADORA EREMA 1', 14, yPos);
+    yPos += 3.5;
+
+    const eremaM = eremaMachineGrouped['Erema 1'];
+    const eremaTableHead = [['MÁQUINA RECICLADORA', 'PELLETS RECICLADOS', 'BORRA (PERDA)', 'ECO A', 'ECO B (P)', 'ECO B (M)', 'PARADA MANUT.', 'PARADA PROC.', 'PARADA OUTROS', 'PARADA TOTAL']];
+    const eremaTableBody = [[
+      eremaM.name,
+      formatWeight(eremaM.net),
+      formatWeight(eremaM.borra),
+      formatWeight(eremaM.ecoA),
+      formatWeight(eremaM.ecoBP),
+      formatWeight(eremaM.ecoBM),
+      `${eremaM.manut} min`,
+      `${eremaM.proc} min`,
+      `${eremaM.outros} min`,
+      `${eremaM.stops} min`
+    ]];
+    const eremaTableFoot = [[
+      'TOTAL RECICLAGEM',
+      formatWeight(eremaM.net),
+      formatWeight(eremaM.borra),
+      formatWeight(eremaM.ecoA),
+      formatWeight(eremaM.ecoBP),
+      formatWeight(eremaM.ecoBM),
+      `${eremaM.manut} min`,
+      `${eremaM.proc} min`,
+      `${eremaM.outros} min`,
+      `${eremaM.stops} min`
+    ]];
+
+    autoTable(doc, {
+      startY: yPos,
+      head: eremaTableHead,
+      body: eremaTableBody,
+      foot: eremaTableFoot,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [5, 150, 105],
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      footStyles: {
+        fillColor: [236, 253, 245],
+        textColor: [6, 95, 70],
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      styles: {
+        fontSize: 7,
+        cellPadding: 2.8,
+        halign: 'center'
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', halign: 'left' },
+        1: { fontStyle: 'bold', textColor: [5, 150, 105] }
+      }
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 4;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`* Balanço Integrado: Extrusão Cast 1 + 2 totaliza ${formatWeight(totalCastNet)}. Reciclagem Erema totaliza ${formatWeight(eremaM.net)}. Soma fabril: ${formatWeight(totalCastNet + eremaM.net)}.`, 14, yPos);
+    yPos += 6;
 
     // Nota explicativa sobre inatividade pré-operação do Cast 2 em junho/2026
     if (!isDaily && dashboardMonth === '2026-06') {
@@ -8712,8 +8812,9 @@ Atenciosamente,
       doc.text('RESUMO DE PARADAS POR MÁQUINA', 14, yPos);
       yPos += 4;
 
+      const allExtMachines = [...Object.values(castMachinesGrouped), ...Object.values(eremaMachineGrouped)];
       const machineStopsHead = [['MÁQUINA', 'PARADA MANUTENÇÃO', 'PARADA PROCESSO', 'OUTRAS PARADAS', 'TOTAL DE PARADAS']];
-      const machineStopsBody = Object.values(machinesGrouped).map((m: any) => [
+      const machineStopsBody = allExtMachines.map((m: any) => [
         m.name.toUpperCase(),
         formatHours(m.manut),
         formatHours(m.proc),
@@ -8721,10 +8822,10 @@ Atenciosamente,
         formatHours(m.stops)
       ]);
 
-      const mTotalManut = Object.values(machinesGrouped).reduce((acc: number, m: any) => acc + (m.manut || 0), 0);
-      const mTotalProc = Object.values(machinesGrouped).reduce((acc: number, m: any) => acc + (m.proc || 0), 0);
-      const mTotalOutros = Object.values(machinesGrouped).reduce((acc: number, m: any) => acc + (m.outros || 0), 0);
-      const mTotalStops = Object.values(machinesGrouped).reduce((acc: number, m: any) => acc + (m.stops || 0), 0);
+      const mTotalManut = allExtMachines.reduce((acc: number, m: any) => acc + (m.manut || 0), 0);
+      const mTotalProc = allExtMachines.reduce((acc: number, m: any) => acc + (m.proc || 0), 0);
+      const mTotalOutros = allExtMachines.reduce((acc: number, m: any) => acc + (m.outros || 0), 0);
+      const mTotalStops = allExtMachines.reduce((acc: number, m: any) => acc + (m.stops || 0), 0);
 
       const machineStopsFoot = [[
         'TOTAL GERAL',
@@ -18402,9 +18503,16 @@ Atenciosamente,
                             </button>
                           </div>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <span className="text-[10px] font-black uppercase opacity-60 block tracking-widest">Total Geral Mês</span>
+                              <div className="flex items-center justify-end gap-2 mb-0.5">
+                                <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-sky-400/20 text-sky-200 border border-sky-400/30">
+                                  Líquido: {formatM2(ribbonDashboardStats.month)}
+                                </span>
+                                <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-400/20 text-amber-200 border border-amber-400/30" title="Volume processado total incluindo perdas e fitas não conformes">
+                                  Bruto: {formatM2(ribbonDashboardStats.monthGross)}
+                                </span>
+                              </div>
                               <div className="flex items-baseline justify-end gap-1.5">
                                 <span className="text-2xl sm:text-3xl font-black">
                                   <AnimatedCounter value={ribbonDashboardStats.month} suffix=" m²" />
@@ -18437,9 +18545,14 @@ Atenciosamente,
                                     {m.label}
                                   </h4>
                                 </div>
-                                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg bg-sky-400/20 text-sky-200 border border-sky-400/30 uppercase tracking-widest">
-                                  CORTE
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] font-black px-2 py-0.5 rounded bg-amber-400/20 text-amber-200 border border-amber-400/30 uppercase tracking-wider" title="Volume bruto processado (líquido + perdas)">
+                                    Bruto: {formatM2(m.monthGross)}
+                                  </span>
+                                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg bg-sky-400/20 text-sky-200 border border-sky-400/30 uppercase tracking-widest">
+                                    CORTE
+                                  </span>
+                                </div>
                               </div>
 
                               {/* M² e Porcentagem */}
@@ -18452,9 +18565,16 @@ Atenciosamente,
                                     / <AnimatedCounter value={m.percent} decimals={1} suffix="%" />
                                   </span>
                                 </div>
-                                <span className="text-[9px] font-black opacity-70 uppercase tracking-wider">
-                                  Meta: {formatM2(m.goal)}
-                                </span>
+                                <div className="text-right">
+                                  <span className="text-[9px] font-black opacity-70 uppercase tracking-wider block">
+                                    Meta: {formatM2(m.goal)}
+                                  </span>
+                                  {m.rejected > 0 && (
+                                    <span className="text-[8.5px] font-bold text-rose-300 uppercase tracking-tight block">
+                                      Perda: -{formatM2(m.rejected)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
                               {/* Barras de Tempo: Mês Atual e Mês Anterior */}
