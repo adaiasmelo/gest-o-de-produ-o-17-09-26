@@ -87,6 +87,7 @@ interface LaunchModalProps {
   isExternalOperatorMode?: boolean;
   operatorRegistration?: string;
   onOperatorLogout?: () => void;
+  onBackToMachineSelect?: () => void;
 }
 
 interface StopItem {
@@ -181,7 +182,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
   isOpen, onClose, onSave, collaborators, employees, vacations = [], activeMachines, availableShifts, initialData, dashboardMonth,
   productionEntries = [], ribbonEntries = [], isStandaloneDowntimeInitial = false,
   presetOperator, presetShift, presetMachine, presetDate, isExternalOperatorMode = false,
-  operatorRegistration, onOperatorLogout
+  operatorRegistration, onOperatorLogout, onBackToMachineSelect
 }) => {
   const [downtimeVersion, setDowntimeVersion] = useState(0);
 
@@ -1229,6 +1230,17 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             {isExternalOperatorMode ? (
               <div className="flex items-center gap-1.5 sm:gap-2">
+                {onBackToMachineSelect && (
+                  <button 
+                    type="button" 
+                    onClick={onBackToMachineSelect} 
+                    className="flex items-center gap-1 bg-blue-800/80 hover:bg-blue-700 text-white px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-blue-500/50 cursor-pointer shrink-0 shadow-sm"
+                    title="Voltar para seleção de máquina"
+                  >
+                    <ArrowLeft size={15} />
+                    <span className="uppercase text-[9px] sm:text-[10px]">Trocar Máquina</span>
+                  </button>
+                )}
                 {onOperatorLogout && (
                   <button 
                     type="button" 
@@ -1236,7 +1248,6 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     className="flex items-center gap-1 bg-red-950/60 hover:bg-red-900/80 text-red-200 hover:text-white px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-red-700/50 cursor-pointer shrink-0"
                     title="Sair / Trocar Operador"
                   >
-                    <ArrowLeft size={15} />
                     <span className="uppercase text-[9px] sm:text-[10px]">Sair</span>
                   </button>
                 )}
@@ -1415,7 +1426,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     name="machine" 
                     value={formData.machine} 
                     onChange={handleChange} 
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat"
+                    disabled={isExternalOperatorMode}
+                    className={`w-full ${isExternalOperatorMode ? 'bg-slate-100 text-slate-900 font-black cursor-not-allowed border-blue-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat`}
                   >
                     <option value="" disabled>Selecionar Máquina</option>
                     <option value="Cast 1">Cast 1</option>
@@ -1431,7 +1443,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       name="operator"
                       value={formData.operator} 
                       onChange={handleChange} 
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat"
+                      disabled={isExternalOperatorMode}
+                      className={`w-full ${isExternalOperatorMode ? 'bg-slate-100 text-slate-900 font-black cursor-not-allowed border-blue-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat`}
                     >
                       <option value="">
                         {filteredOperators.length === 0 
@@ -1455,7 +1468,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     name="shift" 
                     value={formData.shift} 
                     onChange={handleChange} 
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat"
+                    disabled={isExternalOperatorMode}
+                    className={`w-full ${isExternalOperatorMode ? 'bg-slate-100 text-slate-900 font-black cursor-not-allowed border-blue-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat`}
                   >
                     <option value="" disabled>Selecionar Turno</option>
                     <option value="Diurno">Diurno</option>
