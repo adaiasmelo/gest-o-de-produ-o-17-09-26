@@ -153,18 +153,30 @@ const updateSW = registerSW({
         }
       });
 
-      // 3. Checa periodicamente por nova versão do Service Worker a cada 5 segundos
+      // 3. Checa periodicamente por nova versão do Service Worker a cada 60 segundos
       setInterval(() => {
+        try {
+          const hasOpSession = Boolean(localStorage.getItem('manupackaging_operator_portal_user'));
+          const hasDraft = Boolean(localStorage.getItem('manupackaging_extrusion_launch_draft'));
+          // Se o operador estiver autenticado ou preenchendo apontamentos, não força atualização periódica do SW
+          if (hasOpSession || hasDraft) return;
+        } catch (_) {}
         r.update().catch(err => console.warn('PWA: Verificação periódica de SW:', err));
-      }, 5000);
+      }, 60000);
 
-      // 4. Checa imediatamente ao focar na janela ou voltar de segundo plano
+      // 4. Checa ao focar na janela ou voltar de segundo plano apenas se não for operador em apontamento
       window.addEventListener('focus', () => {
+        try {
+          if (localStorage.getItem('manupackaging_operator_portal_user')) return;
+        } catch (_) {}
         r.update().catch(() => {});
       });
 
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
+          try {
+            if (localStorage.getItem('manupackaging_operator_portal_user')) return;
+          } catch (_) {}
           r.update().catch(() => {});
         }
       });
@@ -180,28 +192,43 @@ if ('serviceWorker' in navigator) {
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!refreshing) {
-      // Evita recarregar a tela enquanto o operador está na tela de lançamento externa ou preenchendo apontamentos
+      // Evita categoricamente recarregar a tela enquanto o operador está na tela de lançamento externa ou preenchendo apontamentos
       try {
         const href = (window.location.href || '').toLowerCase();
         const pathname = (window.location.pathname || '').toLowerCase();
         const hash = (window.location.hash || '').toLowerCase();
+        const search = (window.location.search || '').toLowerCase();
+
         const isOperatorLaunch =
           pathname.includes('lancamento') ||
           pathname.includes('lançamento') ||
+          pathname.includes('extrusao') ||
+          pathname.includes('extrusão') ||
           pathname.includes('operador') ||
           pathname.includes('apontamento') ||
           hash.includes('lancamento') ||
           hash.includes('lançamento') ||
+          hash.includes('extrusao') ||
+          hash.includes('extrusão') ||
           hash.includes('operador') ||
           hash.includes('apontamento') ||
+          search.includes('lancamento') ||
+          search.includes('lançamento') ||
+          search.includes('extrusao') ||
+          search.includes('extrusão') ||
+          search.includes('operador') ||
           href.includes('lancamento') ||
-          href.includes('lançamento');
+          href.includes('lançamento') ||
+          href.includes('extrusao') ||
+          href.includes('extrusão');
 
+        const hasActiveSession = Boolean(localStorage.getItem('manupackaging_operator_portal_user'));
+        const hasDraft = Boolean(localStorage.getItem('manupackaging_extrusion_launch_draft'));
         const activeElem = document.activeElement;
         const isUserTyping = activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'SELECT' || activeElem.tagName === 'TEXTAREA');
 
-        if (isOperatorLaunch || isUserTyping) {
-          console.log('PWA: Novo worker pronto. Adiando recarregamento para não interromper o operador durante o lançamento.');
+        if (isOperatorLaunch || hasActiveSession || hasDraft || isUserTyping) {
+          console.log('PWA: Novo worker pronto. Mantendo sessão ativa do operador para não perder nenhum dado de lançamento.');
           return;
         }
       } catch (e) {}

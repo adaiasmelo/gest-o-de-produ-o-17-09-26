@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Trash2, Clock, Zap, Plus } from 'lucide-react';
 import { StopItem } from '../types';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
+import { QuickReasonChips } from './QuickReasonChips';
 
 interface StopItemCardProps {
   stop: StopItem;
@@ -225,20 +226,51 @@ export const StopItemCard: React.FC<StopItemCardProps> = ({
         </div>
       )}
 
+      {/* Motivo Rápido de Parada (Chips em 1 toque + botão '+' para cadastrar novos) */}
+      <div className="space-y-1 pt-1 border-t border-slate-200/80">
+        <QuickReasonChips
+          category={type}
+          kind="downtime"
+          selectedValue={stop.quickReason || stop.category || ''}
+          onSelect={(cat) => {
+            onUpdate(stop.id, 'quickReason', cat);
+            onUpdate(stop.id, 'category', cat);
+            const currentExp = (stop.explicacao || stop.justification || stop.motivo || '').trim();
+            if (!currentExp || currentExp.startsWith('[')) {
+              const cleanExp = currentExp.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+              const formatted = cleanExp ? `[${cat}]: ${cleanExp}` : `[${cat}]: `;
+              onUpdate(stop.id, 'explicacao', formatted);
+              onUpdate(stop.id, 'justification', formatted);
+              onUpdate(stop.id, 'motivo', formatted);
+            }
+          }}
+          colorTheme={type === 'manutencao' ? 'amber' : type === 'processo' ? 'blue' : 'slate'}
+          title="⚡ Motivo Rápido de Parada:"
+        />
+      </div>
+
       {/* Motivo / Justificativa por Escrito com salvamento na relação */}
-      <div className="space-y-1">
+      <div className="space-y-1 pt-1 border-t border-dashed border-slate-200">
+        <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+          <span>✍️ Justificativa Detalhada da Parada:</span>
+          <span className="text-[8px] text-slate-400 font-bold lowercase">*descreva como e por que aconteceu</span>
+        </label>
         <ReasonInputWithSave
-          label="Motivo / Justificativa da Parada"
           value={stop.explicacao || stop.justification || stop.motivo || ''}
           onChange={(val) => {
             onUpdate(stop.id, 'explicacao', val);
             onUpdate(stop.id, 'justification', val);
             onUpdate(stop.id, 'motivo', val);
-            onUpdate(stop.id, 'keyword', '');
+            const match = val.match(/^\[([^\]]+)\]/);
+            if (match && match[1]) {
+              onUpdate(stop.id, 'quickReason', match[1]);
+              onUpdate(stop.id, 'category', match[1]);
+            }
           }}
           category={`paradas_${type}`}
-          placeholder="Digite o motivo da parada ou selecione da relação..."
+          placeholder="Digite a justificativa detalhada da parada ou selecione da relação..."
           multiline={false}
+          hideLabel={true}
         />
       </div>
     </div>

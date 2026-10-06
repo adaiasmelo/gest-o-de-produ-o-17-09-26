@@ -35,9 +35,13 @@ export interface ProductionEntry {
   recycledUsed?: number;
   recycledBags?: number;
   ecoAMotivo?: string;
+  ecoACategory?: string;
   ecoBPMotivo?: string;
+  ecoBPCategory?: string;
   ecoBMMotivo?: string;
+  ecoBMCategory?: string;
   borraTotalMotivo?: string;
+  borraCategory?: string;
   materialType?: 'LC3' | 'LC2' | 'ATX' | 'ATX Plus' | string;
   materials?: Array<{
     id: string;
@@ -79,6 +83,7 @@ export interface Collaborator {
   birthDate?: string;
   address?: string;
   contact?: string;
+  createdAt?: string;
   updatedAt: string;
   isBrigadista?: boolean;
   isSilenced?: boolean;
@@ -453,6 +458,7 @@ export interface StopItem {
   explicacao?: string; // Armazena a justificativa livre
   nature?: DowntimeNature;
   keyword?: string;
+  quickReason?: string; // Motivo rápido de parada para BI
   justification?: string;
   durationMinutes?: number;
   isAvulso?: boolean;

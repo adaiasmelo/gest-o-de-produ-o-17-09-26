@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Plus, Trash2, Database, ShieldCheck, UserPlus, HardHat, Briefcase, Factory, UserX, Edit2, VolumeX, Volume2, RotateCcw, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { X, Search, Plus, Trash2, Database, ShieldCheck, UserPlus, HardHat, Briefcase, Factory, UserX, Edit2, VolumeX, Volume2, RotateCcw, AlertTriangle, ShieldAlert, Sparkles, Clock } from 'lucide-react';
 import { Employee, EmployeeStatus, Collaborator } from '../types';
 import { db } from '../lib/firebase';
 import { setDoc, doc } from 'firebase/firestore';
 import { IMPORTED_COLLABORATORS } from '../constants/importedCollaborators';
+import { isRecentCollaborator, getRecentCollaborators, formatRecentRegistrationBadge } from '../utils/recentCollaborators';
 
 interface DatabaseModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface DatabaseModalProps {
   onTerminate: (id: string, name: string) => void;
   onEditCollaborator: (collaborator: Collaborator) => void;
   onToggleSilenceCollaborator?: (collaborator: Collaborator, shouldSilence: boolean, reason?: string) => Promise<void> | void;
+  onAllocateCollaborator?: (collaborator: Collaborator) => void;
   availableRoles: string[];
   availableShifts: string[];
   machines: string[];
@@ -32,6 +34,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   onTerminate,
   onEditCollaborator,
   onToggleSilenceCollaborator,
+  onAllocateCollaborator,
   availableRoles,
   availableShifts,
   machines,
@@ -68,6 +71,10 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const silencedCollaborators = useMemo(() => {
     return collaborators.filter(c => !!c.isSilenced);
   }, [collaborators]);
+
+  const recentCollaborators = useMemo(() => {
+    return getRecentCollaborators(activeCollaborators, 30);
+  }, [activeCollaborators]);
 
   const filteredCollaboratorsForSelect = useMemo(() => {
     if (!colSearchTerm) return activeCollaborators;
@@ -267,6 +274,11 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                 <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-full ${activeTab === 'collaborators' ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-700 text-slate-300'}`}>
                   {activeCollaborators.length}
                 </span>
+                {recentCollaborators.length > 0 && (
+                  <span className="text-[8px] font-black px-1.5 py-0.2 rounded-full bg-blue-500 text-white animate-pulse shadow-xs">
+                    ✨ {recentCollaborators.length} novos
+                  </span>
+                )}
               </button>
               <button 
                 onClick={() => { setActiveTab('silenced'); setSearchTerm(''); }}
@@ -590,6 +602,116 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
               </button>
             </div>
 
+            {/* Sessão Especial: Nomes Recentemente Cadastrados (Permanecem por pelo menos 1 mês) */}
+            {recentCollaborators.length > 0 && (
+              <div className="bg-gradient-to-r from-blue-50/95 via-indigo-50/70 to-slate-50 border-b border-blue-200/90 px-8 py-5 animate-in fade-in duration-300 shrink-0">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+                      <Sparkles size={16} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                          Nomes Recentemente Cadastrados
+                        </h4>
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-[9px] font-black uppercase border border-blue-200">
+                          {recentCollaborators.length} {recentCollaborators.length === 1 ? 'colaborador' : 'colaboradores'} • Últimos 30 dias
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">
+                        Colaboradores novos ficam salvos no Cadastro Global e destacados aqui por pelo menos um mês para rápida localização e alocação.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {recentCollaborators.map((col) => {
+                    const allocation = employees.find(e => 
+                      (col.id && e.collaboratorId === col.id) || 
+                      (col.registration && e.registration === col.registration) ||
+                      (col.name && e.name && e.name.toLowerCase() === col.name.toLowerCase())
+                    );
+
+                    return (
+                      <div 
+                        key={`recent_card_${col.id}`} 
+                        className="bg-white p-3.5 rounded-2xl border border-blue-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-2 group"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100 font-mono">
+                              #{col.registration || 'S/M'}
+                            </span>
+                            <span className="text-[9px] font-bold text-blue-600 bg-blue-50/80 px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-1">
+                              <Sparkles size={10} />
+                              {formatRecentRegistrationBadge(col)}
+                            </span>
+                          </div>
+
+                          <p className="text-xs font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors">
+                            {col.name}
+                          </p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                            {col.role || 'Auxiliar de Produção'}
+                          </p>
+
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            <span className="font-bold text-slate-400 uppercase">Posto no Quadro:</span>
+                            {allocation ? (
+                              <span className="font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 text-[9px] uppercase">
+                                ✓ {allocation.machine} ({allocation.shift})
+                              </span>
+                            ) : (
+                              <span className="font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100 text-[9px] uppercase">
+                                ⏳ Sem Posto Alocado
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100">
+                          {onAllocateCollaborator && !allocation && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onAllocateCollaborator(col);
+                                onClose();
+                              }}
+                              className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                              title="Inserir e alocar este colaborador em um posto no Quadro Geral"
+                            >
+                              <Plus size={12} />
+                              <span>Inserir no Quadro</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onEditCollaborator(col)}
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+                            title="Editar dados cadastrais"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          {onToggleSilenceCollaborator && (
+                            <button
+                              type="button"
+                              onClick={() => setSilenceModal({ collaborator: col, shouldSilence: true })}
+                              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+                              title="Silenciar colaborador"
+                            >
+                              <VolumeX size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               <table className="w-full border-collapse text-left">
                 <thead className="bg-slate-100 sticky top-0 z-10">
@@ -617,6 +739,11 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                           <div className="flex flex-col">
                             <span className="text-sm font-black text-slate-800 flex items-center gap-2">
                               {col.name}
+                              {isRecentCollaborator(col, 30) && (
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 shrink-0">
+                                  ✨ Recente
+                                </span>
+                              )}
                               {col.isBrigadista && (
                                 <span className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 shrink-0">
                                   🔥 Brigada

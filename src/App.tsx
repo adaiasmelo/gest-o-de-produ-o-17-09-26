@@ -42,6 +42,7 @@ import { extractDowntimeMotives } from './constants/downtimeReasons';
 import { isBiometricAvailable, registerBiometrics, authenticateBiometrics, isBiometricFeatureAllowed } from './services/biometricService';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet, isOperatorNameSilenced, normalizeText } from './utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from './utils/vacationUtils';
+import { isRecentCollaborator, getRecentCollaborators, formatRecentRegistrationBadge } from './utils/recentCollaborators';
 import LaunchModal from './components/LaunchModal';
 import EmployeeModal from './components/EmployeeModal';
 import CollaboratorModal from './components/CollaboratorModal';
@@ -1417,6 +1418,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     const silencedNamesSet = getSilencedNamesSet(collaborators, employees);
     return (operators || []).filter(op => !silencedNamesSet.has(normalizeText(op)));
   }, [operators, collaborators, employees]);
+
+  const recentGlobalCollaborators = useMemo(() => {
+    const active = (collaborators || []).filter(c => !c.isSilenced);
+    return getRecentCollaborators(active, 30);
+  }, [collaborators]);
   const [personnelLogs, setPersonnelLogs] = useState<PersonnelLog[]>([]);
   const [availableShifts, setAvailableShifts] = useState<Shift[]>([]);
   const [operatorPenalties, setOperatorPenalties] = useState<OperatorPenalty[]>(() => {
@@ -1564,6 +1570,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isCollaboratorModalOpen, setIsCollaboratorModalOpen] = useState(false);
   const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
+  const [isRecentCollaboratorsExpanded, setIsRecentCollaboratorsExpanded] = useState(true);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
@@ -1994,8 +2001,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     // Verificação proativa e contínua de novas versões publicadas no Cloudflare
     const checkCloudflareUpdate = async () => {
       try {
-        // Se o operador estiver na tela externa de lançamento em chão de fábrica, não interrompe nem exibe modal de reload
-        if (isExternalOperatorView) return;
+        // Se o operador estiver na tela externa de lançamento em chão de fábrica ou com sessão/rascunho ativo, não interrompe nem exibe modal de reload
+        const hasOpSession = Boolean(localStorage.getItem('manupackaging_operator_portal_user'));
+        const hasDraft = Boolean(localStorage.getItem('manupackaging_extrusion_launch_draft'));
+        if (isExternalOperatorView || hasOpSession || hasDraft || isExternalOperatorRoute()) return;
 
         // 1. Checa se o Service Worker nativo já possui nova versão esperando ou disponível
         if ('serviceWorker' in navigator) {
@@ -3043,6 +3052,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         isSilenced: data.isSilenced !== undefined ? !!data.isSilenced : !!prevCol?.isSilenced,
         silencedAt: data.isSilenced ? (data.silencedAt || prevCol?.silencedAt || now) : '',
         silenceReason: data.isSilenced ? (data.silenceReason || prevCol?.silenceReason || 'Silenciado') : '',
+        createdAt: prevCol?.createdAt || data.createdAt || now,
         updatedAt: now
       };
 
@@ -20975,6 +20985,165 @@ Atenciosamente,
             </div>
 
             <div ref={personnelRef} data-ref-personnel-root className="space-y-8 p-1">
+              {/* Sessão Especial: Nomes Recentemente Cadastrados no Cadastro Global (Permanecem por pelo menos 1 mês) */}
+              {recentGlobalCollaborators.length > 0 && (
+                <div className="bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-800/80 border border-blue-500/30 rounded-[2.5rem] p-6 shadow-xl space-y-4 backdrop-blur-md animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30">
+                        <Sparkles size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base font-black text-white uppercase tracking-tight">
+                            Nomes Recentemente Cadastrados
+                          </h3>
+                          <span className="px-2.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-full text-[10px] font-black uppercase tracking-wider">
+                            {recentGlobalCollaborators.length} {recentGlobalCollaborators.length === 1 ? 'colaborador' : 'colaboradores'} • Últimos 30 dias
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-bold mt-0.5">
+                          Colaboradores salvos no Cadastro Global. Permanecem em destaque nesta sessão por 30 dias para você localizar e alocar no Quadro Geral.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCollaborator(null);
+                            setIsCollaboratorModalOpen(true);
+                          }}
+                          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <UserPlus size={14} />
+                          <span>Cadastrar Novo</span>
+                        </button>
+                      )}
+                      {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsDatabaseModalOpen(true)}
+                          className="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black uppercase rounded-xl transition-all border border-slate-600 active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Database size={14} className="text-emerald-400" />
+                          <span>Ver no Banco</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsRecentCollaboratorsExpanded(!isRecentCollaboratorsExpanded)}
+                        className="px-3 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-[10px] font-black uppercase rounded-xl transition-all border border-slate-600 flex items-center gap-1 cursor-pointer"
+                      >
+                        <ChevronDown size={14} className={`transition-transform duration-200 ${isRecentCollaboratorsExpanded ? 'rotate-180' : ''}`} />
+                        <span>{isRecentCollaboratorsExpanded ? 'Recolher' : 'Expandir'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {isRecentCollaboratorsExpanded && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-2">
+                      {recentGlobalCollaborators.map((col) => {
+                        const allocation = employees.find(e => 
+                          (col.id && e.collaboratorId === col.id) || 
+                          (col.registration && e.registration === col.registration) ||
+                          (col.name && e.name && e.name.toLowerCase() === col.name.toLowerCase())
+                        );
+
+                        return (
+                          <div
+                            key={`board_recent_${col.id}`}
+                            className="bg-slate-900/90 border border-slate-700/80 hover:border-blue-500/50 p-4 rounded-2xl shadow-md transition-all flex flex-col justify-between space-y-3 group"
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-md text-[9px] font-black uppercase tracking-wider font-mono border border-blue-500/30">
+                                  #{col.registration || 'S/M'}
+                                </span>
+                                <span className="text-[9px] font-bold text-blue-400 flex items-center gap-1">
+                                  <Sparkles size={10} />
+                                  {formatRecentRegistrationBadge(col)}
+                                </span>
+                              </div>
+
+                              <h4 className="text-sm font-black text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                                {col.name}
+                              </h4>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                {col.role || 'Auxiliar de Produção'}
+                              </p>
+
+                              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[10px]">
+                                <span className="text-slate-400 font-bold uppercase">Posto no Quadro:</span>
+                                {allocation ? (
+                                  <span className="font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/30 text-[9px] uppercase">
+                                    ✓ {allocation.machine} ({allocation.shift})
+                                  </span>
+                                ) : (
+                                  <span className="font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/30 text-[9px] uppercase">
+                                    ⏳ Sem Posto Alocado
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                              {!allocation && (isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedEmployee({
+                                      id: '',
+                                      name: col.name,
+                                      role: col.role,
+                                      registration: col.registration,
+                                      collaboratorId: col.id,
+                                      sector: 'Extrusão',
+                                      machine: activeMachines[0] || 'Cast 1',
+                                      shift: availableShifts[0]?.name || 'Diurno 1',
+                                      status: 'Ativo',
+                                      updatedAt: new Date().toISOString()
+                                    } as any);
+                                    setSelectedSlot({
+                                      sector: 'Extrusão',
+                                      machine: activeMachines[0] || 'Cast 1',
+                                      shift: availableShifts[0]?.name || 'Diurno 1',
+                                      role: col.role || 'Operador 1'
+                                    });
+                                    setIsEmployeeModalOpen(true);
+                                  }}
+                                  className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                                  title="Alocar e inserir este colaborador em um posto de trabalho"
+                                >
+                                  <Plus size={13} />
+                                  <span>Inserir no Posto</span>
+                                </button>
+                              ) : null}
+
+                              {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCollaborator(col);
+                                    setIsCollaboratorModalOpen(true);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+                                  title="Editar cadastro no sistema"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-5">
                 {renderPersonnelStat('Colaboradores', totalAtivos, 'Ativos', <Users size={20} className="sm:w-6 sm:h-6"/>, 'text-blue-400', () => setPersonnelStatModalType('colaboradores'))}
                 {renderPersonnelStat('Operadores', totalOperadoresAtivos, 'Ativos', <HardHat size={20} className="sm:w-6 sm:h-6"/>, 'text-emerald-400', () => setPersonnelStatModalType('operadores'))}
@@ -21893,6 +22062,27 @@ Atenciosamente,
             console.log('Editing collaborator:', col);
             setSelectedCollaborator(col);
             setIsCollaboratorModalOpen(true);
+          }}
+          onAllocateCollaborator={(col) => {
+            setSelectedEmployee({
+              id: '',
+              name: col.name,
+              role: col.role,
+              registration: col.registration,
+              collaboratorId: col.id,
+              sector: 'Extrusão',
+              machine: activeMachines[0] || 'Cast 1',
+              shift: availableShifts[0]?.name || 'Diurno 1',
+              status: 'Ativo',
+              updatedAt: new Date().toISOString()
+            } as any);
+            setSelectedSlot({
+              sector: 'Extrusão',
+              machine: activeMachines[0] || 'Cast 1',
+              shift: availableShifts[0]?.name || 'Diurno 1',
+              role: col.role || 'Operador 1'
+            });
+            setIsEmployeeModalOpen(true);
           }}
           availableRoles={availableRoles}
           availableShifts={availableShifts.map(s => s.name)}

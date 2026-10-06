@@ -123,7 +123,8 @@ const CollaboratorModal: React.FC<CollaboratorModalProps> = ({
       isBrigadista: !!formData.isBrigadista,
       isSilenced: !!formData.isSilenced,
       silencedAt: formData.isSilenced ? (formData.silencedAt || new Date().toISOString()) : '',
-      silenceReason: formData.isSilenced ? (formData.silenceReason || 'Silenciado') : ''
+      silenceReason: formData.isSilenced ? (formData.silenceReason || 'Silenciado') : '',
+      createdAt: initialData?.createdAt || formData.createdAt || new Date().toISOString()
     };
 
     setIsSaving(true);

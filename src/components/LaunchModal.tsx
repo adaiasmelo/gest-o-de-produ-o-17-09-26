@@ -6,19 +6,57 @@ import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives } from '../constants/downtimeReasons';
 import { StopItemCard } from './StopItemCard';
 import { ReasonInputWithSave, saveReasonToLibrary } from './ReasonInputWithSave';
+import { QuickReasonChips } from './QuickReasonChips';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet } from '../utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from '../utils/vacationUtils';
 import { triggerHaptic } from '../utils/haptics';
+
+// Categorias industriais padronizadas para seleção rápida de perda
+export const QUICK_LOSS_CATEGORIES_ECO_BP = [
+  'Matriz / Lábio',
+  'Troca de Medida',
+  'Arrasto / Bolha',
+  'Rasgo no Bobinamento',
+  'Oscilação Térmica',
+  'Ajuste de Refile',
+  'Dosagem de Resina',
+];
+
+export const QUICK_LOSS_CATEGORIES_ECO_BM = [
+  'Falha Mecânica',
+  'Resistência Queimada',
+  'Sensor de Tração',
+  'Oscilação de Rosca',
+  'Falha Hidráulica',
+  'Alinhamento do Cast',
+  'Troca de Rolamento',
+];
+
+export const QUICK_LOSS_CATEGORIES_BORRA = [
+  'Troca de Tela / Filtro',
+  'Purga de Parada',
+  'Descontaminação',
+  'Setup Térmico',
+];
+
+export const QUICK_LOSS_CATEGORIES_ECO_A = [
+  'Refile de Borda',
+  'Apara Nobre Início',
+  'Envio Sede Curitiba',
+];
 
 interface EcoBReasonCardProps {
   label: string;
   weightName: 'ecoBP' | 'ecoBM';
   motivoName: 'ecoBPMotivo' | 'ecoBMMotivo';
+  categoryName: 'ecoBPCategory' | 'ecoBMCategory';
   weightValue: number;
   motivoValue: string;
+  categoryValue: string;
   categoryGroups?: { groupName: string; reasons: string[] }[];
   onWeightChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onMotivoChange: (fieldName: 'ecoBPMotivo' | 'ecoBMMotivo', newValue: string) => void;
+  onCategoryChange: (fieldName: 'ecoBPCategory' | 'ecoBMCategory', newCategory: string) => void;
   loggedUserName?: string;
 }
 
@@ -26,14 +64,19 @@ const EcoBReasonCard: React.FC<EcoBReasonCardProps> = ({
   label,
   weightName,
   motivoName,
+  categoryName,
   weightValue,
   motivoValue,
+  categoryValue,
   onWeightChange,
   onMotivoChange,
+  onCategoryChange,
   loggedUserName = 'Sistema'
 }) => {
+  const lossCategoryKey = motivoName === 'ecoBPMotivo' ? 'ecoBP' : 'ecoBM';
+
   return (
-    <div className="bg-white p-2.5 rounded-xl border border-orange-200/80 space-y-2 shadow-2xs">
+    <div className="bg-white p-2.5 rounded-xl border border-orange-200/80 space-y-2.5 shadow-2xs">
       <div className="flex items-center justify-between gap-2">
         <label className="text-[10px] font-black text-orange-600 uppercase tracking-wider">{label}</label>
         <div className="flex items-center gap-1">
@@ -50,16 +93,46 @@ const EcoBReasonCard: React.FC<EcoBReasonCardProps> = ({
       </div>
 
       {weightValue > 0 && (
-        <div className="pt-1.5 border-t border-dashed border-orange-150">
-          <ReasonInputWithSave
-            category={motivoName === 'ecoBPMotivo' ? 'extrusao_ecobp' : 'extrusao_ecobm'}
-            value={motivoValue || ''}
-            onChange={(val) => onMotivoChange(motivoName, val)}
-            placeholder={`Justificar perda de ${label} ou selecione da relação...`}
-            loggedUserName={loggedUserName}
-            hideLabel={true}
-            inputClassName="!py-1.5 !text-[11px]"
+        <div className="space-y-2 pt-1 border-t border-dashed border-orange-150">
+          {/* Seleção Rápida de Motivo da Perda (Chips em 1 Toque + Botão '+' para adicionar novos) */}
+          <QuickReasonChips
+            category={lossCategoryKey}
+            kind="loss"
+            selectedValue={categoryValue || ''}
+            onSelect={(cat) => {
+              onCategoryChange(categoryName, cat);
+              if (!motivoValue || motivoValue.startsWith('[')) {
+                const existingText = motivoValue.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+                onMotivoChange(motivoName, existingText ? `[${cat}]: ${existingText}` : `[${cat}]: `);
+              }
+            }}
+            colorTheme="orange"
+            title="⚡ Motivo Rápido da Perda:"
           />
+
+          {/* Justificativa Detalhada Obrigatória */}
+          <div className="space-y-1 pt-1 border-t border-dashed border-orange-150">
+            <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+              <span>✍️ Justificativa Detalhada (Como e Por que aconteceu):</span>
+              <span className="text-[8px] text-amber-600 font-bold lowercase">*obrigatório justificar a perda</span>
+            </label>
+            <ReasonInputWithSave
+              category={motivoName === 'ecoBPMotivo' ? 'extrusao_ecobp' : 'extrusao_ecobm'}
+              value={motivoValue || ''}
+              onChange={(val) => {
+                onMotivoChange(motivoName, val);
+                // Se o usuário digitou [Categoria], sincroniza a categoria automaticamente
+                const match = val.match(/^\[([^\]]+)\]/);
+                if (match && match[1]) {
+                  onCategoryChange(categoryName, match[1]);
+                }
+              }}
+              placeholder={`Descreva detalhadamente como aconteceu a perda de ${label} e a causa raiz...`}
+              loggedUserName={loggedUserName}
+              hideLabel={true}
+              inputClassName="!py-1.5 !text-[11px]"
+            />
+          </div>
         </div>
       )}
     </div>
@@ -132,17 +205,34 @@ const getDefaultDateForMonth = (dbMonth?: string) => {
 
 const LAUNCH_DRAFT_KEY = 'manupackaging_extrusion_launch_draft';
 
-export const saveLaunchDraft = (draft: any) => {
+const getMachineDraftKey = (machine?: string) => {
+  if (!machine) return null;
+  const clean = machine.trim().toLowerCase().replace(/\s+/g, '_');
+  return `${LAUNCH_DRAFT_KEY}_${clean}`;
+};
+
+export const saveLaunchDraft = (draft: any, machine?: string) => {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      localStorage.setItem(LAUNCH_DRAFT_KEY, JSON.stringify(draft));
+      const serialized = JSON.stringify(draft);
+      localStorage.setItem(LAUNCH_DRAFT_KEY, serialized);
+      const targetMach = machine || draft?.formData?.machine;
+      const machKey = getMachineDraftKey(targetMach);
+      if (machKey) {
+        localStorage.setItem(machKey, serialized);
+      }
     }
   } catch (e) {}
 };
 
-export const loadLaunchDraft = () => {
+export const loadLaunchDraft = (machine?: string) => {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
+      const machKey = getMachineDraftKey(machine);
+      if (machKey) {
+        const savedMach = localStorage.getItem(machKey);
+        if (savedMach) return JSON.parse(savedMach);
+      }
       const saved = localStorage.getItem(LAUNCH_DRAFT_KEY);
       return saved ? JSON.parse(saved) : null;
     }
@@ -150,10 +240,17 @@ export const loadLaunchDraft = () => {
   return null;
 };
 
-export const clearLaunchDraft = () => {
+export const clearLaunchDraft = (machine?: string) => {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       localStorage.removeItem(LAUNCH_DRAFT_KEY);
+      const machKey = getMachineDraftKey(machine);
+      if (machKey) {
+        localStorage.removeItem(machKey);
+      }
+      localStorage.removeItem(`${LAUNCH_DRAFT_KEY}_cast_1`);
+      localStorage.removeItem(`${LAUNCH_DRAFT_KEY}_cast_2`);
+      localStorage.removeItem(`${LAUNCH_DRAFT_KEY}_erema`);
     }
   } catch (e) {}
 };
@@ -260,9 +357,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     ecoBM: 0,
     borraTotal: 0,
     ecoAMotivo: '',
+    ecoACategory: '',
     ecoBPMotivo: '',
+    ecoBPCategory: '',
     ecoBMMotivo: '',
+    ecoBMCategory: '',
     borraTotalMotivo: '',
+    borraCategory: '',
     manutencaoMin: 0,
     manutencaoMotivo: '',
     processoMin: 0,
@@ -322,7 +423,11 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       if (m.id === id) {
         const updated = { ...m, [field]: value };
         if (field === 'volumes') {
-          updated.tubetes = (Number(value) || 0) * 16;
+          const numVal = Number(value) || 0;
+          // Sugere automaticamente tubetes = volumes * 16 apenas se o campo tubetes ainda não tiver sido preenchido manualmente
+          if (!m.tubetes || m.tubetes === (Number(m.volumes) || 0) * 16) {
+            updated.tubetes = numVal * 16;
+          }
         }
         return updated;
       }
@@ -582,6 +687,31 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       return;
     }
 
+    // Se o operador JÁ DIGITOU dados na tela (peso bruto, tara, volumes, tubetes) e não é troca de initialData (edição)
+    const hasExistingUserInput = 
+      !initialData && (
+        (formData.grossWeight > 0) || 
+        (formData.tara > 0) || 
+        (formData.netWeight > 0) || 
+        (formData.ecoA > 0) || 
+        (formData.ecoBP > 0) || 
+        (formData.ecoBM > 0) || 
+        (formData.borraTotal > 0) || 
+        materials.some(m => (m.volumes || 0) > 0 || (m.tubetes || 0) > 0) ||
+        manutencaoStops.length > 0 ||
+        processoStops.length > 0 ||
+        outrosStops.length > 0
+      );
+
+    if (hasExistingUserInput && isFormInitializedRef.current && !hasInitialDataChanged) {
+      // JAMAIS apaga os dados já digitados pelo operador em re-renderizações!
+      lastPresetMachineRef.current = presetMachine;
+      if (presetMachine && formData.machine !== presetMachine) {
+        setFormData(prev => ({ ...prev, machine: presetMachine }));
+      }
+      return;
+    }
+
     isFormInitializedRef.current = true;
     lastInitialDataIdRef.current = initialDataId;
     lastPresetMachineRef.current = presetMachine;
@@ -674,7 +804,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
 
       // Tenta recuperar rascunho de apontamento salvo anteriormente no dispositivo
-      const savedDraft = loadLaunchDraft();
+      const savedDraft = loadLaunchDraft(initialMachine || presetMachine);
       const hasMeaningfulDraft = savedDraft && (
         (savedDraft.formData?.grossWeight > 0) ||
         (savedDraft.formData?.tara > 0) ||
@@ -818,7 +948,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         processoStops,
         outrosStops,
         savedAt: Date.now()
-      });
+      }, formData.machine || presetMachine);
       setHasRestoredDraft(true);
     }
   }, [isOpen, initialData, formData, materials, manutencaoStops, processoStops, outrosStops]);
@@ -1028,7 +1158,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       if (activeStoppageReason) saveReasonToLibrary('paradas_extrusao', activeStoppageReason, compiled.operator);
       onSave(initialData ? { ...compiled, id: initialData.id } : compiled);
     }
-    clearLaunchDraft();
+    clearLaunchDraft(formData.machine);
     setHasRestoredDraft(false);
     triggerHaptic('success');
     onClose();
@@ -1036,7 +1166,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
   const handleClearDraft = () => {
     if (window.confirm('Deseja limpar todos os campos preenchidos e reiniciar este lançamento?')) {
-      clearLaunchDraft();
+      clearLaunchDraft(formData.machine);
       setHasRestoredDraft(false);
       const initialOperator = presetOperator || '';
       const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
@@ -2115,16 +2245,48 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </div>
                     </div>
                     {formData.ecoA > 0 && (
-                      <div className="pt-1.5 border-t border-dashed border-indigo-200">
-                        <ReasonInputWithSave
-                          category="extrusao_ecoa"
-                          value={formData.ecoAMotivo || ''}
-                          onChange={(val) => setFormData((prev) => ({ ...prev, ecoAMotivo: val }))}
-                          placeholder="Justificar perda Eco A ou selecione da relação..."
-                          loggedUserName={formData.operator || 'Sistema'}
-                          hideLabel={true}
-                          inputClassName="!py-1.5 !text-[11px]"
+                      <div className="space-y-2 pt-1.5 border-t border-dashed border-indigo-200">
+                        <QuickReasonChips
+                          category="ecoA"
+                          kind="loss"
+                          selectedValue={formData.ecoACategory || ''}
+                          onSelect={(cat) => {
+                            setFormData((prev) => {
+                              const existingText = (prev.ecoAMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+                              return {
+                                ...prev,
+                                ecoACategory: cat,
+                                ecoAMotivo: existingText ? `[${cat}]: ${existingText}` : `[${cat}]: `
+                              };
+                            });
+                          }}
+                          colorTheme="indigo"
+                          title="⚡ Motivo Rápido da Perda:"
                         />
+                        <div className="space-y-1 pt-1 border-t border-dashed border-indigo-150">
+                          <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+                            <span>✍️ Justificativa Detalhada:</span>
+                            <span className="text-[8px] text-indigo-600 font-bold lowercase">*obrigatório justificar</span>
+                          </label>
+                          <ReasonInputWithSave
+                            category="extrusao_ecoa"
+                            value={formData.ecoAMotivo || ''}
+                            onChange={(val) => {
+                              setFormData((prev) => {
+                                const match = val.match(/^\[([^\]]+)\]/);
+                                return {
+                                  ...prev,
+                                  ecoAMotivo: val,
+                                  ...(match && match[1] ? { ecoACategory: match[1] } : {})
+                                };
+                              });
+                            }}
+                            placeholder="Justificar perda Eco A ou selecione da relação..."
+                            loggedUserName={formData.operator || 'Sistema'}
+                            hideLabel={true}
+                            inputClassName="!py-1.5 !text-[11px]"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2139,10 +2301,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                         label="Eco B (P)"
                         weightName="ecoBP"
                         motivoName="ecoBPMotivo"
+                        categoryName="ecoBPCategory"
+                        categoryValue={formData.ecoBPCategory || ''}
                         weightValue={formData.ecoBP || 0}
                         motivoValue={formData.ecoBPMotivo || ''}
                         onWeightChange={handleChange}
                         onMotivoChange={handleMotivoChange}
+                        onCategoryChange={(field, val) => setFormData(prev => ({ ...prev, [field]: val }))}
                         loggedUserName={formData.operator || 'Sistema'}
                       />
 
@@ -2150,10 +2315,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                         label="Eco B (M)"
                         weightName="ecoBM"
                         motivoName="ecoBMMotivo"
+                        categoryName="ecoBMCategory"
+                        categoryValue={formData.ecoBMCategory || ''}
                         weightValue={formData.ecoBM || 0}
                         motivoValue={formData.ecoBMMotivo || ''}
                         onWeightChange={handleChange}
                         onMotivoChange={handleMotivoChange}
+                        onCategoryChange={(field, val) => setFormData(prev => ({ ...prev, [field]: val }))}
                         loggedUserName={formData.operator || 'Sistema'}
                       />
                     </div>
@@ -2176,16 +2344,48 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </div>
                     </div>
                     {formData.borraTotal > 0 && (
-                      <div className="pt-1.5 border-t border-dashed border-red-150">
-                        <ReasonInputWithSave
-                          category="extrusao_borra"
-                          value={formData.borraTotalMotivo || ''}
-                          onChange={(val) => setFormData((prev) => ({ ...prev, borraTotalMotivo: val }))}
-                          placeholder="Justificar perda de Borra ou selecione da relação..."
-                          loggedUserName={formData.operator || 'Sistema'}
-                          hideLabel={true}
-                          inputClassName="!py-1.5 !text-[11px]"
+                      <div className="space-y-2 pt-1.5 border-t border-dashed border-red-150">
+                        <QuickReasonChips
+                          category="borra"
+                          kind="loss"
+                          selectedValue={formData.borraCategory || ''}
+                          onSelect={(cat) => {
+                            setFormData((prev) => {
+                              const existingText = (prev.borraTotalMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+                              return {
+                                ...prev,
+                                borraCategory: cat,
+                                borraTotalMotivo: existingText ? `[${cat}]: ${existingText}` : `[${cat}]: `
+                              };
+                            });
+                          }}
+                          colorTheme="red"
+                          title="⚡ Motivo Rápido da Perda:"
                         />
+                        <div className="space-y-1 pt-1 border-t border-dashed border-red-150">
+                          <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+                            <span>✍️ Justificativa Detalhada:</span>
+                            <span className="text-[8px] text-red-600 font-bold lowercase">*obrigatório justificar</span>
+                          </label>
+                          <ReasonInputWithSave
+                            category="extrusao_borra"
+                            value={formData.borraTotalMotivo || ''}
+                            onChange={(val) => {
+                              setFormData((prev) => {
+                                const match = val.match(/^\[([^\]]+)\]/);
+                                return {
+                                  ...prev,
+                                  borraTotalMotivo: val,
+                                  ...(match && match[1] ? { borraCategory: match[1] } : {})
+                                };
+                              });
+                            }}
+                            placeholder="Justificar perda de Borra ou selecione da relação..."
+                            loggedUserName={formData.operator || 'Sistema'}
+                            hideLabel={true}
+                            inputClassName="!py-1.5 !text-[11px]"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>

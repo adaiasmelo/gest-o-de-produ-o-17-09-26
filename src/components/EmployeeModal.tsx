@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, UserPlus, Save, Briefcase, MapPin, UserX, Stethoscope, Plane, Trash2, Search, Palmtree } from 'lucide-react';
+import { X, UserPlus, Save, Briefcase, MapPin, UserX, Stethoscope, Plane, Trash2, Search, Palmtree, Sparkles } from 'lucide-react';
 import { Shift, Employee, Collaborator } from '../types';
 import { isCollaboratorSilenced } from '../utils/silenceUtils';
+import { isRecentCollaborator, getRecentCollaborators, formatRecentRegistrationBadge } from '../utils/recentCollaborators';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
 
 interface EmployeeModalProps {
@@ -90,6 +91,11 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       return (a.name || '').localeCompare(b.name || '');
     });
   }, [collaborators, searchTerm, formData.role, slotInfo?.role, roleCategoryFilter]);
+
+  const recentCollaborators = useMemo(() => {
+    const active = (collaborators || []).filter(c => c && c.name && !isCollaboratorSilenced(c));
+    return getRecentCollaborators(active, 30);
+  }, [collaborators]);
   
   const [extraData, setExtraData] = useState({
     reason: '',
@@ -477,10 +483,65 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                             <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                           </div>
 
-                          <div className="mt-2 bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden max-h-56 overflow-y-auto custom-scrollbar">
+                          <div className="mt-2 bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
+                            {/* Sessão Especial de Recém-Cadastrados no Cadastro Global */}
+                            {recentCollaborators.length > 0 && !searchTerm && (
+                              <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 border-b border-blue-200 p-2.5 space-y-1">
+                                <div className="flex items-center gap-1.5 px-1 py-0.5 text-[9px] font-black uppercase tracking-wider text-blue-700">
+                                  <Sparkles size={12} className="text-blue-600" />
+                                  <span>Recém-Cadastrados no Cadastro Global (Últimos 30 dias):</span>
+                                  <span className="ml-auto bg-blue-200/80 text-blue-800 text-[8px] font-black px-1.5 py-0.2 rounded-full">
+                                    {recentCollaborators.length}
+                                  </span>
+                                </div>
+                                <div className="space-y-1 pt-0.5">
+                                  {recentCollaborators.map(c => {
+                                    const isOp = (c.role || '').toLowerCase().includes('operador');
+                                    return (
+                                      <button
+                                        key={`rec_${c.id}`}
+                                        type="button"
+                                        onClick={() => {
+                                          setFormData({
+                                            ...formData, 
+                                            name: c.name, 
+                                            collaboratorId: c.id, 
+                                            registration: c.registration,
+                                            role: formData.role && formData.role !== 'Novo Slot' ? formData.role : (c.role || (isOp ? 'Operador 1' : 'Auxiliar de Produção'))
+                                          });
+                                          setSearchTerm(c.name);
+                                          setIsDropdownOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 bg-white hover:bg-blue-100/80 rounded-xl transition-all border border-blue-200/80 shadow-2xs flex items-center justify-between group"
+                                      >
+                                        <div>
+                                          <div className="flex items-center gap-1.5">
+                                            <p className="text-xs font-black text-slate-800 group-hover:text-blue-700">{c.name}</p>
+                                            <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded text-[8px] font-black uppercase">
+                                              ✨ {formatRecentRegistrationBadge(c)}
+                                            </span>
+                                          </div>
+                                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{c.role}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                                            isOp ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                                          }`}>
+                                            {isOp ? 'OPE' : 'AUX'}
+                                          </span>
+                                          <span className="text-[10px] font-bold text-slate-400 font-mono">#{c.registration}</span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
                             {filteredCollaborators.length > 0 ? (
                               filteredCollaborators.map(c => {
                                 const isOp = (c.role || '').toLowerCase().includes('operador');
+                                const isRec = isRecentCollaborator(c, 30);
                                 return (
                                   <button
                                     key={c.id}
@@ -499,7 +560,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                                     className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0 flex items-center justify-between"
                                   >
                                     <div>
-                                      <p className="text-xs font-black text-slate-800">{c.name}</p>
+                                      <div className="flex items-center gap-1.5">
+                                        <p className="text-xs font-black text-slate-800">{c.name}</p>
+                                        {isRec && (
+                                          <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded text-[8px] font-black uppercase">
+                                            ✨ Recente
+                                          </span>
+                                        )}
+                                      </div>
                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{c.role}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
