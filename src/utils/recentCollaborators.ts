@@ -1,5 +1,6 @@
-import { Collaborator } from '../types';
+import { Collaborator, Employee } from '../types';
 import { IMPORTED_COLLABORATORS } from '../constants/importedCollaborators';
+import { normalizeText } from './silenceUtils';
 
 const IMPORTED_REGS_SET = new Set(IMPORTED_COLLABORATORS.map(c => c.registration));
 
@@ -68,4 +69,49 @@ export const getRecentCollaborators = (
       const timeB = new Date(b.createdAt || b.updatedAt || 0).getTime();
       return timeB - timeA;
     });
+};
+
+/**
+ * Verifica se um colaborador já está inserido/alocado em algum posto ativo no Quadro Geral
+ */
+export const isCollaboratorAllocated = (
+  col?: Collaborator | null,
+  employees?: Employee[]
+): boolean => {
+  if (!col || !Array.isArray(employees)) return false;
+  return employees.some((e) => {
+    if (!e) return false;
+    if (e.isSilenced) return false;
+    const statusNorm = (e.status || '').toLowerCase();
+    if (
+      statusNorm.includes('excluid') ||
+      statusNorm.includes('silenciad') ||
+      statusNorm.includes('desligad') ||
+      statusNorm.includes('demitid') ||
+      statusNorm.includes('contratacao') ||
+      statusNorm.includes('vaga')
+    ) {
+      return false;
+    }
+    // Precisa ter máquina/posto associado
+    if (!e.machine || !e.machine.trim()) return false;
+
+    if (col.id && e.collaboratorId && e.collaboratorId === col.id) return true;
+    if (col.registration && e.registration && String(col.registration).trim() === String(e.registration).trim()) return true;
+    if (col.name && e.name && normalizeText(e.name) === normalizeText(col.name)) return true;
+    return false;
+  });
+};
+
+/**
+ * Filtra e retorna apenas colaboradores recentes (até 1 mês) que AINDA NÃO FORAM INSERIDOS EM NENHUM POSTO.
+ * A partir do momento em que são inseridos no posto, somem da listagem de recém-cadastrados.
+ */
+export const getUnallocatedRecentCollaborators = (
+  collaborators: Collaborator[],
+  employees: Employee[],
+  maxDays = 30
+): Collaborator[] => {
+  const recents = getRecentCollaborators(collaborators, maxDays);
+  return recents.filter(col => !isCollaboratorAllocated(col, employees));
 };

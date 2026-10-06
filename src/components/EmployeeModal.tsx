@@ -115,7 +115,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
         setRoleCategoryFilter('all');
       }
 
-      if (initialData) {
+      if (initialData && initialData.id) {
         const isLeadership = String(initialData.sector || '').toLowerCase().includes('lideran');
         let initialShift = initialData.shift || '';
         if (isLeadership && (!initialShift || initialShift === 'Integral' || initialShift === 'Dia' || initialShift === 'Noite')) {
@@ -133,6 +133,30 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
         });
         setSearchTerm(initialData.name || '');
         setActionType('update');
+      } else if (initialData && !initialData.id) {
+        const isLeadership = String(initialData.sector || '').toLowerCase().includes('lideran');
+        let initialShift = initialData.shift || '';
+        if (isLeadership && (!initialShift || initialShift === 'Integral' || initialShift === 'Dia' || initialShift === 'Noite')) {
+          initialShift = 'Comercial';
+        }
+        setFormData({
+          name: initialData.name || '',
+          role: initialData.role || (slotInfo?.role === 'Novo Slot' ? 'Operador 1' : (slotInfo?.role || 'Operador 1')),
+          sector: initialData.sector || slotInfo?.sector || '',
+          machine: initialData.machine || slotInfo?.machine || '',
+          shift: initialShift || slotInfo?.shift || '',
+          status: 'Ativo',
+          registration: initialData.registration || '',
+          collaboratorId: initialData.collaboratorId || '',
+          substituteForId: slotInfo?.vacationingId || '',
+          substituteForName: slotInfo?.vacationingName || '',
+          substituteReturnDate: slotInfo?.vacationingReturnDate || '',
+          replacedEmployeeId: slotInfo?.dismissedId || '',
+          replacedEmployeeName: slotInfo?.dismissedName || '',
+          replacedReason: slotInfo?.dismissedReason || ''
+        });
+        setSearchTerm(initialData.name || '');
+        setActionType('create');
       } else if (slotInfo) {
         const isLeadership = String(slotInfo.sector || '').toLowerCase().includes('lideran');
         let initialShift = slotInfo.shift || '';

@@ -42,10 +42,11 @@ import { extractDowntimeMotives } from './constants/downtimeReasons';
 import { isBiometricAvailable, registerBiometrics, authenticateBiometrics, isBiometricFeatureAllowed } from './services/biometricService';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet, isOperatorNameSilenced, normalizeText } from './utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from './utils/vacationUtils';
-import { isRecentCollaborator, getRecentCollaborators, formatRecentRegistrationBadge } from './utils/recentCollaborators';
+import { isRecentCollaborator, getRecentCollaborators, getUnallocatedRecentCollaborators, formatRecentRegistrationBadge } from './utils/recentCollaborators';
 import LaunchModal from './components/LaunchModal';
 import EmployeeModal from './components/EmployeeModal';
 import CollaboratorModal from './components/CollaboratorModal';
+import RecentCollaboratorsModal from './components/RecentCollaboratorsModal';
 import HistoryModal from './components/HistoryModal';
 import ShiftModal from './components/ShiftModal';
 import RoleModal from './components/RoleModal';
@@ -1423,6 +1424,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     const active = (collaborators || []).filter(c => !c.isSilenced);
     return getRecentCollaborators(active, 30);
   }, [collaborators]);
+
+  const unallocatedRecentCollaborators = useMemo(() => {
+    const active = (collaborators || []).filter(c => !c.isSilenced);
+    return getUnallocatedRecentCollaborators(active, employees, 30);
+  }, [collaborators, employees]);
   const [personnelLogs, setPersonnelLogs] = useState<PersonnelLog[]>([]);
   const [availableShifts, setAvailableShifts] = useState<Shift[]>([]);
   const [operatorPenalties, setOperatorPenalties] = useState<OperatorPenalty[]>(() => {
@@ -1570,6 +1576,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isCollaboratorModalOpen, setIsCollaboratorModalOpen] = useState(false);
   const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
+  const [isRecentCollaboratorsModalOpen, setIsRecentCollaboratorsModalOpen] = useState(false);
   const [isRecentCollaboratorsExpanded, setIsRecentCollaboratorsExpanded] = useState(true);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
@@ -20733,7 +20740,7 @@ Atenciosamente,
               <div className="relative">
                 <button 
                   onClick={() => setIsExtraMenuOpen(!isExtraMenuOpen)}
-                  className={`p-3.5 border rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-2 cursor-pointer ${
+                  className={`p-3.5 border rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-2 cursor-pointer relative ${
                     isExtraMenuOpen
                       ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -20742,6 +20749,12 @@ Atenciosamente,
                 >
                   <Menu size={20} />
                   <span className="text-[10px] font-black uppercase tracking-widest px-1">Menu Extra</span>
+                  {unallocatedRecentCollaborators.length > 0 && (
+                    <span className="flex h-2 w-2 relative -ml-1">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+                    </span>
+                  )}
                   <ChevronDown size={14} className={`transition-transform duration-200 ${isExtraMenuOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
                 </button>
                 
@@ -20751,6 +20764,21 @@ Atenciosamente,
                     
                     {/* VERSÃO CELULAR (MOBILE): Permanece exatamente como está (em coluna vertical) */}
                     <div className="md:hidden absolute left-1/2 -translate-x-1/2 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200 origin-top">
+                      {unallocatedRecentCollaborators.length > 0 && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setIsRecentCollaboratorsModalOpen(true); }}
+                          className="w-full flex items-center justify-between px-4 py-3 text-slate-700 hover:bg-blue-50/70 text-[11px] font-black uppercase transition-colors border-b border-slate-50 cursor-pointer bg-blue-50/40"
+                          title="Colaboradores recém-cadastrados (últimos 30 dias) ainda não alocados em postos"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Sparkles size={18} className="text-blue-600 animate-pulse" />
+                            <span className="text-blue-900 font-black">Nomes Recentes</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-600 text-white shadow-xs">
+                            {unallocatedRecentCollaborators.length}
+                          </span>
+                        </button>
+                      )}
                       {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
                         <button 
                           onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
@@ -20860,6 +20888,22 @@ Atenciosamente,
                       </div>
                       
                       <div className="flex flex-wrap items-center justify-center gap-2.5">
+                        {unallocatedRecentCollaborators.length > 0 && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsRecentCollaboratorsModalOpen(true); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-blue-50/80 hover:bg-blue-100 text-blue-900 border border-blue-200/90 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group ring-1 ring-blue-400/20"
+                            title="Colaboradores cadastrados recentemente (últimos 30 dias) ainda não inseridos em nenhum posto"
+                          >
+                            <div className="p-1 rounded-lg bg-blue-600 text-white transition-colors shadow-2xs">
+                              <Sparkles size={15} />
+                            </div>
+                            <span>Nomes Recentes</span>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-600 text-white shadow-2xs">
+                              {unallocatedRecentCollaborators.length}
+                            </span>
+                          </button>
+                        )}
+
                         {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
                           <button 
                             onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
@@ -20985,165 +21029,6 @@ Atenciosamente,
             </div>
 
             <div ref={personnelRef} data-ref-personnel-root className="space-y-8 p-1">
-              {/* Sessão Especial: Nomes Recentemente Cadastrados no Cadastro Global (Permanecem por pelo menos 1 mês) */}
-              {recentGlobalCollaborators.length > 0 && (
-                <div className="bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-800/80 border border-blue-500/30 rounded-[2.5rem] p-6 shadow-xl space-y-4 backdrop-blur-md animate-in fade-in duration-300">
-                  <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30">
-                        <Sparkles size={20} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-base font-black text-white uppercase tracking-tight">
-                            Nomes Recentemente Cadastrados
-                          </h3>
-                          <span className="px-2.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-full text-[10px] font-black uppercase tracking-wider">
-                            {recentGlobalCollaborators.length} {recentGlobalCollaborators.length === 1 ? 'colaborador' : 'colaboradores'} • Últimos 30 dias
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-300 font-bold mt-0.5">
-                          Colaboradores salvos no Cadastro Global. Permanecem em destaque nesta sessão por 30 dias para você localizar e alocar no Quadro Geral.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCollaborator(null);
-                            setIsCollaboratorModalOpen(true);
-                          }}
-                          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <UserPlus size={14} />
-                          <span>Cadastrar Novo</span>
-                        </button>
-                      )}
-                      {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
-                        <button
-                          type="button"
-                          onClick={() => setIsDatabaseModalOpen(true)}
-                          className="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black uppercase rounded-xl transition-all border border-slate-600 active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Database size={14} className="text-emerald-400" />
-                          <span>Ver no Banco</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setIsRecentCollaboratorsExpanded(!isRecentCollaboratorsExpanded)}
-                        className="px-3 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-[10px] font-black uppercase rounded-xl transition-all border border-slate-600 flex items-center gap-1 cursor-pointer"
-                      >
-                        <ChevronDown size={14} className={`transition-transform duration-200 ${isRecentCollaboratorsExpanded ? 'rotate-180' : ''}`} />
-                        <span>{isRecentCollaboratorsExpanded ? 'Recolher' : 'Expandir'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {isRecentCollaboratorsExpanded && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-2">
-                      {recentGlobalCollaborators.map((col) => {
-                        const allocation = employees.find(e => 
-                          (col.id && e.collaboratorId === col.id) || 
-                          (col.registration && e.registration === col.registration) ||
-                          (col.name && e.name && e.name.toLowerCase() === col.name.toLowerCase())
-                        );
-
-                        return (
-                          <div
-                            key={`board_recent_${col.id}`}
-                            className="bg-slate-900/90 border border-slate-700/80 hover:border-blue-500/50 p-4 rounded-2xl shadow-md transition-all flex flex-col justify-between space-y-3 group"
-                          >
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-md text-[9px] font-black uppercase tracking-wider font-mono border border-blue-500/30">
-                                  #{col.registration || 'S/M'}
-                                </span>
-                                <span className="text-[9px] font-bold text-blue-400 flex items-center gap-1">
-                                  <Sparkles size={10} />
-                                  {formatRecentRegistrationBadge(col)}
-                                </span>
-                              </div>
-
-                              <h4 className="text-sm font-black text-white group-hover:text-blue-400 transition-colors line-clamp-1">
-                                {col.name}
-                              </h4>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                {col.role || 'Auxiliar de Produção'}
-                              </p>
-
-                              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[10px]">
-                                <span className="text-slate-400 font-bold uppercase">Posto no Quadro:</span>
-                                {allocation ? (
-                                  <span className="font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/30 text-[9px] uppercase">
-                                    ✓ {allocation.machine} ({allocation.shift})
-                                  </span>
-                                ) : (
-                                  <span className="font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/30 text-[9px] uppercase">
-                                    ⏳ Sem Posto Alocado
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
-                              {!allocation && (isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedEmployee({
-                                      id: '',
-                                      name: col.name,
-                                      role: col.role,
-                                      registration: col.registration,
-                                      collaboratorId: col.id,
-                                      sector: 'Extrusão',
-                                      machine: activeMachines[0] || 'Cast 1',
-                                      shift: availableShifts[0]?.name || 'Diurno 1',
-                                      status: 'Ativo',
-                                      updatedAt: new Date().toISOString()
-                                    } as any);
-                                    setSelectedSlot({
-                                      sector: 'Extrusão',
-                                      machine: activeMachines[0] || 'Cast 1',
-                                      shift: availableShifts[0]?.name || 'Diurno 1',
-                                      role: col.role || 'Operador 1'
-                                    });
-                                    setIsEmployeeModalOpen(true);
-                                  }}
-                                  className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
-                                  title="Alocar e inserir este colaborador em um posto de trabalho"
-                                >
-                                  <Plus size={13} />
-                                  <span>Inserir no Posto</span>
-                                </button>
-                              ) : null}
-
-                              {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedCollaborator(col);
-                                    setIsCollaboratorModalOpen(true);
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors border border-slate-700 cursor-pointer"
-                                  title="Editar cadastro no sistema"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-5">
                 {renderPersonnelStat('Colaboradores', totalAtivos, 'Ativos', <Users size={20} className="sm:w-6 sm:h-6"/>, 'text-blue-400', () => setPersonnelStatModalType('colaboradores'))}
                 {renderPersonnelStat('Operadores', totalOperadoresAtivos, 'Ativos', <HardHat size={20} className="sm:w-6 sm:h-6"/>, 'text-emerald-400', () => setPersonnelStatModalType('operadores'))}
@@ -22227,6 +22112,39 @@ Atenciosamente,
           />
         </div>
       )}
+      <RecentCollaboratorsModal
+        isOpen={isRecentCollaboratorsModalOpen}
+        onClose={() => setIsRecentCollaboratorsModalOpen(false)}
+        collaborators={unallocatedRecentCollaborators}
+        onSelectToAllocate={(col) => {
+          setIsRecentCollaboratorsModalOpen(false);
+          setSelectedEmployee({
+            id: '',
+            name: col.name,
+            role: col.role,
+            registration: col.registration,
+            collaboratorId: col.id,
+            sector: 'Extrusão',
+            machine: activeMachines[0] || 'Cast 1',
+            shift: availableShifts[0]?.name || 'Diurno 1',
+            status: 'Ativo',
+            updatedAt: new Date().toISOString()
+          } as any);
+          setSelectedSlot({
+            sector: 'Extrusão',
+            machine: activeMachines[0] || 'Cast 1',
+            shift: availableShifts[0]?.name || 'Diurno 1',
+            role: col.role || 'Operador 1'
+          });
+          setIsEmployeeModalOpen(true);
+        }}
+        onEditCollaborator={(col) => {
+          setIsRecentCollaboratorsModalOpen(false);
+          setSelectedCollaborator(col);
+          setIsCollaboratorModalOpen(true);
+        }}
+        isReadOnly={isReadOnlyAccount || (!isAdmin && !userPerms.personnel.manage)}
+      />
       <PersonnelStatModal
         isOpen={!!personnelStatModalType}
         onClose={() => setPersonnelStatModalType(null)}
