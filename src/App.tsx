@@ -1109,8 +1109,8 @@ export const App: React.FC = () => {
     window.addEventListener('wheel', onUserActivity, { passive: true });
 
     const idleInterval = setInterval(() => {
-      // Se o usuário já estiver na tela de projeção voluntariamente ou o protetor já estiver ativo, não faz nada
-      if (activeTab === 'projection' || isScreensaverActive) return;
+      // Se estiver na tela externa do operador de lançamento ou projeção, protetor NUNCA é ativado
+      if (isExternalOperatorView || isExternalCalculatorView || isExternalTvView || activeTab === 'projection' || isScreensaverActive) return;
 
       // Executa apenas quando usado no computador (desktop/laptop)
       if (!isComputerDevice()) return;
@@ -1994,6 +1994,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     // Verificação proativa e contínua de novas versões publicadas no Cloudflare
     const checkCloudflareUpdate = async () => {
       try {
+        // Se o operador estiver na tela externa de lançamento em chão de fábrica, não interrompe nem exibe modal de reload
+        if (isExternalOperatorView) return;
+
         // 1. Checa se o Service Worker nativo já possui nova versão esperando ou disponível
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.getRegistrations().then(regs => {
@@ -11460,7 +11463,26 @@ Atenciosamente,
               userId: currentUser?.uid || 'operador_externo',
               updatedAt: new Date().toISOString()
             };
-            await setDoc(doc(db, 'productionEntries', id), entry);
+
+            const sanitizedShift = sanitizeShift(entry.shift, entry.machine);
+            const upgradedOperator = upgradeName(entry.operator);
+            const fullEntry = { ...entry, shift: sanitizedShift, operator: upgradedOperator };
+
+            // 1. Atualização Instantânea em Tempo Real no Estado React e no Cache Local (0ms de latência)
+            setProductionData(prev => {
+              const filtered = prev.filter(p => p.id !== id);
+              const updated = [fullEntry as ProductionEntry, ...filtered];
+              saveProductionCache(updated);
+              return updated;
+            });
+
+            // 2. Gravação no Banco de Dados em Nuvem (Firestore)
+            await setDoc(doc(db, 'productionEntries', id), fullEntry);
+
+            // 3. Notifica abas ou componentes para atualizar visão geral e relatórios imediatamente
+            try {
+              window.dispatchEvent(new CustomEvent('production_data_updated', { detail: fullEntry }));
+            } catch (err) {}
 
             logAuditEvent({
               action: 'CREATE',

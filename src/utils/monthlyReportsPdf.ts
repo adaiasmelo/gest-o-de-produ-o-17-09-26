@@ -1760,36 +1760,42 @@ export const generateIntegratedMonthlyReportPDF = async ({
     ribTotalM2Tipo2 += (e.m2Tipo2 || 0);
   });
 
-  const wasteSummaryHead = [['SETOR', 'TIPO DE RESÍDUO / MATERIAL', 'ORIGEM', 'VOLUME APURADO', 'DESTINAÇÃO OPERACIONAL']];
-  const wasteSummaryBody: any[] = [
-    // 1. SETOR EXTRUSÃO — SEPARADO CAST 1 E CAST 2 (SEM APARAS DE BORDA; COAR E ECO B)
-    ['EXTRUSÃO', 'COAR', 'Cast 1', formatWeight(castMacMap['Cast 1'].borra), 'Descarte / Classificação Industrial'],
-    ['EXTRUSÃO', 'ECO B PRODUÇÃO E MANUTENÇÃO', 'Cast 1', formatWeight(castMacMap['Cast 1'].ecoBP + castMacMap['Cast 1'].ecoBM), 'Alimentação Erema (Reciclagem Interna)'],
-    ['EXTRUSÃO', 'COAR', 'Cast 2', formatWeight(castMacMap['Cast 2'].borra), 'Descarte / Classificação Industrial'],
-    ['EXTRUSÃO', 'ECO B PRODUÇÃO E MANUTENÇÃO', 'Cast 2', formatWeight(castMacMap['Cast 2'].ecoBP + castMacMap['Cast 2'].ecoBM), 'Alimentação Erema (Reciclagem Interna)'],
-
-    // 2. SETOR RECICLAGEM — SOMENTE EREMA (SEM PERDAS)
-    ['RECICLAGEM', 'PELLETS RECICLADOS GERADOS', 'Erema 1', eremaVolumeFormat, 'Retorno em Blend para Cast 1 e Cast 2 (Erema não gera perda)'],
-
-    // 3. SETOR CORTE DE FITA — SEPARADO POR MÁQUINA EM M² (SEM QUILOS)
-    ['CORTE DE FITA', 'LIXO DE CORTE', 'Ghezzi', formatM2(ribMacMap['Ghezzi'].wasteM2), 'Descarte Controlado / Enfarfamento'],
-    ['CORTE DE FITA', 'LIXO DE CORTE', 'Lintech', formatM2(ribMacMap['Lintech'].wasteM2), 'Descarte Controlado / Enfarfamento'],
-    ['CORTE DE FITA', 'LIXO DE CORTE', 'Wultec / Ultratec', formatM2(ribMacMap['Wultec'].wasteM2), 'Descarte Controlado / Enfarfamento']
+  const ribbonSubRows: any[] = [
+    ['LIXO DE CORTE', 'Ghezzi', formatM2(ribMacMap['Ghezzi'].wasteM2), 'Descarte Controlado / Enfarfamento'],
+    ['LIXO DE CORTE', 'Lintech', formatM2(ribMacMap['Lintech'].wasteM2), 'Descarte Controlado / Enfarfamento'],
+    ['LIXO DE CORTE', 'Wultec / Ultratec', formatM2(ribMacMap['Wultec'].wasteM2), 'Descarte Controlado / Enfarfamento']
   ];
 
   if (ribTotalM2Tipo1 > 0 || ribTotalM2Tipo2 > 0) {
     if (ribTotalM2Tipo1 > 0) {
-      wasteSummaryBody.push(['CORTE DE FITA', 'NÃO CONFORME TIPO 1', 'Corte de Fita', formatM2(ribTotalM2Tipo1), 'Segregação Operacional / Segunda Linha']);
+      ribbonSubRows.push(['NÃO CONFORME TIPO 1', 'Corte de Fita', formatM2(ribTotalM2Tipo1), 'Segregação Operacional / Segunda Linha']);
     }
     if (ribTotalM2Tipo2 > 0) {
-      wasteSummaryBody.push(['CORTE DE FITA', 'NÃO CONFORME TIPO 2', 'Corte de Fita', formatM2(ribTotalM2Tipo2), 'Segregação Operacional / Segunda Linha']);
+      ribbonSubRows.push(['NÃO CONFORME TIPO 2', 'Corte de Fita', formatM2(ribTotalM2Tipo2), 'Segregação Operacional / Segunda Linha']);
     }
   } else if (totalRibMacRej > 0) {
-    wasteSummaryBody.push(['CORTE DE FITA', 'NÃO CONFORME (TIPO 1 & 2)', 'Corte de Fita', formatM2(totalRibMacRej), 'Segregação Operacional / Segunda Linha']);
+    ribbonSubRows.push(['NÃO CONFORME (TIPO 1 & 2)', 'Corte de Fita', formatM2(totalRibMacRej), 'Segregação Operacional / Segunda Linha']);
   }
+
+  const wasteSummaryHead = [['SETOR', 'TIPO DE RESÍDUO / MATERIAL', 'ORIGEM', 'VOLUME APURADO', 'DESTINAÇÃO OPERACIONAL']];
+  const wasteSummaryBody: any[] = [
+    // 1. SETOR EXTRUSÃO — CÉLULA MESCLADA (ROWSPAN) ABRANGENDO TODAS AS LINHAS DA EXTRUSÃO COM ECO A E ECO B
+    [{ content: 'EXTRUSÃO', rowSpan: 4, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'ECO A', 'Cast 1', formatWeight(castMacMap['Cast 1'].ecoA), 'Rebobinamento / Reprocesso Interno'],
+    ['ECO B PRODUÇÃO E MANUTENÇÃO', 'Cast 1', formatWeight(castMacMap['Cast 1'].ecoBP + castMacMap['Cast 1'].ecoBM), 'Alimentação Erema (Reciclagem Interna)'],
+    ['ECO A', 'Cast 2', formatWeight(castMacMap['Cast 2'].ecoA), 'Rebobinamento / Reprocesso Interno'],
+    ['ECO B PRODUÇÃO E MANUTENÇÃO', 'Cast 2', formatWeight(castMacMap['Cast 2'].ecoBP + castMacMap['Cast 2'].ecoBM), 'Alimentação Erema (Reciclagem Interna)'],
+
+    // 2. SETOR RECICLAGEM — SOMENTE EREMA (PERMANECE COMO ESTÁ)
+    ['RECICLAGEM', 'PELLETS RECICLADOS GERADOS', 'Erema 1', eremaVolumeFormat, 'Retorno em Blend para Cast 1 e Cast 2 (Erema não gera perda)'],
+
+    // 3. SETOR CORTE DE FITA — CÉLULA MESCLADA (ROWSPAN) ABRANGENDO TODAS AS LINHAS DO CORTE DE FITA
+    [{ content: 'CORTE DE FITA', rowSpan: ribbonSubRows.length, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, ...ribbonSubRows[0]],
+    ...ribbonSubRows.slice(1)
+  ];
 
   autoTable(doc, {
     startY: yPos,
+    margin: { left: 14, right: 14 },
     head: wasteSummaryHead,
     body: wasteSummaryBody,
     theme: 'grid',
@@ -1807,10 +1813,10 @@ export const generateIntegratedMonthlyReportPDF = async ({
     },
     columnStyles: {
       0: { fontStyle: 'bold', halign: 'center', cellWidth: 26 },
-      1: { fontStyle: 'bold', halign: 'left', cellWidth: 50 },
-      2: { cellWidth: 30 },
+      1: { fontStyle: 'bold', halign: 'left', cellWidth: 48 },
+      2: { cellWidth: 28 },
       3: { fontStyle: 'bold', textColor: [194, 65, 12], cellWidth: 36 },
-      4: { cellWidth: 40, fontSize: 6.8 }
+      4: { cellWidth: 44, fontSize: 6.8 }
     },
     didParseCell: function(data) {
       if (data.section === 'body') {
@@ -1838,13 +1844,13 @@ export const generateIntegratedMonthlyReportPDF = async ({
   const totalAllPlantStops = totalCastStops + eremaStops + totalRibMacStops;
 
   const stopsSummaryHead = [['SETOR', 'MÁQUINA / EQUIPAMENTO', 'PARADA TOTAL (HORAS)', 'PARTICIPAÇÃO NO TEMPO PARADO']];
-  const stopsSummaryBody = [
-    ['EXTRUSÃO', 'Cast 1', formatHours(castMacMap['Cast 1'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 1'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['EXTRUSÃO', 'Cast 2', formatHours(castMacMap['Cast 2'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 2'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+  const stopsSummaryBody: any[] = [
+    [{ content: 'EXTRUSÃO', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'Cast 1', formatHours(castMacMap['Cast 1'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 1'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['Cast 2', formatHours(castMacMap['Cast 2'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 2'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
     ['RECICLAGEM', 'Erema 1', formatHours(eremaStops), `${totalAllPlantStops > 0 ? ((eremaStops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['CORTE DE FITA', 'Ghezzi', formatHours(ribMacMap['Ghezzi'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Ghezzi'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['CORTE DE FITA', 'Lintech', formatHours(ribMacMap['Lintech'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Lintech'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['CORTE DE FITA', 'Wultec / Ultratec', formatHours(ribMacMap['Wultec'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Wultec'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`]
+    [{ content: 'CORTE DE FITA', rowSpan: 3, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'Ghezzi', formatHours(ribMacMap['Ghezzi'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Ghezzi'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['Lintech', formatHours(ribMacMap['Lintech'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Lintech'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
+    ['Wultec / Ultratec', formatHours(ribMacMap['Wultec'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Wultec'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`]
   ];
   const stopsSummaryFoot = [
     ['TOTAL', 'Todas as Máquinas', formatHours(totalAllPlantStops), '100.0%']
@@ -1852,6 +1858,7 @@ export const generateIntegratedMonthlyReportPDF = async ({
 
   autoTable(doc, {
     startY: yPos,
+    margin: { left: 14, right: 14 },
     head: stopsSummaryHead,
     body: stopsSummaryBody,
     foot: stopsSummaryFoot,

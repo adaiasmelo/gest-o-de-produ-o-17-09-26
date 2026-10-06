@@ -130,6 +130,34 @@ const getDefaultDateForMonth = (dbMonth?: string) => {
   return `${dbMonth}-01`;
 };
 
+const LAUNCH_DRAFT_KEY = 'manupackaging_extrusion_launch_draft';
+
+export const saveLaunchDraft = (draft: any) => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(LAUNCH_DRAFT_KEY, JSON.stringify(draft));
+    }
+  } catch (e) {}
+};
+
+export const loadLaunchDraft = () => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const saved = localStorage.getItem(LAUNCH_DRAFT_KEY);
+      return saved ? JSON.parse(saved) : null;
+    }
+  } catch (e) {}
+  return null;
+};
+
+export const clearLaunchDraft = () => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.removeItem(LAUNCH_DRAFT_KEY);
+    }
+  } catch (e) {}
+};
+
 const getDiffMinutes = (startTimeStr: string, endTimeStr: string): number => {
   if (!startTimeStr || !endTimeStr) return 0;
   const [hStart, mStart] = startTimeStr.split(':').map(Number);
@@ -212,6 +240,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [pendingEntries, setPendingEntries] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const isFormInitializedRef = useRef(false);
+  const lastInitialDataIdRef = useRef<string | undefined>(undefined);
+  const lastPresetMachineRef = useRef<string | undefined>(undefined);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [formData, setFormData] = useState({
     date: getYesterdayStr(),
     operator: '',
@@ -503,25 +535,190 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     }
   };
 
+  // Reset initialization tracking when modal closes
   useEffect(() => {
-    if (isOpen) {
-      const currentEntry = pendingEntries.length > 0 ? pendingEntries[currentIndex] : initialData;
-      if (currentEntry) {
-        setManutencaoStops(parseMotivo(currentEntry.manutencaoMotivo, currentEntry.manutencaoMin));
-        setProcessoStops(parseMotivo(currentEntry.processoMotivo, currentEntry.processoMin));
-        setOutrosStops(parseMotivo(currentEntry.outrosMotivo, currentEntry.outrosMin));
-        
-        const initMats = currentEntry.materials && currentEntry.materials.length > 0 
-          ? currentEntry.materials 
-          : [{
-              id: `mat-init-${Date.now()}-${Math.random()}`,
-              materialType: currentEntry.materialType || 'LC3',
-              volumes: currentEntry.volumes || 0,
-              tubetes: currentEntry.tubetes || 0,
-              tubetesEcoB: currentEntry.tubetesEcoB || 0,
-            }];
-        setMaterials(initMats);
+    if (!isOpen) {
+      isFormInitializedRef.current = false;
+      lastInitialDataIdRef.current = undefined;
+      lastPresetMachineRef.current = undefined;
+    }
+  }, [isOpen]);
+
+  // Handle navigation across pendingEntries if imported from file
+  useEffect(() => {
+    if (!isOpen || pendingEntries.length === 0) return;
+    const currentEntry = pendingEntries[currentIndex];
+    if (currentEntry) {
+      setManutencaoStops(parseMotivo(currentEntry.manutencaoMotivo, currentEntry.manutencaoMin));
+      setProcessoStops(parseMotivo(currentEntry.processoMotivo, currentEntry.processoMin));
+      setOutrosStops(parseMotivo(currentEntry.outrosMotivo, currentEntry.outrosMin));
+
+      const initMats = currentEntry.materials && currentEntry.materials.length > 0 
+        ? currentEntry.materials 
+        : [{
+            id: `mat-init-${Date.now()}-${Math.random()}`,
+            materialType: currentEntry.materialType || 'LC3',
+            volumes: currentEntry.volumes || 0,
+            tubetes: currentEntry.tubetes || 0,
+            tubetesEcoB: currentEntry.tubetesEcoB || 0,
+          }];
+      setMaterials(initMats);
+      setFormData(prev => ({ ...prev, ...currentEntry }));
+    }
+  }, [isOpen, currentIndex, pendingEntries]);
+
+  // Form initialization: ONLY runs on initial open, or when editing a different entry, or when presetMachine changes on initial open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const initialDataId = initialData?.id;
+    const hasInitialDataChanged = initialDataId !== lastInitialDataIdRef.current;
+    const hasPresetMachineChanged = presetMachine !== lastPresetMachineRef.current;
+    const shouldInitialize = !isFormInitializedRef.current || hasInitialDataChanged || hasPresetMachineChanged;
+
+    if (!shouldInitialize) {
+      // The modal is ALREADY OPEN and the operator is actively filling the form!
+      // DO NOT reset formData, materials or stops on parent re-renders!
+      return;
+    }
+
+    isFormInitializedRef.current = true;
+    lastInitialDataIdRef.current = initialDataId;
+    lastPresetMachineRef.current = presetMachine;
+
+    setPendingEntries([]);
+    setCurrentIndex(0);
+
+    if (initialData) {
+      setOpSearchTerm(initialData.operator);
+      const isInitStandalone = isStandaloneDowntimeInitial || Boolean(initialData.isStandaloneDowntime) || (Boolean(initialData.isMaintenanceEntry) && !initialData.grossWeight && !initialData.netWeight);
+      const initCategory: 'manutencao' | 'processo' | 'outros' = (initialData.downtimeCategory as any) || (initialData.processoMin && !initialData.manutencaoMin ? 'processo' : 'manutencao');
+
+      setManutencaoStops(parseMotivo(initialData.manutencaoMotivo, initialData.manutencaoMin));
+      setProcessoStops(parseMotivo(initialData.processoMotivo, initialData.processoMin));
+      setOutrosStops(parseMotivo(initialData.outrosMotivo, initialData.outrosMin));
+
+      const initMats = initialData.materials && initialData.materials.length > 0 
+        ? initialData.materials 
+        : [{
+            id: `mat-init-${Date.now()}-${Math.random()}`,
+            materialType: initialData.materialType || 'LC3',
+            volumes: initialData.volumes || 0,
+            tubetes: initialData.tubetes || 0,
+            tubetesEcoB: initialData.tubetesEcoB || 0,
+          }];
+      setMaterials(initMats);
+
+      setFormData({
+        date: initialData.date,
+        operator: initialData.operator,
+        machine: initialData.machine,
+        shift: initialData.shift,
+        grossWeight: initialData.grossWeight,
+        tara: initialData.tara,
+        netWeight: initialData.netWeight,
+        volumes: initialData.volumes,
+        tubetes: initialData.tubetes,
+        tubetesEcoB: initialData.tubetesEcoB ?? 0,
+        ecoA: initialData.ecoA,
+        ecoBP: initialData.ecoBP,
+        ecoBM: initialData.ecoBM,
+        borraTotal: initialData.borraTotal,
+        ecoAMotivo: initialData.ecoAMotivo || '',
+        ecoBPMotivo: initialData.ecoBPMotivo || '',
+        ecoBMMotivo: initialData.ecoBMMotivo || '',
+        borraTotalMotivo: initialData.borraTotalMotivo || '',
+        manutencaoMin: initialData.manutencaoMin,
+        manutencaoMotivo: initialData.manutencaoMotivo || '',
+        processoMin: initialData.processoMin,
+        processoMotivo: initialData.processoMotivo || '',
+        outrosMin: initialData.outrosMin,
+        outrosMotivo: initialData.outrosMotivo || '',
+        isMaintenanceEntry: initialData.isMaintenanceEntry || false,
+        isStandaloneDowntime: isInitStandalone,
+        downtimeCategory: initCategory,
+        isNoWorkDay: initialData.isNoWorkDay || false,
+        noWorkReason: initialData.noWorkReason || '',
+        eremaWeight1: initialData.eremaWeight1 ?? 0,
+        eremaWeight2: initialData.eremaWeight2 ?? 0,
+        eremaWeight3: initialData.eremaWeight3 ?? 0,
+        eremaWeight4: initialData.eremaWeight4 ?? 0,
+        recycledUsed: initialData.recycledUsed ?? 0,
+        recycledBags: initialData.recycledBags ?? (initialData.recycledUsed ? Number((initialData.recycledUsed / 1100).toFixed(2)) : 0),
+        materialType: initialData.materialType || 'LC3',
+        hasPenalty: initialData.hasPenalty || false,
+        infractionType: initialData.infractionType || '',
+        penaltyType: initialData.penaltyType || 'deduction_kg',
+        deductionValue: initialData.deductionValue ?? 500,
+        penaltyReason: initialData.penaltyReason || '',
+      });
+
+      if (initialData.infractionType) {
+        if (PRESET_INFRACTIONS.includes(initialData.infractionType)) {
+          setSelectedPresetInfraction(initialData.infractionType);
+          setCustomInfractionText('');
+        } else {
+          setSelectedPresetInfraction('📝 Outra Infração Personalizada...');
+          setCustomInfractionText(initialData.infractionType);
+        }
       } else {
+        setSelectedPresetInfraction(PRESET_INFRACTIONS[0]);
+        setCustomInfractionText('');
+      }
+    } else {
+      setSelectedPresetInfraction(PRESET_INFRACTIONS[0]);
+      setCustomInfractionText('');
+      const initialOperator = presetOperator || '';
+      const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
+      const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
+      const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
+
+      // Tenta recuperar rascunho de apontamento salvo anteriormente no dispositivo
+      const savedDraft = loadLaunchDraft();
+      const hasMeaningfulDraft = savedDraft && (
+        (savedDraft.formData?.grossWeight > 0) ||
+        (savedDraft.formData?.tara > 0) ||
+        (savedDraft.formData?.netWeight > 0) ||
+        (savedDraft.materials && savedDraft.materials.some((m: any) => (m.volumes || 0) > 0 || (m.tubetes || 0) > 0)) ||
+        (savedDraft.formData?.ecoA > 0) ||
+        (savedDraft.formData?.ecoBP > 0) ||
+        (savedDraft.formData?.ecoBM > 0) ||
+        (savedDraft.formData?.borraTotal > 0) ||
+        (savedDraft.manutencaoStops?.length > 0) ||
+        (savedDraft.processoStops?.length > 0) ||
+        (savedDraft.outrosStops?.length > 0)
+      );
+
+      if (hasMeaningfulDraft) {
+        setFormData({
+          ...savedDraft.formData,
+          date: initialDate || savedDraft.formData.date || getYesterdayStr(),
+          operator: initialOperator || savedDraft.formData.operator || '',
+          machine: initialMachine || savedDraft.formData.machine || '',
+          shift: initialShift || savedDraft.formData.shift || '',
+        });
+        if (savedDraft.materials && savedDraft.materials.length > 0) {
+          setMaterials(savedDraft.materials);
+        } else {
+          setMaterials([{
+            id: `mat-init-${Date.now()}`,
+            materialType: 'LC3',
+            volumes: 0,
+            tubetes: 0,
+            tubetesEcoB: 0,
+          }]);
+        }
+        setManutencaoStops(savedDraft.manutencaoStops || []);
+        setProcessoStops(savedDraft.processoStops || []);
+        setOutrosStops(savedDraft.outrosStops || []);
+        setHasRestoredDraft(true);
+
+        const opToSet = initialOperator || savedDraft.formData.operator;
+        if (opToSet) {
+          setOpSearchTerm(opToSet);
+        }
+      } else {
+        setHasRestoredDraft(false);
         if (isStandaloneDowntimeInitial) {
           setManutencaoStops([{
             id: `stop-${Date.now()}`,
@@ -544,82 +741,6 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           tubetes: 0,
           tubetesEcoB: 0,
         }]);
-      }
-    }
-  }, [isOpen, currentIndex, initialData, pendingEntries, isStandaloneDowntimeInitial]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setPendingEntries([]);
-      setCurrentIndex(0);
-      if (initialData) {
-        setOpSearchTerm(initialData.operator);
-        const isInitStandalone = isStandaloneDowntimeInitial || Boolean(initialData.isStandaloneDowntime) || (Boolean(initialData.isMaintenanceEntry) && !initialData.grossWeight && !initialData.netWeight);
-        const initCategory: 'manutencao' | 'processo' | 'outros' = (initialData.downtimeCategory as any) || (initialData.processoMin && !initialData.manutencaoMin ? 'processo' : 'manutencao');
-
-        setFormData({
-          date: initialData.date,
-          operator: initialData.operator,
-          machine: initialData.machine,
-          shift: initialData.shift,
-          grossWeight: initialData.grossWeight,
-          tara: initialData.tara,
-          netWeight: initialData.netWeight,
-          volumes: initialData.volumes,
-          tubetes: initialData.tubetes,
-          tubetesEcoB: initialData.tubetesEcoB ?? 0,
-          ecoA: initialData.ecoA,
-          ecoBP: initialData.ecoBP,
-          ecoBM: initialData.ecoBM,
-          borraTotal: initialData.borraTotal,
-          ecoAMotivo: initialData.ecoAMotivo || '',
-          ecoBPMotivo: initialData.ecoBPMotivo || '',
-          ecoBMMotivo: initialData.ecoBMMotivo || '',
-          borraTotalMotivo: initialData.borraTotalMotivo || '',
-          manutencaoMin: initialData.manutencaoMin,
-          manutencaoMotivo: initialData.manutencaoMotivo || '',
-          processoMin: initialData.processoMin,
-          processoMotivo: initialData.processoMotivo || '',
-          outrosMin: initialData.outrosMin,
-          outrosMotivo: initialData.outrosMotivo || '',
-          isMaintenanceEntry: initialData.isMaintenanceEntry || false,
-          isStandaloneDowntime: isInitStandalone,
-          downtimeCategory: initCategory,
-          isNoWorkDay: initialData.isNoWorkDay || false,
-          noWorkReason: initialData.noWorkReason || '',
-          eremaWeight1: initialData.eremaWeight1 ?? 0,
-          eremaWeight2: initialData.eremaWeight2 ?? 0,
-          eremaWeight3: initialData.eremaWeight3 ?? 0,
-          eremaWeight4: initialData.eremaWeight4 ?? 0,
-          recycledUsed: initialData.recycledUsed ?? 0,
-          recycledBags: initialData.recycledBags ?? (initialData.recycledUsed ? Number((initialData.recycledUsed / 1100).toFixed(2)) : 0),
-          materialType: initialData.materialType || 'LC3',
-          hasPenalty: initialData.hasPenalty || false,
-          infractionType: initialData.infractionType || '',
-          penaltyType: initialData.penaltyType || 'deduction_kg',
-          deductionValue: initialData.deductionValue ?? 500,
-          penaltyReason: initialData.penaltyReason || '',
-        });
-
-        if (initialData.infractionType) {
-          if (PRESET_INFRACTIONS.includes(initialData.infractionType)) {
-            setSelectedPresetInfraction(initialData.infractionType);
-            setCustomInfractionText('');
-          } else {
-            setSelectedPresetInfraction('📝 Outra Infração Personalizada...');
-            setCustomInfractionText(initialData.infractionType);
-          }
-        } else {
-          setSelectedPresetInfraction(PRESET_INFRACTIONS[0]);
-          setCustomInfractionText('');
-        }
-      } else {
-        setSelectedPresetInfraction(PRESET_INFRACTIONS[0]);
-        setCustomInfractionText('');
-        const initialOperator = presetOperator || '';
-        const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
-        const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
-        const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
 
         setFormData({
           date: initialDate,
@@ -671,6 +792,36 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       }
     }
   }, [isOpen, initialData, activeMachines, availableShifts, dashboardMonth, isStandaloneDowntimeInitial, presetOperator, presetShift, presetMachine, presetDate]);
+
+  // Autosave contínuo em background para garantir que nenhum número digitado (peso bruto, tara, volumes, tubetes) seja perdido
+  useEffect(() => {
+    if (!isOpen || initialData) return;
+
+    const hasContent = 
+      (formData.grossWeight > 0) || 
+      (formData.tara > 0) || 
+      (formData.netWeight > 0) || 
+      (formData.ecoA > 0) || 
+      (formData.ecoBP > 0) || 
+      (formData.ecoBM > 0) || 
+      (formData.borraTotal > 0) || 
+      materials.some(m => (m.volumes || 0) > 0 || (m.tubetes || 0) > 0) ||
+      manutencaoStops.length > 0 ||
+      processoStops.length > 0 ||
+      outrosStops.length > 0;
+
+    if (hasContent) {
+      saveLaunchDraft({
+        formData,
+        materials,
+        manutencaoStops,
+        processoStops,
+        outrosStops,
+        savedAt: Date.now()
+      });
+      setHasRestoredDraft(true);
+    }
+  }, [isOpen, initialData, formData, materials, manutencaoStops, processoStops, outrosStops]);
 
   useEffect(() => {
     if (isErema) {
@@ -877,8 +1028,76 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       if (activeStoppageReason) saveReasonToLibrary('paradas_extrusao', activeStoppageReason, compiled.operator);
       onSave(initialData ? { ...compiled, id: initialData.id } : compiled);
     }
+    clearLaunchDraft();
+    setHasRestoredDraft(false);
     triggerHaptic('success');
     onClose();
+  };
+
+  const handleClearDraft = () => {
+    if (window.confirm('Deseja limpar todos os campos preenchidos e reiniciar este lançamento?')) {
+      clearLaunchDraft();
+      setHasRestoredDraft(false);
+      const initialOperator = presetOperator || '';
+      const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
+      const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
+      const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
+
+      setMaterials([{
+        id: `mat-init-${Date.now()}`,
+        materialType: 'LC3',
+        volumes: 0,
+        tubetes: 0,
+        tubetesEcoB: 0,
+      }]);
+      setManutencaoStops([]);
+      setProcessoStops([]);
+      setOutrosStops([]);
+      setFormData({
+        date: initialDate,
+        operator: initialOperator,
+        machine: initialMachine,
+        shift: initialShift,
+        grossWeight: 0,
+        tara: 0,
+        netWeight: 0,
+        volumes: 0,
+        tubetes: 0,
+        tubetesEcoB: 0,
+        ecoA: 0,
+        ecoBP: 0,
+        ecoBM: 0,
+        borraTotal: 0,
+        ecoAMotivo: '',
+        ecoBPMotivo: '',
+        ecoBMMotivo: '',
+        borraTotalMotivo: '',
+        manutencaoMin: 0,
+        manutencaoMotivo: '',
+        processoMin: 0,
+        processoMotivo: '',
+        outrosMin: 0,
+        outrosMotivo: '',
+        isMaintenanceEntry: false,
+        isStandaloneDowntime: false,
+        downtimeCategory: 'manutencao',
+        isNoWorkDay: false,
+        noWorkReason: '',
+        eremaWeight1: 0,
+        eremaWeight2: 0,
+        eremaWeight3: 0,
+        eremaWeight4: 0,
+        recycledUsed: 0,
+        recycledBags: 0,
+        materialType: 'LC3',
+        hasPenalty: false,
+        infractionType: '',
+        penaltyType: 'deduction_kg',
+        deductionValue: 500,
+        penaltyReason: '',
+      });
+      triggerHaptic('light');
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -1346,6 +1565,22 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden relative w-full">
           {/* Scrollable Form Body */}
           <div className="flex-1 overflow-y-auto p-2 md:p-3 custom-scrollbar relative space-y-2.5">
+          {hasRestoredDraft && !initialData && (
+            <div className="bg-amber-950/70 border border-amber-500/40 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-amber-200 shrink-0 shadow-sm animate-in fade-in duration-200">
+              <span className="flex items-center gap-1.5 font-bold text-[11px] text-amber-300">
+                <span>💾</span> Dados preservados automaticamente no aparelho (proteção contra perda).
+              </span>
+              <button
+                type="button"
+                onClick={handleClearDraft}
+                className="text-[10px] uppercase font-black px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 hover:text-white rounded-lg border border-amber-500/40 cursor-pointer transition-colors"
+                title="Limpar todos os campos deste rascunho"
+              >
+                Limpar Campos
+              </button>
+            </div>
+          )}
+
           {pendingEntries.length > 1 && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-1.5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">

@@ -180,6 +180,32 @@ if ('serviceWorker' in navigator) {
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!refreshing) {
+      // Evita recarregar a tela enquanto o operador está na tela de lançamento externa ou preenchendo apontamentos
+      try {
+        const href = (window.location.href || '').toLowerCase();
+        const pathname = (window.location.pathname || '').toLowerCase();
+        const hash = (window.location.hash || '').toLowerCase();
+        const isOperatorLaunch =
+          pathname.includes('lancamento') ||
+          pathname.includes('lançamento') ||
+          pathname.includes('operador') ||
+          pathname.includes('apontamento') ||
+          hash.includes('lancamento') ||
+          hash.includes('lançamento') ||
+          hash.includes('operador') ||
+          hash.includes('apontamento') ||
+          href.includes('lancamento') ||
+          href.includes('lançamento');
+
+        const activeElem = document.activeElement;
+        const isUserTyping = activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'SELECT' || activeElem.tagName === 'TEXTAREA');
+
+        if (isOperatorLaunch || isUserTyping) {
+          console.log('PWA: Novo worker pronto. Adiando recarregamento para não interromper o operador durante o lançamento.');
+          return;
+        }
+      } catch (e) {}
+
       refreshing = true;
       console.log('PWA: Novo controller assumiu o controle! Recarregando sistema...');
       window.location.reload();

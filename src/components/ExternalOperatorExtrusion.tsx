@@ -157,15 +157,28 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
   // Fluxo de telas: 'login' -> 'first_access' -> 'select_machine' -> 'launch_form'
   const [currentStep, setCurrentStep] = useState<'login' | 'first_access' | 'select_machine' | 'launch_form'>(() => {
     try {
-      const saved = localStorage.getItem('manupackaging_operator_portal_user');
-      return saved ? 'select_machine' : 'login';
+      const savedUser = localStorage.getItem('manupackaging_operator_portal_user');
+      const savedStep = localStorage.getItem('manupackaging_operator_portal_step') as any;
+      const savedMach = localStorage.getItem('manupackaging_operator_portal_machine');
+      if (savedUser && savedStep === 'launch_form' && savedMach) {
+        return 'launch_form';
+      }
+      return savedUser ? 'select_machine' : 'login';
     } catch {
       return 'login';
     }
   });
 
   // Dados do lançamento selecionados pelo operador
-  const [selectedMachine, setSelectedMachine] = useState<'Cast 1' | 'Cast 2' | 'Erema' | null>(null);
+  const [selectedMachine, setSelectedMachine] = useState<'Cast 1' | 'Cast 2' | 'Erema' | null>(() => {
+    try {
+      const savedMach = localStorage.getItem('manupackaging_operator_portal_machine');
+      if (savedMach === 'Cast 1' || savedMach === 'Cast 2' || savedMach === 'Erema') {
+        return savedMach;
+      }
+    } catch {}
+    return null;
+  });
   const [selectedShift, setSelectedShift] = useState<'Diurno' | 'Noturno'>('Noturno');
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const calc = calculateExtrusion12x36();
@@ -491,6 +504,8 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
       triggerHaptic('light');
       setOperatorSession(null);
       localStorage.removeItem('manupackaging_operator_portal_user');
+      localStorage.removeItem('manupackaging_operator_portal_step');
+      localStorage.removeItem('manupackaging_operator_portal_machine');
       setPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -503,6 +518,10 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
   const handleSelectMachineToLaunch = (machine: 'Cast 1' | 'Cast 2' | 'Erema') => {
     triggerHaptic('light');
     setSelectedMachine(machine);
+    try {
+      localStorage.setItem('manupackaging_operator_portal_machine', machine);
+      localStorage.setItem('manupackaging_operator_portal_step', 'launch_form');
+    } catch {}
     setCurrentStep('launch_form');
   };
 
@@ -516,7 +535,12 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
         setSaveSuccessToast(null);
       }, 5000);
 
-      // Retorna para a tela de seleção de máquina após o salvamento
+      // Limpa dados temporários e retorna para a tela de seleção de máquina
+      try {
+        localStorage.removeItem('manupackaging_operator_portal_machine');
+        localStorage.setItem('manupackaging_operator_portal_step', 'select_machine');
+      } catch {}
+      setSelectedMachine(null);
       setCurrentStep('select_machine');
     } catch (err) {
       console.error('Erro ao salvar:', err);
@@ -524,6 +548,11 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
       alert('Falha ao salvar lançamento no sistema. Verifique a conexão com a internet.');
     }
   };
+
+  // Máquina ativa estável memoizada para não re-instanciar array e não disparar re-render no modal
+  const activeMachinesArray = useMemo(() => {
+    return selectedMachine ? [selectedMachine] : [];
+  }, [selectedMachine]);
 
   // ==========================================
   // ETAPA 4: FORMULÁRIO DE LANÇAMENTO OFICIAL
@@ -554,7 +583,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
           collaborators={collaborators}
           employees={employees}
           vacations={vacations}
-          activeMachines={[selectedMachine]}
+          activeMachines={activeMachinesArray}
           availableShifts={availableShifts}
           dashboardMonth={dashboardMonth}
           productionEntries={productionEntries}
