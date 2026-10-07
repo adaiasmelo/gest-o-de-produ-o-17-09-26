@@ -124,6 +124,9 @@ export interface Employee {
   replacedEmployeeId?: string; // ID do colaborador desligado que este substituiu
   replacedEmployeeName?: string; // Nome do colaborador desligado que este substituiu
   replacedReason?: string; // Motivo do desligamento do colaborador substituído
+  coveredByEmployeeId?: string; // ID do colaborador que assumiu a vaga deste desligado
+  coveredByEmployeeName?: string; // Nome do colaborador que assumiu a vaga deste desligado
+  userId?: string;
 }
 
 export interface Vacation {
@@ -185,6 +188,19 @@ export interface PersonnelStructure {
   extrusao: SectorStructureExtrusao[];
   erema: SectorStructureStandard[];
   fitaAdesiva: SectorStructureStandard[];
+}
+
+export interface CustomSector {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  colorTheme?: 'blue' | 'emerald' | 'amber' | 'violet' | 'indigo' | 'orange' | 'rose' | 'teal' | 'slate' | string;
+  shifts: string[];
+  machines: string[];
+  defaultCapacity?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TrainingRecord {

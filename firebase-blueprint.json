@@ -408,6 +408,24 @@
         "createdBy": { "type": "string" }
       },
       "required": ["reason", "category"]
+    },
+    "CustomSector": {
+      "title": "Custom Sector",
+      "description": "Custom operational sectors created by users on the personnel board (e.g. Serviços Gerais, Manutenção).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "colorTheme": { "type": "string" },
+        "shifts": { "type": "array" },
+        "machines": { "type": "array" },
+        "defaultCapacity": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "shifts", "machines"]
     }
   },
   "firestore": {
@@ -432,6 +450,7 @@
     "active_sessions": { "schema": "ActiveSession", "description": "Online user sessions and live screen tracking" },
     "access_logs": { "schema": "AccessLog", "description": "User login and logout logs" },
     "user_activity_logs": { "schema": "UserActivityLog", "description": "Audited history of user screen visits and actions" },
-    "reasons_library": { "schema": "SystemReason", "description": "User-saved custom justifications library for Extrusion, Ribbon, Stoppages and Overtime" }
+    "reasons_library": { "schema": "SystemReason", "description": "User-saved custom justifications library for Extrusion, Ribbon, Stoppages and Overtime" },
+    "custom_sectors": { "schema": "CustomSector", "description": "Custom user-created sectors on the personnel board" }
   }
 }

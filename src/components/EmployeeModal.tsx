@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, UserPlus, Save, Briefcase, MapPin, UserX, Stethoscope, Plane, Trash2, Search, Palmtree, Sparkles } from 'lucide-react';
-import { Shift, Employee, Collaborator } from '../types';
+import { Shift, Employee, Collaborator, CustomSector } from '../types';
 import { isCollaboratorSilenced } from '../utils/silenceUtils';
 import { isRecentCollaborator, getRecentCollaborators, formatRecentRegistrationBadge } from '../utils/recentCollaborators';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
@@ -13,6 +13,7 @@ interface EmployeeModalProps {
   availableMachines: string[];
   availableRoles: string[]; // Added roles prop
   collaborators: Collaborator[];
+  customSectors?: CustomSector[];
   initialData?: Employee | null;
   slotInfo?: { 
     sector: string; 
@@ -30,7 +31,18 @@ interface EmployeeModalProps {
 
 type ModalAction = 'update' | 'vacation' | 'medical' | 'terminate' | 'transfer' | 'create' | 'delete';
 
-const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, availableShifts, availableMachines, availableRoles, collaborators, initialData, slotInfo }) => {
+const EmployeeModal: React.FC<EmployeeModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  availableShifts, 
+  availableMachines, 
+  availableRoles, 
+  collaborators, 
+  customSectors = [],
+  initialData, 
+  slotInfo 
+}) => {
   const [actionType, setActionType] = useState<ModalAction>('update');
   const [formData, setFormData] = useState<Partial<Employee>>({
     name: '',
@@ -43,6 +55,71 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
   });
   
   const [searchTerm, setSearchTerm] = useState('');
+
+  const availableSectors = useMemo(() => {
+    const list = ['Extrusão', 'Reciclagem', 'Fita', 'Liderança'];
+    (customSectors || []).forEach(cs => {
+      if (cs.name && !list.includes(cs.name)) {
+        list.push(cs.name);
+      }
+    });
+    if (formData.sector && !list.includes(formData.sector)) {
+      list.push(formData.sector);
+    }
+    return list;
+  }, [customSectors, formData.sector]);
+
+  const shiftsForCurrentSector = useMemo(() => {
+    const secNorm = String(formData.sector || '').toLowerCase();
+    const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === secNorm);
+    if (foundCustom && foundCustom.shifts && foundCustom.shifts.length > 0) {
+      return foundCustom.shifts;
+    }
+    if (secNorm.includes('lideran')) {
+      return ['Comercial', 'Comercial Flexível'];
+    }
+    if (secNorm.includes('extrus')) {
+      return ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'];
+    }
+    if (secNorm.includes('recic')) {
+      return ['Diurno 1', 'Diurno 2'];
+    }
+    if (secNorm.includes('fita')) {
+      return ['Diurno 1', 'Diurno 2', 'Comercial'];
+    }
+    return Array.from(new Set([
+      ...(formData.shift ? [formData.shift] : []),
+      'Comercial',
+      'Diurno 1',
+      'Noturno 1',
+      ...(availableShifts || []).map(s => s?.name || '').filter(Boolean)
+    ]));
+  }, [formData.sector, formData.shift, customSectors, availableShifts]);
+
+  const machinesForCurrentSector = useMemo(() => {
+    const secNorm = String(formData.sector || '').toLowerCase();
+    const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === secNorm);
+    if (foundCustom && foundCustom.machines && foundCustom.machines.length > 0) {
+      return foundCustom.machines;
+    }
+    if (secNorm.includes('extrus')) {
+      return ['Cast 1', 'Cast 2'];
+    }
+    if (secNorm.includes('recic')) {
+      return ['Erema 1'];
+    }
+    if (secNorm.includes('fita')) {
+      return ['Ghezzi', 'Lintech', 'Wultec'];
+    }
+    if (secNorm.includes('lideran')) {
+      return ['Geral'];
+    }
+    return Array.from(new Set([
+      ...(formData.machine ? [formData.machine] : []),
+      'Geral',
+      ...(availableMachines || [])
+    ]));
+  }, [formData.sector, formData.machine, customSectors, availableMachines]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [roleCategoryFilter, setRoleCategoryFilter] = useState<'all' | 'operador' | 'auxiliar'>('all');
 
@@ -658,35 +735,50 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                 {/* Allocation details - hidden for new registrations per user request */}
                 {actionType !== 'create' && (
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={12}/> Alocação</h3>
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={12}/> Alocação do Posto</h3>
                       <div className="grid grid-cols-2 gap-3">
                            <div>
                               <label className="text-[9px] font-bold text-slate-400 uppercase">Setor</label>
-                              <input type="text" value={formData.sector || ''} disabled className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-500" />
+                              <select 
+                                value={formData.sector || availableSectors[0]} 
+                                onChange={e => {
+                                  const newSec = e.target.value;
+                                  const secNorm = newSec.toLowerCase();
+                                  const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === secNorm);
+                                  const defaultMach = foundCustom?.machines?.[0] || (secNorm.includes('extrus') ? 'Cast 1' : secNorm.includes('recic') ? 'Erema 1' : secNorm.includes('fita') ? 'Ghezzi' : 'Geral');
+                                  const defaultSh = foundCustom?.shifts?.[0] || (secNorm.includes('lideran') ? 'Comercial' : 'Diurno 1');
+                                  setFormData({
+                                    ...formData,
+                                    sector: newSec,
+                                    machine: defaultMach,
+                                    shift: defaultSh
+                                  });
+                                }} 
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                              >
+                                {availableSectors.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
                            </div>
                            <div>
                               <label className="text-[9px] font-bold text-slate-400 uppercase">Turno</label>
-                              <select value={formData.shift || ''} onChange={e => setFormData({...formData, shift: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500">
-                                  {String(formData.sector || '').toLowerCase().includes('lideran') ? (
-                                      ['Comercial', 'Comercial Flexível'].map(s => <option key={s} value={s}>{s}</option>)
-                                  ) : String(formData.sector || '').toLowerCase().includes('extrus') ? (
-                                      ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].map(s => <option key={s} value={s}>{s}</option>)
-                                  ) : (
-                                      Array.from(new Set([
-                                        ...(formData.shift ? [formData.shift] : []),
-                                        'Comercial',
-                                        'Comercial Flexível',
-                                        ...(availableShifts || []).map(s => s?.name || '').filter(Boolean)
-                                      ])).map(sName => (
-                                        <option key={sName} value={sName}>{sName}</option>
-                                      ))
-                                  )}
+                              <select 
+                                value={formData.shift || ''} 
+                                onChange={e => setFormData({...formData, shift: e.target.value})} 
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                              >
+                                {shiftsForCurrentSector.map(sName => (
+                                  <option key={sName} value={sName}>{sName}</option>
+                                ))}
                               </select>
                            </div>
                            <div className="col-span-2">
-                              <label className="text-[9px] font-bold text-slate-400 uppercase">Máquina</label>
-                              <select value={formData.machine || ''} onChange={e => setFormData({...formData, machine: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500">
-                                  {(availableMachines || []).map(m => <option key={m} value={m}>{m}</option>)}
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">Máquina / Posto de Trabalho</label>
+                              <select 
+                                value={formData.machine || ''} 
+                                onChange={e => setFormData({...formData, machine: e.target.value})} 
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                              >
+                                {machinesForCurrentSector.map(m => <option key={m} value={m}>{m}</option>)}
                               </select>
                            </div>
                       </div>

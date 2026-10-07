@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Users, HardHat, Briefcase, UserPlus, Factory, Building2, Clock, CheckCircle2, AlertCircle, Copy, Check, Palmtree, Calendar, Edit2, UserCheck, UserX } from 'lucide-react';
-import { Employee } from '../types';
+import { X, Search, Users, HardHat, Briefcase, UserPlus, Factory, Building2, Clock, CheckCircle2, AlertCircle, Copy, Check, Palmtree, Calendar, Edit2, UserCheck, UserX, Trash2 } from 'lucide-react';
+import { Employee, CustomSector } from '../types';
 
 export type PersonnelStatType = 'colaboradores' | 'operadores' | 'auxiliares' | 'vagas' | 'ferias';
 
@@ -23,8 +23,10 @@ interface PersonnelStatModalProps {
   type: PersonnelStatType | null;
   employees: Employee[];
   vacancies: VacancyDetail[];
+  customSectors?: CustomSector[];
   onManageVacation?: (employee: Employee) => void;
   onSelectVacancy?: (vacancy: VacancyDetail) => void;
+  onDeleteVacancy?: (vacancy: VacancyDetail) => void;
 }
 
 export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
@@ -33,8 +35,10 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
   type,
   employees,
   vacancies,
+  customSectors = [],
   onManageVacation,
-  onSelectVacancy
+  onSelectVacancy,
+  onDeleteVacancy
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sectorFilter, setSectorFilter] = useState<string>('todos');
@@ -49,7 +53,7 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
 
   const isRelevantSector = (s?: string) => {
     const n = normalize(s);
-    return ['extrusao', 'reciclagem', 'fita', 'lideranca'].includes(n);
+    return ['extrusao', 'reciclagem', 'fita', 'lideranca'].includes(n) || (customSectors || []).some(cs => normalize(cs.name) === n);
   };
 
   // Filter lists based on type
@@ -249,17 +253,24 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            {['todos', 'extrusao', 'reciclagem', 'fita', 'lideranca'].map((sec) => (
+            {[
+              { id: 'todos', label: 'Todos' },
+              { id: 'extrusao', label: 'Extrusão' },
+              { id: 'reciclagem', label: 'Reciclagem' },
+              { id: 'fita', label: 'Fita' },
+              { id: 'lideranca', label: 'Liderança' },
+              ...(customSectors || []).map(cs => ({ id: normalize(cs.name), label: cs.name }))
+            ].map((sec) => (
               <button
-                key={sec}
-                onClick={() => setSectorFilter(sec)}
+                key={sec.id}
+                onClick={() => setSectorFilter(sec.id)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
-                  sectorFilter === sec
+                  sectorFilter === sec.id
                     ? 'bg-slate-800 text-white shadow-sm'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {sec === 'todos' ? 'Todos' : sec === 'extrusao' ? 'Extrusão' : sec === 'reciclagem' ? 'Reciclagem' : sec === 'fita' ? 'Fita' : 'Liderança'}
+                {sec.label}
               </button>
             ))}
           </div>
@@ -333,6 +344,16 @@ export const PersonnelStatModal: React.FC<PersonnelStatModalProps> = ({
                           >
                             <UserPlus size={11} />
                             <span>Preencher Vaga</span>
+                          </button>
+                        )}
+                        {onDeleteVacancy && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteVacancy(v)}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-red-200"
+                            title="Excluir este slot de vaga"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         )}
                       </div>

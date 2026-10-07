@@ -9,7 +9,7 @@ import {
   UserPlus, Download, AlertCircle, FileSpreadsheet, Scale, FileText, Menu, Fingerprint, Smartphone, Bell, Volume2, Share, ExternalLink, Mail, Copy, Filter,
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
-  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck
+  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -24,7 +24,7 @@ import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialDa
 import { getToken, onMessage } from 'firebase/messaging';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, UserActivityLog, OperatorPenalty, CompanyNotice, EcoBalanceSettings } from './types';
+import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, UserActivityLog, OperatorPenalty, CompanyNotice, EcoBalanceSettings, CustomSector } from './types';
 import { recordUserActivity, subscribeUserActivities, clearUserActivities, loadActivityLogsFromCache } from './services/activityService';
 import { DEFAULT_COMPANY_NOTICES } from './data/defaultNotices';
 import * as XLSX from 'xlsx';
@@ -43,10 +43,19 @@ import { isBiometricAvailable, registerBiometrics, authenticateBiometrics, isBio
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet, isOperatorNameSilenced, normalizeText } from './utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from './utils/vacationUtils';
 import { isRecentCollaborator, getRecentCollaborators, getUnallocatedRecentCollaborators, formatRecentRegistrationBadge } from './utils/recentCollaborators';
+import { 
+  getStoredCustomSectors, 
+  persistCustomSectorsLocal, 
+  saveCustomSectorToFirestore, 
+  deleteCustomSectorFromFirestore,
+  SECTOR_COLOR_THEMES,
+  renderSectorIcon
+} from './utils/customSectors';
 import LaunchModal from './components/LaunchModal';
 import EmployeeModal from './components/EmployeeModal';
 import CollaboratorModal from './components/CollaboratorModal';
 import RecentCollaboratorsModal from './components/RecentCollaboratorsModal';
+import SectorModal from './components/SectorModal';
 import HistoryModal from './components/HistoryModal';
 import ShiftModal from './components/ShiftModal';
 import RoleModal from './components/RoleModal';
@@ -1590,6 +1599,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
   const [isQuickAllocModalOpen, setIsQuickAllocModalOpen] = useState(false);
   const [quickAllocSector, setQuickAllocSector] = useState('Extrusão');
+  const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
+  const [selectedSectorForEdit, setSelectedSectorForEdit] = useState<CustomSector | null>(null);
+  const [customSectors, setCustomSectors] = useState<CustomSector[]>(getStoredCustomSectors());
   const [isTrainingModalOpen, setIsTrainingModalOpen] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
@@ -2371,6 +2383,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       console.error('Shifts error:', err);
     });
 
+    const unsubCustomSectors = onSnapshot(collection(db, 'custom_sectors'), (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomSector));
+      if (data.length > 0) {
+        setCustomSectors(data);
+        persistCustomSectorsLocal(data);
+      }
+    }, (err) => {
+      console.warn('Erro ao escutar custom_sectors:', err);
+    });
+
     const unsubUsers = onSnapshot(collection(db, 'system_users'), (snap) => {
       const data = snap.docs.map(docRef => {
         const raw = docRef.data() as SystemUser;
@@ -2633,6 +2655,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       unsubActivities();
       unsubPenalties();
       unsubNotices();
+      unsubCustomSectors();
     };
   }, [currentUser]);
 
@@ -2648,8 +2671,15 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       // Ensure all INITIAL_EMPLOYEES exist in both employees and collaborators collections (Self-healing)
       for (const initialEmp of INITIAL_EMPLOYEES) {
         if (!initialEmp.name || initialEmp.name === 'VAGA DISPONÍVEL' || initialEmp.name === 'Em Contratação') continue;
-        const existsInEmployees = employees.some(e => e.id === initialEmp.id || (e.registration && e.registration === initialEmp.registration) || e.name === initialEmp.name);
-        const existsInCollaborators = currentCollaborators.some(c => (c.registration && c.registration === initialEmp.registration) || c.name === initialEmp.name);
+        const existsInEmployees = employees.some(e => 
+          e.id === initialEmp.id || 
+          (e.registration && initialEmp.registration && e.registration === initialEmp.registration) || 
+          (e.name && initialEmp.name && normalizeText(e.name) === normalizeText(initialEmp.name))
+        );
+        const existsInCollaborators = currentCollaborators.some(c => 
+          (c.registration && initialEmp.registration && c.registration === initialEmp.registration) || 
+          (c.name && initialEmp.name && normalizeText(c.name) === normalizeText(initialEmp.name))
+        );
 
         if (!existsInEmployees) {
           try {
@@ -2661,18 +2691,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             });
           } catch (err) {
             console.error(`Erro ao auto-semear colaborador ${initialEmp.name}:`, err);
-          }
-        } else {
-          // If they exist but status is "vaga excluida", restore them to "Ativo" if they are part of Lintech or other main slots
-          const foundEmp = employees.find(e => e.id === initialEmp.id || (e.registration && e.registration === initialEmp.registration) || e.name === initialEmp.name);
-          const foundEmpStatusNorm = foundEmp && foundEmp.status ? foundEmp.status.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "") : '';
-          if (foundEmp && foundEmpStatusNorm === 'vaga excluida' && (initialEmp.registration === "1702" || initialEmp.registration === "1840")) {
-            try {
-              console.log(`Self-healing: Restoring excluded employee to Ativo: ${initialEmp.name}`);
-              await setDoc(doc(db, 'employees', foundEmp.id), { status: 'Ativo' }, { merge: true });
-            } catch (err) {
-              console.error(`Erro ao restaurar status do colaborador ${initialEmp.name}:`, err);
-            }
           }
         }
 
@@ -8043,6 +8061,17 @@ Atenciosamente,
     // 4. Fita
     addGroupedSector('SETOR: FITA ADESIVA', 'fita', ['Ghezzi', 'Lintech', 'Wultec'], ['Diurno 1', 'Diurno 2', 'Comercial'], 2);
 
+    // 5. Setores Personalizados Criados pelo Usuário
+    (customSectors || []).forEach(cs => {
+      addGroupedSector(
+        `SETOR: ${cs.name.toUpperCase()}`,
+        cs.name,
+        cs.machines && cs.machines.length > 0 ? cs.machines : ['Geral'],
+        cs.shifts && cs.shifts.length > 0 ? cs.shifts : ['Comercial'],
+        cs.defaultCapacity || 1
+      );
+    });
+
     // Rodapé com número de páginas
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
@@ -10406,7 +10435,7 @@ Atenciosamente,
 
   const isRelevantSector = (s: string) => {
     const n = normalize(s);
-    return ['extrusao', 'reciclagem', 'fita', 'lideranca'].includes(n);
+    return ['extrusao', 'reciclagem', 'fita', 'lideranca'].includes(n) || (customSectors || []).some(cs => normalize(cs.name) === n);
   };
 
   const totalAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && isRelevantSector(e.sector)).length;
@@ -10646,72 +10675,118 @@ Atenciosamente,
     }
   };
 
-  const handleDeleteVacancySlot = (sector: string, machine: string, shift: string, role: string, employee?: Employee) => {
+  const handleDeleteVacancySlot = (
+    sector: string, 
+    machine: string, 
+    shift: string, 
+    role: string, 
+    employee?: Employee,
+    dismissedEmployee?: Employee
+  ) => {
     if (isReadOnlyAccount) {
       handleBlockedReadOnlyAction('Exclusão Bloqueada', 'A exclusão de vagas não é permitida no Modo de Leitura.');
       return;
     }
+
+    const targetEmp = dismissedEmployee || employee;
+    const vacancyLabel = targetEmp?.name && targetEmp.name !== 'Vaga' && targetEmp.name !== 'Em Contratação'
+      ? `de ${targetEmp.name}`
+      : role || 'Vaga';
+
     openConfirm(
       'Confirmar Exclusão de Vaga',
-      `Deseja realmente EXCLUIR esta vaga do setor ${sector}, máquina ${machine}, turno ${shift}? Esta ação removerá as informações do sistema e do banco de dados.`,
+      `Deseja realmente EXCLUIR este slot de vaga (${vacancyLabel}) no setor ${sector}, máquina ${machine}, turno ${shift}? O slot e a vaga deixarão de existir no quadro.`,
       async () => {
         try {
           const now = new Date().toISOString();
           const logId = Math.random().toString(36).substring(2, 15);
 
-          if (employee && employee.id) {
-            await setDoc(doc(db, 'employees', employee.id), {
-              status: 'Vaga Excluída',
-              name: 'Vaga Excluída',
+          if (targetEmp && targetEmp.id) {
+            const updatedEmp: Employee = {
+              ...targetEmp,
+              sector: sector || targetEmp.sector,
+              machine: machine || targetEmp.machine,
+              shift: shift || targetEmp.shift,
+              role: role || targetEmp.role,
+              status: 'Vaga Excluída' as any,
+              name: targetEmp.name,
+              replacedEmployeeId: 'vaga_excluida',
               updatedAt: now,
               userId: currentUser?.uid || 'anonymous'
-            }, { merge: true });
+            };
 
-            await setDoc(doc(db, 'personnelLogs', logId), {
+            await setDoc(doc(db, 'employees', targetEmp.id), cleanUndefined(updatedEmp), { merge: true });
+
+            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
               id: logId,
               userId: currentUser?.uid || 'anonymous',
               date: now,
-              employeeName: employee.name || 'Vaga',
+              employeeName: targetEmp.name || 'Vaga',
               action: 'Exclusão' as any,
-              details: `Vaga de contratação excluída permanentemente (${sector} - ${machine} - ${shift})`,
+              details: `Slot de vaga excluído permanentemente (${sector} - ${machine} - ${shift})`,
               user: loggedUser?.name || 'Sistema'
+            }));
+
+            recordUserActivity({
+              user: loggedUser,
+              type: 'action',
+              screen: 'Gestão de Pessoas',
+              subScreen: 'Quadro de Funcionários',
+              action: 'Exclusão de Vaga',
+              details: `Slot de vaga (${targetEmp.name}) excluído no posto ${machine} (${shift})`
             });
 
-            const simulatedEmps = employees.map(e => e.id === employee.id ? { ...e, name: 'Vaga Excluída', status: 'Vaga Excluída' as any } : e);
+            const simulatedEmps = employees.map(e => e.id === targetEmp.id ? updatedEmp : e);
+            setEmployees(simulatedEmps);
+            localStorage.setItem('manupackaging_employees', JSON.stringify(simulatedEmps));
             await syncOperatorsSetting(simulatedEmps);
+            addNotification(`Slot de vaga de ${targetEmp.name} excluído com sucesso.`);
           } else {
-            const id = Math.random().toString(36).substring(2, 15);
+            const id = `vaga_exc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
             const empData: Employee = {
               id,
               registration: '',
               name: 'Vaga Excluída',
-              role,
+              role: role || 'Vaga',
               sector,
               machine,
               shift,
               status: 'Vaga Excluída',
-              updatedAt: now
-            };
-            await setDoc(doc(db, 'employees', id), {
-              ...empData,
+              replacedEmployeeId: 'vaga_excluida',
+              updatedAt: now,
               userId: currentUser?.uid || 'anonymous'
-            });
+            };
 
-            await setDoc(doc(db, 'personnelLogs', logId), {
+            await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
+
+            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
               id: logId,
               userId: currentUser?.uid || 'anonymous',
               date: now,
               employeeName: 'Vaga',
               action: 'Exclusão' as any,
-              details: `Vaga excluída permanentemente (${sector} - ${machine} - ${shift} - ${role})`,
+              details: `Slot de vaga excluído permanentemente (${sector} - ${machine} - ${shift} - ${role})`,
               user: loggedUser?.name || 'Sistema'
+            }));
+
+            recordUserActivity({
+              user: loggedUser,
+              type: 'action',
+              screen: 'Gestão de Pessoas',
+              subScreen: 'Quadro de Funcionários',
+              action: 'Exclusão de Vaga',
+              details: `Slot de vaga excluído no posto ${machine} (${shift})`
             });
 
             const simulatedEmps = [...employees, empData];
+            setEmployees(simulatedEmps);
+            localStorage.setItem('manupackaging_employees', JSON.stringify(simulatedEmps));
             await syncOperatorsSetting(simulatedEmps);
+            addNotification('Slot de vaga excluído com sucesso.');
           }
         } catch (err) {
           console.error("Erro ao excluir vaga:", err);
+          addNotification('Erro ao excluir vaga.');
         }
       }
     );
@@ -10756,11 +10831,14 @@ Atenciosamente,
         normalize(e.sector) === normalize(sectorKey) && 
         matchPersonnelMachine(e.machine, ma) && 
         normalize(e.shift) === normalize(sh) && 
-        normalize(e.status) === 'desligado'
+        normalize(e.status) === 'desligado' &&
+        e.replacedEmployeeId !== 'vaga_excluida'
       ).sort((a, b) => (b.terminatedAt || b.updatedAt || '').localeCompare(a.terminatedAt || a.updatedAt || ''));
 
       const uncoveredDismissed = dismissedInGroup.filter(d => 
-        !activeEmps.some(e => e.replacedEmployeeId === d.id)
+        !activeEmps.some(e => e.replacedEmployeeId === d.id) &&
+        d.replacedEmployeeId !== 'vaga_excluida' &&
+        !d.coveredByEmployeeId
       );
 
       // CADA colaborador desligado sem substituto gera uma vaga em aberto explícita por desligamento
@@ -10824,8 +10902,17 @@ Atenciosamente,
       });
     });
 
+    // Setores Personalizados Criados pelo Usuário (ex: Serviços Gerais, Manutenção)
+    (customSectors || []).forEach(sec => {
+      (sec.machines || ['Geral']).forEach(ma => {
+        (sec.shifts || ['Comercial']).forEach(sh => {
+          processGroup(sec.name, sec.name, ma, sh, sec.defaultCapacity || 1);
+        });
+      });
+    });
+
     return list;
-  }, [employees, collaborators]);
+  }, [employees, collaborators, customSectors]);
 
   const totalVacancies = useMemo(() => {
     return vacanciesDetailedList.length;
@@ -10838,6 +10925,51 @@ Atenciosamente,
       return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
     return dateStr;
+  };
+
+  const handleSaveCustomSector = async (secData: Partial<CustomSector>) => {
+    try {
+      const saved = await saveCustomSectorToFirestore(secData);
+      setCustomSectors(prev => {
+        const idx = prev.findIndex(s => s.id === saved.id);
+        if (idx >= 0) {
+          const cp = [...prev];
+          cp[idx] = saved;
+          return cp;
+        }
+        return [...prev, saved];
+      });
+      recordUserActivity({
+        user: loggedUser,
+        type: 'action',
+        screen: 'Gestão de Pessoas',
+        subScreen: 'Quadro Geral',
+        action: secData.id ? 'Alteração de Setor' : 'Criação de Setor',
+        details: `Setor: ${saved.name}`
+      });
+    } catch (err) {
+      console.error('Erro ao salvar setor personalizado:', err);
+      throw err;
+    }
+  };
+
+  const handleDeleteCustomSector = async (sectorId: string) => {
+    try {
+      const secToDelete = customSectors.find(s => s.id === sectorId);
+      await deleteCustomSectorFromFirestore(sectorId);
+      setCustomSectors(prev => prev.filter(s => s.id !== sectorId));
+      recordUserActivity({
+        user: loggedUser,
+        type: 'action',
+        screen: 'Gestão de Pessoas',
+        subScreen: 'Quadro Geral',
+        action: 'Exclusão de Setor',
+        details: `Setor: ${secToDelete?.name || sectorId}`
+      });
+    } catch (err) {
+      console.error('Erro ao excluir setor personalizado:', err);
+      throw err;
+    }
   };
 
   const handleMoveEmployee = async (
@@ -11181,17 +11313,6 @@ Atenciosamente,
                 </button>
               )}
 
-              {/* 4. COLABORADOR ATIVO QUE ASSUMIU A VAGA DE ALGUÉM DESLIGADO */}
-              {!isVacant && emp?.replacedEmployeeName && (
-                <div 
-                  className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-[9px] font-bold text-left max-w-full"
-                  title={`Em substituição a ${emp.replacedEmployeeName} (Desligado)${emp.replacedReason ? ` • Motivo: ${emp.replacedReason}` : ''}`}
-                >
-                  <UserCheck size={10} className="text-emerald-600 shrink-0" />
-                  <span className="truncate max-w-[125px]">Subst. {formatDisplayName(emp.replacedEmployeeName)}</span>
-                </div>
-              )}
-
               {isVacant && !vacationingEmployee && !dismissedEmployee && (
                 <span className="text-[9px] font-black text-slate-400/50 uppercase tracking-tighter slot-role">{label || role}</span>
               )}
@@ -11215,12 +11336,13 @@ Atenciosamente,
             )}
             {canManagePersonnel && (
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeleteVacancySlot(sector, machine, shift, role, emp);
+                  handleDeleteVacancySlot(sector, machine, shift, role, emp, dismissedEmployee);
                 }}
-                className="p-1 hover:bg-red-100 hover:text-red-600 rounded-md transition-colors text-slate-400"
-                title="Excluir Vaga"
+                className="p-1.5 hover:bg-red-100 hover:text-red-600 rounded-lg transition-all text-slate-400 hover:scale-110 active:scale-95 cursor-pointer z-10"
+                title={isDismissedVacant ? "Excluir este slot e fechar a vaga em aberto" : "Excluir Vaga e Slot"}
               >
                 <Trash2 size={13} />
               </button>
@@ -11272,7 +11394,8 @@ Atenciosamente,
       normalize(e.sector) === normalize(sector) && 
       matchPersonnelMachine(e.machine, machine) && 
       normalize(e.shift) === normalize(shift) && 
-      normalize(e.status) === 'desligado'
+      normalize(e.status) === 'desligado' &&
+      e.replacedEmployeeId !== 'vaga_excluida'
     ).sort((a, b) => {
       const dateA = a.terminatedAt || a.updatedAt || '';
       const dateB = b.terminatedAt || b.updatedAt || '';
@@ -11281,7 +11404,9 @@ Atenciosamente,
 
     // Identifica quais colaboradores desligados NÃO possuem substituto cobrindo sua vaga
     const uncoveredDismissed = dismissedInGroup.filter(d => 
-      !machineEmps.some(e => e.replacedEmployeeId === d.id)
+      !machineEmps.some(e => e.replacedEmployeeId === d.id) &&
+      d.replacedEmployeeId !== 'vaga_excluida' &&
+      !d.coveredByEmployeeId
     );
     
     const excludedCount = employees.filter(e =>
@@ -20736,7 +20861,21 @@ Atenciosamente,
             />
           ) : (
             <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="flex justify-center no-print">
+            <div className="flex items-center justify-center gap-3 no-print">
+              {canManagePersonnel && (
+                <button 
+                  onClick={() => {
+                    setSelectedSectorForEdit(null);
+                    setIsSectorModalOpen(true);
+                  }}
+                  className="p-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl shadow-sm hover:shadow-md active:scale-95 transition-all flex items-center gap-2 cursor-pointer border border-blue-500/30"
+                  title="Criar Novo Setor no Quadro Geral de Pessoal"
+                >
+                  <FolderPlus size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest px-1">Novo Setor</span>
+                </button>
+              )}
+
               <div className="relative">
                 <button 
                   onClick={() => setIsExtraMenuOpen(!isExtraMenuOpen)}
@@ -20780,13 +20919,22 @@ Atenciosamente,
                         </button>
                       )}
                       {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-b border-slate-50 cursor-pointer"
-                        >
-                          <UserPlus size={18} className="text-blue-600" />
-                          Cadastrar Colaborador
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setSelectedSectorForEdit(null); setIsSectorModalOpen(true); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-b border-slate-50 cursor-pointer"
+                          >
+                            <FolderPlus size={18} className="text-indigo-600" />
+                            Criar Novo Setor
+                          </button>
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-b border-slate-50 cursor-pointer"
+                          >
+                            <UserPlus size={18} className="text-blue-600" />
+                            Cadastrar Colaborador
+                          </button>
+                        </>
                       )}
                       {(isAdmin || userPerms.personnel.reports) && (
                         <button 
@@ -20905,15 +21053,28 @@ Atenciosamente,
                         )}
 
                         {(isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount)) && (
-                          <button 
-                            onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
-                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                          >
-                            <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
-                              <UserPlus size={15} className="text-blue-600" />
-                            </div>
-                            <span>Cadastrar Colaborador</span>
-                          </button>
+                          <>
+                            <button 
+                              onClick={() => { setIsExtraMenuOpen(false); setSelectedSectorForEdit(null); setIsSectorModalOpen(true); }}
+                              className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-indigo-50/80 text-slate-700 hover:text-indigo-900 border border-slate-200 hover:border-indigo-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                              title="Criar novo setor personalizado"
+                            >
+                              <div className="p-1 rounded-lg bg-white group-hover:bg-indigo-100/60 transition-colors shadow-2xs">
+                                <FolderPlus size={15} className="text-indigo-600" />
+                              </div>
+                              <span>Criar Novo Setor</span>
+                            </button>
+
+                            <button 
+                              onClick={() => { setIsExtraMenuOpen(false); setIsCollaboratorModalOpen(true); }}
+                              className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-blue-50/80 text-slate-700 hover:text-blue-900 border border-slate-200 hover:border-blue-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                            >
+                              <div className="p-1 rounded-lg bg-white group-hover:bg-blue-100/60 transition-colors shadow-2xs">
+                                <UserPlus size={15} className="text-blue-600" />
+                              </div>
+                              <span>Cadastrar Colaborador</span>
+                            </button>
+                          </>
                         )}
 
                         {(isAdmin || userPerms.personnel.reports) && (
@@ -21028,7 +21189,7 @@ Atenciosamente,
               </div>
             </div>
 
-            <div ref={personnelRef} data-ref-personnel-root className="space-y-8 p-1">
+            <div ref={personnelRef} id="personnel-board-container" data-ref-personnel-root className="space-y-8">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-5">
                 {renderPersonnelStat('Colaboradores', totalAtivos, 'Ativos', <Users size={20} className="sm:w-6 sm:h-6"/>, 'text-blue-400', () => setPersonnelStatModalType('colaboradores'))}
                 {renderPersonnelStat('Operadores', totalOperadoresAtivos, 'Ativos', <HardHat size={20} className="sm:w-6 sm:h-6"/>, 'text-emerald-400', () => setPersonnelStatModalType('operadores'))}
@@ -21284,6 +21445,188 @@ Atenciosamente,
                     </div>
                 </div>
               </div>
+
+              {/* Setores Personalizados Criados pelo Usuário */}
+              {(customSectors || []).map((sec) => {
+                const theme = SECTOR_COLOR_THEMES[sec.colorTheme || 'slate'] || SECTOR_COLOR_THEMES.slate;
+                const secMachines = sec.machines && sec.machines.length > 0 ? sec.machines : ['Geral'];
+                const secShifts = sec.shifts && sec.shifts.length > 0 ? sec.shifts : ['Comercial'];
+                const allocatedCount = employees.filter(e => 
+                  !isEmployeeSilenced(e, collaborators) && 
+                  normalize(e.sector) === normalize(sec.name) && 
+                  isEmployed(e.status) && 
+                  e.status !== 'Férias'
+                ).length;
+
+                return (
+                  <div 
+                    key={sec.id} 
+                    className={`${theme.cardBg} rounded-[2.5rem] overflow-hidden shadow-2xl border ${theme.cardBorder} transition-all`}
+                  >
+                    <div className={`px-8 py-6 flex items-center justify-between ${theme.headerBg} border-b ${theme.headerBorder}`}>
+                      <div className="flex items-center gap-5">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${theme.iconBg}`}>
+                          {renderSectorIcon(sec.icon, 24, theme.iconText)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-black text-white uppercase tracking-tight">
+                              Setor: {sec.name}
+                            </h2>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${theme.badgeBg} ${theme.badgeText}`}>
+                              {allocatedCount} {allocatedCount === 1 ? 'Colaborador' : 'Colaboradores'}
+                            </span>
+                          </div>
+                          <p className={`text-[10px] font-bold uppercase tracking-[0.2em] mt-0.5 ${theme.iconText} opacity-90`}>
+                            {sec.description || secMachines.join(' / ')}
+                          </p>
+                        </div>
+                      </div>
+
+                      {canManagePersonnel && (
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => { 
+                              setQuickAllocSector(sec.name); 
+                              setIsQuickAllocModalOpen(true); 
+                            }} 
+                            className="bg-emerald-600 text-white p-2.5 rounded-xl hover:bg-emerald-700 active:scale-95 transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center cursor-pointer"
+                            title={`Alocação Rápida no setor ${sec.name}`}
+                          >
+                            <Plus size={20} />
+                          </button>
+                          <button 
+                            onClick={() => { 
+                              setSelectedSlot({ 
+                                sector: sec.name, 
+                                machine: secMachines[0] || 'Geral', 
+                                shift: secShifts[0] || 'Comercial', 
+                                role: 'Novo Slot' 
+                              }); 
+                              setIsEmployeeModalOpen(true); 
+                            }} 
+                            className={`${theme.accentBtn} p-2.5 rounded-xl active:scale-95 transition-all shadow-lg flex items-center justify-center cursor-pointer`}
+                            title={`Adicionar novo slot no setor ${sec.name}`}
+                          >
+                            <Plus size={20} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedSectorForEdit(sec);
+                              setIsSectorModalOpen(true);
+                            }}
+                            className="bg-white/10 hover:bg-white/20 text-white p-2.5 rounded-xl active:scale-95 transition-all flex items-center justify-center cursor-pointer border border-white/10"
+                            title={`Editar configurações do setor ${sec.name}`}
+                          >
+                            <Settings size={18} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-6 space-y-6 bg-slate-900/20">
+                      <div className={`grid grid-cols-1 ${secMachines.length > 1 ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-1'} gap-6`}>
+                        {secMachines.map(mach => (
+                          <div 
+                            key={mach} 
+                            className="bg-white p-6 rounded-[2rem] border border-slate-200/80 shadow-sm"
+                            onDragOver={(e) => {
+                              if (canManagePersonnel) {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = 'move';
+                              }
+                            }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              const draggedId = e.dataTransfer.getData('text/plain');
+                              if (draggedId) {
+                                await handleMoveEmployee(draggedId, sec.name, mach, secShifts[0] || 'Comercial');
+                              }
+                            }}
+                          >
+                            <div className="flex items-center justify-between mb-6 pb-2 border-b border-slate-100">
+                              <div className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                                <h3 className="text-[12px] font-black uppercase text-slate-800 tracking-widest">
+                                  {mach === 'Geral' ? `Posto / Área Geral` : mach}
+                                </h3>
+                              </div>
+                              {canManagePersonnel && (
+                                <button 
+                                  className="text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                  title={`Adicionar vaga em ${mach}`}
+                                  onClick={() => { 
+                                    setSelectedSlot({ 
+                                      sector: sec.name, 
+                                      machine: mach, 
+                                      shift: secShifts[0] || 'Comercial', 
+                                      role: 'Novo Slot' 
+                                    }); 
+                                    setIsEmployeeModalOpen(true); 
+                                  }}
+                                >
+                                  <Plus size={16} />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className={`grid grid-cols-1 ${secShifts.length > 1 ? 'sm:grid-cols-2' : ''} gap-4`}>
+                              {secShifts.map(sh => (
+                                <div key={sh} className="space-y-3">
+                                  <div className="flex justify-between items-center mb-1">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{sh}</p>
+                                    {canManagePersonnel && (
+                                      <button 
+                                        className="text-blue-400 hover:bg-blue-50 p-1 rounded-md transition-colors cursor-pointer"
+                                        title={`Adicionar vaga no turno ${sh}`}
+                                        onClick={() => { 
+                                          setSelectedSlot({ 
+                                            sector: sec.name, 
+                                            machine: mach, 
+                                            shift: sh, 
+                                            role: 'Novo Slot' 
+                                          }); 
+                                          setIsEmployeeModalOpen(true); 
+                                        }}
+                                      >
+                                        <Plus size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                  {renderMachineGroup(sec.name, mach, sh, sec.defaultCapacity || 1)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Botão / Cartão para Criar Novo Setor */}
+              {canManagePersonnel && (
+                <div 
+                  onClick={() => {
+                    setSelectedSectorForEdit(null);
+                    setIsSectorModalOpen(true);
+                  }}
+                  className="p-8 border-2 border-dashed border-slate-300 hover:border-blue-500 bg-white/60 hover:bg-blue-50/50 rounded-[2.5rem] flex flex-col sm:flex-row items-center justify-center gap-4 cursor-pointer transition-all hover:scale-[1.005] group text-center sm:text-left shadow-sm"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm shrink-0">
+                    <FolderPlus size={28} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase text-slate-800 tracking-wide group-hover:text-blue-600 transition-colors">
+                      Criar Novo Setor no Quadro Geral
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Adicione novos setores (ex: Serviços Gerais, Manutenção, Qualidade, Logística) e aloque colaboradores em postos de trabalho
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )
@@ -21751,6 +22094,18 @@ Atenciosamente,
             } else {
               await setDoc(doc(db, 'employees', empId), cleanUndefined({ ...data, updatedAt: now, userId: currentUser.uid }), { merge: true });
             }
+
+            if (data.replacedEmployeeId && data.replacedEmployeeId !== 'vaga_excluida') {
+              try {
+                await setDoc(doc(db, 'employees', data.replacedEmployeeId), {
+                  coveredByEmployeeId: empId,
+                  coveredByEmployeeName: data.name,
+                  updatedAt: now
+                }, { merge: true });
+              } catch (e) {
+                console.warn('Erro ao atualizar status de cobertura do colaborador desligado:', e);
+              }
+            }
             
             const logId = Math.random().toString(36).substr(2, 9);
             const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || '';
@@ -21816,7 +22171,7 @@ Atenciosamente,
           } catch(error) {
             console.error(error);
           }
-      }} availableShifts={availableShifts} availableMachines={activeMachines} availableRoles={availableRoles} collaborators={collaborators} initialData={selectedEmployee} slotInfo={selectedSlot} />
+      }} availableShifts={availableShifts} availableMachines={activeMachines} availableRoles={availableRoles} collaborators={collaborators} customSectors={customSectors} initialData={selectedEmployee} slotInfo={selectedSlot} />
       
       <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={async (s) => {
         try {
@@ -21906,6 +22261,7 @@ Atenciosamente,
         availableRoles={availableRoles}
         availableShifts={availableShifts.map(s => s.name)}
         machines={activeMachines}
+        customSectors={customSectors}
         onAdd={async (newEmp) => {
           try {
             const id = Math.random().toString(36).substring(2, 15);
@@ -22151,6 +22507,7 @@ Atenciosamente,
         type={personnelStatModalType}
         employees={employees}
         vacancies={vacanciesDetailedList}
+        customSectors={customSectors}
         onManageVacation={(emp) => handleOpenVacationReturnModal(emp)}
         onSelectVacancy={(v) => {
           setPersonnelStatModalType(null);
@@ -22165,6 +22522,23 @@ Atenciosamente,
           });
           setIsEmployeeModalOpen(true);
         }}
+        onDeleteVacancy={(v) => {
+          if (!canManagePersonnel) return;
+          const disEmp = v.dismissedId ? employees.find(e => e.id === v.dismissedId) : undefined;
+          handleDeleteVacancySlot(v.sector, v.machine, v.shift, v.role, undefined, disEmp);
+        }}
+      />
+      <SectorModal
+        isOpen={isSectorModalOpen}
+        onClose={() => {
+          setIsSectorModalOpen(false);
+          setSelectedSectorForEdit(null);
+        }}
+        onSave={handleSaveCustomSector}
+        onDelete={handleDeleteCustomSector}
+        initialData={selectedSectorForEdit}
+        existingSectorNames={['Liderança', 'Extrusão', 'Reciclagem', 'Fita', ...customSectors.map(s => s.name)]}
+        allocatedEmployeesCount={employees.filter(e => selectedSectorForEdit && normalize(e.sector) === normalize(selectedSectorForEdit.name) && isEmployed(e.status)).length}
       />
 
       <VacationReturnModal

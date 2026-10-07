@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Search, Plus, UserPlus } from 'lucide-react';
-import { Employee, EmployeeStatus, Collaborator } from '../types';
+import { Employee, EmployeeStatus, Collaborator, CustomSector } from '../types';
 import { isCollaboratorSilenced } from '../utils/silenceUtils';
 
 interface QuickAllocationModalProps {
@@ -11,6 +11,7 @@ interface QuickAllocationModalProps {
   availableRoles: string[];
   availableShifts: string[];
   machines: string[];
+  customSectors?: CustomSector[];
   onAdd: (employee: Omit<Employee, 'id' | 'updatedAt'>) => Promise<void>;
 }
 
@@ -22,14 +23,35 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
   availableRoles,
   availableShifts,
   machines,
+  customSectors = [],
   onAdd
 }) => {
   const [colSearchTerm, setColSearchTerm] = useState('');
   const [isColDropdownOpen, setIsColDropdownOpen] = useState(false);
 
+  const allSectorOptions = useMemo(() => {
+    const list = ['Extrusão', 'Reciclagem', 'Fita', 'Liderança'];
+    (customSectors || []).forEach(cs => {
+      if (cs.name && !list.includes(cs.name)) {
+        list.push(cs.name);
+      }
+    });
+    return list;
+  }, [customSectors]);
+
   const uniqueRoles = Array.from(new Set(availableRoles));
   const uniqueShifts = Array.from(new Set([...availableShifts, 'Comercial', 'Comercial Flexível', 'Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2']));
-  const uniqueMachines = Array.from(new Set([...machines, 'Geral', 'Cast 1', 'Cast 2', 'Erema 1', 'Ghezzi', 'Lintech', 'Wultec']));
+  const uniqueMachines = Array.from(new Set([
+    ...machines, 
+    'Geral', 
+    'Cast 1', 
+    'Cast 2', 
+    'Erema 1', 
+    'Ghezzi', 
+    'Lintech', 
+    'Wultec',
+    ...(customSectors || []).flatMap(cs => cs.machines || [])
+  ]));
 
   // Pre-selected defaults depending on the sector
   const getInitialMachine = (sector: string) => {
@@ -39,6 +61,10 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
     if (s.includes('extrusão') || s.includes('extrusao')) return 'Cast 1';
     if (s.includes('reciclagem')) return 'Erema 1';
     if (s.includes('fita')) return 'Ghezzi';
+    const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === s);
+    if (foundCustom && foundCustom.machines && foundCustom.machines.length > 0) {
+      return foundCustom.machines[0];
+    }
     return 'Geral';
   };
 
@@ -46,6 +72,10 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
     if (!sector) return 'Diurno 1';
     const s = sector.toLowerCase();
     if (s.includes('liderança') || s.includes('lideranca')) return 'Comercial';
+    const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === s);
+    if (foundCustom && foundCustom.shifts && foundCustom.shifts.length > 0) {
+      return foundCustom.shifts[0];
+    }
     return 'Diurno 1';
   };
 
@@ -90,6 +120,10 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
 
   const shiftsForSector = useMemo(() => {
     const s = newEmp.sector ? newEmp.sector.toLowerCase() : '';
+    const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === s);
+    if (foundCustom && foundCustom.shifts && foundCustom.shifts.length > 0) {
+      return foundCustom.shifts;
+    }
     if (s.includes('extrusão') || s.includes('extrusao')) {
       return ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'];
     }
@@ -103,7 +137,28 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
       return ['Diurno 1', 'Diurno 2', 'Comercial'];
     }
     return uniqueShifts;
-  }, [newEmp.sector, uniqueShifts]);
+  }, [newEmp.sector, uniqueShifts, customSectors]);
+
+  const machinesForSector = useMemo(() => {
+    const s = newEmp.sector ? newEmp.sector.toLowerCase() : '';
+    const foundCustom = (customSectors || []).find(cs => cs.name.toLowerCase() === s);
+    if (foundCustom && foundCustom.machines && foundCustom.machines.length > 0) {
+      return foundCustom.machines;
+    }
+    if (s.includes('extrusão') || s.includes('extrusao')) {
+      return ['Cast 1', 'Cast 2'];
+    }
+    if (s.includes('reciclagem')) {
+      return ['Erema 1'];
+    }
+    if (s.includes('fita')) {
+      return ['Ghezzi', 'Lintech', 'Wultec'];
+    }
+    if (s.includes('liderança') || s.includes('lideranca')) {
+      return ['Geral'];
+    }
+    return uniqueMachines;
+  }, [newEmp.sector, uniqueMachines, customSectors]);
 
   const filteredCollaboratorsForSelect = useMemo(() => {
     const list = (collaborators || []).filter(c => !isCollaboratorSilenced(c));
@@ -248,19 +303,19 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
                 onChange={(e) => handleSectorChange(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all h-[44px]"
               >
-                {['Extrusão', 'Reciclagem', 'Fita', 'Liderança'].map(s => <option key={s} value={s}>{s}</option>)}
+                {allSectorOptions.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
 
             {/* Máquina */}
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Máquina</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Máquina / Posto</label>
               <select
                 value={newEmp.machine}
                 onChange={(e) => setNewEmp({ ...newEmp, machine: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all h-[44px]"
               >
-                {uniqueMachines.map(m => <option key={m} value={m}>{m}</option>)}
+                {machinesForSector.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
 
