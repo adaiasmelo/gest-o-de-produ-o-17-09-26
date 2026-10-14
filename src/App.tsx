@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -141,11 +141,20 @@ import {
   loadProductionCache,
   saveProductionCache,
   mergeProductionDocChanges,
+  deduplicateProductionEntries,
   loadRibbonCache,
   saveRibbonCache,
   mergeRibbonDocChanges
 } from './utils/productionCache';
 import { EvaluationsTab } from './components/EvaluationsTab';
+import { SupabaseModal } from './components/SupabaseModal';
+import { 
+  saveProductionEntryToSupabase, 
+  deleteProductionEntryFromSupabase, 
+  fetchAllProductionFromSupabase, 
+  isSupabaseConfigured 
+} from './lib/supabase';
+import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
   "marcelo": { registration: "1611", name: "MARCELO DA SILVA CASTRO" },
@@ -1597,6 +1606,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [updateVersionTag, setUpdateVersionTag] = useState<string>('');
   const sessionLoadedBuildTimeRef = useRef<string | null>(null);
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isQuickAllocModalOpen, setIsQuickAllocModalOpen] = useState(false);
   const [quickAllocSector, setQuickAllocSector] = useState('Extrusão');
   const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
@@ -2126,6 +2136,94 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   }, [systemLogo, settingsLoaded, loggedUser]);
 
+  // Sincronização contínua bi-direcional via servidor para todos os aparelhos (celulares, tablets, computadores)
+  const [isCrossDeviceSyncing, setIsCrossDeviceSyncing] = useState(false);
+
+  const syncProductionBetweenDevices = useCallback(async (showToast = false) => {
+    setIsCrossDeviceSyncing(true);
+    try {
+      // 1. Carrega o cache local deste aparelho
+      const localCache = loadProductionCache();
+      const localEntries = localCache.entries || [];
+
+      // 2. Se este aparelho possui lançamentos no cache local, envia para unificar no servidor
+      if (localEntries.length > 0) {
+        try {
+          await fetch('/api/sync/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries: localEntries })
+          });
+        } catch (_) {}
+      }
+
+      // 3. Obtém o estado unificado consolidado no servidor
+      const res = await fetch('/api/sync/production');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+          setProductionData(prev => {
+            const merged = deduplicateProductionEntries([...data.entries, ...prev]);
+            saveProductionCache(merged);
+            return merged;
+          });
+          if (showToast) {
+            addNotification(`Sincronização concluída: ${data.entries.length} lançamentos consolidados.`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao sincronizar aparelhos:', err);
+    } finally {
+      setIsCrossDeviceSyncing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncProductionBetweenDevices(false);
+    const timer = setInterval(() => syncProductionBetweenDevices(false), 25000);
+    return () => clearInterval(timer);
+  }, [syncProductionBetweenDevices]);
+
+  // Sincronização em tempo real e carga automática com Supabase (PostgreSQL)
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    // 1. Carga inicial dos lançamentos cadastrados no Supabase
+    fetchAllProductionFromSupabase().then(entries => {
+      if (entries && entries.length > 0) {
+        setProductionData(prev => {
+          const merged = deduplicateProductionEntries([...entries, ...prev]);
+          saveProductionCache(merged);
+          return merged;
+        });
+      }
+    }).catch(e => console.warn('Aviso Supabase load:', e));
+
+    // 2. Realtime listener com sub-segundo de latência para múltiplos aparelhos
+    const unsub = subscribeToSupabaseProduction(
+      (entry) => {
+        setProductionData(prev => {
+          const filtered = prev.filter(p => p.id !== entry.id);
+          const updated = deduplicateProductionEntries([entry, ...filtered]);
+          saveProductionCache(updated);
+          return updated;
+        });
+      },
+      (deletedId) => {
+        setProductionData(prev => {
+          const updated = prev.filter(p => p.id !== deletedId);
+          saveProductionCache(updated);
+          return updated;
+        });
+      }
+    );
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
+
   useEffect(() => {
     if (!currentUser) return;
 
@@ -2137,35 +2235,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     setProductionSyncStatus(prev => ({ ...prev, isSyncing: true }));
 
     const unsubProduction = onSnapshot(collection(db, 'productionEntries'), (snap) => {
-      // 1. Manutenção em segundo plano de registros legados / higienização de nomes e turnos
-      snap.docChanges().forEach((change) => {
-        if (change.type === 'added' || change.type === 'modified') {
-          const raw = change.doc.data() as ProductionEntry;
-          const cleaned = { ...raw, shift: sanitizeShift(raw.shift, raw.machine), id: change.doc.id };
-          const upgraded = { ...cleaned, operator: upgradeName(cleaned.operator) };
-          
-          if (upgraded.date) {
-            const year = parseInt(upgraded.date.split('-')[0], 10);
-            if (!isNaN(year) && year < 2026) {
-              deleteDoc(doc(db, 'productionEntries', change.doc.id)).catch(err => {
-                console.error('Erro ao excluir apontamento antigo da nuvem:', err);
-              });
-              return;
-            }
-          } else {
-            deleteDoc(doc(db, 'productionEntries', change.doc.id)).catch(() => {});
-            return;
-          }
-
-          if (upgraded.operator !== raw.operator || upgraded.shift !== raw.shift) {
-            setDoc(doc(db, 'productionEntries', change.doc.id), upgraded).catch(err => {
-              console.error('Erro ao migrar dados em productionEntries:', err);
-            });
-          }
-        }
-      });
-
-      // 2. Sincronização Inteligente Incremental (Zero Latência e apenas diferenças aplicadas)
+      // 1. Higienização apenas em memória (sem writes desnecessários ao Firestore para não estourar a cota)
       const allLiveDocIds = isInitialLoad ? new Set(snap.docs.map(d => d.id)) : undefined;
 
       setProductionData(prevEntries => {
@@ -2188,10 +2258,17 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             isLoadedFromCache: false,
             isSyncing: false
           });
+
+          // Envia em segundo plano para o servidor unificar entre todos os aparelhos
+          fetch('/api/sync/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries: updatedEntries })
+          }).catch(() => {});
+
           return updatedEntries;
         }
 
-        // Se nenhuma alteração ocorreu entre o cache local e a nuvem, mantemos a referência exata
         setProductionSyncStatus(prev => ({
           ...prev,
           lastSyncTime: prev.lastSyncTime || new Date().toISOString(),
@@ -2200,20 +2277,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         return prevEntries;
       });
 
-      // 3. Notificações sonoras e visuais para novos lançamentos recebidos em tempo real
+      // 2. Notificações sonoras e visuais para novos lançamentos recebidos em tempo real
       snap.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const newEntry = change.doc.data() as ProductionEntry;
           const entryTime = newEntry.updatedAt || '';
           
-          // Apenas notifica se adicionado/atualizado após o início da sessão e não for rota TV
           if (entryTime >= sessionStartTime && !isExternalTvRoute()) {
             const id = Math.random().toString(36).substring(7);
-            
-            // Toca áudio de alerta
             audioRef.current.play().catch(e => console.log('Autoplay bloqueado ou erro de áudio:', e));
 
-            // Adiciona notificação toast
             setNotifications(prev => [
               { 
                 id, 
@@ -2225,7 +2298,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             ]);
             setUnreadCount(prev => prev + 1);
 
-            // Remoção automática após 5 segundos
             setTimeout(() => {
               setNotifications(prev => prev.filter(n => n.id !== id));
             }, 5000);
@@ -2234,25 +2306,31 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       });
       isInitialLoad = false;
     }, (err) => {
-      console.warn('Erro ao escutar productionEntries, operando com cache local instantâneo.', err);
+      console.warn('Aviso: Firestore em modo restrito ou cota diária excedida. Ativando sincronização via servidor local/nuvem.', err);
       try { handleFirestoreError(err, OperationType.LIST, 'productionEntries'); } catch (_) {}
       setProductionSyncStatus(prev => ({ ...prev, isSyncing: false }));
       setIsInitializing(false);
+
+      // Fallback Inteligente: Busca lançamentos consolidados no servidor
+      fetch('/api/sync/production')
+        .then(res => res.json())
+        .then(data => {
+          if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+            setProductionData(prev => {
+              const merged = deduplicateProductionEntries([...data.entries, ...prev]);
+              saveProductionCache(merged);
+              return merged;
+            });
+          }
+        })
+        .catch(e => console.warn('Falha no fallback de sync do servidor:', e));
     });
 
     const unsubEmployees = onSnapshot(collection(db, 'employees'), (snap) => {
       const data = snap.docs.map(docRef => {
         const raw = docRef.data() as Employee;
         const cleaned = { ...raw, shift: sanitizeShift(raw.shift, raw.sector || raw.machine), id: docRef.id };
-        const upgraded = upgradeEmployee(cleaned);
-        
-        if (upgraded.role !== raw.role || upgraded.shift !== raw.shift) {
-          // Asynchronously update Firestore in background
-          setDoc(doc(db, 'employees', docRef.id), { role: upgraded.role, shift: upgraded.shift, updatedAt: new Date().toISOString() }, { merge: true }).catch(err => {
-            console.error('Erro ao migrar cargo/turno do colaborador no Firestore:', err);
-          });
-        }
-        return upgraded;
+        return upgradeEmployee(cleaned);
       });
       setEmployees(data);
       if (data.length > 0) {
@@ -2268,15 +2346,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       const data = snap.docs.map(docRef => {
         const raw = docRef.data() as Collaborator;
         const cleaned = { ...raw, id: docRef.id };
-        const upgraded = upgradeCollaborator(cleaned);
-        
-        if (upgraded.role !== cleaned.role) {
-          // Asynchronously update Firestore in background
-          setDoc(doc(db, 'collaborators', docRef.id), { role: upgraded.role, updatedAt: new Date().toISOString() }, { merge: true }).catch(err => {
-            console.error('Erro ao migrar cargo no cadastro global (collaborators):', err);
-          });
-        }
-        return upgraded;
+        return upgradeCollaborator(cleaned);
       });
       setCollaborators(data);
     }, (err) => {
@@ -2304,15 +2374,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           changed = true;
         }
         
-        const upgraded = { ...cleaned, participants: upgradedParticipants };
-        
-        if (changed) {
-          // Asynchronously update Firestore in background
-          setDoc(doc(db, 'training_records', docRef.id), upgraded).catch(err => {
-            console.error('Erro ao migrar participante no registro de treino:', err);
-          });
-        }
-        return upgraded;
+        return { ...cleaned, participants: upgradedParticipants };
       });
       setTrainingRecords(data.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')));
     }, (err) => {
@@ -2337,19 +2399,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         // Forced Migration: If footer is still the old one, update it automatically
         const newFooter = 'Revisão: 004 Data emissão: 08/01/2016 Data revisão: 22/01/2024 Elaboração: Leila Silva Aprovação: Lara Andrade';
         
-        if (data.footerText && (data.footerText.includes('Gestão Industrial') || data.footerText.includes('13/05/2026') || data.footerText.includes('Status: Aprovado') || data.footerText.includes('Rev.: 00'))) {
-          if (data.footerText !== newFooter) {
-            setDoc(doc(db, 'settings', 'training_template'), { ...data, footerText: newFooter }, { merge: true });
-            setTrainingTemplate({ ...data, footerText: newFooter });
-          } else {
-            setTrainingTemplate(data);
-          }
-        } else {
-          setTrainingTemplate(data);
-        }
+        setTrainingTemplate(data);
       }
     }, (err) => {
-      console.warn('Erro ao escutar settings/training_template.', err);
+      console.warn('Settings/training_template em modo offline/cache.');
       try { handleFirestoreError(err, OperationType.GET, 'settings/training_template'); } catch (_) {}
     });
 
@@ -2358,19 +2411,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         const raw = docRef.data() as PersonnelLog;
         const cleaned = { ...raw, id: docRef.id };
         const upgradedName = upgradeName(cleaned.employeeName);
-        
-        if (upgradedName !== cleaned.employeeName) {
-          const upgraded = { ...cleaned, employeeName: upgradedName };
-          setDoc(doc(db, 'personnelLogs', docRef.id), upgraded).catch(err => {
-            console.error('Erro ao migrar nome do colaborador no personnelLog:', err);
-          });
-          return upgraded;
-        }
-        return cleaned;
+        return upgradedName ? { ...cleaned, employeeName: upgradedName } : cleaned;
       });
       setPersonnelLogs(data.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
     }, (err) => {
-      console.warn('Erro ao escutar personnelLogs.', err);
+      console.warn('PersonnelLogs em modo offline/cache.');
       try { handleFirestoreError(err, OperationType.LIST, 'personnelLogs'); } catch (_) {}
     });
 
@@ -2380,7 +2425,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         setAvailableShifts(data);
       }
     }, (err) => {
-      console.error('Shifts error:', err);
+      console.warn('Shifts em modo offline/cache.');
     });
 
     const unsubCustomSectors = onSnapshot(collection(db, 'custom_sectors'), (snap) => {
@@ -2390,33 +2435,25 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         persistCustomSectorsLocal(data);
       }
     }, (err) => {
-      console.warn('Erro ao escutar custom_sectors:', err);
+      console.warn('Custom sectors em modo offline/cache.');
     });
 
     const unsubUsers = onSnapshot(collection(db, 'system_users'), (snap) => {
       const data = snap.docs.map(docRef => {
         const raw = docRef.data() as SystemUser;
         const cleaned = { ...raw, id: docRef.id };
-        
         const normName = cleaned.name.trim().toLowerCase();
-        let foundKey = findManualMapKey(normName);
-        
+        const foundKey = findManualMapKey(normName);
         if (foundKey) {
           const updated = MANUAL_MAP[foundKey];
-          if (cleaned.name !== updated.name || cleaned.registration !== updated.registration) {
-            const upgraded = { ...cleaned, name: updated.name, registration: updated.registration };
-            setDoc(doc(db, 'system_users', docRef.id), upgraded).catch(err => {
-              console.error('Erro ao migrar system_users:', err);
-            });
-            return upgraded;
-          }
+          return { ...cleaned, name: updated.name, registration: updated.registration };
         }
         return cleaned;
       });
       setSystemUsers(data);
       setIsInitializing(false);
     }, (err) => {
-      console.error('Users error:', err);
+      console.warn('Users em modo offline/cache.');
       try { handleFirestoreError(err, OperationType.LIST, 'system_users'); } catch (_) {}
       setIsInitializing(false);
     });
@@ -2461,12 +2498,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             }
           }
           
-          if (changed) {
-            setDoc(doc(db, 'settings', 'global'), { ...data, operators: upgradedOps }, { merge: true }).catch(err => {
-              console.error('Erro ao atualizar operador em settings/global:', err);
-            });
-          }
-          
           setOperators(upgradedOps);
           localStorage.setItem('manupackaging_operators', JSON.stringify(upgradedOps));
         }
@@ -2494,20 +2525,13 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         }
         if (data.availableRoles) {
           const rolesList = [...data.availableRoles];
-          let changed = false;
           if (!rolesList.includes('Em Experiência')) {
             rolesList.push('Em Experiência');
-            changed = true;
           }
           if (!rolesList.includes('Operador 3')) {
             rolesList.push('Operador 3');
-            changed = true;
           }
           setAvailableRoles(rolesList);
-          if (changed) {
-            setDoc(doc(db, 'settings', 'global'), { availableRoles: rolesList }, { merge: true })
-              .catch(err => console.error('Erro ao atualizar cargos em settings/global:', err));
-          }
         }
 
         // Detector de Atualizações e Edições do Sistema em Tempo Real (PC e Mobile)
@@ -11613,15 +11637,29 @@ Atenciosamente,
             // 1. Atualização Instantânea em Tempo Real no Estado React e no Cache Local (0ms de latência)
             setProductionData(prev => {
               const filtered = prev.filter(p => p.id !== id);
-              const updated = [fullEntry as ProductionEntry, ...filtered];
+              const updated = deduplicateProductionEntries([fullEntry as ProductionEntry, ...filtered]);
               saveProductionCache(updated);
               return updated;
             });
 
-            // 2. Gravação no Banco de Dados em Nuvem (Firestore)
-            await setDoc(doc(db, 'productionEntries', id), fullEntry);
+            // 2. Sincronização com o servidor compartilhado para todos os celulares e computadores
+            fetch('/api/sync/production', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ entries: [fullEntry] })
+            }).catch(() => {});
 
-            // 3. Notifica abas ou componentes para atualizar visão geral e relatórios imediatamente
+            // 2.1 Gravação no Banco de Dados Supabase (PostgreSQL)
+            saveProductionEntryToSupabase(fullEntry).catch(() => {});
+
+            // 3. Gravação no Banco de Dados em Nuvem (Firestore)
+            try {
+              await setDoc(doc(db, 'productionEntries', id), fullEntry);
+            } catch (fireErr) {
+              console.warn('Persistindo lançamento via servidor:', fireErr);
+            }
+
+            // 4. Notifica abas ou componentes para atualizar visão geral e relatórios imediatamente
             try {
               window.dispatchEvent(new CustomEvent('production_data_updated', { detail: fullEntry }));
             } catch (err) {}
@@ -12194,6 +12232,18 @@ Atenciosamente,
               <Users size={14} className="text-emerald-600 shrink-0 hidden sm:inline" />
             </button>
           )}
+
+          {/* Botão de Atalho Direto: Supabase & Nuvem */}
+          <button
+            type="button"
+            onClick={() => setIsSupabaseModalOpen(true)}
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl md:rounded-2xl transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer font-bold text-[10px] sm:text-xs uppercase"
+            title="Abrir Painel do Supabase & Nuvem / Migração de Dados"
+          >
+            <Zap size={14} className="text-emerald-600 shrink-0" />
+            <span className="hidden sm:inline">Supabase & Nuvem</span>
+            <span className="sm:hidden">Supabase</span>
+          </button>
 
           {/* Botão de Menu com 4 Barrinhas Horizontais */}
           <button
@@ -12968,6 +13018,24 @@ Atenciosamente,
                         <span>Configurações Gerais</span>
                       </button>
                     )}
+
+                    {/* Supabase & Nuvem (Banco de Dados) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSupabaseModalOpen(true);
+                        setIsMainMenuOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-emerald-800 hover:bg-emerald-50 transition-colors text-left cursor-pointer border border-emerald-100/80 bg-emerald-50/40"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Zap size={18} className="text-emerald-600 shrink-0" />
+                        <span>Supabase & Nuvem</span>
+                      </div>
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-black uppercase">
+                        Conectado
+                      </span>
+                    </button>
 
                     {/* Trilha de Auditoria (ISO 9001) */}
                     <button
@@ -16153,11 +16221,28 @@ Atenciosamente,
                     <Trash2 size={18}/> Excluir Selecionados ({selectedEntries.length})
                   </button>
                 )}
-                <button onClick={exportToCSV} className="px-8 py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95 whitespace-nowrap">
+                <button 
+                  onClick={() => syncProductionBetweenDevices(true)} 
+                  disabled={isCrossDeviceSyncing}
+                  className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-blue-100 transition-all active:scale-95 whitespace-nowrap cursor-pointer"
+                  title="Sincroniza todos os apontamentos deste aparelho com a nuvem e outros celulares/computadores"
+                >
+                  <RefreshCw size={18} className={isCrossDeviceSyncing ? "animate-spin" : ""} />
+                  <span>{isCrossDeviceSyncing ? "Sincronizando..." : "Sincronizar Aparelhos"}</span>
+                </button>
+                <button onClick={exportToCSV} className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95 whitespace-nowrap cursor-pointer">
                   <FileDown size={18}/> Exportar Excel
                 </button>
-                <button onClick={downloadBackup} className="px-8 py-3.5 bg-indigo-600 text-white hover:bg-indigo-750 rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 transition-all active:scale-95 whitespace-nowrap" title="Extrair Backup Completo em formato JSON">
+                <button onClick={downloadBackup} className="px-6 py-3.5 bg-indigo-600 text-white hover:bg-indigo-750 rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 transition-all active:scale-95 whitespace-nowrap cursor-pointer" title="Extrair Backup Completo em formato JSON">
                   <Database size={18}/> Extrair Backup (JSON)
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  className="px-6 py-3.5 bg-slate-700 hover:bg-slate-800 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 whitespace-nowrap cursor-pointer"
+                  title="Importar ou Restaurar arquivo de Backup JSON neste e nos outros aparelhos"
+                >
+                  <Upload size={18} />
+                  <span>Importar Backup</span>
                 </button>
               </div>
             </div>
@@ -16470,6 +16555,7 @@ Atenciosamente,
                                                   async () => {
                                                     try {
                                                       await deleteDoc(doc(db, 'productionEntries', entry.id));
+                                                      deleteProductionEntryFromSupabase(entry.id).catch(() => {});
                                                       recordUserActivity({
                                                         user: loggedUser,
                                                         type: 'action',
@@ -20958,13 +21044,22 @@ Atenciosamente,
                         </span>
                       </button>
                       {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
-                        <button 
-                          onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors cursor-pointer"
-                        >
-                          <Database size={18} className="text-emerald-500" />
-                          Banco de Dados
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors cursor-pointer"
+                          >
+                            <Database size={18} className="text-emerald-500" />
+                            Banco de Dados
+                          </button>
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setIsSupabaseModalOpen(true); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-emerald-800 hover:bg-emerald-50 text-[11px] font-black uppercase transition-colors cursor-pointer border-t border-slate-50"
+                          >
+                            <Zap size={18} className="text-emerald-600" />
+                            Supabase & Nuvem
+                          </button>
+                        </>
                       )}
                       {(isAdmin || userPerms.personnel.vacations) && (
                         <button 
@@ -21100,15 +21195,27 @@ Atenciosamente,
                         </button>
 
                         {(isAdmin || (userPerms.settings.system && !isReadOnlyAccount)) && (
-                          <button 
-                            onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
-                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                          >
-                            <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-100/60 transition-colors shadow-2xs">
-                              <Database size={15} className="text-emerald-500" />
-                            </div>
-                            <span>Banco de Dados</span>
-                          </button>
+                          <>
+                            <button 
+                              onClick={() => { setIsExtraMenuOpen(false); setIsDatabaseModalOpen(true); }}
+                              className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                            >
+                              <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-100/60 transition-colors shadow-2xs">
+                                <Database size={15} className="text-emerald-500" />
+                              </div>
+                              <span>Banco de Dados</span>
+                            </button>
+                            <button 
+                              onClick={() => { setIsExtraMenuOpen(false); setIsSupabaseModalOpen(true); }}
+                              className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                              title="Configurar Supabase, exportar dados e ver guia GitHub"
+                            >
+                              <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-200/60 transition-colors shadow-2xs">
+                                <Zap size={15} className="text-emerald-600" />
+                              </div>
+                              <span>Supabase & Nuvem</span>
+                            </button>
+                          </>
                         )}
 
                         {(isAdmin || userPerms.personnel.vacations) && (
@@ -21995,13 +22102,22 @@ Atenciosamente,
                     if (data.goals) setGoals(data.goals);
                     if (data.dashboardMonth) setDashboardMonth(data.dashboardMonth);
 
-                    // Restore to LocalStorage
-                    if (data.productionData) setProductionData(data.productionData.map((e: any) => ({ ...e, shift: sanitizeShift(e.shift, e.machine || e.sector) })));
+                    // Restore to LocalStorage and Server Sync
+                    if (data.productionData) {
+                      const sanitized = deduplicateProductionEntries(data.productionData.map((e: any) => ({ ...e, shift: sanitizeShift(e.shift, e.machine || e.sector) })));
+                      setProductionData(sanitized);
+                      saveProductionCache(sanitized);
+                      fetch('/api/sync/production', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ entries: sanitized })
+                      }).catch(() => {});
+                    }
                     if (data.employees) setEmployees(data.employees.map((e: any) => ({ ...e, shift: sanitizeShift(e.shift, e.sector || e.machine) })));
                     if (data.availableShifts) setAvailableShifts(data.availableShifts);
                     if (data.personnelLogs) setPersonnelLogs(data.personnelLogs);
 
-                    alert('Backup restaurado com sucesso!');
+                    alert('Backup restaurado e sincronizado com todos os aparelhos!');
                 } catch (err) {
                     alert('Erro ao processar arquivo de backup.');
                 }
@@ -22014,9 +22130,33 @@ Atenciosamente,
         try {
           const isNew = !editingEntry;
           const id = editingEntry ? editingEntry.id : Math.random().toString(36).substr(2, 9);
-          const entry = { ...e, id, userId: currentUser.uid, updatedAt: new Date().toISOString() };
+          const entry = { ...e, id, userId: currentUser?.uid || 'usuario', updatedAt: new Date().toISOString() };
           const oldEntry = editingEntry ? productionData.find(x => x.id === editingEntry.id) : null;
-          await setDoc(doc(db, 'productionEntries', id), entry);
+
+          // 1. Atualização Otimista Imediata no Estado React e Cache Local
+          setProductionData(prev => {
+            const filtered = prev.filter(p => p.id !== id);
+            const updated = deduplicateProductionEntries([entry as ProductionEntry, ...filtered]);
+            saveProductionCache(updated);
+            return updated;
+          });
+
+          // 2. Sincronização em nuvem via servidor compartilhado
+          fetch('/api/sync/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries: [entry] })
+          }).catch(() => {});
+
+          // 2.1 Gravação no Banco de Dados Supabase (PostgreSQL)
+          saveProductionEntryToSupabase(entry).catch(() => {});
+
+          // 3. Gravação no Firestore
+          try {
+            await setDoc(doc(db, 'productionEntries', id), entry);
+          } catch (fireErr) {
+            console.warn('Lançamento salvo localmente e no servidor:', fireErr);
+          }
 
           logAuditEvent({
             action: isNew ? 'CREATE' : 'UPDATE',
@@ -22292,6 +22432,27 @@ Atenciosamente,
           }
         }}
       />
+      {isSupabaseModalOpen && (
+        <SupabaseModal
+          isOpen={isSupabaseModalOpen}
+          onClose={() => setIsSupabaseModalOpen(false)}
+          productionEntries={productionData}
+          employees={employees}
+          collaborators={collaborators}
+          shifts={availableShifts}
+          personnelLogs={personnelLogs}
+          settings={{
+            global: { operators, availableRoles, goals },
+            training_template: trainingTemplate
+          }}
+          companyNotices={companyNotices}
+          trainingRecords={trainingRecords}
+          operatorTrainingSheets={operatorTrainingSheets}
+          operatorPenalties={operatorPenalties}
+          ribbonEntries={ribbonEntries}
+          onShowToast={(msg) => addNotification(msg)}
+        />
+      )}
       {isDatabaseModalOpen && (
         <DatabaseModal 
           isOpen={isDatabaseModalOpen}

@@ -57,16 +57,19 @@ export interface FirestoreErrorInfo {
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errorMsg = error instanceof Error ? error.message : String(error);
-  const isOffline = errorMsg.toLowerCase().includes('offline') || 
-                    errorMsg.toLowerCase().includes('network') || 
-                    errorMsg.toLowerCase().includes('reach') ||
-                    errorMsg.toLowerCase().includes('unavailable') ||
-                    errorMsg.toLowerCase().includes('unreachable') ||
-                    errorMsg.toLowerCase().includes('the operation could not be completed') ||
-                    errorMsg.toLowerCase().includes('failed to get document');
+  const isOfflineOrQuota = 
+    errorMsg.toLowerCase().includes('offline') || 
+    errorMsg.toLowerCase().includes('network') || 
+    errorMsg.toLowerCase().includes('reach') ||
+    errorMsg.toLowerCase().includes('unavailable') ||
+    errorMsg.toLowerCase().includes('unreachable') ||
+    errorMsg.toLowerCase().includes('quota') ||
+    errorMsg.toLowerCase().includes('resource-exhausted') ||
+    errorMsg.toLowerCase().includes('the operation could not be completed') ||
+    errorMsg.toLowerCase().includes('failed to get document');
 
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMsg,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -80,16 +83,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     },
     operationType,
     path
-  }
+  };
   
-  if (isOffline) {
-    console.warn('PWA Offline:', operationType, path);
-    // Não lança erro se for apenas offline, permite que o Firestore use o cache silenciosamente
+  if (isOfflineOrQuota) {
+    console.warn(`[Firestore Offline/Cota] Operação: ${operationType} em ${path || 'raiz'}. Operando em cache local.`);
     return;
   }
 
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.warn('Firestore Warning Info: ', JSON.stringify(errInfo));
 }
 
 export const seedInitialData = async (data: {

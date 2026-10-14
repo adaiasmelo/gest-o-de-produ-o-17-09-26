@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import * as admin from 'firebase-admin';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -87,6 +88,98 @@ async function startServer() {
   // API Routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  const SHARED_PROD_FILE = path.join(process.cwd(), 'data', 'shared_production_entries.json');
+
+  function readSharedProduction(): any[] {
+    try {
+      if (fs.existsSync(SHARED_PROD_FILE)) {
+        const content = fs.readFileSync(SHARED_PROD_FILE, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && Array.isArray(parsed.entries)) return parsed.entries;
+      }
+    } catch (err) {
+      console.warn("Erro ao ler shared_production_entries:", err);
+    }
+    return [];
+  }
+
+  function writeSharedProduction(entries: any[]): void {
+    try {
+      const dir = path.dirname(SHARED_PROD_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(SHARED_PROD_FILE, JSON.stringify({
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        count: entries.length,
+        entries
+      }, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn("Erro ao gravar shared_production_entries:", err);
+    }
+  }
+
+  function deduplicateEntriesServer(entries: any[]): any[] {
+    const idMap = new Map<string, any>();
+    const bizMap = new Map<string, any>();
+
+    const sorted = [...entries].sort((a, b) => {
+      const timeA = a.updatedAt || a.date || '';
+      const timeB = b.updatedAt || b.date || '';
+      return timeB.localeCompare(timeA) || String(b.id || '').localeCompare(String(a.id || ''));
+    });
+
+    for (const entry of sorted) {
+      if (!entry || !entry.id || !entry.date) continue;
+      if (idMap.has(entry.id)) continue;
+
+      const normDate = String(entry.date || '').trim();
+      const normMachine = String(entry.machine || '').trim().toLowerCase();
+      const normShift = String(entry.shift || '').trim().toLowerCase();
+      const normOperator = String(entry.operator || '').trim().toUpperCase();
+
+      const isSpecial = entry.isNoWorkDay || entry.isMaintenanceEntry;
+      const bizKey = isSpecial ? `${normDate}_${normMachine}_${normShift}_${entry.id}` : `${normDate}_${normMachine}_${normShift}_${normOperator}`;
+
+      if (bizMap.has(bizKey)) {
+        continue;
+      }
+
+      idMap.set(entry.id, entry);
+      bizMap.set(bizKey, entry);
+    }
+
+    return Array.from(idMap.values()).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  }
+
+  // Endpoint de Sincronização em Nuvem Servidor-Cliente (Garante consistência entre Celular, Desktop e IA Studio)
+  app.get("/api/sync/production", (req, res) => {
+    const entries = readSharedProduction();
+    res.json({
+      status: "ok",
+      count: entries.length,
+      lastSyncTime: new Date().toISOString(),
+      entries
+    });
+  });
+
+  app.post("/api/sync/production", (req, res) => {
+    try {
+      const incoming = Array.isArray(req.body?.entries) ? req.body.entries : [];
+      const current = readSharedProduction();
+      const merged = deduplicateEntriesServer([...incoming, ...current]);
+      writeSharedProduction(merged);
+      res.json({
+        status: "ok",
+        count: merged.length,
+        lastSyncTime: new Date().toISOString(),
+        entries: merged
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erro ao sincronizar' });
+    }
   });
 
   app.post("/api/extract-production", async (req, res) => {

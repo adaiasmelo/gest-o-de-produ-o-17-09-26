@@ -32,6 +32,55 @@ export function isValidProductionEntry(entry: any): entry is ProductionEntry {
 }
 
 /**
+ * Remove duplicatas de lançamentos usando ID primário e chave de negócio (data + máquina + turno + operador).
+ * Se houver dois registros com dados conflitantes ou IDs gerados em aparelhos diferentes (ex: João Augusto duplicado),
+ * preserva o mais recente ou mais completo.
+ */
+export function deduplicateProductionEntries(entries: ProductionEntry[]): ProductionEntry[] {
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+  
+  const idMap = new Map<string, ProductionEntry>();
+  const businessMap = new Map<string, ProductionEntry>();
+
+  // Ordena com os mais recentes (maior data ou updatedAt) primeiro
+  const sorted = [...entries].filter(isValidProductionEntry).sort((a, b) => {
+    const timeA = a.updatedAt || a.date || '';
+    const timeB = b.updatedAt || b.date || '';
+    return timeB.localeCompare(timeA) || (b.id || '').localeCompare(a.id || '');
+  });
+
+  for (const entry of sorted) {
+    if (!entry.id || idMap.has(entry.id)) {
+      continue;
+    }
+
+    // Normaliza chave de negócio para evitar registros duplicados do mesmo operador no mesmo turno/máquina/dia
+    const normDate = (entry.date || '').trim();
+    const normMachine = (entry.machine || '').trim().toLowerCase();
+    const normShift = (entry.shift || '').trim().toLowerCase();
+    const normOperator = (entry.operator || '').trim().toUpperCase();
+
+    // Se for dia sem produção ou manutenção explícita, inclui chave de motivo para permitir paradas distintas
+    const isSpecial = entry.isNoWorkDay || entry.isMaintenanceEntry;
+    const businessKey = isSpecial 
+      ? `${normDate}_${normMachine}_${normShift}_${entry.id}` 
+      : `${normDate}_${normMachine}_${normShift}_${normOperator}`;
+
+    if (businessMap.has(businessKey)) {
+      // Já existe um registro ativo para este operador neste turno e máquina na mesma data. Ignora duplicata!
+      continue;
+    }
+
+    idMap.set(entry.id, entry);
+    businessMap.set(businessKey, entry);
+  }
+
+  return Array.from(idMap.values()).sort(
+    (a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')
+  );
+}
+
+/**
  * Carrega instantaneamente os dados de produção do localStorage (0ms de latência)
  * Executado na inicialização do estado para que o dashboard nunca apareça vazio.
  */
@@ -50,9 +99,9 @@ export function loadProductionCache(): {
     if (v2Raw) {
       const parsed: CachedProductionEnvelope = JSON.parse(v2Raw);
       if (Array.isArray(parsed.entries) && parsed.entries.length > 0) {
-        const validEntries = parsed.entries.filter(isValidProductionEntry);
+        const validEntries = deduplicateProductionEntries(parsed.entries.filter(isValidProductionEntry));
         return {
-          entries: validEntries.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')),
+          entries: validEntries,
           lastSyncTime: parsed.lastSyncTime || localStorage.getItem(PROD_LAST_SYNC_KEY) || null,
           isLoadedFromCache: true
         };
@@ -64,9 +113,9 @@ export function loadProductionCache(): {
     if (legacyRaw) {
       const parsed = JSON.parse(legacyRaw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const validEntries = parsed.filter(isValidProductionEntry);
+        const validEntries = deduplicateProductionEntries(parsed.filter(isValidProductionEntry));
         return {
-          entries: validEntries.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')),
+          entries: validEntries,
           lastSyncTime: localStorage.getItem(PROD_LAST_SYNC_KEY) || null,
           isLoadedFromCache: true
         };
@@ -274,9 +323,8 @@ export function mergeProductionDocChanges(
     };
   }
 
-  const updatedEntries = Array.from(entriesMap.values()).sort(
-    (a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')
-  );
+  const rawList = Array.from(entriesMap.values());
+  const updatedEntries = deduplicateProductionEntries(rawList);
 
   return {
     updatedEntries,
