@@ -207,18 +207,25 @@ export async function saveProductionEntryToSupabase(entry: any): Promise<boolean
 }
 
 export async function deleteProductionEntryFromSupabase(id: string): Promise<boolean> {
+  return deleteProductionEntriesFromSupabase([id]);
+}
+
+export async function deleteProductionEntriesFromSupabase(ids: string[]): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client || !ids || ids.length === 0) return false;
 
   try {
-    const { error } = await client.from('production_entries').delete().eq('id', id);
-    if (error) {
-      console.warn('Erro ao deletar no Supabase:', error);
-      return false;
+    const chunkSize = 100;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error } = await client.from('production_entries').delete().in('id', chunk);
+      if (error) {
+        console.warn('Erro ao deletar lote no Supabase:', error);
+      }
     }
     return true;
   } catch (err) {
-    console.warn('Exceção ao deletar no Supabase:', err);
+    console.warn('Exceção ao deletar lote no Supabase:', err);
     return false;
   }
 }
@@ -228,19 +235,57 @@ export async function fetchAllProductionFromSupabase(): Promise<any[]> {
   if (!client) return [];
 
   try {
-    const { data, error } = await client
-      .from('production_entries')
-      .select('*')
-      .order('date', { ascending: false });
+    const pageSize = 1000;
+    let from = 0;
+    let allRows: any[] = [];
+    let hasMore = true;
 
-    if (error) {
-      console.warn('Erro ao buscar lançamentos no Supabase:', error);
-      return [];
+    while (hasMore) {
+      const { data, error } = await client
+        .from('production_entries')
+        .select('*')
+        .order('date', { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        console.warn('Erro ao buscar lançamentos no Supabase:', error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allRows = allRows.concat(data);
+        if (data.length < pageSize) {
+          hasMore = false;
+        } else {
+          from += pageSize;
+        }
+      } else {
+        hasMore = false;
+      }
     }
 
-    return (data || []).map(mapSupabaseRowToProductionEntry);
+    return allRows.map(mapSupabaseRowToProductionEntry);
   } catch (err) {
-    console.warn('Exceção ao buscar do Supabase:', err);
+    console.warn('Exceção ao buscar do Supabase com paginação:', err);
     return [];
   }
 }
+
+export async function checkSupabaseConnection(): Promise<{ connected: boolean; count: number; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { connected: false, count: 0, error: 'Cliente não configurado' };
+
+  try {
+    const { count, error } = await client
+      .from('production_entries')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) {
+      return { connected: false, count: 0, error: error.message };
+    }
+    return { connected: true, count: count || 0 };
+  } catch (err: any) {
+    return { connected: false, count: 0, error: err?.message || 'Erro desconhecido' };
+  }
+}
+

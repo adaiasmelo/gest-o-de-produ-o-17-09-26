@@ -4,9 +4,33 @@ import { ProductionEntry, RibbonCuttingEntry } from '../types';
 export const PROD_CACHE_KEY = 'manupackaging_production_v2';
 export const PROD_CACHE_LEGACY_KEY = 'manupackaging_production';
 export const PROD_LAST_SYNC_KEY = 'manupackaging_production_last_sync';
+export const PROD_DELETED_IDS_KEY = 'manupackaging_production_deleted_ids';
 
 export const RIBBON_CACHE_KEY = 'manupackaging_ribbon_v2';
 export const RIBBON_LAST_SYNC_KEY = 'manupackaging_ribbon_last_sync';
+
+export function getLocalDeletedProductionIds(): string[] {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    const val = localStorage.getItem(PROD_DELETED_IDS_KEY);
+    if (!val) return [];
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function recordLocalDeletedProductionIds(ids: string[]): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage || !ids.length) return;
+    const current = new Set(getLocalDeletedProductionIds());
+    ids.forEach(id => { if (id) current.add(String(id)); });
+    localStorage.setItem(PROD_DELETED_IDS_KEY, JSON.stringify(Array.from(current)));
+  } catch (e) {
+    console.warn('Erro ao salvar deleted IDs:', e);
+  }
+}
 
 export interface CachedProductionEnvelope {
   version: number;
@@ -39,18 +63,19 @@ export function isValidProductionEntry(entry: any): entry is ProductionEntry {
 export function deduplicateProductionEntries(entries: ProductionEntry[]): ProductionEntry[] {
   if (!Array.isArray(entries) || entries.length === 0) return [];
   
+  const deletedSet = new Set(getLocalDeletedProductionIds());
   const idMap = new Map<string, ProductionEntry>();
   const businessMap = new Map<string, ProductionEntry>();
 
   // Ordena com os mais recentes (maior data ou updatedAt) primeiro
-  const sorted = [...entries].filter(isValidProductionEntry).sort((a, b) => {
+  const sorted = [...entries].filter(isValidProductionEntry).filter(e => !deletedSet.has(e.id)).sort((a, b) => {
     const timeA = a.updatedAt || a.date || '';
     const timeB = b.updatedAt || b.date || '';
     return timeB.localeCompare(timeA) || (b.id || '').localeCompare(a.id || '');
   });
 
   for (const entry of sorted) {
-    if (!entry.id || idMap.has(entry.id)) {
+    if (!entry.id || idMap.has(entry.id) || deletedSet.has(entry.id)) {
       continue;
     }
 

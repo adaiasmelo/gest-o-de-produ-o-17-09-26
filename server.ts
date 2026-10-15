@@ -91,14 +91,50 @@ async function startServer() {
   });
 
   const SHARED_PROD_FILE = path.join(process.cwd(), 'data', 'shared_production_entries.json');
+  const SHARED_DELETED_FILE = path.join(process.cwd(), 'data', 'shared_deleted_ids.json');
+
+  function readSharedDeleted(): Set<string> {
+    try {
+      if (fs.existsSync(SHARED_DELETED_FILE)) {
+        const content = fs.readFileSync(SHARED_DELETED_FILE, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) return new Set(parsed);
+        if (parsed && Array.isArray(parsed.deletedIds)) return new Set(parsed.deletedIds);
+      }
+    } catch (err) {
+      console.warn("Erro ao ler shared_deleted_ids:", err);
+    }
+    return new Set<string>();
+  }
+
+  function writeSharedDeleted(idsSet: Set<string>): void {
+    try {
+      const dir = path.dirname(SHARED_DELETED_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(SHARED_DELETED_FILE, JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        count: idsSet.size,
+        deletedIds: Array.from(idsSet)
+      }, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn("Erro ao gravar shared_deleted_ids:", err);
+    }
+  }
 
   function readSharedProduction(): any[] {
     try {
       if (fs.existsSync(SHARED_PROD_FILE)) {
         const content = fs.readFileSync(SHARED_PROD_FILE, 'utf-8');
         const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) return parsed;
-        if (parsed && Array.isArray(parsed.entries)) return parsed.entries;
+        let entries: any[] = [];
+        if (Array.isArray(parsed)) entries = parsed;
+        else if (parsed && Array.isArray(parsed.entries)) entries = parsed.entries;
+
+        const deleted = readSharedDeleted();
+        if (deleted.size > 0) {
+          entries = entries.filter(e => !deleted.has(e.id));
+        }
+        return entries;
       }
     } catch (err) {
       console.warn("Erro ao ler shared_production_entries:", err);
@@ -108,13 +144,15 @@ async function startServer() {
 
   function writeSharedProduction(entries: any[]): void {
     try {
+      const deleted = readSharedDeleted();
+      const filtered = entries.filter(e => !deleted.has(e.id));
       const dir = path.dirname(SHARED_PROD_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(SHARED_PROD_FILE, JSON.stringify({
         version: 2,
         updatedAt: new Date().toISOString(),
-        count: entries.length,
-        entries
+        count: filtered.length,
+        entries: filtered
       }, null, 2), 'utf-8');
     } catch (err) {
       console.warn("Erro ao gravar shared_production_entries:", err);
@@ -124,6 +162,7 @@ async function startServer() {
   function deduplicateEntriesServer(entries: any[]): any[] {
     const idMap = new Map<string, any>();
     const bizMap = new Map<string, any>();
+    const deleted = readSharedDeleted();
 
     const sorted = [...entries].sort((a, b) => {
       const timeA = a.updatedAt || a.date || '';
@@ -133,6 +172,7 @@ async function startServer() {
 
     for (const entry of sorted) {
       if (!entry || !entry.id || !entry.date) continue;
+      if (deleted.has(entry.id)) continue;
       if (idMap.has(entry.id)) continue;
 
       const normDate = String(entry.date || '').trim();
@@ -156,29 +196,75 @@ async function startServer() {
 
   // Endpoint de Sincronização em Nuvem Servidor-Cliente (Garante consistência entre Celular, Desktop e IA Studio)
   app.get("/api/sync/production", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
     const entries = readSharedProduction();
+    const deleted = readSharedDeleted();
     res.json({
       status: "ok",
       count: entries.length,
       lastSyncTime: new Date().toISOString(),
-      entries
+      entries,
+      deletedIds: Array.from(deleted)
     });
   });
 
   app.post("/api/sync/production", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     try {
       const incoming = Array.isArray(req.body?.entries) ? req.body.entries : [];
+      const clientDeleted = Array.isArray(req.body?.deletedIds) ? req.body.deletedIds : [];
+      
+      const deletedSet = readSharedDeleted();
+      if (clientDeleted.length > 0) {
+        clientDeleted.forEach((id: string) => { if (id) deletedSet.add(String(id)); });
+        writeSharedDeleted(deletedSet);
+      }
+
       const current = readSharedProduction();
       const merged = deduplicateEntriesServer([...incoming, ...current]);
       writeSharedProduction(merged);
+
       res.json({
         status: "ok",
         count: merged.length,
         lastSyncTime: new Date().toISOString(),
-        entries: merged
+        entries: merged,
+        deletedIds: Array.from(deletedSet)
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erro ao sincronizar' });
+    }
+  });
+
+  // Endpoint para registrar exclusão instantânea e sincronizar entre todos os aparelhos
+  app.post("/api/sync/production/delete", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    try {
+      const idsToDelete: string[] = Array.isArray(req.body?.ids) 
+        ? req.body.ids 
+        : (req.body?.id ? [req.body.id] : []);
+
+      if (idsToDelete.length === 0) {
+        return res.json({ status: "ok", message: "Nenhum ID para excluir" });
+      }
+
+      const deletedSet = readSharedDeleted();
+      idsToDelete.forEach(id => deletedSet.add(String(id)));
+      writeSharedDeleted(deletedSet);
+
+      const current = readSharedProduction();
+      const filtered = current.filter(e => !deletedSet.has(e.id));
+      writeSharedProduction(filtered);
+
+      res.json({
+        status: "ok",
+        deletedCount: idsToDelete.length,
+        remainingCount: filtered.length,
+        lastSyncTime: new Date().toISOString()
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erro ao registrar exclusão' });
     }
   });
 

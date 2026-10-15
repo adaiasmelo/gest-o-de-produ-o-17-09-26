@@ -113,7 +113,11 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.includes('version.json'),
+            urlPattern: ({ url }) => url.pathname.includes('version.json') || url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: ({ url }) => url.hostname.includes('supabase.co'),
             handler: 'NetworkOnly',
           },
           {

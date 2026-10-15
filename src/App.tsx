@@ -142,6 +142,8 @@ import {
   saveProductionCache,
   mergeProductionDocChanges,
   deduplicateProductionEntries,
+  getLocalDeletedProductionIds,
+  recordLocalDeletedProductionIds,
   loadRibbonCache,
   saveRibbonCache,
   mergeRibbonDocChanges
@@ -150,8 +152,10 @@ import { EvaluationsTab } from './components/EvaluationsTab';
 import { SupabaseModal } from './components/SupabaseModal';
 import { 
   saveProductionEntryToSupabase, 
-  deleteProductionEntryFromSupabase, 
+  deleteProductionEntryFromSupabase,
+  deleteProductionEntriesFromSupabase,
   fetchAllProductionFromSupabase, 
+  checkSupabaseConnection,
   isSupabaseConfigured 
 } from './lib/supabase';
 import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
@@ -2136,40 +2140,65 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   }, [systemLogo, settingsLoaded, loggedUser]);
 
-  // Sincronização contínua bi-direcional via servidor para todos os aparelhos (celulares, tablets, computadores)
+  // Sincronização contínua bi-direcional automática via servidor e Supabase para todos os aparelhos
   const [isCrossDeviceSyncing, setIsCrossDeviceSyncing] = useState(false);
 
   const syncProductionBetweenDevices = useCallback(async (showToast = false) => {
     setIsCrossDeviceSyncing(true);
     try {
-      // 1. Carrega o cache local deste aparelho
+      // 1. Carrega o cache local deste aparelho e IDs deletados
       const localCache = loadProductionCache();
       const localEntries = localCache.entries || [];
+      const localDeletedIds = getLocalDeletedProductionIds();
 
-      // 2. Se este aparelho possui lançamentos no cache local, envia para unificar no servidor
-      if (localEntries.length > 0) {
-        try {
-          await fetch('/api/sync/production', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries: localEntries })
-          });
-        } catch (_) {}
-      }
+      // 2. Se este aparelho possui lançamentos no cache local, envia para unificar no servidor junto com IDs deletados
+      try {
+        await fetch('/api/sync/production', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({ entries: localEntries, deletedIds: localDeletedIds })
+        });
+      } catch (_) {}
 
       // 3. Obtém o estado unificado consolidado no servidor
-      const res = await fetch('/api/sync/production');
+      const res = await fetch('/api/sync/production', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+        if (data && Array.isArray(data.deletedIds) && data.deletedIds.length > 0) {
+          recordLocalDeletedProductionIds(data.deletedIds);
+        }
+        if (data && Array.isArray(data.entries)) {
+          const currentDeleted = new Set(getLocalDeletedProductionIds());
+          const cleanEntries = data.entries.filter((e: any) => !currentDeleted.has(e.id));
           setProductionData(prev => {
-            const merged = deduplicateProductionEntries([...data.entries, ...prev]);
+            const cleanPrev = prev.filter(e => !currentDeleted.has(e.id));
+            const merged = deduplicateProductionEntries([...cleanEntries, ...cleanPrev]);
             saveProductionCache(merged);
             return merged;
           });
           if (showToast) {
-            addNotification(`Sincronização concluída: ${data.entries.length} lançamentos consolidados.`);
+            addNotification(`Sincronização concluída: ${cleanEntries.length} lançamentos consolidados.`);
           }
+        }
+      }
+
+      // 4. Sincroniza também com o Supabase (PostgreSQL) com paginação completa
+      if (isSupabaseConfigured()) {
+        try {
+          const supabaseRows = await fetchAllProductionFromSupabase();
+          if (supabaseRows && supabaseRows.length > 0) {
+            const currentDeleted = new Set(getLocalDeletedProductionIds());
+            const cleanSupabaseRows = supabaseRows.filter((e: any) => !currentDeleted.has(e.id));
+            setProductionData(prev => {
+              const cleanPrev = prev.filter(e => !currentDeleted.has(e.id));
+              const merged = deduplicateProductionEntries([...cleanSupabaseRows, ...cleanPrev]);
+              saveProductionCache(merged);
+              return merged;
+            });
+          }
+        } catch (supErr) {
+          console.warn('Erro sync Supabase no ciclo automático:', supErr);
         }
       }
     } catch (err) {
@@ -2179,43 +2208,63 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   }, []);
 
+  // Sincronismo 100% automático e contínuo sem intervenção do usuário
   useEffect(() => {
+    // Sincronização inicial
     syncProductionBetweenDevices(false);
-    const timer = setInterval(() => syncProductionBetweenDevices(false), 25000);
-    return () => clearInterval(timer);
+
+    // Polling periódico em segundo plano a cada 20 segundos
+    const timer = setInterval(() => syncProductionBetweenDevices(false), 20000);
+
+    // Sincroniza automaticamente quando o usuário volta para a aba ou desbloqueia o aparelho
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncProductionBetweenDevices(false);
+      }
+    };
+    const handleOnline = () => syncProductionBetweenDevices(false);
+    const handleFocus = () => syncProductionBetweenDevices(false);
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [syncProductionBetweenDevices]);
 
   // Sincronização em tempo real e carga automática com Supabase (PostgreSQL)
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
-    // 1. Carga inicial dos lançamentos cadastrados no Supabase
-    fetchAllProductionFromSupabase().then(entries => {
-      if (entries && entries.length > 0) {
-        setProductionData(prev => {
-          const merged = deduplicateProductionEntries([...entries, ...prev]);
-          saveProductionCache(merged);
-          return merged;
-        });
-      }
-    }).catch(e => console.warn('Aviso Supabase load:', e));
-
-    // 2. Realtime listener com sub-segundo de latência para múltiplos aparelhos
+    // Realtime listener com sub-segundo de latência para múltiplos aparelhos
     const unsub = subscribeToSupabaseProduction(
       (entry) => {
+        const currentDeleted = new Set(getLocalDeletedProductionIds());
+        if (currentDeleted.has(entry.id)) return;
         setProductionData(prev => {
-          const filtered = prev.filter(p => p.id !== entry.id);
+          const filtered = prev.filter(p => p.id !== entry.id && !currentDeleted.has(p.id));
           const updated = deduplicateProductionEntries([entry, ...filtered]);
           saveProductionCache(updated);
           return updated;
         });
       },
       (deletedId) => {
+        recordLocalDeletedProductionIds([deletedId]);
         setProductionData(prev => {
           const updated = prev.filter(p => p.id !== deletedId);
           saveProductionCache(updated);
           return updated;
         });
+        fetch('/api/sync/production/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [deletedId] })
+        }).catch(() => {});
       }
     );
 
@@ -2945,22 +2994,45 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     
     openConfirm(
       'Confirmar Exclusão em Massa',
-      `Deseja realmente excluir os ${selectedEntries.length} lançamentos selecionados? Esta ação não pode ser desfeita.`,
+      `Deseja realmente excluir os ${selectedEntries.length} lançamentos selecionados? Esta ação é definitiva e removerá os dados de todos os aparelhos e do banco de dados.`,
       async () => {
         try {
           setIsInitializing(true);
+          const idsToDelete = [...selectedEntries];
+
+          // 1. Atualização instantânea na tela e no cache local
+          recordLocalDeletedProductionIds(idsToDelete);
+          setProductionData(prev => {
+            const updated = prev.filter(e => !idsToDelete.includes(e.id));
+            saveProductionCache(updated);
+            return updated;
+          });
+          setSelectedEntries([]);
+
+          // 2. Exclusão em lote no Firestore
           const batches = [];
-          for (let i = 0; i < selectedEntries.length; i += 500) {
+          for (let i = 0; i < idsToDelete.length; i += 500) {
               const batch = writeBatch(db);
-              selectedEntries.slice(i, i + 500).forEach(id => {
+              idsToDelete.slice(i, i + 500).forEach(id => {
                   batch.delete(doc(db, 'productionEntries', id));
               });
               batches.push(batch.commit());
           }
           await Promise.all(batches);
-          const count = selectedEntries.length;
-          setSelectedEntries([]);
-          addNotification(`${count} registros excluídos com sucesso.`);
+
+          // 3. Exclusão em lote no Supabase (PostgreSQL)
+          deleteProductionEntriesFromSupabase(idsToDelete).catch(err => {
+            console.warn('Erro ao deletar lote no Supabase:', err);
+          });
+
+          // 4. Exclusão no arquivo consolidado do servidor compartilhado
+          fetch('/api/sync/production/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: idsToDelete })
+          }).catch(() => {});
+
+          addNotification(`${idsToDelete.length} registros excluídos com sucesso de todo o sistema.`);
         } catch (error) {
           console.error('Error deleting batch:', error);
           alert('Erro ao excluir registros. Verifique sua conexão.');
@@ -12233,17 +12305,6 @@ Atenciosamente,
             </button>
           )}
 
-          {/* Botão de Atalho Direto: Supabase & Nuvem */}
-          <button
-            type="button"
-            onClick={() => setIsSupabaseModalOpen(true)}
-            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl md:rounded-2xl transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer font-bold text-[10px] sm:text-xs uppercase"
-            title="Abrir Painel do Supabase & Nuvem / Migração de Dados"
-          >
-            <Zap size={14} className="text-emerald-600 shrink-0" />
-            <span className="hidden sm:inline">Supabase & Nuvem</span>
-            <span className="sm:hidden">Supabase</span>
-          </button>
 
           {/* Botão de Menu com 4 Barrinhas Horizontais */}
           <button
@@ -13019,23 +13080,6 @@ Atenciosamente,
                       </button>
                     )}
 
-                    {/* Supabase & Nuvem (Banco de Dados) */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsSupabaseModalOpen(true);
-                        setIsMainMenuOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-emerald-800 hover:bg-emerald-50 transition-colors text-left cursor-pointer border border-emerald-100/80 bg-emerald-50/40"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Zap size={18} className="text-emerald-600 shrink-0" />
-                        <span>Supabase & Nuvem</span>
-                      </div>
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-black uppercase">
-                        Conectado
-                      </span>
-                    </button>
 
                     {/* Trilha de Auditoria (ISO 9001) */}
                     <button
@@ -16221,15 +16265,7 @@ Atenciosamente,
                     <Trash2 size={18}/> Excluir Selecionados ({selectedEntries.length})
                   </button>
                 )}
-                <button 
-                  onClick={() => syncProductionBetweenDevices(true)} 
-                  disabled={isCrossDeviceSyncing}
-                  className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-blue-100 transition-all active:scale-95 whitespace-nowrap cursor-pointer"
-                  title="Sincroniza todos os apontamentos deste aparelho com a nuvem e outros celulares/computadores"
-                >
-                  <RefreshCw size={18} className={isCrossDeviceSyncing ? "animate-spin" : ""} />
-                  <span>{isCrossDeviceSyncing ? "Sincronizando..." : "Sincronizar Aparelhos"}</span>
-                </button>
+
                 <button onClick={exportToCSV} className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95 whitespace-nowrap cursor-pointer">
                   <FileDown size={18}/> Exportar Excel
                 </button>
@@ -16554,8 +16590,23 @@ Atenciosamente,
                                                   isStopped ? 'Deseja realmente excluir este lançamento de parada?' : `Deseja realmente excluir este lançamento de ${entry.operator}?`,
                                                   async () => {
                                                     try {
-                                                      await deleteDoc(doc(db, 'productionEntries', entry.id));
-                                                      deleteProductionEntryFromSupabase(entry.id).catch(() => {});
+                                                      const entryId = entry.id;
+                                                      recordLocalDeletedProductionIds([entryId]);
+                                                      setProductionData(prev => {
+                                                        const updated = prev.filter(e => e.id !== entryId);
+                                                        saveProductionCache(updated);
+                                                        return updated;
+                                                      });
+
+                                                      await deleteDoc(doc(db, 'productionEntries', entryId));
+                                                      deleteProductionEntryFromSupabase(entryId).catch(() => {});
+
+                                                      fetch('/api/sync/production/delete', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ ids: [entryId] })
+                                                     }).catch(() => {});
+
                                                       recordUserActivity({
                                                         user: loggedUser,
                                                         type: 'action',
@@ -16564,7 +16615,11 @@ Atenciosamente,
                                                         action: 'Excluiu lançamento de produção',
                                                         details: `${entry.machine} - ${entry.product} (${entry.operator})`
                                                       });
-                                                    } catch(e) { console.error(e); }
+                                                      addNotification('Lançamento excluído com sucesso.');
+                                                    } catch(e) { 
+                                                      console.error(e); 
+                                                      alert('Erro ao excluir lançamento.');
+                                                    }
                                                   }
                                                 );
                                               }} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={13}/></button>
@@ -21052,13 +21107,7 @@ Atenciosamente,
                             <Database size={18} className="text-emerald-500" />
                             Banco de Dados
                           </button>
-                          <button 
-                            onClick={() => { setIsExtraMenuOpen(false); setIsSupabaseModalOpen(true); }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-emerald-800 hover:bg-emerald-50 text-[11px] font-black uppercase transition-colors cursor-pointer border-t border-slate-50"
-                          >
-                            <Zap size={18} className="text-emerald-600" />
-                            Supabase & Nuvem
-                          </button>
+
                         </>
                       )}
                       {(isAdmin || userPerms.personnel.vacations) && (
@@ -21205,16 +21254,7 @@ Atenciosamente,
                               </div>
                               <span>Banco de Dados</span>
                             </button>
-                            <button 
-                              onClick={() => { setIsExtraMenuOpen(false); setIsSupabaseModalOpen(true); }}
-                              className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
-                              title="Configurar Supabase, exportar dados e ver guia GitHub"
-                            >
-                              <div className="p-1 rounded-lg bg-white group-hover:bg-emerald-200/60 transition-colors shadow-2xs">
-                                <Zap size={15} className="text-emerald-600" />
-                              </div>
-                              <span>Supabase & Nuvem</span>
-                            </button>
+
                           </>
                         )}
 
@@ -24643,21 +24683,7 @@ const SettingsModal: React.FC<{
                   </div>
                </div>
 
-               <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex flex-col items-center text-center justify-center gap-2 group cursor-pointer hover:bg-emerald-50 hover:border-emerald-200 transition-all" onClick={() => {
-                    openConfirm(
-                      'Sincronizar Cloud', 
-                      'Deseja enviar seus dados locais atuais para o banco de dados na nuvem? Use isso se seus indicadores estiverem zerados na nuvem.',
-                      handleSyncLocalToCloud,
-                      'warning'
-                    );
-                  }}>
-                    <RotateCcw size={16} className={`text-slate-400 group-hover:text-emerald-500 transition-all duration-500 ${isInitializing ? 'animate-spin' : ''}`} />
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Nuvem</p>
-                      <p className="text-[11px] font-black text-slate-700 uppercase leading-none">Sincronizar Cloud</p>
-                    </div>
-                  </div>
+               <div className="grid grid-cols-1 gap-4">
                   <div className="bg-red-50 p-5 rounded-2xl border border-red-100 flex flex-col items-center text-center justify-center gap-2 group cursor-pointer hover:bg-red-100 transition-all" onClick={async () => {
                     if (confirm('Deseja limpar o cache e reiniciar o aplicativo? Isso pode resolver problemas de carregamento.')) {
                       if ('serviceWorker' in navigator) {
