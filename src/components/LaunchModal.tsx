@@ -6,44 +6,10 @@ import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives } from '../constants/downtimeReasons';
 import { StopItemCard } from './StopItemCard';
 import { ReasonInputWithSave, saveReasonToLibrary } from './ReasonInputWithSave';
-import { QuickReasonChips } from './QuickReasonChips';
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet } from '../utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from '../utils/vacationUtils';
 import { triggerHaptic } from '../utils/haptics';
 
-// Categorias industriais padronizadas para seleção rápida de perda
-export const QUICK_LOSS_CATEGORIES_ECO_BP = [
-  'Matriz / Lábio',
-  'Troca de Medida',
-  'Arrasto / Bolha',
-  'Rasgo no Bobinamento',
-  'Oscilação Térmica',
-  'Ajuste de Refile',
-  'Dosagem de Resina',
-];
-
-export const QUICK_LOSS_CATEGORIES_ECO_BM = [
-  'Falha Mecânica',
-  'Resistência Queimada',
-  'Sensor de Tração',
-  'Oscilação de Rosca',
-  'Falha Hidráulica',
-  'Alinhamento do Cast',
-  'Troca de Rolamento',
-];
-
-export const QUICK_LOSS_CATEGORIES_BORRA = [
-  'Troca de Tela / Filtro',
-  'Purga de Parada',
-  'Descontaminação',
-  'Setup Térmico',
-];
-
-export const QUICK_LOSS_CATEGORIES_ECO_A = [
-  'Refile de Borda',
-  'Apara Nobre Início',
-  'Envio Sede Curitiba',
-];
 
 interface EcoBReasonCardProps {
   label: string;
@@ -93,46 +59,22 @@ const EcoBReasonCard: React.FC<EcoBReasonCardProps> = ({
       </div>
 
       {weightValue > 0 && (
-        <div className="space-y-2 pt-1 border-t border-dashed border-orange-150">
-          {/* Seleção Rápida de Motivo da Perda (Chips em 1 Toque + Botão '+' para adicionar novos) */}
-          <QuickReasonChips
-            category={lossCategoryKey}
-            kind="loss"
-            selectedValue={categoryValue || ''}
-            onSelect={(cat) => {
-              onCategoryChange(categoryName, cat);
-              if (!motivoValue || motivoValue.startsWith('[')) {
-                const existingText = motivoValue.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
-                onMotivoChange(motivoName, existingText ? `[${cat}]: ${existingText}` : `[${cat}]: `);
-              }
+        <div className="space-y-1.5 pt-1.5 border-t border-dashed border-orange-150">
+          <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+            <span>✍️ Justificativa Detalhada da Perda:</span>
+            <span className="text-[8px] text-amber-600 font-bold lowercase">*descreva como e por que aconteceu</span>
+          </label>
+          <ReasonInputWithSave
+            category={motivoName === 'ecoBPMotivo' ? 'extrusao_ecobp' : 'extrusao_ecobm'}
+            value={(motivoValue || '').replace(/^\[[^\]]+\]\s*:?\s*/, '')}
+            onChange={(val) => {
+              onMotivoChange(motivoName, val);
             }}
-            colorTheme="orange"
-            title="⚡ Motivo Rápido da Perda:"
+            placeholder={`Descreva detalhadamente como aconteceu a perda de ${label} e a causa raiz...`}
+            loggedUserName={loggedUserName}
+            hideLabel={true}
+            inputClassName="!py-1.5 !text-[11px]"
           />
-
-          {/* Justificativa Detalhada Obrigatória */}
-          <div className="space-y-1 pt-1 border-t border-dashed border-orange-150">
-            <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
-              <span>✍️ Justificativa Detalhada (Como e Por que aconteceu):</span>
-              <span className="text-[8px] text-amber-600 font-bold lowercase">*obrigatório justificar a perda</span>
-            </label>
-            <ReasonInputWithSave
-              category={motivoName === 'ecoBPMotivo' ? 'extrusao_ecobp' : 'extrusao_ecobm'}
-              value={motivoValue || ''}
-              onChange={(val) => {
-                onMotivoChange(motivoName, val);
-                // Se o usuário digitou [Categoria], sincroniza a categoria automaticamente
-                const match = val.match(/^\[([^\]]+)\]/);
-                if (match && match[1]) {
-                  onCategoryChange(categoryName, match[1]);
-                }
-              }}
-              placeholder={`Descreva detalhadamente como aconteceu a perda de ${label} e a causa raiz...`}
-              loggedUserName={loggedUserName}
-              hideLabel={true}
-              inputClassName="!py-1.5 !text-[11px]"
-            />
-          </div>
         </div>
       )}
     </div>
@@ -2245,48 +2187,25 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </div>
                     </div>
                     {formData.ecoA > 0 && (
-                      <div className="space-y-2 pt-1.5 border-t border-dashed border-indigo-200">
-                        <QuickReasonChips
-                          category="ecoA"
-                          kind="loss"
-                          selectedValue={formData.ecoACategory || ''}
-                          onSelect={(cat) => {
-                            setFormData((prev) => {
-                              const existingText = (prev.ecoAMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
-                              return {
-                                ...prev,
-                                ecoACategory: cat,
-                                ecoAMotivo: existingText ? `[${cat}]: ${existingText}` : `[${cat}]: `
-                              };
-                            });
+                      <div className="space-y-1.5 pt-1.5 border-t border-dashed border-indigo-200">
+                        <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+                          <span>✍️ Justificativa Detalhada da Perda:</span>
+                          <span className="text-[8px] text-indigo-600 font-bold lowercase">*descreva como e por que aconteceu</span>
+                        </label>
+                        <ReasonInputWithSave
+                          category="extrusao_ecoa"
+                          value={(formData.ecoAMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '')}
+                          onChange={(val) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              ecoAMotivo: val
+                            }));
                           }}
-                          colorTheme="indigo"
-                          title="⚡ Motivo Rápido da Perda:"
+                          placeholder="Descreva detalhadamente como e por que aconteceu a perda Eco A..."
+                          loggedUserName={formData.operator || 'Sistema'}
+                          hideLabel={true}
+                          inputClassName="!py-1.5 !text-[11px]"
                         />
-                        <div className="space-y-1 pt-1 border-t border-dashed border-indigo-150">
-                          <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
-                            <span>✍️ Justificativa Detalhada:</span>
-                            <span className="text-[8px] text-indigo-600 font-bold lowercase">*obrigatório justificar</span>
-                          </label>
-                          <ReasonInputWithSave
-                            category="extrusao_ecoa"
-                            value={formData.ecoAMotivo || ''}
-                            onChange={(val) => {
-                              setFormData((prev) => {
-                                const match = val.match(/^\[([^\]]+)\]/);
-                                return {
-                                  ...prev,
-                                  ecoAMotivo: val,
-                                  ...(match && match[1] ? { ecoACategory: match[1] } : {})
-                                };
-                              });
-                            }}
-                            placeholder="Justificar perda Eco A ou selecione da relação..."
-                            loggedUserName={formData.operator || 'Sistema'}
-                            hideLabel={true}
-                            inputClassName="!py-1.5 !text-[11px]"
-                          />
-                        </div>
                       </div>
                     )}
                   </div>
@@ -2344,48 +2263,25 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </div>
                     </div>
                     {formData.borraTotal > 0 && (
-                      <div className="space-y-2 pt-1.5 border-t border-dashed border-red-150">
-                        <QuickReasonChips
-                          category="borra"
-                          kind="loss"
-                          selectedValue={formData.borraCategory || ''}
-                          onSelect={(cat) => {
-                            setFormData((prev) => {
-                              const existingText = (prev.borraTotalMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
-                              return {
-                                ...prev,
-                                borraCategory: cat,
-                                borraTotalMotivo: existingText ? `[${cat}]: ${existingText}` : `[${cat}]: `
-                              };
-                            });
+                      <div className="space-y-1.5 pt-1.5 border-t border-dashed border-red-150">
+                        <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
+                          <span>✍️ Justificativa Detalhada da Perda:</span>
+                          <span className="text-[8px] text-red-600 font-bold lowercase">*descreva como e por que aconteceu</span>
+                        </label>
+                        <ReasonInputWithSave
+                          category="extrusao_borra"
+                          value={(formData.borraTotalMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '')}
+                          onChange={(val) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              borraTotalMotivo: val,
+                            }));
                           }}
-                          colorTheme="red"
-                          title="⚡ Motivo Rápido da Perda:"
+                          placeholder="Descreva detalhadamente como e por que aconteceu a perda de Borra..."
+                          loggedUserName={formData.operator || 'Sistema'}
+                          hideLabel={true}
+                          inputClassName="!py-1.5 !text-[11px]"
                         />
-                        <div className="space-y-1 pt-1 border-t border-dashed border-red-150">
-                          <label className="text-[9px] font-black uppercase text-slate-700 flex items-center justify-between">
-                            <span>✍️ Justificativa Detalhada:</span>
-                            <span className="text-[8px] text-red-600 font-bold lowercase">*obrigatório justificar</span>
-                          </label>
-                          <ReasonInputWithSave
-                            category="extrusao_borra"
-                            value={formData.borraTotalMotivo || ''}
-                            onChange={(val) => {
-                              setFormData((prev) => {
-                                const match = val.match(/^\[([^\]]+)\]/);
-                                return {
-                                  ...prev,
-                                  borraTotalMotivo: val,
-                                  ...(match && match[1] ? { borraCategory: match[1] } : {})
-                                };
-                              });
-                            }}
-                            placeholder="Justificar perda de Borra ou selecione da relação..."
-                            loggedUserName={formData.operator || 'Sistema'}
-                            hideLabel={true}
-                            inputClassName="!py-1.5 !text-[11px]"
-                          />
-                        </div>
                       </div>
                     )}
                   </div>

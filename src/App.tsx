@@ -35,7 +35,6 @@ import { InternalPdfViewerModal } from './components/InternalPdfViewerModal';
 import { ReadOnlyBlockedModal } from './components/ReadOnlyBlockedModal';
 import { ActiveUsersModal } from './components/ActiveUsersModal';
 import { WeeklyProductionSummaryModal } from './components/WeeklyProductionSummaryModal';
-import { GlobalSpellchecker } from './components/GlobalSpellchecker';
 import { IMPORTED_COLLABORATORS } from './constants/importedCollaborators';
 import { INITIAL_DATA, GOAL_VALUE, DEFAULT_OPERATORS, INITIAL_EMPLOYEES, INITIAL_LOGS } from './constants';
 import { extractDowntimeMotives } from './constants/downtimeReasons';
@@ -576,7 +575,7 @@ const formatStoppageMotiveClean = (motivoRaw: string | undefined): string => {
       return parsed.map((item: any) => {
         const de = (item.de || '').trim();
         const ate = (item.ate || '').trim();
-        const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.motivo || '').trim();
+        const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.motivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
         if (de && ate) {
           return `${de} às ${ate}${written ? `: ${written}` : ''}`;
         }
@@ -586,7 +585,7 @@ const formatStoppageMotiveClean = (motivoRaw: string | undefined): string => {
   } catch (e) {
     // Fallback if parsing fails
   }
-  return trimmed;
+  return trimmed.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
 };
 
 // Helper to draw the favicon with a badge dynamically
@@ -6260,7 +6259,7 @@ Atenciosamente,
             const list = parsed.map((item: any) => {
               const de = (item.de || '').trim();
               const ate = (item.ate || '').trim();
-              const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.observacoes || item.descricao || item.causa || item.motivo || '').trim();
+              const written = (item.explicacao || item.justification || item.justificativa || item.observacao || item.observacoes || item.descricao || item.causa || item.motivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
               return {
                 de,
                 ate,
@@ -6272,7 +6271,8 @@ Atenciosamente,
           }
         } catch (e) {
           // Plain string fallback
-          return [{ de: '', ate: '', motivo: trimmed }];
+          const cleanTrimmed = trimmed.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+          return [{ de: '', ate: '', motivo: cleanTrimmed || trimmed }];
         }
         
         if (defaultMin > 0) {
@@ -6368,21 +6368,27 @@ Atenciosamente,
         stopsTotal = 720;
       }
 
+      const cleanLossText = (t: string | undefined): string => {
+        if (!t) return '';
+        return t.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+      };
+
       const ecoAJusts = Array.from(new Set(entries
         .filter(e => (e.ecoA || 0) > 0 && e.ecoAMotivo && e.ecoAMotivo.trim())
-        .map(e => e.ecoAMotivo!.trim())));
+        .map(e => cleanLossText(e.ecoAMotivo))
+        .filter(Boolean)));
       
       const ecoBJustsSet = new Set<string>();
       entries.forEach(e => {
         if ((e.ecoBP || 0) > 0 && e.ecoBPMotivo && e.ecoBPMotivo.trim()) {
           e.ecoBPMotivo.split(/ • |;|,/).forEach(m => {
-            const clean = m.trim();
+            const clean = cleanLossText(m);
             if (clean) ecoBJustsSet.add(clean);
           });
         }
         if ((e.ecoBM || 0) > 0 && e.ecoBMMotivo && e.ecoBMMotivo.trim()) {
           e.ecoBMMotivo.split(/ • |;|,/).forEach(m => {
-            const clean = m.trim();
+            const clean = cleanLossText(m);
             if (clean) ecoBJustsSet.add(clean);
           });
         }
@@ -6391,7 +6397,8 @@ Atenciosamente,
 
       const borraJusts = Array.from(new Set(entries
         .filter(e => (e.borraTotal || 0) > 0 && e.borraTotalMotivo && e.borraTotalMotivo.trim())
-        .map(e => e.borraTotalMotivo!.trim())));
+        .map(e => cleanLossText(e.borraTotalMotivo))
+        .filter(Boolean)));
 
       const ecoAJustText = ecoAJusts.length > 0 ? ` - ${ecoAJusts.join('; ')}` : '';
       const ecoBJustText = ecoBJusts.length > 0 ? ` - ${ecoBJusts.join('; ')}` : '';
@@ -6962,10 +6969,12 @@ Atenciosamente,
             parsed.forEach((item: any) => {
               const de = item.de || '';
               const ate = item.ate || '';
-              // Prioriza expressamente a justificativa por escrito digitada pelo usuário
+              // Prioriza expressamente a justificativa detalhada por escrito digitada pelo usuário
               const written = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || item.justificativa || item.motivoDigitado || '').trim();
               const tag = (item.motivo || item.keyword || item.tag || '').trim();
-              const motivo = written || tag || `${type} (Justificativa não informada)`;
+              const rawMotivo = written || tag || `${type} (Justificativa não informada)`;
+              const cleanMotivo = rawMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+              const motivo = cleanMotivo || rawMotivo;
               const itemMin = de && ate ? getDiffMinutes(de, ate) : 0;
               
               const reasonStr = de && ate ? `${de} às ${ate} - ${motivo}` : motivo;
@@ -6985,7 +6994,8 @@ Atenciosamente,
         // Fallback
       }
       
-      results[machine].motifs.push({ type, min: minInput, reason: reasonInput.trim() || `${type} (Justificativa não informada)`, operator, date });
+      const cleanFallback = reasonInput.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+      results[machine].motifs.push({ type, min: minInput, reason: cleanFallback || reasonInput.trim() || `${type} (Justificativa não informada)`, operator, date });
     };
 
     filteredDashboardData.forEach(e => {
@@ -12865,7 +12875,25 @@ Atenciosamente,
                                 <span>Treinamentos</span>
                               </button>
                             )}
-
+{/* Almoço */}
+{(isAdmin || userPerms.personnel.lunch) && (
+  <button
+    type="button"
+    onClick={() => {
+      setActiveTab('personnel');
+      setPersonnelSubView('lunch');
+      setIsMainMenuOpen(false);
+    }}
+    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+      activeTab === 'personnel' && personnelSubView === 'lunch'
+        ? 'bg-blue-100 text-blue-700 font-black'
+        : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+    }`}
+  >
+    <Utensils size={14} />
+    <span>Escala de Almoço</span>
+  </button>
+)}
                             {/* Escala de Almoço */}
                             {(isAdmin || userPerms.personnel.lunch) && (
                               <button
@@ -16548,32 +16576,32 @@ Atenciosamente,
                                     <td className="px-4 py-3 text-right font-bold text-orange-600">
                                       <div>{formatWeight(entry.ecoA)}</div>
                                       {entry.ecoA > 0 && entry.ecoAMotivo && (
-                                        <div className="text-[9px] text-[#9a3412]/80 bg-orange-50/70 border border-orange-100/50 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.ecoAMotivo}>
-                                          ✍️ {entry.ecoAMotivo}
+                                        <div className="text-[9px] text-[#9a3412]/80 bg-orange-50/70 border border-orange-100/50 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.ecoAMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}>
+                                          ✍️ {entry.ecoAMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}
                                         </div>
                                       )}
                                     </td>
                                     <td className="px-4 py-3 text-right font-bold text-orange-600">
                                       <div>{formatWeight(entry.ecoBP)}</div>
                                       {entry.ecoBP > 0 && entry.ecoBPMotivo && (
-                                        <div className="text-[9px] text-[#9a3412]/80 bg-orange-50/70 border border-orange-100/50 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.ecoBPMotivo}>
-                                          ✍️ {entry.ecoBPMotivo}
+                                        <div className="text-[9px] text-[#9a3412]/80 bg-orange-50/70 border border-orange-100/50 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.ecoBPMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}>
+                                          ✍️ {entry.ecoBPMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}
                                         </div>
                                       )}
                                     </td>
                                     <td className="px-4 py-3 text-right font-bold text-orange-600">
                                       <div>{formatWeight(entry.ecoBM)}</div>
                                       {entry.ecoBM > 0 && entry.ecoBMMotivo && (
-                                        <div className="text-[9px] text-[#9a3412]/80 bg-orange-50/70 border border-orange-100/50 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.ecoBMMotivo}>
-                                          ✍️ {entry.ecoBMMotivo}
+                                        <div className="text-[9px] text-[#9a3412]/80 bg-orange-50/70 border border-orange-100/50 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.ecoBMMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}>
+                                          ✍️ {entry.ecoBMMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}
                                         </div>
                                       )}
                                     </td>
                                     <td className="px-4 py-3 text-right font-black text-red-650 bg-red-50/15">
                                       <div>{formatWeight(entry.borraTotal)}</div>
                                       {entry.borraTotal > 0 && entry.borraTotalMotivo && (
-                                        <div className="text-[9px] text-red-750 bg-red-100/40 border border-red-205/30 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.borraTotalMotivo}>
-                                          ✍️ {entry.borraTotalMotivo}
+                                        <div className="text-[9px] text-red-750 bg-red-100/40 border border-red-205/30 rounded px-1 py-0.5 mt-1 font-medium max-w-[140px] truncate ml-auto" title={entry.borraTotalMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}>
+                                          ✍️ {entry.borraTotalMotivo.replace(/^\[[^\]]+\]\s*:?\s*/, '')}
                                         </div>
                                       )}
                                     </td>
@@ -22871,8 +22899,6 @@ Atenciosamente,
         title={readOnlyBlockedModal.title}
         message={readOnlyBlockedModal.message}
       />
-
-      <GlobalSpellchecker />
 
       <RoleModal
         isOpen={isRoleModalOpen}

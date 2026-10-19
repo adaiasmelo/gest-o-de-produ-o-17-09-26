@@ -74,6 +74,11 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
   const rawOccurrences = useMemo(() => {
     const list: StoppageOccurrence[] = [];
 
+    const cleanJustification = (text: string | undefined): string => {
+      if (!text) return '';
+      return text.replace(/^\[[^\]]+\]\s*:?\s*/, '').trim();
+    };
+
     const parseStopsJSON = (raw: string | undefined): { de: string; ate: string; motivo: string; durationMinutes?: number }[] => {
       if (!raw) return [];
       const trimmed = raw.trim();
@@ -83,8 +88,8 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
           return parsed.map((item: any) => {
             const de = (item.de || '').trim();
             const ate = (item.ate || '').trim();
-            const motivo = (item.motivo || item.keyword || '').trim();
-            const explicacao = (item.explicacao || item.justification || item.observacao || item.observacoes || item.descricao || '').trim();
+            const explicacao = cleanJustification(item.explicacao || item.justification || item.justificativa || item.observacao || item.observacoes || item.descricao);
+            const motivo = cleanJustification(item.motivo || item.keyword);
             const desc = explicacao || motivo || '';
             return {
               de,
@@ -96,7 +101,8 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
         }
       } catch (e) {
         if (trimmed) {
-          return [{ de: '', ate: '', motivo: trimmed }];
+          const clean = cleanJustification(trimmed);
+          return [{ de: '', ate: '', motivo: clean || trimmed }];
         }
       }
       return [];
@@ -146,7 +152,7 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
       } else if (Number(e.manutencaoMin || 0) > 0) {
         list.push({
           id: `${e.id}-manut-single`,
-          reason: e.manutencaoMotivo?.trim() || 'Manutenção Corretiva / Ajustes',
+          reason: cleanJustification(e.manutencaoMotivo) || 'Manutenção Corretiva / Ajustes',
           category: 'Manutenção',
           minutes: Number(e.manutencaoMin),
           date: e.date,
@@ -183,7 +189,7 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
       } else if (Number(e.processoMin || 0) > 0) {
         list.push({
           id: `${e.id}-proc-single`,
-          reason: e.processoMotivo?.trim() || 'Regulagem de Processo',
+          reason: cleanJustification(e.processoMotivo) || 'Regulagem de Processo',
           category: 'Processo',
           minutes: Number(e.processoMin),
           date: e.date,
@@ -220,7 +226,7 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
       } else if (Number(e.outrosMin || 0) > 0) {
         list.push({
           id: `${e.id}-outr-single`,
-          reason: e.outrosMotivo?.trim() || 'Outras Ocorrências Operacionais',
+          reason: cleanJustification(e.outrosMotivo) || 'Outras Ocorrências Operacionais',
           category: 'Outros',
           minutes: Number(e.outrosMin),
           date: e.date,
@@ -593,11 +599,11 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
 
             {/* Free Search */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Buscar Motivo / Op</label>
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Buscar Justificativa / Op</label>
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Pesquisar..."
+                  placeholder="Buscar justificativa detalhada..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-white outline-none focus:ring-2 focus:ring-blue-500"
@@ -680,9 +686,9 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
             <div className="bg-slate-800/60 p-6 rounded-3xl border border-slate-700/80 space-y-4">
               <div>
                 <h4 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
-                  <TrendingUp size={16} className="text-blue-400" /> Motivos Mais Recorrentes (Top 8 Frequência)
+                  <TrendingUp size={16} className="text-blue-400" /> Justificativas Detalhadas Mais Recorrentes (Top 8 Frequência)
                 </h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Quantas vezes o mesmo problema se repetiu no período</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Quantas vezes a mesma justificativa detalhada se repetiu no período</p>
               </div>
 
               <div className="w-full h-72">
@@ -705,9 +711,9 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
             <div className="bg-slate-800/60 p-6 rounded-3xl border border-slate-700/80 space-y-4">
               <div>
                 <h4 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
-                  <Clock size={16} className="text-amber-400" /> Top Motivos por Horas Perdidas (Impacto Inativo)
+                  <Clock size={16} className="text-amber-400" /> Top Justificativas Detalhadas por Horas Perdidas (Impacto Inativo)
                 </h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Total de horas acumuladas de paralisação por motivo</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Total de horas acumuladas de paralisação por justificativa detalhada</p>
               </div>
 
               <div className="w-full h-72">
@@ -733,15 +739,15 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
             <div className="px-6 py-5 bg-slate-800 border-b border-slate-700 flex justify-between items-center flex-wrap gap-3">
               <div>
                 <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                  <Layers size={18} className="text-blue-400" /> Tabela Detalhada de Motivos & Ocorrências
+                  <Layers size={18} className="text-blue-400" /> Tabela Detalhada de Justificativas de Parada & Ocorrências
                 </h4>
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                  Clique em qualquer motivo para visualizar o histórico individual de lançamentos
+                  Clique em qualquer justificativa para visualizar o histórico individual de lançamentos
                 </p>
               </div>
 
               <span className="text-xs font-black text-slate-400 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-700">
-                {aggregatedReasons.length} motivos na filtragem
+                {aggregatedReasons.length} justificativas na filtragem
               </span>
             </div>
 
@@ -750,7 +756,7 @@ export const DowntimeAnalyticsModal: React.FC<DowntimeAnalyticsModalProps> = ({
                 <thead>
                   <tr className="bg-slate-900/80 text-[10px] font-black uppercase text-slate-400 tracking-wider border-b border-slate-700">
                     <th className="py-3.5 px-4 text-center"># Rank</th>
-                    <th className="py-3.5 px-6">Motivo de Parada</th>
+                    <th className="py-3.5 px-6">Justificativa Detalhada da Parada</th>
                     <th className="py-3.5 px-4">Categoria</th>
                     <th className="py-3.5 px-4 text-center">Ocorrências</th>
                     <th className="py-3.5 px-4 text-right">Tempo Total</th>
