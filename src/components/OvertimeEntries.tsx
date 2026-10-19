@@ -6,7 +6,7 @@ import {
   Download, Eye, AlertTriangle, ShieldCheck, History, Info,
   Share2, Copy, Percent, Sparkles, UserCheck, RefreshCw, FileSpreadsheet,
   Sun, Moon, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity,
-  Award, Flame, Layers, Hash, Zap, Factory
+  Award, Flame, Layers, Hash, Zap, Factory, CheckSquare
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -196,6 +196,50 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     return [];
   });
   const [showReasonDropdown, setShowReasonDropdown] = useState<boolean>(false);
+
+  // Controle de rolagem por arrasto na Tabela de Apontamentos sem seleção acidental de texto
+  const appointmentsTableRef = useRef<HTMLDivElement>(null);
+  const [isTableDragging, setIsTableDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [dragScrollLeft, setDragScrollLeft] = useState(0);
+
+  const handleTableMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, select, a, textarea')) return;
+    // Impede o aparecimento do cursor de texto ("pauzinho de texto") e seleção acidental ao arrastar a tabela
+    e.preventDefault();
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch (_) {}
+    if (!appointmentsTableRef.current) return;
+    setIsTableDragging(true);
+    setDragStartX(e.pageX - appointmentsTableRef.current.offsetLeft);
+    setDragScrollLeft(appointmentsTableRef.current.scrollLeft);
+  };
+
+  const handleTableMouseLeave = () => {
+    setIsTableDragging(false);
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch (_) {}
+  };
+
+  const handleTableMouseUp = () => {
+    setIsTableDragging(false);
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch (_) {}
+  };
+
+  const handleTableMouseMove = (e: React.MouseEvent) => {
+    if (!isTableDragging || !appointmentsTableRef.current) return;
+    e.preventDefault();
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch (_) {}
+    const x = e.pageX - appointmentsTableRef.current.offsetLeft;
+    const walk = (x - dragStartX) * 1.5;
+    appointmentsTableRef.current.scrollLeft = dragScrollLeft - walk;
+  };
 
   // Escuta em tempo real no Firestore da coleção `overtime_reasons`
   useEffect(() => {
@@ -2736,8 +2780,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </span>
               </div>
 
-              <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left text-xs border-collapse">
+              <div 
+                className="overflow-x-auto custom-scrollbar select-none" 
+                onSelectStart={(e) => e.preventDefault()}
+                onDragStart={(e) => e.preventDefault()}
+                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+              >
+                <table 
+                  onSelectStart={(e) => e.preventDefault()}
+                  onDragStart={(e) => e.preventDefault()}
+                  className="w-full text-left text-xs border-collapse select-none cursor-default [&_*]:select-none [&_*]:cursor-default"
+                >
                   <thead>
                     <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black">
                       <th className="px-4 py-3 text-center">Rank</th>
@@ -3054,30 +3107,92 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 </div>
               )}
 
-              <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left text-xs border-collapse">
+              {/* Estilos específicos para garantir que nenhum texto seja selecionado ou exiba cursor de texto ao arrastar */}
+              <style>{`
+                .overtime-appointments-table,
+                .overtime-appointments-table *,
+                .overtime-appointments-table tr,
+                .overtime-appointments-table th,
+                .overtime-appointments-table td,
+                .overtime-appointments-table span,
+                .overtime-appointments-table div,
+                .overtime-appointments-table p {
+                  -webkit-user-select: none !important;
+                  -moz-user-select: none !important;
+                  -ms-user-select: none !important;
+                  user-select: none !important;
+                  -webkit-user-drag: none !important;
+                  cursor: default;
+                }
+                .overtime-appointments-table button,
+                .overtime-appointments-table button *,
+                .overtime-appointments-table input,
+                .overtime-appointments-table select {
+                  cursor: pointer !important;
+                }
+                .overtime-appointments-table-dragging,
+                .overtime-appointments-table-dragging * {
+                  cursor: grabbing !important;
+                  -webkit-user-select: none !important;
+                  user-select: none !important;
+                }
+              `}</style>
+
+              <div 
+                ref={appointmentsTableRef}
+                onMouseDown={handleTableMouseDown}
+                onMouseLeave={handleTableMouseLeave}
+                onMouseUp={handleTableMouseUp}
+                onMouseMove={handleTableMouseMove}
+                onSelectStart={(e) => e.preventDefault()}
+                onDragStart={(e) => e.preventDefault()}
+                className={`overflow-x-auto custom-scrollbar select-none overtime-appointments-table ${isTableDragging ? 'cursor-grabbing select-none overtime-appointments-table-dragging' : 'cursor-default'}`}
+                style={{
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  MozUserSelect: 'none',
+                  msUserSelect: 'none',
+                  touchAction: 'pan-x pan-y'
+                }}
+              >
+                <table 
+                  onSelectStart={(e) => e.preventDefault()}
+                  onDragStart={(e) => e.preventDefault()}
+                  className="w-full text-left text-xs border-collapse select-none cursor-default [&_*]:select-none"
+                >
                 <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black">
-                    <th className="px-3.5 py-3.5 w-10 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        onChange={toggleSelectAll}
-                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                        title="Selecionar / Desmarcar todos os visíveis"
-                      />
+                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-black select-none">
+                    <th className="px-3.5 py-3.5 whitespace-nowrap text-left select-none">
+                      <div className="flex items-center gap-2 select-none">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer shrink-0"
+                          title="Selecionar / Desmarcar todos os visíveis"
+                        />
+                        <button
+                          type="button"
+                          onClick={toggleSelectAll}
+                          className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs shrink-0 select-none"
+                          title="Selecionar ou desmarcar múltiplos apontamentos para exclusão"
+                        >
+                          <CheckSquare size={12} className="text-blue-600" />
+                          <span>{isAllSelected ? 'Desmarcar' : 'Selecionar Vários'}</span>
+                        </button>
+                      </div>
                     </th>
-                    <th className="px-4 py-3.5">Data</th>
-                    <th className="px-4 py-3.5">Matrícula</th>
-                    <th className="px-4 py-3.5">Colaborador / Operador</th>
-                    <th className="px-4 py-3.5">Setor & Turno</th>
-                    <th className="px-4 py-3.5 text-center">Modalidade & Horários</th>
-                    <th className="px-4 py-3.5 text-center">Horas Trab.</th>
-                    <th className="px-4 py-3.5 text-center">Horas Extras</th>
-                    <th className="px-4 py-3.5 text-center">% HE</th>
-                    <th className="px-4 py-3.5 text-center">Status</th>
-                    <th className="px-4 py-3.5">Cálculo & Motivo</th>
-                    <th className="px-4 py-3.5 text-right">Ações (Editar / Excluir)</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap select-none">Data</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap select-none">Matrícula</th>
+                    <th className="px-4 py-3.5 select-none">Colaborador / Operador</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap select-none">Setor & Turno</th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Modalidade & Horários</th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Horas Trab.</th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Horas Extras</th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">% HE</th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Status</th>
+                    <th className="px-4 py-3.5 select-none">Cálculo & Motivo</th>
+                    <th className="px-4 py-3.5 text-right whitespace-nowrap select-none">Excluir</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -3105,26 +3220,40 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     return (
                       <tr
                         key={item.id}
-                        className={`transition-colors ${
+                        onSelectStart={(e) => e.preventDefault()}
+                        className={`transition-colors select-none cursor-default ${
                           isSelected ? 'bg-blue-50/50 hover:bg-blue-50/80' : 'hover:bg-blue-50/30'
                         }`}
                       >
-                        {/* Checkbox de seleção */}
-                        <td className="px-3.5 py-3.5 w-10 text-center" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectEntry(item.id)}
-                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                            title="Selecionar este apontamento"
-                          />
+                        {/* Checkbox de seleção para excluir + Botão Editar logo na frente ao lado de Data */}
+                        <td className="px-3.5 py-3.5 whitespace-nowrap select-none" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 select-none">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectEntry(item.id)}
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer shrink-0"
+                              title="Selecionar este apontamento para exclusão em lote"
+                            />
+                            {(!isReadOnly || canManage) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(item)}
+                                className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition-all text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 select-none"
+                                title="Editar informações deste apontamento de hora extra"
+                              >
+                                <Edit2 size={12} className="text-white" />
+                                <span>Editar</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
 
                         {/* Data */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-black text-slate-800">{dateFormatted}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
+                        <td className="px-4 py-3.5 whitespace-nowrap select-none">
+                          <div className="flex items-center gap-1.5 select-none">
+                            <span className="font-black text-slate-800 select-none">{dateFormatted}</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black select-none ${
                               dayAbbr === 'DOM' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
                             }`}>
                               {dayAbbr}
@@ -3133,60 +3262,60 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         </td>
 
                         {/* Matrícula */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <span className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 font-mono font-black text-[11px] border border-slate-200">
+                        <td className="px-4 py-3.5 whitespace-nowrap select-none">
+                          <span className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 font-mono font-black text-[11px] border border-slate-200 select-none">
                             {item.registration || '-'}
                           </span>
                         </td>
 
                         {/* Colaborador */}
-                        <td className="px-4 py-3.5">
-                          <div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-black text-slate-900">{item.employeeName}</span>
+                        <td className="px-4 py-3.5 select-none">
+                          <div className="select-none">
+                            <div className="flex items-center gap-1.5 flex-wrap select-none">
+                              <span className="font-black text-slate-900 select-none">{item.employeeName}</span>
                               {empHours >= 40 ? (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black bg-red-100 text-red-700 border border-red-200" title={`Acúmulo crítico: ${empHours}h no ciclo`}>
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black bg-red-100 text-red-700 border border-red-200 select-none" title={`Acúmulo crítico: ${empHours}h no ciclo`}>
                                   🚨 Crítico ({empHours}h)
                                 </span>
                               ) : empHours >= 30 ? (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black bg-amber-100 text-amber-800 border border-amber-200" title={`Alerta de fadiga: ${empHours}h no ciclo`}>
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black bg-amber-100 text-amber-800 border border-amber-200 select-none" title={`Alerta de fadiga: ${empHours}h no ciclo`}>
                                   ⚠️ Alerta ({empHours}h)
                                 </span>
                               ) : null}
                             </div>
                             {item.role && (
-                              <div className="text-[10px] text-slate-400 font-semibold">{item.role}</div>
+                              <div className="text-[10px] text-slate-400 font-semibold select-none">{item.role}</div>
                             )}
                           </div>
                         </td>
 
                         {/* Setor & Turno */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div>
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                        <td className="px-4 py-3.5 whitespace-nowrap select-none">
+                          <div className="select-none">
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] select-none">
                               {item.sector || 'Geral'}
                             </span>
-                            <div className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1">
+                            <div className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1 select-none">
                               {item.shiftTypeChoice === 'Noturno' ? '🌙 Noturno' : item.shiftTypeChoice === 'Diurno' ? '☀️ Diurno' : item.isCommercialFlexible ? '🏢 Comercial Flex' : '🏢 Comercial'}
                             </div>
                           </div>
                         </td>
 
                         {/* Modalidade & Horários */}
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className={`text-[9px] px-2 py-0.5 rounded-md font-black uppercase ${
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                          <div className="flex flex-col items-center gap-0.5 select-none">
+                            <span className={`text-[9px] px-2 py-0.5 rounded-md font-black uppercase select-none ${
                               isIntegral 
                                 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
                                 : 'bg-amber-50 text-amber-700 border border-amber-200'
                             }`}>
                               {isIntegral ? 'Turno Integral' : 'Passando do Horário'}
                             </span>
-                            <div className="font-bold text-slate-800 font-mono text-[11px] mt-0.5">
+                            <div className="font-bold text-slate-800 font-mono text-[11px] mt-0.5 select-none">
                               {item.startTime} às {item.endTime}
                             </div>
                             {item.normalShiftStartTime && item.normalShiftEndTime && !isIntegral && (
-                              <div className="text-[9px] text-slate-400 font-medium">
+                              <div className="text-[9px] text-slate-400 font-medium select-none">
                                 (Turno normal: {item.normalShiftStartTime} - {item.normalShiftEndTime})
                               </div>
                             )}
@@ -3194,29 +3323,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         </td>
 
                         {/* Horas Trabalhando */}
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                          <div className="font-black text-indigo-700">
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                          <div className="font-black text-indigo-700 select-none">
                             {item.workingHoursFormatted || `${item.workingHours}h`}
                           </div>
-                          <div className="text-[9px] text-slate-400 font-semibold">
+                          <div className="text-[9px] text-slate-400 font-semibold select-none">
                             {item.workingHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h dec.
                           </div>
                         </td>
 
                         {/* Horas Extras */}
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 font-black text-blue-900 font-mono">
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 font-black text-blue-900 font-mono select-none">
                             <Clock size={12} className="text-blue-600" />
                             <span>{item.overtimeHoursFormatted || `${item.overtimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h`}</span>
                           </div>
-                          <div className="text-[9px] text-slate-400 font-semibold mt-0.5">
+                          <div className="text-[9px] text-slate-400 font-semibold mt-0.5 select-none">
                             {item.overtimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h dec.
                           </div>
                         </td>
 
                         {/* % HE */}
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full font-black text-[10px] uppercase border ${
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                          <span className={`px-2.5 py-1 rounded-full font-black text-[10px] uppercase border select-none ${
                             isHighPercent
                               ? 'bg-amber-100 text-amber-800 border-amber-300'
                               : 'bg-indigo-100 text-indigo-800 border-indigo-200'
@@ -3224,38 +3353,38 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                             {item.overtimePercentage || 60}%
                           </span>
                           {item.equivalentHours ? (
-                            <div className="text-[9px] text-slate-400 font-bold mt-0.5" title="Horas calculadas com adicional">
+                            <div className="text-[9px] text-slate-400 font-bold mt-0.5 select-none" title="Horas calculadas com adicional">
                               = {item.equivalentHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h eq.
                             </div>
                           ) : null}
                         </td>
 
                         {/* Status / Validação */}
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                          <div className="flex flex-col items-center gap-1">
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                          <div className="flex flex-col items-center gap-1 select-none">
                             {item.status === 'approved' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300" title={`Aprovado por ${item.approvedBy || 'Liderança'}`}>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 select-none" title={`Aprovado por ${item.approvedBy || 'Liderança'}`}>
                                 <Check size={11} className="text-emerald-700" />
                                 Aprovado
                               </span>
                             ) : item.status === 'rejected' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-800 border border-red-300" title={item.rejectionReason || 'Rejeitado pela liderança'}>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-800 border border-red-300 select-none" title={item.rejectionReason || 'Rejeitado pela liderança'}>
                                 <X size={11} className="text-red-700" />
                                 Rejeitado
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 select-none">
                                 <Clock size={11} className="text-amber-700" />
                                 Pendente
                               </span>
                             )}
 
                             {(!isReadOnly || canManage) && item.status !== 'approved' && (
-                              <div className="flex items-center gap-1 mt-0.5">
+                              <div className="flex items-center gap-1 mt-0.5 select-none">
                                 <button
                                   type="button"
                                   onClick={() => handleApproveEntry(item)}
-                                  className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-black uppercase transition-colors cursor-pointer flex items-center gap-0.5"
+                                  className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-black uppercase transition-colors cursor-pointer flex items-center gap-0.5 select-none"
                                   title="Aprovar hora extra em 1 clique"
                                 >
                                   <Check size={10} /> Aprovar
@@ -3264,7 +3393,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleOpenRejectModal(item.id)}
-                                    className="px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[9px] font-black uppercase transition-colors cursor-pointer flex items-center gap-0.5"
+                                    className="px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[9px] font-black uppercase transition-colors cursor-pointer flex items-center gap-0.5 select-none"
                                     title="Rejeitar com justificativa"
                                   >
                                     <X size={10} /> Rejeitar
@@ -3276,41 +3405,30 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                         </td>
 
                         {/* Cálculo Aplicado & Motivo */}
-                        <td className="px-4 py-3.5 max-w-[260px]">
+                        <td className="px-4 py-3.5 max-w-[260px] select-none">
                           {item.overtimeExplanation ? (
-                            <div className="text-[10px] text-slate-600 line-clamp-2 font-medium" title={item.overtimeExplanation}>
+                            <div className="text-[10px] text-slate-600 line-clamp-2 font-medium select-none" title={item.overtimeExplanation}>
                               {item.overtimeExplanation}
                             </div>
                           ) : null}
-                          <div className="text-[10px] text-slate-400 truncate mt-0.5 font-semibold" title={item.reason || item.notes}>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5 font-semibold select-none" title={item.reason || item.notes}>
                             Motivo: {item.reason || item.notes || '-'}
                           </div>
                         </td>
 
-                        {/* Ações (Editar e Excluir) */}
-                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
+                        {/* Ações (Exclusão individual) */}
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap select-none">
+                          <div className="flex items-center justify-end gap-1.5 select-none">
                             {(!isReadOnly || canManage) && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditModal(item)}
-                                  className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition-all text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs"
-                                  title="Editar informações deste lançamento de hora extra"
-                                >
-                                  <Edit2 size={12} className="text-blue-600" />
-                                  <span>Editar</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteConfirmId(item.id)}
-                                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition-all text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs"
-                                  title="Excluir este lançamento individualmente"
-                                >
-                                  <Trash2 size={12} className="text-rose-600" />
-                                  <span>Excluir</span>
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteConfirmId(item.id)}
+                                className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition-all text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs select-none"
+                                title="Excluir este lançamento individualmente"
+                              >
+                                <Trash2 size={12} className="text-rose-600" />
+                                <span>Excluir</span>
+                              </button>
                             )}
                           </div>
                         </td>
