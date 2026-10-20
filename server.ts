@@ -26,6 +26,19 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+  // Middleware para capturar erros de payload/JSON sem quebrar conexões
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err) {
+      console.error("Express middleware error:", err?.message || err);
+      return res.status(err.status || 400).json({
+        success: false,
+        error: err.message || "Erro no corpo da requisição"
+      });
+    }
+    next();
+  });
 
   // Initialize Firebase Admin if configuration exists
   try {
@@ -334,12 +347,13 @@ async function startServer() {
       const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
       const finalMime = mimeType || "image/png";
 
-      // Tentativa 1: Leitura via Inteligência Artificial Gemini (gemini-3.8-flash)
+      // Tentativa 1: Leitura via Inteligência Artificial Gemini (com timeout de segurança)
       let aiResult: any = null;
       try {
-        const ai = getGeminiClient();
-        const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
+        if (process.env.GEMINI_API_KEY) {
+          const ai = getGeminiClient();
+          const geminiCall = ai.models.generateContent({
+            model: "gemini-2.5-flash",
           contents: [
             {
               inlineData: {
@@ -431,8 +445,14 @@ Retorne em formato JSON estrito.`
           }
         });
 
-        if (response.text) {
-          aiResult = JSON.parse(response.text);
+          const timeoutCall = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout ao processar imagem")), 12000)
+          );
+          const response = await Promise.race([geminiCall, timeoutCall]);
+
+          if (response?.text) {
+            aiResult = JSON.parse(response.text);
+          }
         }
       } catch (geminiError: any) {
         console.warn("Gemini API call failed or requires valid key, using high-fidelity fallback parser:", geminiError?.message);
@@ -766,10 +786,12 @@ Retorne em formato JSON estrito.`
         ]
       };
 
-      res.json({ success: true, source: "ai-scanner-engine", data: fallbackResult });
+      res.setHeader('Content-Type', 'application/json');
+      return res.json({ success: true, source: "ai-scanner-engine", data: fallbackResult });
     } catch (error: any) {
       console.error("Erro geral no endpoint /api/parse-cartao-ponto:", error);
-      res.status(500).json({ error: error?.message || "Erro ao processar imagem de ponto" });
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(500).json({ success: false, error: error?.message || "Erro ao processar imagem de ponto" });
     }
   });
 

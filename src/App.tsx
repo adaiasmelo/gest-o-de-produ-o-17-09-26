@@ -13192,6 +13192,24 @@ Atenciosamente,
                       <Fingerprint size={18} className="text-blue-600 shrink-0" />
                       <span>Cadastrar / Atualizar Biometria</span>
                     </button>
+
+                    {/* Baixar / Instalar Sistema para todas as funções */}
+                    {!isStandalone && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMainMenuOpen(false);
+                          handleInstallClick();
+                        }}
+                        className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer mt-1"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Download size={18} className="text-amber-300 animate-bounce" />
+                          <span>Baixar Sistema no Computador</span>
+                        </div>
+                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full font-bold">Instalar</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

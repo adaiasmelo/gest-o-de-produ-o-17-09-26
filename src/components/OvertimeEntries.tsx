@@ -3253,7 +3253,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     // Estatísticas de horas do colaborador no ciclo para alerta de fadiga
                     const empStats = dashboardAnalytics.rankedEmployees.find(e => 
                       (item.registration && e.registration === item.registration) || 
-                      e.name.toLowerCase() === (item.employeeName || '').toLowerCase()
+                      (e.name && (e.name || '').toLowerCase() === (item.employeeName || '').toLowerCase())
                     );
                     const empHours = empStats ? empStats.totalHours : 0;
 

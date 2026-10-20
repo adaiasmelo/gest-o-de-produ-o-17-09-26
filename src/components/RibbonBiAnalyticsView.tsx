@@ -125,14 +125,18 @@ export const RibbonBiAnalyticsView: React.FC<RibbonBiAnalyticsViewProps> = ({
   const [bonusRefOp3, setBonusRefOp3] = useState<number>(1500);
 
   // Helper to extract operator level and corresponding bonus reference from employees allocations database
-  const getOperatorDetails = (opName: string) => {
+  const getOperatorDetails = (opName?: string) => {
+    if (!opName) {
+      return { level: 1, roleName: 'Operador 1', bonusRef: bonusRefOp1 };
+    }
     const listEmps = employees || [];
-    const emp = listEmps.find(e => e.name.toLowerCase().trim() === opName.toLowerCase().trim());
+    const targetName = String(opName).trim().toLowerCase();
+    const emp = listEmps.find(e => e && e.name && String(e.name).trim().toLowerCase() === targetName);
     if (!emp) {
       return { level: 1, roleName: 'Operador 1', bonusRef: bonusRefOp1 };
     }
     
-    const roleStr = (emp.role || '').toLowerCase();
+    const roleStr = String(emp.role || '').toLowerCase();
     let level = 1;
     let roleDisplay = emp.role || 'Operador 1';
     
@@ -613,7 +617,7 @@ export const RibbonBiAnalyticsView: React.FC<RibbonBiAnalyticsViewProps> = ({
   const filteredOperators = useMemo(() => {
     if (!operatorSearch.trim()) return operatorMetrics;
     const term = operatorSearch.toLowerCase();
-    return operatorMetrics.filter(o => o.operator.toLowerCase().includes(term));
+    return operatorMetrics.filter(o => (o.operator || '').toLowerCase().includes(term));
   }, [operatorMetrics, operatorSearch]);
 
   const { minWaste, maxWaste, wasteRange } = useMemo(() => {

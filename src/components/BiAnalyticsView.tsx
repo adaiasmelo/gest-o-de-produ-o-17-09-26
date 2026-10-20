@@ -76,7 +76,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
       // Exclui lançamentos antigos e em desuso do Cast 2 de Maio/Junho
       const isExcludedMonth = e.date.substring(5, 7) === '05' || e.date.substring(5, 7) === '06';
       const isExistingPastEntry = !e.updatedAt || e.updatedAt < '2026-06-12T17:44:00Z';
-      if (isExcludedMonth && e.machine.toLowerCase().includes('cast 2') && isExistingPastEntry) {
+      if (isExcludedMonth && (e.machine || '').toLowerCase().includes('cast 2') && isExistingPastEntry) {
         return false;
       }
       return true;
@@ -231,7 +231,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
 
     const machinesList = Object.values(machineDict)
       .filter(m => {
-        const nameLower = m.machine.toLowerCase();
+        const nameLower = (m.machine || '').toLowerCase();
         return nameLower === 'cast 1' || nameLower === 'cast 2';
       })
       .map(m => ({
@@ -280,16 +280,20 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   const [bonusRefOp3, setBonusRefOp3] = useState<number>(1500);
 
   // Helper to extract operator level and corresponding bonus reference from employees allocations database
-  const getOperatorDetails = (opName: string) => {
+  const getOperatorDetails = (opName?: string) => {
+    if (!opName) {
+      return { level: 1, roleName: 'Operador 1', bonusRef: bonusRefOp1 };
+    }
     const listEmps = employees || [];
-    const emp = listEmps.find(e => e.name.toLowerCase().trim() === opName.toLowerCase().trim());
+    const targetName = String(opName).trim().toLowerCase();
+    const emp = listEmps.find(e => e && e.name && String(e.name).trim().toLowerCase() === targetName);
     if (!emp) {
       // Default to level 1 if not found in allocations database
       return { level: 1, roleName: 'Operador 1', bonusRef: bonusRefOp1 };
     }
     
     // Extract level from employee.role
-    const roleStr = (emp.role || '').toLowerCase();
+    const roleStr = String(emp.role || '').toLowerCase();
     let level = 1;
     let roleDisplay = emp.role || 'Operador 1';
     
@@ -544,7 +548,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
     const maxMonth = periodA >= periodB ? periodA : periodB;
 
     processedDataFiltered.forEach(e => {
-      if (!e.operator || e.machine.toLowerCase().includes('erema')) return;
+      if (!e.operator || (e.machine || '').toLowerCase().includes('erema')) return;
       const m = e.date.substring(0, 7);
       if (m < minMonth || m > maxMonth) return;
       if (!acc[e.operator]) {
@@ -640,7 +644,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   const filteredOperators = useMemo(() => {
     if (!operatorSearch.trim()) return operatorMetrics;
     const term = operatorSearch.toLowerCase();
-    return operatorMetrics.filter(o => o.operator.toLowerCase().includes(term));
+    return operatorMetrics.filter(o => (o.operator || '').toLowerCase().includes(term));
   }, [operatorMetrics, operatorSearch]);
 
   const { minWaste, maxWaste, wasteRange } = useMemo(() => {
@@ -1838,10 +1842,10 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
           // Local helper memos for Eco B vs Tubetes
           const sortedEcoBOperators = [...ecoBTubetesMetrics.operatorsList];
           if (ecoBOperatorSearch.trim()) {
-            const s = ecoBOperatorSearch.toLowerCase();
+            const s = (ecoBOperatorSearch || '').toLowerCase();
             sortedEcoBOperators.sort((a, b) => {
-              const matchA = a.operator.toLowerCase().includes(s) ? 1 : 0;
-              const matchB = b.operator.toLowerCase().includes(s) ? 1 : 0;
+              const matchA = (a.operator || '').toLowerCase().includes(s) ? 1 : 0;
+              const matchB = (b.operator || '').toLowerCase().includes(s) ? 1 : 0;
               if (matchA !== matchB) return matchB - matchA;
               return 0;
             });
@@ -1857,13 +1861,13 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
 
           const filteredDailyGrid = ecoBTubetesMetrics.dailyGridList.filter(entry => {
             if (ecoBOperatorSearch.trim()) {
-              if (!entry.operator.toLowerCase().includes(ecoBOperatorSearch.toLowerCase())) return false;
+              if (!(entry.operator || '').toLowerCase().includes((ecoBOperatorSearch || '').toLowerCase())) return false;
             }
             if (ecoBMachineFilter !== 'all') {
-              if (entry.machine.toLowerCase() !== ecoBMachineFilter.toLowerCase()) return false;
+              if ((entry.machine || '').toLowerCase() !== (ecoBMachineFilter || '').toLowerCase()) return false;
             }
             if (ecoBShiftFilter !== 'all') {
-              if (entry.shift.toLowerCase() !== ecoBShiftFilter.toLowerCase()) return false;
+              if ((entry.shift || '').toLowerCase() !== (ecoBShiftFilter || '').toLowerCase()) return false;
             }
             return true;
           });
