@@ -31,6 +31,7 @@ import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
 import { INITIAL_OVERTIME_ENTRIES } from '../data/initialOvertimeEntries';
 import ConfirmDialog from './ConfirmDialog';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
+import { OvertimeAiScannerModal } from './OvertimeAiScannerModal';
 import { triggerHaptic } from '../utils/haptics';
 import { logAuditEvent } from '../services/auditLogger';
 import {
@@ -113,6 +114,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isAiScannerOpen, setIsAiScannerOpen] = useState<boolean>(false);
 
   // Sub-Aba ativa: Dashboard & Análise vs Tabela de Apontamentos
   const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'records'>('dashboard');
@@ -1103,6 +1105,24 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
   };
 
+  // Salvar apontamentos em lote importados via IA (cada dia salvo individualmente conforme solicitado)
+  const handleSaveBatchFromAi = async (batchList: Array<Omit<OvertimeEntry, 'id'>>) => {
+    for (const item of batchList) {
+      const docRef = await addDoc(collection(db, 'overtime_entries'), item);
+      logAuditEvent({
+        action: 'CREATE',
+        module: 'Horas Extras',
+        targetTitle: `Hora Extra (IA) - ${item.employeeName} (${item.overtimeHours}h - ${item.date})`,
+        targetId: docRef.id,
+        userName: loggedUser?.name || 'Sistema',
+        userRole: loggedUser?.role,
+        newState: { ...item, id: docRef.id },
+        reason: item.reason,
+      });
+    }
+    setActiveSubTab('records');
+  };
+
   // Aprovação em 1 clique
   const handleApproveEntry = async (entry: OvertimeEntry) => {
     if (isReadOnly) {
@@ -2004,6 +2024,26 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   {selectedEntryIds.length}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Botão Importar Folha de Ponto c/ IA */}
+          {(!isReadOnly || canManage) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (isReadOnly) {
+                  if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                  else alert('Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
+                  return;
+                }
+                setIsAiScannerOpen(true);
+              }}
+              className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white text-xs font-black uppercase tracking-wider rounded-2xl flex items-center gap-2 shadow-md shadow-purple-600/20 transition-all cursor-pointer shrink-0"
+              title="Importar Folha de Ponto (PNG) com Leitura Automática por Inteligência Artificial"
+            >
+              <Sparkles size={16} className="text-amber-300" />
+              <span>Importar Ponto c/ IA</span>
             </button>
           )}
 
@@ -3489,6 +3529,36 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                   </div>
                 )}
 
+                {/* Banner de Atalho para Leitura com IA da Folha de Ponto */}
+                {!editingEntry && (
+                  <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                        <Sparkles size={16} className="text-amber-300" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-900 uppercase">
+                          Prefere preencher automaticamente através da Folha de Ponto?
+                        </p>
+                        <p className="text-[10.5px] text-slate-500 font-semibold">
+                          Carregue a imagem PNG do cartão de ponto para a IA extrair matrícula, horários, turno e horas extras em lote.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsFormOpen(false);
+                        setIsAiScannerOpen(true);
+                      }}
+                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                    >
+                      <Sparkles size={13} className="text-amber-300" />
+                      <span>Escanear Cartão Ponto (IA)</span>
+                    </button>
+                  </div>
+                )}
+
               {/* SEÇÃO 1: IDENTIFICAÇÃO DO COLABORADOR OU TURMA */}
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
@@ -4575,6 +4645,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         confirmVariant="danger"
         onConfirm={handleDeleteEntry}
         onCancel={() => setDeleteConfirmId(null)}
+      />
+
+      {/* Modal de Leitura de Folha de Ponto com IA */}
+      <OvertimeAiScannerModal
+        isOpen={isAiScannerOpen}
+        onClose={() => setIsAiScannerOpen(false)}
+        onSaveBatchEntries={handleSaveBatchFromAi}
+        loggedUser={loggedUser}
+        employees={activePersonnelEmployees}
       />
     </div>
   );

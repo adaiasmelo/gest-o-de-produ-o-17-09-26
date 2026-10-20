@@ -12316,6 +12316,20 @@ Atenciosamente,
           )}
 
 
+          {/* Botão Baixar Sistema - Disponível para todas as funções (RH, Líder, Operador, etc.) que ainda não baixaram no computador/aparelho */}
+          {!isStandalone && (
+            <button 
+              type="button"
+              onClick={handleInstallClick}
+              className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl md:rounded-2xl transition-all shadow-md shadow-blue-600/20 active:scale-95 flex items-center gap-1.5 cursor-pointer font-black text-[10px] sm:text-xs uppercase tracking-wider"
+              title="Baixar e Instalar o Sistema neste Computador (Acesso Direto para Todas as Funções)"
+            >
+              <Download size={14} className="animate-bounce text-amber-300" />
+              <span className="hidden xs:inline">Baixar Sistema</span>
+              <span className="xs:hidden">Baixar</span>
+            </button>
+          )}
+
           {/* Botão de Menu com 4 Barrinhas Horizontais */}
           <button
             type="button"
@@ -13093,6 +13107,27 @@ Atenciosamente,
                     Ferramentas & Ajustes
                   </p>
                   <div className="space-y-1">
+                    {/* Baixar Sistema - Acesso para Todas as Funções (se não estiver baixado ainda) */}
+                    {!isStandalone && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMainMenuOpen(false);
+                          handleInstallClick();
+                        }}
+                        className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-500/20 active:scale-95 cursor-pointer mb-2"
+                        title="Baixar e Instalar o Sistema neste Computador ou Dispositivo"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Download size={17} className="animate-bounce text-amber-300" />
+                          <span>Baixar Sistema no Computador</span>
+                        </div>
+                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
+                          Instalar
+                        </span>
+                      </button>
+                    )}
+
                     {/* Configurações Gerais */}
                     {canManageSettings && (
                       <button
