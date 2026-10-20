@@ -517,12 +517,13 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
       
       let json: any = null;
       try {
+        const optimizedImage = await compressImageForAnalysis(imagePreview);
         const res = await fetch('/api/parse-cartao-ponto', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            base64Image: imagePreview,
-            mimeType: selectedFile?.type || 'image/png'
+            base64Image: optimizedImage,
+            mimeType: 'image/jpeg'
           })
         });
 

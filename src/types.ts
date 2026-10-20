@@ -282,6 +282,7 @@ export interface PersonnelPermissions {
   overtime: boolean;     // Solicitação de Hora Extra
   overtimeEntries: boolean; // Lançamentos de Horas Extras
   evaluations: boolean;  // Avaliações de Desempenho
+  bonus?: boolean;        // Gestão de Bônus de Produção
   reports?: boolean;     // Relatórios e PDF de Pessoal
   manage: boolean;       // Cadastrar / Gerir Colaboradores
 }

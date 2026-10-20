@@ -6,7 +6,8 @@ import {
   Download, Eye, AlertTriangle, ShieldCheck, History, Info,
   Share2, Copy, Percent, Sparkles, UserCheck, RefreshCw, FileSpreadsheet,
   Sun, Moon, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity,
-  Award, Flame, Layers, Hash, Zap, Factory, CheckSquare
+  Award, Flame, Layers, Hash, Zap, Factory, CheckSquare,
+  SlidersHorizontal, MoreVertical
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -177,6 +178,21 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
   const [bulkDeleteScope, setBulkDeleteScope] = useState<'selected' | 'filtered'>('selected');
+
+  // Menu de Opções Suspenso (Excel, PDF, Importar Ponto c/ IA)
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState<boolean>(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isActionsMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setIsActionsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isActionsMenuOpen]);
   const [isDeletingBulk, setIsDeletingBulk] = useState<boolean>(false);
 
   // Justificativa e observações
@@ -1974,80 +1990,26 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
         {/* GRUPO DE BOTÕES DE AÇÃO: ORGANIZADOS E PADRONIZADOS */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          {/* Grupo de Exportação (Excel + Relatório PDF) */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80 shadow-2xs">
-            <button
-              type="button"
-              onClick={exportToCSV}
-              className="px-3.5 py-2 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 rounded-xl transition-all flex items-center gap-1.5 text-xs font-black uppercase tracking-wider shadow-2xs border border-transparent hover:border-emerald-200 cursor-pointer active:scale-95"
-              title="Exportar dados da planilha para Excel (.CSV)"
-            >
-              <FileSpreadsheet size={15} className="text-emerald-600 shrink-0" />
-              <span>Excel (CSV)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={exportToPDF}
-              className="px-3.5 py-2 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-800 rounded-xl transition-all flex items-center gap-1.5 text-xs font-black uppercase tracking-wider shadow-2xs border border-transparent hover:border-blue-200 cursor-pointer active:scale-95 ml-1"
-              title="Exportar relatório consolidado oficial em PDF"
-            >
-              <Printer size={15} className="text-blue-600 shrink-0" />
-              <span>Relatório PDF</span>
-            </button>
-          </div>
-
-          {/* Botão Exclusão Geral */}
-          {(!isReadOnly || canManage) && (
+          {/* Botão Exclusão Geral - SÓ APARECE QUANDO SELECIONAR ALGUM ITEM */}
+          {(!isReadOnly || canManage) && selectedEntryIds.length > 0 && (
             <button
               type="button"
               onClick={() => {
-                if (selectedEntryIds.length > 0) {
-                  setBulkDeleteScope('selected');
-                } else {
-                  setBulkDeleteScope('filtered');
-                }
+                setBulkDeleteScope('selected');
                 setIsBulkDeleteModalOpen(true);
               }}
-              disabled={filteredEntries.length === 0}
-              className={`px-3.5 py-2.5 rounded-2xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed ${
-                selectedEntryIds.length > 0
-                  ? 'bg-rose-600 text-white border-rose-700 shadow-md shadow-rose-600/20 hover:bg-rose-700'
-                  : 'bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border-rose-200'
-              }`}
-              title="Exclusão geral de apontamentos (selecionados ou todos os filtrados)"
+              className="px-3.5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white border border-rose-700 rounded-2xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-wider cursor-pointer shadow-md shadow-rose-600/20 animate-in fade-in zoom-in-95 duration-150"
+              title="Excluir apontamentos selecionados"
             >
-              <Trash2 size={15} className={selectedEntryIds.length > 0 ? 'text-white' : 'text-rose-600'} />
-              <span>Exclusão Geral</span>
-              {selectedEntryIds.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-white/30 text-[10px] font-black">
-                  {selectedEntryIds.length}
-                </span>
-              )}
+              <Trash2 size={15} className="text-white" />
+              <span>Excluir Selecionados</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-white/30 text-[10px] font-black">
+                {selectedEntryIds.length}
+              </span>
             </button>
           )}
 
-          {/* Botão Importar Folha de Ponto c/ IA */}
-          {(!isReadOnly || canManage) && (
-            <button
-              type="button"
-              onClick={() => {
-                if (isReadOnly) {
-                  if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
-                  else alert('Usuário com perfil somente leitura não tem permissão para cadastrar horas extras.');
-                  return;
-                }
-                setIsAiScannerOpen(true);
-              }}
-              className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white text-xs font-black uppercase tracking-wider rounded-2xl flex items-center gap-2 shadow-md shadow-purple-600/20 transition-all cursor-pointer shrink-0"
-              title="Importar Folha de Ponto (PNG) com Leitura Automática por Inteligência Artificial"
-            >
-              <Sparkles size={16} className="text-amber-300" />
-              <span>Importar Ponto c/ IA</span>
-            </button>
-          )}
-
-          {/* Botão Novo Lançamento (Ação Primária Principal) */}
+          {/* Botão Novo Lançamento (Ação Primária Principal) - Único botão direto na tela para RH e demais usuários */}
           {(!isReadOnly || canManage) && (
             <button
               type="button"
@@ -2067,6 +2029,80 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             </button>
           )}
 
+          {/* Menu de Ações (Excel CSV, Relatório PDF, Importar Ponto c/ IA) */}
+          <div className="relative" ref={actionsMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
+              className={`px-3.5 py-2.5 rounded-2xl transition-all flex items-center gap-2 text-xs font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs ${
+                isActionsMenuOpen
+                  ? 'bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-blue-500/20'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+              }`}
+              title="Menu de opções, exportação e IA"
+            >
+              <SlidersHorizontal size={15} className="text-slate-600" />
+              <span className="hidden sm:inline">Opções</span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isActionsMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 font-sans">
+                {/* Importar Ponto com IA */}
+                {(!isReadOnly || canManage) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      setIsAiScannerOpen(true);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Sparkles size={16} className="text-purple-600 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="font-black uppercase text-[11px]">Importar Ponto c/ IA</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Leitura automática de folha PNG</span>
+                    </div>
+                  </button>
+                )}
+
+                <div className="my-1 border-t border-slate-100" />
+
+                {/* Exportar Excel CSV */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionsMenuOpen(false);
+                    exportToCSV();
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <FileSpreadsheet size={16} className="text-emerald-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-black uppercase text-[11px]">Excel (CSV)</span>
+                    <span className="text-[9px] text-slate-400 font-normal">Exportar dados da planilha</span>
+                  </div>
+                </button>
+
+                {/* Relatório PDF */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionsMenuOpen(false);
+                    exportToPDF();
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <Printer size={16} className="text-blue-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-black uppercase text-[11px]">Relatório PDF</span>
+                    <span className="text-[9px] text-slate-400 font-normal">Exportar relatório consolidado</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Botão Voltar */}
           <button
             type="button"
@@ -2081,9 +2117,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       </div>
 
       {/* ============================================================== */}
-      {/* SELETOR DE TELAS: DASHBOARD vs TABELA */}
+      {/* SELETOR DE TELAS: DASHBOARD vs TABELA (LIMPO) */}
       {/* ============================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 sm:px-8 py-3">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 sm:px-8 py-3">
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
           <button
             type="button"
@@ -2107,18 +2143,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             }`}
           >
             <FileText size={15} />
-            Tabela de Apontamentos ({filteredEntries.length})
+            Tabela de Apontamentos
           </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-[10px] font-black uppercase border border-blue-200">
-            <Clock size={13} className="text-blue-600" />
-            <span>Total Filtrado: {stats.totalOvertimeHours.toLocaleString('pt-BR', { minimumFractionDigits: 1 })}h extras</span>
-          </div>
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">
-            {filteredEntries.length} lançamento(s)
-          </span>
         </div>
       </div>
 
@@ -2201,6 +2227,22 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               </select>
             </div>
 
+            {/* Caixa de Seleção de Atalhos Rápidos */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+              <Zap size={14} className="text-amber-500 shrink-0" />
+              <select
+                value={quickFilter}
+                onChange={(e) => setQuickFilter(e.target.value as any)}
+                className="bg-transparent text-xs font-black text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="all">Todos os Atalhos</option>
+                <option value="cycle">Ciclo Vigente</option>
+                <option value="this_week">Esta Semana</option>
+                <option value="sun_holiday">Domingos e Feriados</option>
+                <option value="weekdays">Dias Normais</option>
+              </select>
+            </div>
+
             {/* Botão Limpar Filtros se houver algum ativo */}
             {(searchTerm || filterSector !== 'todos' || filterShift !== 'todos' || quickFilter !== 'all') && (
               <button
@@ -2217,36 +2259,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 <span>Limpar Filtros</span>
               </button>
             )}
-          </div>
-
-          {/* Atalhos Rápidos de Filtro */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-100 no-scrollbar">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 shrink-0 mr-1">
-              <Zap size={13} className="text-amber-500" /> Atalhos:
-            </span>
-            {[
-              { id: 'all', label: 'Todos' },
-              { id: 'cycle', label: 'Ciclo Vigente (25 a 24)' },
-              { id: 'this_week', label: 'Esta Semana' },
-              { id: 'sun_holiday', label: 'Domingos / Feriados (110%)' },
-              { id: 'weekdays', label: 'Dias Normais (60%)' },
-              { id: 'pending', label: 'Pendentes' },
-              { id: 'over_2h', label: 'Acima de 2h/dia' },
-              { id: 'fatigue', label: 'Alerta Fadiga (>30h)' },
-            ].map((pill) => (
-              <button
-                key={pill.id}
-                type="button"
-                onClick={() => setQuickFilter(pill.id as any)}
-                className={`px-3 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                  quickFilter === pill.id
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
           </div>
         </div>
 
@@ -3115,9 +3127,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
                         Relação Oficial de Apontamentos de Horas Extras
                       </h4>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        {filteredEntries.length} lançamento(s) exibido(s) no filtro ativo
-                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -3128,21 +3137,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     >
                       {isAllSelected ? 'Desmarcar Todos' : `Selecionar Todos (${filteredEntries.length})`}
                     </button>
-
-                    {(!isReadOnly || canManage) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBulkDeleteScope('filtered');
-                          setIsBulkDeleteModalOpen(true);
-                        }}
-                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
-                        title="Excluir todos os registros que estão filtrados na tela"
-                      >
-                        <Trash2 size={12} className="text-rose-600" />
-                        <span>Exclusão Geral</span>
-                      </button>
-                    )}
                   </div>
                 </div>
               )}

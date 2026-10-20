@@ -21,7 +21,8 @@ import {
   Palmtree, 
   AlertCircle,
   ChevronRight,
-  Utensils
+  Utensils,
+  Award
 } from 'lucide-react';
 import { UserPermissions } from '../types';
 
@@ -823,6 +824,30 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                       <span>Avaliação de Desempenho</span>
                     </div>
                     <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-teal-600" />
+                  </button>
+                )}
+
+                {(isAdmin || userPerms.personnel.bonus !== false) && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectOption(() => onNavigatePersonnel('bonus'))}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
+                      activeTab === 'personnel' && personnelSubView === 'bonus'
+                        ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
+                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeTab === 'personnel' && personnelSubView === 'bonus'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
+                      }`}>
+                        <Award size={14} />
+                      </div>
+                      <span>Gestão de Bônus de Produção</span>
+                    </div>
+                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-amber-600" />
                   </button>
                 )}
               </div>

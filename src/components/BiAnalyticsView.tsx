@@ -274,22 +274,20 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
     return Object.values(dailyDict).sort((a, b) => a.date.localeCompare(b.date));
   }, [processedDataFiltered]);
 
-  // Reference values for operator monthly bonus by level (for Desconto Linear Proporcional calculation)
-  const [bonusRefOp1, setBonusRefOp1] = useState<number>(1000);
-  const [bonusRefOp2, setBonusRefOp2] = useState<number>(1200);
-  const [bonusRefOp3, setBonusRefOp3] = useState<number>(1500);
+  // Reference value for operator monthly bonus (single meta of R$ 250)
+  const [metaMensalBonus, setMetaMensalBonus] = useState<number>(250);
 
   // Helper to extract operator level and corresponding bonus reference from employees allocations database
   const getOperatorDetails = (opName?: string) => {
     if (!opName) {
-      return { level: 1, roleName: 'Operador 1', bonusRef: bonusRefOp1 };
+      return { level: 1, roleName: 'Operador 1', bonusRef: metaMensalBonus };
     }
     const listEmps = employees || [];
     const targetName = String(opName).trim().toLowerCase();
     const emp = listEmps.find(e => e && e.name && String(e.name).trim().toLowerCase() === targetName);
     if (!emp) {
       // Default to level 1 if not found in allocations database
-      return { level: 1, roleName: 'Operador 1', bonusRef: bonusRefOp1 };
+      return { level: 1, roleName: 'Operador 1', bonusRef: metaMensalBonus };
     }
     
     // Extract level from employee.role
@@ -307,12 +305,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
     } else {
       level = 1;
     }
-    
-    let bonusRef = bonusRefOp1;
-    if (level === 2) bonusRef = bonusRefOp2;
-    if (level === 3) bonusRef = bonusRefOp3;
 
-    return { level, roleName: roleDisplay, bonusRef };
+    return { level, roleName: roleDisplay, bonusRef: metaMensalBonus };
   };
 
   // Aggregate monthly data for analytics computations
@@ -1536,58 +1530,56 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                   <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
                     <Users className="text-blue-600" size={16} /> Evolução Histórica de Desempenho e Consistência de Operadores
                   </h3>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase mt-1">Comparação cruzada de volume individual produzido versus volatilidade de desperdício (Eco A/Eco B/Borra)</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Operador 1 */}
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1">
-                    <Award className="text-blue-500 shrink-0" size={14} />
-                    <div className="flex flex-col min-w-[85px]">
-                      <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-wider leading-none">Ref. Operador 1</span>
-                      <div className="flex items-center gap-0.5 mt-0.5">
-                        <span className="text-[9px] font-bold text-slate-500">R$</span>
-                        <input 
-                          type="number" 
-                          min={0}
-                          value={bonusRefOp1} 
-                          onChange={e => setBonusRefOp1(Number(e.target.value) || 0)} 
-                          className="bg-transparent font-black text-[11px] text-slate-800 outline-none w-14 p-0 border-none focus:ring-0 focus:outline-none"
-                        />
+                  {/* Meta Mensal Única de R$ 250 com bolinha explicativa da regra */}
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 shadow-2xs">
+                    <Award className="text-amber-500 shrink-0" size={16} />
+                    <div className="flex flex-col min-w-[125px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider leading-none">Meta Mensal</span>
+                        {/* Bolinha explicativa interativa ao passar o mouse */}
+                        <div className="group relative inline-flex items-center cursor-help">
+                          <span className="w-3.5 h-3.5 rounded-full bg-slate-200 hover:bg-blue-600 text-slate-600 hover:text-white flex items-center justify-center text-[9px] font-black transition-colors" title="Como funciona o cálculo da meta e bônus">
+                            ?
+                          </span>
+                          <div className="pointer-events-none absolute right-0 top-full mt-2 w-80 sm:w-96 p-4 bg-slate-900/95 backdrop-blur-md border border-slate-700 text-white text-[10px] font-medium rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] normal-case tracking-normal space-y-2.5 leading-relaxed">
+                            <div className="flex items-center gap-2 text-amber-400 font-black uppercase text-[11px] pb-1 border-b border-slate-800">
+                              <Award size={14} className="text-amber-400" />
+                              <span>Cálculo da Regra de Bônus (Meta R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</span>
+                            </div>
+                            <p className="text-slate-300">
+                              O bônus individual é calculado com base na <strong>Meta Mensal de R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> por operador, aplicando o modelo de <strong>Desconto Linear Proporcional</strong> conforme o coeficiente de perda de cada colaborador:
+                            </p>
+                            <div className="space-y-1.5">
+                              <div className="p-2 bg-emerald-950/60 border border-emerald-500/30 rounded-xl">
+                                <span className="font-bold text-emerald-400 block text-[10.5px]">Melhor Perda (Mínimo Desperdício):</span>
+                                <span className="text-slate-300 text-[9.5px]">Aplica <strong>0% de desconto</strong>. O operador recebe 100% da meta: <strong>R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>.</span>
+                              </div>
+                              <div className="p-2 bg-rose-950/60 border border-rose-500/30 rounded-xl">
+                                <span className="font-bold text-rose-400 block text-[10.5px]">Pior Perda (Máximo Desperdício):</span>
+                                <span className="text-slate-300 text-[9.5px]">Aplica <strong>100% de desconto</strong>, resultando em <strong>R$ 0,00</strong>.</span>
+                              </div>
+                              <div className="p-2 bg-blue-950/60 border border-blue-500/30 rounded-xl">
+                                <span className="font-bold text-blue-400 block text-[10.5px]">Desempenho Intermediário:</span>
+                                <span className="text-slate-300 text-[9.5px]">O desconto varia linearmente entre 0% e 100% conforme a posição relativa entre a melhor e pior perda.</span>
+                              </div>
+                            </div>
+                            <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between font-mono">
+                              <span>Fórmula:</span>
+                              <span className="text-slate-200">Bônus = R$ {metaMensalBonus} × (1 - Desconto% / 100)</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Operador 2 */}
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1">
-                    <Award className="text-indigo-500 shrink-0" size={14} />
-                    <div className="flex flex-col min-w-[85px]">
-                      <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-wider leading-none">Ref. Operador 2</span>
-                      <div className="flex items-center gap-0.5 mt-0.5">
-                        <span className="text-[9px] font-bold text-slate-500">R$</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[10px] font-bold text-slate-500">R$</span>
                         <input 
                           type="number" 
                           min={0}
-                          value={bonusRefOp2} 
-                          onChange={e => setBonusRefOp2(Number(e.target.value) || 0)} 
-                          className="bg-transparent font-black text-[11px] text-slate-800 outline-none w-14 p-0 border-none focus:ring-0 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Operador 3 */}
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1">
-                    <Award className="text-amber-500 shrink-0" size={14} />
-                    <div className="flex flex-col min-w-[85px]">
-                      <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-wider leading-none">Ref. Operador 3</span>
-                      <div className="flex items-center gap-0.5 mt-0.5">
-                        <span className="text-[9px] font-bold text-slate-500">R$</span>
-                        <input 
-                          type="number" 
-                          min={0}
-                          value={bonusRefOp3} 
-                          onChange={e => setBonusRefOp3(Number(e.target.value) || 0)} 
-                          className="bg-transparent font-black text-[11px] text-slate-800 outline-none w-14 p-0 border-none focus:ring-0 focus:outline-none"
+                          value={metaMensalBonus} 
+                          onChange={e => setMetaMensalBonus(Number(e.target.value) || 0)} 
+                          className="bg-transparent font-black text-xs text-slate-800 outline-none w-16 p-0 border-none focus:ring-0 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -1599,20 +1591,9 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                       placeholder="Pesquisar operador..." 
                       value={operatorSearch} 
                       onChange={e => setOperatorSearch(e.target.value)} 
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 w-full sm:w-52"
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 w-full sm:w-52"
                     />
                   </div>
-                </div>
-              </div>
-
-              {/* Informational banner about the Linear Proportional Discount Bonus system */}
-              <div className="bg-gradient-to-r from-emerald-50/70 to-teal-50/70 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3.5 shadow-sm">
-                <Award className="text-emerald-500 mt-1 shrink-0" size={18} />
-                <div className="space-y-1">
-                  <h4 className="text-xs font-black text-emerald-800 uppercase tracking-wider">Regra de Bônus: Desconto Linear Proporcional por Nível</h4>
-                  <p className="text-[10px] text-slate-600 font-semibold leading-relaxed">
-                    Cálculo individual contínuo onde o operador com o <strong>melhor (menor) coeficiente de perda ({formatPercent(minWaste)})</strong> recebe 100% do bônus completo correspondente ao seu nível com 0% de desconto. O operador com o <strong>pior (maior) coeficiente de perda ({formatPercent(maxWaste)})</strong> recebe 100% de desconto, resultando em <strong>R$ 0,00</strong>. Os valores de bônus base variam por nível de operador (<strong>Operador 1: R$ {bonusRefOp1.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Operador 2: R$ {bonusRefOp2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Operador 3: R$ {bonusRefOp3.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>).
-                  </p>
                 </div>
               </div>
 
@@ -1783,13 +1764,13 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                               {(() => {
                                 const details = getOperatorDetails(op.operator);
                                 const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
-                                const bonusAmt = details.bonusRef * (1 - (discountPct / 100));
+                                const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
                                 if (discountPct === 0) {
                                   return (
                                     <div className="flex justify-end items-center gap-1">
                                       <span className="text-emerald-600 font-black text-xs flex flex-col items-end bg-emerald-50 px-2.5 py-1 rounded-xl">
                                         <span className="flex items-center gap-0.5"><Award size={12} className="text-amber-500 fill-amber-500 inline mr-0.5" /> R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                        <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">Sem desconto ({details.roleName})</span>
+                                        <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">Sem desconto (Meta R$ {metaMensalBonus})</span>
                                       </span>
                                     </div>
                                   );
@@ -1798,14 +1779,14 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                                   return (
                                     <div className="flex flex-col items-end">
                                       <span className="text-slate-400 font-normal">R$ 0,00</span>
-                                      <span className="text-[8px] text-rose-400 font-bold block mt-0.5">Pior média ({details.roleName})</span>
+                                      <span className="text-[8px] text-rose-400 font-bold block mt-0.5">100% desconto (Pior perda)</span>
                                     </div>
                                   );
                                 }
                                 return (
                                   <div className="flex flex-col items-end">
                                     <span className="text-slate-700 font-extrabold text-xs">R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                    <span className="text-[8px] text-slate-400 font-semibold">Base: R$ {details.bonusRef} ({details.roleName})</span>
+                                    <span className="text-[8px] text-slate-400 font-semibold">Meta: R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                                   </div>
                                 );
                               })()}

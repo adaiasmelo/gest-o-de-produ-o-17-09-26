@@ -148,6 +148,7 @@ import {
   mergeRibbonDocChanges
 } from './utils/productionCache';
 import { EvaluationsTab } from './components/EvaluationsTab';
+import { ProductionBonusManager } from './components/ProductionBonusManager';
 import { SupabaseModal } from './components/SupabaseModal';
 import { 
   saveProductionEntryToSupabase, 
@@ -1156,7 +1157,7 @@ export const App: React.FC = () => {
     };
   }, [screensaverSettings, loggedUser, activeTab, isScreensaverActive]);
 
-  const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations'>(() => {
+  const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations' | 'bonus'>(() => {
     try {
       const saved = localStorage.getItem('manupackaging_user');
       if (saved) {
@@ -3376,6 +3377,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         else if (personnelSubView === 'overtime') subScreen = 'Solicitação de Horas Extras';
         else if (personnelSubView === 'overtime_entries') subScreen = 'Lançamento de Horas Extras';
         else if (personnelSubView === 'evaluations') subScreen = 'Avaliação de Desempenho';
+        else if (personnelSubView === 'bonus') subScreen = 'Gestão de Bônus de Produção';
         break;
       case 'evaluations':
         screen = 'Avaliação de Desempenho';
@@ -4377,7 +4379,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       (personnelSubView === 'lunch' && userPerms.personnel.lunch) ||
       (personnelSubView === 'overtime' && userPerms.personnel.overtime) ||
       (personnelSubView === 'overtime_entries' && userPerms.personnel.overtimeEntries) ||
-      (personnelSubView === 'evaluations' && userPerms.personnel.evaluations);
+      (personnelSubView === 'evaluations' && userPerms.personnel.evaluations) ||
+      (personnelSubView === 'bonus' && userPerms.personnel.bonus !== false);
 
     if (!isSubviewAllowed) {
       if (userPerms.personnel.overtime) setPersonnelSubView('overtime');
@@ -12987,6 +12990,26 @@ Atenciosamente,
                                 <span>Avaliação de Desempenho</span>
                               </button>
                             )}
+
+                            {/* Gestão de Bônus de Produção */}
+                            {(isAdmin || userPerms.personnel.bonus !== false) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('personnel');
+                                  setPersonnelSubView('bonus');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'personnel' && personnelSubView === 'bonus'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Award size={14} className="shrink-0 text-amber-600" />
+                                <span>Gestão de Bônus de Produção</span>
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -21081,9 +21104,30 @@ Atenciosamente,
               TRAINING_MODULES={TRAINING_MODULES}
               onClose={() => setPersonnelSubView('board')}
             />
+          ) : personnelSubView === 'bonus' ? (
+            <ProductionBonusManager
+              employees={employees}
+              onClose={() => setPersonnelSubView('board')}
+              canManage={canManagePersonnel}
+              isReadOnly={isReadOnlyAccount}
+              onBlockedAction={handleBlockedReadOnlyAction}
+              loggedUser={loggedUser}
+            />
           ) : (
             <div className="space-y-8 animate-in fade-in duration-500">
             <div className="flex items-center justify-center gap-3 no-print">
+              {/* Botão de Acesso Direto: Gestão de Bônus de Produção */}
+              {(isAdmin || userPerms.personnel.bonus !== false) && (
+                <button 
+                  onClick={() => setPersonnelSubView('bonus')}
+                  className="p-3.5 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white rounded-2xl shadow-sm hover:shadow-md active:scale-95 transition-all flex items-center gap-2 cursor-pointer border border-amber-400/30"
+                  title="Gestão de Bônus de Produção (Atestados, Faltas, Atrasos e Metas de Máquinas)"
+                >
+                  <Award size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest px-1">Bônus de Produção</span>
+                </button>
+              )}
+
               {canManagePersonnel && (
                 <button 
                   onClick={() => {
@@ -21234,6 +21278,15 @@ Atenciosamente,
                         >
                           <Award size={18} className="text-indigo-600" />
                           Avaliações e Desempenho
+                        </button>
+                      )}
+                      {(isAdmin || userPerms.personnel.bonus !== false) && (
+                        <button 
+                          onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('bonus'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 text-[11px] font-black uppercase transition-colors border-t border-slate-50 cursor-pointer"
+                        >
+                          <Award size={18} className="text-amber-500" />
+                          Gestão de Bônus de Produção
                         </button>
                       )}
                       {(isAdmin || userPerms.personnel.training) && (
@@ -21396,6 +21449,18 @@ Atenciosamente,
                               <Award size={15} className="text-indigo-600" />
                             </div>
                             <span>Avaliações e Desempenho</span>
+                          </button>
+                        )}
+
+                        {(isAdmin || userPerms.personnel.bonus !== false) && (
+                          <button 
+                            onClick={() => { setIsExtraMenuOpen(false); setPersonnelSubView('bonus'); }}
+                            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-amber-50/80 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-200 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer whitespace-nowrap group"
+                          >
+                            <div className="p-1 rounded-lg bg-white group-hover:bg-amber-100/60 transition-colors shadow-2xs">
+                              <Award size={15} className="text-amber-500" />
+                            </div>
+                            <span>Gestão de Bônus de Produção</span>
                           </button>
                         )}
 

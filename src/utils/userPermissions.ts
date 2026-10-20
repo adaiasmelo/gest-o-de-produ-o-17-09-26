@@ -37,6 +37,7 @@ export const DEFAULT_PERSONNEL_PERMISSIONS: PersonnelPermissions = {
   overtime: true,
   overtimeEntries: true,
   evaluations: true,
+  bonus: true,
   reports: true,
   manage: false
 };
