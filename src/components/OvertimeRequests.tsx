@@ -158,10 +158,12 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     const unsub = onSnapshot(
       collection(db, 'overtime_requests'),
       (snapshot) => {
-        const list = snapshot.docs.map((docSnap) => ({
+        const rawList = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data()
-        })) as OvertimeRequest[];
+        })) as any[];
+
+        const list = rawList.filter((r) => r && !r.isDeleted) as OvertimeRequest[];
 
         // Ordenar por data (decrescente) e criação
         list.sort((a, b) => {
@@ -1504,8 +1506,15 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
       return;
     }
     try {
-      await deleteDoc(doc(db, 'overtime_requests', id));
+      setRequests((prev) => prev.filter((r) => r.id !== id));
       setDeleteConfirmId(null);
+      try {
+        await updateDoc(doc(db, 'overtime_requests', id), {
+          isDeleted: true,
+          deletedAt: new Date().toISOString()
+        });
+      } catch {}
+      await deleteDoc(doc(db, 'overtime_requests', id));
     } catch (err) {
       console.error('Erro ao excluir solicitação:', err);
     }

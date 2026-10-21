@@ -18,20 +18,26 @@ interface RibbonBiAnalyticsViewProps {
 }
 
 // "em todo o sistema sempre que o valor for igual o maior que mil deve ser apresentado com T se for menor que mil deve ser apresentado com Kg."
-const formatWeight = (val: number) => {
-  const absVal = Math.abs(val);
+const formatWeight = (val: number | null | undefined) => {
+  const num = Number(val);
+  if (isNaN(num)) return '0 Kg';
+  const absVal = Math.abs(num);
   if (absVal >= 1000) {
-    return (val / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
+    return (num / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
   }
-  return val.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
+  return num.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
 };
 
-const formatM2 = (val: number) => {
-  return val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' m²';
+const formatM2 = (val: number | null | undefined) => {
+  const num = Number(val);
+  if (isNaN(num)) return '0 m²';
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' m²';
 };
 
-const formatPercent = (val: number) => {
-  return `${val.toFixed(2).replace('.', ',')}%`;
+const formatPercent = (val: number | null | undefined) => {
+  const num = Number(val);
+  if (isNaN(num)) return '0,00%';
+  return `${num.toFixed(2).replace('.', ',')}%`;
 };
 
 const formatMinutes = (val: number) => {

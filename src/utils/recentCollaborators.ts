@@ -35,7 +35,8 @@ export const isRecentCollaborator = (col?: Collaborator | null, maxDays = 30): b
 /**
  * Retorna quantos dias se passaram desde o cadastro (0 = hoje, 1 = ontem, etc.)
  */
-export const getRecentDaysAgo = (col: Collaborator): number => {
+export const getRecentDaysAgo = (col?: Collaborator | null): number => {
+  if (!col) return 0;
   const timeStr = col.createdAt || col.updatedAt;
   if (!timeStr) return 0;
   const time = new Date(timeStr).getTime();
@@ -47,7 +48,8 @@ export const getRecentDaysAgo = (col: Collaborator): number => {
 /**
  * Formata texto amigável de quando foi cadastrado
  */
-export const formatRecentRegistrationBadge = (col: Collaborator): string => {
+export const formatRecentRegistrationBadge = (col?: Collaborator | null): string => {
+  if (!col) return 'Recente';
   const days = getRecentDaysAgo(col);
   if (days === 0) return 'Cadastrado hoje';
   if (days === 1) return 'Cadastrado ontem';

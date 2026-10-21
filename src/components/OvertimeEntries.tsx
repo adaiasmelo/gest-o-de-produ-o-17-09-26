@@ -30,6 +30,13 @@ import autoTable from 'jspdf-autotable';
 import { db } from '../lib/firebase';
 import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
 import { INITIAL_OVERTIME_ENTRIES } from '../data/initialOvertimeEntries';
+import { 
+  getDeletedOvertimeEntryIds, 
+  recordDeletedOvertimeEntryIds, 
+  recordDeletedOvertimeEntryId,
+  markOvertimeAsInitialized,
+  hasOvertimeBeenInitialized
+} from '../utils/overtimeTombstone';
 import ConfirmDialog from './ConfirmDialog';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
 import { OvertimeAiScannerModal } from './OvertimeAiScannerModal';
@@ -296,22 +303,22 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       collection(db, 'overtime_entries'),
       async (snapshot) => {
         if (!isMounted) return;
-        const list = snapshot.docs.map((docSnap) => ({
+        const deletedIds = getDeletedOvertimeEntryIds();
+        const rawList = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data()
-        })) as OvertimeEntry[];
+        })) as any[];
+
+        // Exclui permanentemente quaisquer lançamentos que tenham sido apagados ou marcados com isDeleted
+        const list = rawList.filter((item) => item && !item.isDeleted && !deletedIds.has(item.id)) as OvertimeEntry[];
+
+        // CRUCIAL: Se a lista for vazia (porque o usuário apagou lançamentos), mantém vazia!
+        // Não semear automaticamente para não ressuscitar registros que o usuário excluiu.
+        markOvertimeAsInitialized();
 
         if (list.length === 0) {
-          // Se não houver lançamentos no Firestore, inicializa com os 22 lançamentos oficiais de teste
-          setEntries(INITIAL_OVERTIME_ENTRIES);
+          setEntries([]);
           setIsLoading(false);
-          try {
-            for (const item of INITIAL_OVERTIME_ENTRIES) {
-              await setDoc(doc(db, 'overtime_entries', item.id), item);
-            }
-          } catch (e) {
-            console.warn('Erro ao auto-semear overtime_entries:', e);
-          }
           return;
         }
 
@@ -328,7 +335,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       (err) => {
         console.error('Erro ao sincronizar overtime_entries:', err);
         if (isMounted) {
-          setEntries(INITIAL_OVERTIME_ENTRIES);
+          const deletedIds = getDeletedOvertimeEntryIds();
+          setEntries((prev) => prev.filter((item) => !deletedIds.has(item.id)));
           setIsLoading(false);
         }
       }
@@ -1184,13 +1192,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
   };
 
-  // Exclusão Individual
+  // Exclusão Individual Definitiva
   const handleDeleteEntry = async () => {
     if (!deleteConfirmId || isReadOnly) return;
+    const targetId = deleteConfirmId;
     try {
-      await deleteDoc(doc(db, 'overtime_entries', deleteConfirmId));
-      setSelectedEntryIds((prev) => prev.filter((id) => id !== deleteConfirmId));
+      // 1. Atualização Otimista Imediata
+      setEntries((prev) => prev.filter((item) => item.id !== targetId));
+      setSelectedEntryIds((prev) => prev.filter((id) => id !== targetId));
       setDeleteConfirmId(null);
+
+      // 2. Grava no Tombstone definitivo para impedir qualquer ressurreição
+      recordDeletedOvertimeEntryId(targetId);
+
+      // 3. Marca como excluído para consultas concorrentes e deleta do Firestore
+      try {
+        await updateDoc(doc(db, 'overtime_entries', targetId), {
+          isDeleted: true,
+          deletedAt: new Date().toISOString()
+        });
+      } catch {}
+
+      // 4. Deleta permanentemente do Firestore
+      await deleteDoc(doc(db, 'overtime_entries', targetId));
     } catch (err) {
       console.error('Erro ao excluir lançamento de hora extra:', err);
     }
@@ -1206,6 +1230,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       }
       return;
     }
+
+    // Limpa tombstones para permitir recarregar testes limpos
+    try {
+      localStorage.removeItem('manupack_deleted_overtime_entry_ids');
+    } catch {}
 
     setIsSeedingTests(true);
     try {
@@ -1347,7 +1376,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     return entries.find((item) => item.id === deleteConfirmId);
   }, [entries, deleteConfirmId]);
 
-  // Exclusão Geral (Selecionados ou Todos os Filtrados)
+  // Exclusão Geral Definitiva (Selecionados ou Todos os Filtrados)
   const handleConfirmBulkDelete = async () => {
     if (isReadOnly) {
       onBlockedAction?.('Ação Bloqueada', 'Usuário com perfil somente leitura não tem permissão para excluir lançamentos.');
@@ -1365,11 +1394,23 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
     setIsDeletingBulk(true);
     try {
-      for (const id of idsToDelete) {
-        await deleteDoc(doc(db, 'overtime_entries', id));
-      }
+      // 1. Atualização Otimista Imediata
+      const idsSet = new Set(idsToDelete);
+      setEntries((prev) => prev.filter((item) => !idsSet.has(item.id)));
       setSelectedEntryIds([]);
       setIsBulkDeleteModalOpen(false);
+
+      // 2. Grava permanentemente no Tombstone
+      recordDeletedOvertimeEntryIds(idsToDelete);
+
+      // 3. Deleta cada documento do Firestore
+      for (const id of idsToDelete) {
+        try {
+          await deleteDoc(doc(db, 'overtime_entries', id));
+        } catch (e) {
+          console.warn('Erro ao deletar documento individual:', id, e);
+        }
+      }
     } catch (err) {
       console.error('Erro ao realizar exclusão geral:', err);
     } finally {

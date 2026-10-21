@@ -123,12 +123,14 @@ const getYesterdayStr = () => {
   return d.toLocaleDateString('sv-SE');
 };
 
-const formatWeight = (val: number) => {
-  const absVal = Math.abs(val);
+const formatWeight = (val: number | null | undefined) => {
+  const num = Number(val);
+  if (isNaN(num)) return '0 Kg';
+  const absVal = Math.abs(num);
   if (absVal >= 1000) {
-    return (val / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
+    return (num / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
   }
-  return val.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
+  return num.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
 };
 
 const getDefaultDateForMonth = (dbMonth?: string) => {

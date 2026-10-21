@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { setDoc, doc } from 'firebase/firestore';
 import { IMPORTED_COLLABORATORS } from '../constants/importedCollaborators';
 import { isRecentCollaborator, getRecentCollaborators, formatRecentRegistrationBadge } from '../utils/recentCollaborators';
+import ErrorBoundary from './ErrorBoundary';
 
 interface DatabaseModalProps {
   isOpen: boolean;
@@ -27,17 +28,17 @@ interface DatabaseModalProps {
 const DatabaseModal: React.FC<DatabaseModalProps> = ({ 
   isOpen, 
   onClose, 
-  employees, 
-  collaborators,
+  employees = [], 
+  collaborators = [],
   onAdd, 
   onDelete,
   onTerminate,
   onEditCollaborator,
   onToggleSilenceCollaborator,
   onAllocateCollaborator,
-  availableRoles,
-  availableShifts,
-  machines,
+  availableRoles = [],
+  availableShifts = [],
+  machines = [],
   isReadOnly = false,
   onBlockedAction
 }) => {
@@ -53,23 +54,23 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const [silenceReasonInput, setSilenceReasonInput] = useState('');
   const [showExcludedSlots, setShowExcludedSlots] = useState(false);
 
-  const [newEmp, setNewEmp] = useState({
+  const [newEmp, setNewEmp] = useState(() => ({
     name: '',
-    role: availableRoles[0] || '',
+    role: (availableRoles && availableRoles[0]) || 'Operador 1',
     sector: 'Extrusão',
-    machine: machines[0] || 'Cast 1',
-    shift: availableShifts[0] || 'Diurno 1',
+    machine: (machines && machines[0]) || 'Cast 1',
+    shift: (availableShifts && availableShifts[0]) || 'Diurno 1',
     status: 'Ativo' as EmployeeStatus,
     collaboratorId: ''
-  });
+  }));
 
   // Active (non-silenced) vs Silenced Collaborators
   const activeCollaborators = useMemo(() => {
-    return collaborators.filter(c => !c.isSilenced);
+    return (collaborators || []).filter(c => c && !c.isSilenced);
   }, [collaborators]);
 
   const silencedCollaborators = useMemo(() => {
-    return collaborators.filter(c => !!c.isSilenced);
+    return (collaborators || []).filter(c => c && !!c.isSilenced);
   }, [collaborators]);
 
   const recentCollaborators = useMemo(() => {
@@ -80,14 +81,16 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     if (!colSearchTerm) return activeCollaborators;
     const term = (colSearchTerm || '').trim().toLowerCase();
     return activeCollaborators.filter(c => 
-      String(c?.name || '').toLowerCase().includes(term) ||
-      String(c?.registration || '').includes(term)
+      c && (
+        String(c.name || '').toLowerCase().includes(term) ||
+        String(c.registration || '').includes(term)
+      )
     );
   }, [activeCollaborators, colSearchTerm]);
 
-  const uniqueRoles = Array.from(new Set(availableRoles));
-  const uniqueShifts = Array.from(new Set(availableShifts));
-  const uniqueMachines = Array.from(new Set(machines));
+  const uniqueRoles = Array.from(new Set(availableRoles || []));
+  const uniqueShifts = Array.from(new Set(availableShifts || []));
+  const uniqueMachines = Array.from(new Set(machines || []));
 
   const shiftsForDatabaseSector = useMemo(() => {
     const s = newEmp.sector ? newEmp.sector.toLowerCase() : '';
@@ -130,37 +133,46 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredEmployees = employees.filter(e => {
-    const statusNorm = (e.status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
-    const nameNorm = (e.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
-    const isExcluded = statusNorm.includes('excluid') || nameNorm.includes('excluid') || statusNorm.includes('silenciad') || e.isSilenced;
-    if (isExcluded && !showExcludedSlots) return false;
-    const term = (searchTerm || '').trim().toLowerCase();
-    return (
-      String(e?.name || '').toLowerCase().includes(term) ||
-      String(e?.role || '').toLowerCase().includes(term) ||
-      String(e?.sector || '').toLowerCase().includes(term) ||
-      String(e?.machine || '').toLowerCase().includes(term)
-    );
-  }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  const filteredEmployees = useMemo(() => {
+    return (employees || []).filter(e => {
+      if (!e) return false;
+      const statusNorm = (e.status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+      const nameNorm = (e.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+      const isExcluded = statusNorm.includes('excluid') || nameNorm.includes('excluid') || statusNorm.includes('silenciad') || e.isSilenced;
+      if (isExcluded && !showExcludedSlots) return false;
+      const term = (searchTerm || '').trim().toLowerCase();
+      return (
+        String(e?.name || '').toLowerCase().includes(term) ||
+        String(e?.role || '').toLowerCase().includes(term) ||
+        String(e?.sector || '').toLowerCase().includes(term) ||
+        String(e?.machine || '').toLowerCase().includes(term)
+      );
+    }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  }, [employees, showExcludedSlots, searchTerm]);
 
-  const filteredCollaboratorsList = activeCollaborators.filter(c => {
-    const term = (searchTerm || '').trim().toLowerCase();
-    return (
-      String(c?.name || '').toLowerCase().includes(term) ||
-      String(c?.registration || '').includes(term) ||
-      String(c?.role || '').toLowerCase().includes(term)
-    );
-  }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  const filteredCollaboratorsList = useMemo(() => {
+    return activeCollaborators.filter(c => {
+      if (!c) return false;
+      const term = (searchTerm || '').trim().toLowerCase();
+      return (
+        String(c?.name || '').toLowerCase().includes(term) ||
+        String(c?.registration || '').includes(term) ||
+        String(c?.role || '').toLowerCase().includes(term)
+      );
+    }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  }, [activeCollaborators, searchTerm]);
 
-  const filteredSilencedList = silencedCollaborators.filter(c => {
-    const term = (searchTerm || '').trim().toLowerCase();
-    return (
-      String(c?.name || '').toLowerCase().includes(term) ||
-      String(c?.registration || '').includes(term) ||
-      String(c?.role || '').toLowerCase().includes(term)
-    );
-  }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  const filteredSilencedList = useMemo(() => {
+    return silencedCollaborators.filter(c => {
+      if (!c) return false;
+      const term = (searchTerm || '').trim().toLowerCase();
+      return (
+        String(c?.name || '').toLowerCase().includes(term) ||
+        String(c?.registration || '').includes(term) ||
+        String(c?.role || '').toLowerCase().includes(term)
+      );
+    }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  }, [silencedCollaborators, searchTerm]);
 
   const filteredImportedCollaborators = useMemo(() => {
     if (!searchTerm) return IMPORTED_COLLABORATORS;
@@ -240,8 +252,9 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="bg-white rounded-[2.5rem] w-full max-w-6xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
+    <ErrorBoundary fallbackTitle="Erro na Base de Dados" onClose={onClose}>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="bg-white rounded-[2.5rem] w-full max-w-6xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
         
         {/* Header */}
         <div className="bg-slate-900 text-white px-4 md:px-8 py-4 md:py-6 flex flex-col md:flex-row items-center justify-between border-b border-slate-800 gap-4 shrink-0">
@@ -476,10 +489,12 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                       <tr key={emp.id} className={`hover:bg-slate-50 transition-colors group ${emp.status === 'Vaga Excluída' ? 'opacity-60 bg-slate-50/50' : ''}`}>
                         <td className="px-8 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
-                              {emp.name.substring(0, 2)}
+                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs uppercase shrink-0">
+                              {String(emp?.name || 'VG').substring(0, 2)}
                             </div>
-                            <span className={`text-sm font-bold ${emp.status === 'Vaga Excluída' ? 'text-slate-400 italic line-through' : 'text-slate-800'}`}>{emp.name}</span>
+                            <span className={`text-sm font-bold ${emp.status === 'Vaga Excluída' ? 'text-slate-400 italic line-through' : 'text-slate-800'}`}>
+                              {emp.name || (emp.status === 'Em Contratação' ? 'Em Contratação' : 'Vaga Aberta')}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -487,17 +502,17 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                         </td>
                         <td className="px-6 py-4">
                           <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-tight">
-                            {emp.role}
+                            {emp.role || 'Geral'}
                           </span>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
-                            <span className="text-xs font-bold text-slate-700">{emp.sector}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{emp.machine}</span>
+                            <span className="text-xs font-bold text-slate-700">{emp.sector || 'Extrusão'}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{emp.machine || 'Cast 1'}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-xs font-bold text-slate-600">{emp.shift}</span>
+                          <span className="text-xs font-bold text-slate-600">{emp.shift || 'Diurno 1'}</span>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide
@@ -508,14 +523,14 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                               emp.status === 'Silenciado' ? 'bg-amber-100 text-amber-800' :
                               emp.status === 'Vaga Excluída' ? 'bg-slate-100 text-slate-500 border border-dashed border-slate-200' : 'bg-purple-100 text-purple-700'}
                           `}>
-                            {emp.status}
+                            {emp.status || 'Ativo'}
                           </span>
                         </td>
                         <td className="px-8 py-4 text-right">
                           <div className="flex items-center justify-end gap-2 px-1">
                             {emp.status !== 'Vaga Excluída' && (
                               <button 
-                                onClick={() => setConfirmModal({ id: emp.id, name: emp.name, type: 'terminate' })}
+                                onClick={() => setConfirmModal({ id: emp.id, name: emp.name || 'este colaborador', type: 'terminate' })}
                                 className="p-2.5 bg-orange-50 text-orange-400 hover:bg-orange-500 hover:text-white rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm shadow-orange-100"
                                 title="Desligar e abrir vaga"
                               >
@@ -523,7 +538,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                               </button>
                             )}
                             <button 
-                              onClick={() => setConfirmModal({ id: emp.id, name: emp.name, type: 'delete' })}
+                              onClick={() => setConfirmModal({ id: emp.id, name: emp.name || 'este slot', type: 'delete' })}
                               className="p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm shadow-red-100"
                               title={emp.status === 'Vaga Excluída' ? "Excluir permanentemente (Restaurar Vaga)" : "Excluir (Remover Slot)"}
                             >
@@ -628,15 +643,17 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {recentCollaborators.map((col) => {
-                    const allocation = employees.find(e => 
-                      (col.id && e.collaboratorId === col.id) || 
-                      (col.registration && e.registration === col.registration) ||
-                      (col.name && e.name && e.name.toLowerCase() === col.name.toLowerCase())
+                    const allocation = (employees || []).find(e => 
+                      e && (
+                        (col.id && e.collaboratorId === col.id) || 
+                        (col.registration && e.registration && String(col.registration).trim() === String(e.registration).trim()) ||
+                        (col.name && e.name && String(col.name).trim().toLowerCase() === String(e.name).trim().toLowerCase())
+                      )
                     );
 
                     return (
                       <div 
-                        key={`recent_card_${col.id}`} 
+                        key={`recent_card_${col.id || col.registration || Math.random()}`} 
                         className="bg-white p-3.5 rounded-2xl border border-blue-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-2 group"
                       >
                         <div>
@@ -651,7 +668,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                           </div>
 
                           <p className="text-xs font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors">
-                            {col.name}
+                            {col.name || 'Sem nome'}
                           </p>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
                             {col.role || 'Auxiliar de Produção'}
@@ -661,7 +678,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                             <span className="font-bold text-slate-400 uppercase">Posto no Quadro:</span>
                             {allocation ? (
                               <span className="font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 text-[9px] uppercase">
-                                ✓ {allocation.machine} ({allocation.shift})
+                                ✓ {allocation.machine || 'Geral'} ({allocation.shift || 'Comercial'})
                               </span>
                             ) : (
                               <span className="font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100 text-[9px] uppercase">
@@ -738,7 +755,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                         <td className="px-8 py-5">
                           <div className="flex flex-col">
                             <span className="text-sm font-black text-slate-800 flex items-center gap-2">
-                              {col.name}
+                              {col.name || 'Sem nome'}
                               {isRecentCollaborator(col, 30) && (
                                 <span className="px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 shrink-0">
                                   ✨ Recente
@@ -760,13 +777,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                         </td>
                         <td className="px-6 py-5 text-center">
                           <span className="text-xs font-bold text-slate-600">
-                            {col.birthDate ? col.birthDate.split('-').reverse().join('/') : '- - / - - / - -'}
+                            {typeof col.birthDate === 'string' && col.birthDate.includes('-')
+                              ? col.birthDate.split('-').reverse().join('/') 
+                              : (col.birthDate ? String(col.birthDate) : '- - / - - / - -')}
                           </span>
                         </td>
                         <td className="px-6 py-5">
                           {col.contact ? (
                             <a 
-                              href={`https://wa.me/${col.contact.replace(/\D/g, '')}`} 
+                              href={`https://wa.me/${String(col.contact || '').replace(/\D/g, '')}`} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="text-xs font-bold text-blue-600 font-mono hover:underline flex items-center gap-1.5 group/wa"
@@ -858,26 +877,37 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                         <td className="px-8 py-5">
                           <div className="flex flex-col">
                             <span className="text-sm font-black text-slate-800 flex items-center gap-2">
-                              {col.name}
+                              {col?.name || 'Sem nome'}
                               <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
                                 <VolumeX size={10} /> Silenciado
                               </span>
                             </span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{col.address || 'Sem endereço'}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{col?.address || 'Sem endereço'}</span>
                           </div>
                         </td>
                         <td className="px-6 py-5">
                           <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200">
-                            {col.role || 'Não Definitivo'}
+                            {col?.role || 'Não Definitivo'}
                           </span>
                         </td>
                         <td className="px-6 py-5">
                           <div className="flex flex-col">
                             <span className="text-xs font-bold text-slate-700">
-                              {col.silenceReason || 'Desligado / Silenciado'}
+                              {col?.silenceReason || 'Desligado / Silenciado'}
                             </span>
                             <span className="text-[10px] text-slate-400 font-medium">
-                              {col.silencedAt ? new Date(col.silencedAt).toLocaleDateString('pt-BR') : 'Data não informada'}
+                              {(() => {
+                                if (!col?.silencedAt) return 'Data não informada';
+                                try {
+                                  if (typeof col.silencedAt === 'object' && 'seconds' in (col.silencedAt as any)) {
+                                    return new Date((col.silencedAt as any).seconds * 1000).toLocaleDateString('pt-BR');
+                                  }
+                                  const d = new Date(col.silencedAt);
+                                  return isNaN(d.getTime()) ? 'Data não informada' : d.toLocaleDateString('pt-BR');
+                                } catch {
+                                  return 'Data não informada';
+                                }
+                              })()}
                             </span>
                           </div>
                         </td>
@@ -951,7 +981,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                     </tr>
                   ) : (
                     filteredImportedCollaborators.map((item) => {
-                      const regCol = collaborators.find(c => c.registration === item.registration);
+                      const regCol = (collaborators || []).find(c => c && String(c.registration || '').trim() === String(item.registration || '').trim());
                       const isRegistered = !!regCol;
                       const isSilenced = regCol?.isSilenced;
 
@@ -1173,7 +1203,8 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </ErrorBoundary>
+);
 };
 
 export default DatabaseModal;

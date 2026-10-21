@@ -59,6 +59,7 @@ import HistoryModal from './components/HistoryModal';
 import ShiftModal from './components/ShiftModal';
 import RoleModal from './components/RoleModal';
 import DatabaseModal from './components/DatabaseModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import { QuickAllocationModal } from './components/QuickAllocationModal';
 import TrainingModal from './components/TrainingModal';
 import TrainingTemplateModal from './components/TrainingTemplateModal';
@@ -3976,18 +3977,26 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   };
 
-  const formatWeight = (val: number) => {
-    const absVal = Math.abs(val);
+  const formatWeight = (val: number | null | undefined) => {
+    const num = Number(val);
+    if (isNaN(num)) return '0 Kg';
+    const absVal = Math.abs(num);
     if (absVal >= 1000) {
-      return (val / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
+      return (num / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
     }
-    return val.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
+    return num.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
   };
-  const formatM2 = (val: number) => {
-    return val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' m²';
+  const formatM2 = (val: number | null | undefined) => {
+    const num = Number(val);
+    if (isNaN(num)) return '0 m²';
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' m²';
   };
   const formatShareWeight = formatWeight;
-  const formatMinutes = (val: number) => val >= 60 ? `${Math.floor(val / 60)}h ${val % 60}m` : `${val} min`;
+  const formatMinutes = (val: number | null | undefined) => {
+    const num = Number(val);
+    if (isNaN(num)) return '0 min';
+    return num >= 60 ? `${Math.floor(num / 60)}h ${num % 60}m` : `${num} min`;
+  };
 
   const dynamicMetricsList = [
     { id: 'prod', label: 'Produção Líquida kg/t', getValue: (e: any) => (e.netWeight || 0), formatter: formatWeight },
@@ -22640,143 +22649,145 @@ Atenciosamente,
         />
       )}
       {isDatabaseModalOpen && (
-        <DatabaseModal 
-          isOpen={isDatabaseModalOpen}
-          onClose={() => setIsDatabaseModalOpen(false)}
-          employees={employees}
-          collaborators={collaborators}
-          onToggleSilenceCollaborator={handleToggleSilenceCollaborator}
-          onEditCollaborator={(col) => {
-            console.log('Editing collaborator:', col);
-            setSelectedCollaborator(col);
-            setIsCollaboratorModalOpen(true);
-          }}
-          onAllocateCollaborator={(col) => {
-            setSelectedEmployee({
-              id: '',
-              name: col.name,
-              role: col.role,
-              registration: col.registration,
-              collaboratorId: col.id,
-              sector: 'Extrusão',
-              machine: activeMachines[0] || 'Cast 1',
-              shift: availableShifts[0]?.name || 'Diurno 1',
-              status: 'Ativo',
-              updatedAt: new Date().toISOString()
-            } as any);
-            setSelectedSlot({
-              sector: 'Extrusão',
-              machine: activeMachines[0] || 'Cast 1',
-              shift: availableShifts[0]?.name || 'Diurno 1',
-              role: col.role || 'Operador 1'
-            });
-            setIsEmployeeModalOpen(true);
-          }}
-          availableRoles={availableRoles}
-          availableShifts={availableShifts.map(s => s.name)}
-          machines={activeMachines}
-           onAdd={async (newEmp) => {
-            try {
-              const id = Math.random().toString(36).substring(2, 15);
-              const now = new Date().toISOString();
-              const empData = {
-                ...newEmp,
-                id,
-                userId: currentUser.uid,
-                updatedAt: now
-              };
-              await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
-              
-              const logId = Math.random().toString(36).substring(2, 15);
-              await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
-                id: logId,
-                userId: currentUser.uid,
-                date: now,
-                employeeName: newEmp.name,
-                action: 'Contratação' as any,
-                details: `Inclusão direta via Banco de Dados (${newEmp.sector} - ${newEmp.machine})`,
-                user: loggedUser?.name || 'Sistema'
-              }));
-              
-              const simulatedEmps = [...employees, empData as Employee];
-              await syncOperatorsSetting(simulatedEmps);
-            } catch (err) {
-              console.error(err);
-            }
-          }}
-          onDelete={(id, name) => {
-            openConfirm(
-              'Excluir Slot',
-              `Tem certeza que deseja EXCLUIR o slot de ${name}? Isso removerá o registro e o slot do quadro caso seja um extra.`,
-              async () => {
-                try {
-                  await deleteDoc(doc(db, 'employees', id));
-                  
-                  const now = new Date().toISOString();
-                  const logId = Math.random().toString(36).substring(2, 15);
-                  await setDoc(doc(db, 'personnelLogs', logId), {
-                    id: logId,
-                    userId: currentUser.uid,
-                    date: now,
-                    employeeName: name,
-                    action: 'Exclusão' as any,
-                    details: `Exclusão permanente via Banco de Dados`,
-                    user: loggedUser?.name || 'Sistema'
-                  });
-                  
-                  const simulatedEmps = employees.filter(e => e.id !== id);
-                  await syncOperatorsSetting(simulatedEmps);
-                } catch (err) {
-                  console.error(err);
-                }
+        <ErrorBoundary fallbackTitle="Base de Dados de Pessoal" onClose={() => setIsDatabaseModalOpen(false)}>
+          <DatabaseModal 
+            isOpen={isDatabaseModalOpen}
+            onClose={() => setIsDatabaseModalOpen(false)}
+            employees={employees || []}
+            collaborators={collaborators || []}
+            onToggleSilenceCollaborator={handleToggleSilenceCollaborator}
+            onEditCollaborator={(col) => {
+              console.log('Editing collaborator:', col);
+              setSelectedCollaborator(col);
+              setIsCollaboratorModalOpen(true);
+            }}
+            onAllocateCollaborator={(col) => {
+              setSelectedEmployee({
+                id: '',
+                name: col.name,
+                role: col.role,
+                registration: col.registration,
+                collaboratorId: col.id,
+                sector: 'Extrusão',
+                machine: activeMachines[0] || 'Cast 1',
+                shift: availableShifts[0]?.name || 'Diurno 1',
+                status: 'Ativo',
+                updatedAt: new Date().toISOString()
+              } as any);
+              setSelectedSlot({
+                sector: 'Extrusão',
+                machine: activeMachines[0] || 'Cast 1',
+                shift: availableShifts[0]?.name || 'Diurno 1',
+                role: col.role || 'Operador 1'
+              });
+              setIsEmployeeModalOpen(true);
+            }}
+            availableRoles={availableRoles || []}
+            availableShifts={(availableShifts || []).map(s => (typeof s === 'string' ? s : s?.name || ''))}
+            machines={activeMachines || []}
+             onAdd={async (newEmp) => {
+              try {
+                const id = Math.random().toString(36).substring(2, 15);
+                const now = new Date().toISOString();
+                const empData = {
+                  ...newEmp,
+                  id,
+                  userId: currentUser.uid,
+                  updatedAt: now
+                };
+                await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
+                
+                const logId = Math.random().toString(36).substring(2, 15);
+                await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
+                  id: logId,
+                  userId: currentUser.uid,
+                  date: now,
+                  employeeName: newEmp.name,
+                  action: 'Contratação' as any,
+                  details: `Inclusão direta via Banco de Dados (${newEmp.sector} - ${newEmp.machine})`,
+                  user: loggedUser?.name || 'Sistema'
+                }));
+                
+                const simulatedEmps = [...employees, empData as Employee];
+                await syncOperatorsSetting(simulatedEmps);
+              } catch (err) {
+                console.error(err);
               }
-            );
-          }}
-          onTerminate={(id, name) => {
-            openConfirm(
-              'Confirmar Desligamento',
-              `Deseja DESLIGAR ${name}? Isso abrirá uma vaga disponível no quadro.`,
-              async () => {
-                try {
-                  const now = new Date().toISOString();
-                  await setDoc(doc(db, 'employees', id), { 
-                    status: 'Desligado', 
-                    name: name,
-                    terminationReason: 'Desligamento direto via Banco de Dados',
-                    statusDetails: 'Desligamento direto via Banco de Dados',
-                    terminatedAt: now,
-                    updatedAt: now, 
-                    userId: currentUser.uid 
-                  }, { merge: true });
-                  
-                  const logId = Math.random().toString(36).substring(2, 15);
-                  await setDoc(doc(db, 'personnelLogs', logId), {
-                    id: logId,
-                    userId: currentUser.uid,
-                    date: now,
-                    employeeName: name,
-                    action: 'Desligamento' as any,
-                    details: `Motivo: Desligamento direto via Banco de Dados`,
-                    user: loggedUser?.name || 'Sistema'
-                  });
-                  
-                  const simulatedEmps = employees.map(e => e.id === id ? { 
-                    ...e, 
-                    name: name, 
-                    status: 'Desligado' as any,
-                    terminationReason: 'Desligamento direto via Banco de Dados',
-                    statusDetails: 'Desligamento direto via Banco de Dados',
-                    terminatedAt: now
-                  } : e);
-                  await syncOperatorsSetting(simulatedEmps);
-                } catch (err) {
-                  console.error(err);
+            }}
+            onDelete={(id, name) => {
+              openConfirm(
+                'Excluir Slot',
+                `Tem certeza que deseja EXCLUIR o slot de ${name}? Isso removerá o registro e o slot do quadro caso seja um extra.`,
+                async () => {
+                  try {
+                    await deleteDoc(doc(db, 'employees', id));
+                    
+                    const now = new Date().toISOString();
+                    const logId = Math.random().toString(36).substring(2, 15);
+                    await setDoc(doc(db, 'personnelLogs', logId), {
+                      id: logId,
+                      userId: currentUser.uid,
+                      date: now,
+                      employeeName: name,
+                      action: 'Exclusão' as any,
+                      details: `Exclusão permanente via Banco de Dados`,
+                      user: loggedUser?.name || 'Sistema'
+                    });
+                    
+                    const simulatedEmps = employees.filter(e => e.id !== id);
+                    await syncOperatorsSetting(simulatedEmps);
+                  } catch (err) {
+                    console.error(err);
+                  }
                 }
-              },
-              'warning'
-            );
-          }}
-        />
+              );
+            }}
+            onTerminate={(id, name) => {
+              openConfirm(
+                'Confirmar Desligamento',
+                `Deseja DESLIGAR ${name}? Isso abrirá uma vaga disponível no quadro.`,
+                async () => {
+                  try {
+                    const now = new Date().toISOString();
+                    await setDoc(doc(db, 'employees', id), { 
+                      status: 'Desligado', 
+                      name: name,
+                      terminationReason: 'Desligamento direto via Banco de Dados',
+                      statusDetails: 'Desligamento direto via Banco de Dados',
+                      terminatedAt: now,
+                      updatedAt: now, 
+                      userId: currentUser.uid 
+                    }, { merge: true });
+                    
+                    const logId = Math.random().toString(36).substring(2, 15);
+                    await setDoc(doc(db, 'personnelLogs', logId), {
+                      id: logId,
+                      userId: currentUser.uid,
+                      date: now,
+                      employeeName: name,
+                      action: 'Desligamento' as any,
+                      details: `Motivo: Desligamento direto via Banco de Dados`,
+                      user: loggedUser?.name || 'Sistema'
+                    });
+                    
+                    const simulatedEmps = employees.map(e => e.id === id ? { 
+                      ...e, 
+                      name: name, 
+                      status: 'Desligado' as any,
+                      terminationReason: 'Desligamento direto via Banco de Dados',
+                      statusDetails: 'Desligamento direto via Banco de Dados',
+                      terminatedAt: now
+                    } : e);
+                    await syncOperatorsSetting(simulatedEmps);
+                  } catch (err) {
+                    console.error(err);
+                  }
+                },
+                'warning'
+              );
+            }}
+          />
+        </ErrorBoundary>
       )}
       <WeeklyProductionSummaryModal
         isOpen={isWeeklySummaryOpen}

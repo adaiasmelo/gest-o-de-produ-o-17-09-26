@@ -34,7 +34,14 @@ export interface ChartExportDetails {
  * Builds an HTML string for the detailed data legend table based on chart type.
  */
 function buildLegendHTML(details: ChartExportDetails): string {
-  const { chartType, data, formatWeight = (v: number) => `${v.toLocaleString('pt-BR')} kg`, formatM2 = (v: number) => `${v.toLocaleString('pt-BR')} m²`, formatMinutes = (m: number) => `${m} min`, extraInfo = {} } = details;
+  const { 
+    chartType, 
+    data, 
+    formatWeight = (v: any) => `${(Number(v) || 0).toLocaleString('pt-BR')} kg`, 
+    formatM2 = (v: any) => `${(Number(v) || 0).toLocaleString('pt-BR')} m²`, 
+    formatMinutes = (m: any) => `${Number(m) || 0} min`, 
+    extraInfo = {} 
+  } = details;
 
   if (!data || (Array.isArray(data) && data.length === 0)) {
     return '';

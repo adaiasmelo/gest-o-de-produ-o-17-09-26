@@ -628,41 +628,46 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Impressão Direta da Apuração Oficial
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div className="space-y-4 pb-8 animate-in fade-in duration-200 font-sans">
+    <div className="space-y-2.5 pb-6 animate-in fade-in duration-200 font-sans">
       
       {/* ============================================================== */}
       {/* CABEÇALHO COMPACTO E LIMPO COM MENU DE AÇÕES UNIFICADO */}
       {/* ============================================================== */}
-      <div className="bg-white rounded-2xl p-4 sm:p-4.5 border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white flex items-center justify-center shadow-sm shadow-amber-500/20 shrink-0">
-            <Award size={20} />
+      <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/20 shrink-0">
+            <Award size={18} />
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-tight">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
                 Gestão de Bônus de Produção
               </h2>
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[10px] font-black uppercase tracking-wider border border-blue-200">
+              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[9.5px] font-black uppercase tracking-wider border border-blue-200">
                 {summaryStats.totalCount} Colaboradores Efetivos do Quadro Geral
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium">
-              Vinculado aos 16 operadores e 21 auxiliares do Quadro Geral (exceto liderança). Regra por máquina e turno.
+            <p className="text-[10.5px] text-slate-500 font-medium leading-tight">
+              Vinculado estritamente aos {summaryStats.operadoresCount} operadores e {summaryStats.auxiliaresCount} auxiliares efetivos do Quadro Geral (exceto liderança). Regra por máquina e turno.
             </p>
           </div>
         </div>
 
         {/* Grupo de Ações Primárias & Menu */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* Seletor de Período da Folha */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
-            <Calendar size={13} className="text-blue-600 shrink-0" />
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs">
+            <Calendar size={12} className="text-blue-600 shrink-0" />
             <select
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer"
+              className="bg-transparent text-[11px] font-black text-slate-700 outline-none cursor-pointer"
             >
               {getAvailablePayrollCycles().map(c => (
                 <option key={c.key} value={c.key}>
@@ -673,15 +678,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           </div>
 
           {/* Configuração da Meta Base R$ 250 */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
-            <span className="text-[9.5px] font-black text-slate-400 uppercase">Meta:</span>
-            <span className="text-[11px] font-bold text-slate-500">R$</span>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs">
+            <span className="text-[9px] font-black text-slate-400 uppercase">Meta:</span>
+            <span className="text-[10.5px] font-bold text-slate-500">R$</span>
             <input
               type="number"
               min={0}
               value={baseBonusAmount}
               onChange={(e) => setBaseBonusAmount(Number(e.target.value) || 0)}
-              className="w-13 bg-transparent font-black text-xs text-slate-800 outline-none p-0 border-none"
+              className="w-11 bg-transparent font-black text-[11px] text-slate-800 outline-none p-0 border-none"
               title="Valor estimado da meta mensal de bônus por colaborador"
             />
           </div>
@@ -691,11 +696,11 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             <button
               type="button"
               onClick={() => handleOpenIncidentModal()}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-black uppercase tracking-wider shadow-sm shadow-blue-600/20 shrink-0"
+              className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider shadow-xs shadow-blue-600/20 shrink-0"
               title="Lançar Atestado, Falta, Atraso ou Penalidade de Meta"
             >
-              <Plus size={14} />
-              <span>Lançar Ocorrência</span>
+              <Plus size={13} />
+              <span>Ocorrência</span>
             </button>
           )}
 
@@ -703,56 +708,72 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           <button
             type="button"
             onClick={() => setIsRulesModalOpen(true)}
-            className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-xs font-black uppercase tracking-wider"
+            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
             title="Ver Regras Oficiais de Corte e Abatimento do Bônus"
           >
-            <HelpCircle size={14} className="text-amber-600" />
+            <HelpCircle size={13} className="text-amber-600" />
             <span className="hidden sm:inline">Regras</span>
           </button>
 
-          {/* MENU SUSPENSO DE AÇÕES (IMPRESSÃO, PDF, CSV, VOLTAR) */}
+          {/* MENU SUSPENSO DE AÇÕES (IMPRESSÃO, PDF, CSV, BOTÃO DE VOLTAR) */}
           <div className="relative" ref={actionsMenuRef}>
             <button
               type="button"
               onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
-              className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 text-xs font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs ${
+              className={`px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 text-[11px] font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs ${
                 isActionsMenuOpen
                   ? 'bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-blue-500/20'
                   : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
               }`}
-              title="Menu de opções, exportação e ações"
+              title="Menu de opções: Impressão, PDF, CSV e Voltar"
             >
-              <SlidersHorizontal size={14} className="text-slate-600" />
+              <SlidersHorizontal size={13} className="text-slate-600" />
               <span>Menu</span>
-              <ChevronDown size={13} className={`text-slate-400 transition-transform ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown size={12} className={`text-slate-400 transition-transform ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isActionsMenuOpen && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
-                {/* Imprimir / PDF */}
+                {/* 1. Impressão */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionsMenuOpen(false);
+                    handlePrint();
+                  }}
+                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <Printer size={15} className="text-slate-700 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-black uppercase text-[11px]">Impressão</span>
+                    <span className="text-[9px] text-slate-400 font-normal">Imprimir apuração em papel</span>
+                  </div>
+                </button>
+
+                {/* 2. Relatório PDF */}
                 <button
                   type="button"
                   onClick={() => {
                     setIsActionsMenuOpen(false);
                     handleExportPDF();
                   }}
-                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <Printer size={15} className="text-blue-600 shrink-0" />
+                  <FileText size={15} className="text-blue-600 shrink-0" />
                   <div className="flex flex-col">
                     <span className="font-black uppercase text-[11px]">Relatório PDF</span>
                     <span className="text-[9px] text-slate-400 font-normal">Baixar folha oficial consolidada</span>
                   </div>
                 </button>
 
-                {/* Exportar Excel CSV */}
+                {/* 3. Exportar Excel CSV */}
                 <button
                   type="button"
                   onClick={() => {
                     setIsActionsMenuOpen(false);
                     handleExportCSV();
                   }}
-                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
                   <FileSpreadsheet size={15} className="text-emerald-600 shrink-0" />
                   <div className="flex flex-col">
@@ -763,31 +784,67 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
                 <div className="my-1 border-t border-slate-100" />
 
-                {/* Voltar ao Quadro Geral */}
+                {/* 4. Botão de Voltar ao Quadro Geral */}
                 <button
                   type="button"
                   onClick={() => {
                     setIsActionsMenuOpen(false);
                     onClose();
                   }}
-                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <ArrowLeft size={15} className="text-slate-500 shrink-0" />
-                  <span className="font-bold">Voltar ao Quadro Geral</span>
+                  <ArrowLeft size={15} className="text-rose-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-black uppercase text-[11px]">Voltar ao Quadro</span>
+                    <span className="text-[9px] text-slate-400 font-normal">Retornar à tela de Quadro Geral</span>
+                  </div>
                 </button>
               </div>
             )}
           </div>
 
+          {/* Botão de Atalho Rápido: Impressão */}
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
+            title="Imprimir Apuração de Bônus"
+          >
+            <Printer size={12} className="text-slate-600" />
+            <span className="hidden lg:inline">Imprimir</span>
+          </button>
+
+          {/* Botão de Atalho Rápido: PDF */}
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
+            title="Exportar Relatório PDF"
+          >
+            <FileText size={12} className="text-blue-600" />
+            <span className="hidden lg:inline">PDF</span>
+          </button>
+
+          {/* Botão de Atalho Rápido: CSV */}
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
+            title="Exportar Planilha Excel CSV"
+          >
+            <FileSpreadsheet size={12} className="text-emerald-600" />
+            <span className="hidden lg:inline">CSV</span>
+          </button>
+
           {/* Botão Voltar Direto */}
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-xs font-black uppercase tracking-wider"
+            className="px-2.5 py-1.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
             title="Voltar ao Quadro Geral de Pessoal"
           >
-            <ArrowLeft size={13} />
-            <span className="hidden sm:inline">Voltar</span>
+            <ArrowLeft size={12} />
+            <span>Voltar</span>
           </button>
         </div>
       </div>
@@ -795,71 +852,71 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       {/* ============================================================== */}
       {/* CARDS DE INDICADORES EXECUTIVOS (COMPACTOS E DIRECIONADOS) */}
       {/* ============================================================== */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-2.5">
         
         {/* Card 1: Total da Folha & Colaboradores do Quadro */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider">Folha de Bônus</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <Award size={14} />
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Folha de Bônus</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <Award size={13} />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-1">
+          <div className="text-lg sm:text-xl font-black text-slate-900 tracking-tight mt-0.5">
             R$ {summaryStats.totalPayable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
             <span className="text-slate-500 font-bold">{summaryStats.totalCount} no Quadro Geral</span>
             <span className="text-emerald-700 font-black">{summaryStats.operadoresCount} Op. • {summaryStats.auxiliaresCount} Aux.</span>
           </div>
         </div>
 
         {/* Card 2: Bônus Integral (100%) */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider">Bônus Integral (100%)</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <CheckCircle2 size={14} />
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bônus Integral (100%)</span>
+            <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <CheckCircle2 size={13} />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-blue-600 tracking-tight mt-1">
-            {summaryStats.integralCount} <span className="text-xs text-slate-400 font-semibold">colab.</span>
+          <div className="text-lg sm:text-xl font-black text-blue-600 tracking-tight mt-0.5">
+            {summaryStats.integralCount} <span className="text-[11px] text-slate-400 font-semibold">colab.</span>
           </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
             <span className="text-slate-500 font-bold">Sem faltas ou atestados</span>
             <span className="text-blue-700 font-black">R$ {baseBonusAmount.toFixed(2)}/cada</span>
           </div>
         </div>
 
         {/* Card 3: Bônus Parcial (Abatimento de Meta) */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider">Bônus Parcial</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-              <AlertTriangle size={14} />
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bônus Parcial</span>
+            <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <AlertTriangle size={13} />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-amber-600 tracking-tight mt-1">
-            {summaryStats.parcialCount} <span className="text-xs text-slate-400 font-semibold">colab.</span>
+          <div className="text-lg sm:text-xl font-black text-amber-600 tracking-tight mt-0.5">
+            {summaryStats.parcialCount} <span className="text-[11px] text-slate-400 font-semibold">colab.</span>
           </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
             <span className="text-slate-500 font-bold">1 atraso ou meta máq.</span>
             <span className="text-amber-700 font-black">Abatido</span>
           </div>
         </div>
 
         {/* Card 4: Bônus Zerados (0%) */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider">Bônus Zerados (0%)</span>
-            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-              <XCircle size={14} />
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bônus Zerados (0%)</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+              <XCircle size={13} />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-rose-600 tracking-tight mt-1">
-            {summaryStats.zeradoCount} <span className="text-xs text-slate-400 font-semibold">colab.</span>
+          <div className="text-lg sm:text-xl font-black text-rose-600 tracking-tight mt-0.5">
+            {summaryStats.zeradoCount} <span className="text-[11px] text-slate-400 font-semibold">colab.</span>
           </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
             <span className="text-slate-500 font-bold">Atestado, falta ou atrasos</span>
             <span className="text-rose-700 font-black">Corte 100%</span>
           </div>
