@@ -585,11 +585,11 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
 
             {/* Detalhamento compacto das cortadeiras no dia */}
             <div className="flex items-center justify-between text-[8px] sm:text-[9px] text-cyan-100 font-semibold pt-0.5">
-              <span>Lintech: {metrics.ribbonMachineToday['Lintech']?.m2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
+              <span>Lintech: {(metrics.ribbonMachineToday?.['Lintech']?.m2 || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
               <span>•</span>
-              <span>Ghezzi: {metrics.ribbonMachineToday['Ghezzi']?.m2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
+              <span>Ghezzi: {(metrics.ribbonMachineToday?.['Ghezzi']?.m2 || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
               <span>•</span>
-              <span>Wultec: {metrics.ribbonMachineToday['Wultec']?.m2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
+              <span>Wultec: {(metrics.ribbonMachineToday?.['Wultec']?.m2 || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²</span>
             </div>
           </div>
         </div>
@@ -697,7 +697,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                     <div className="flex items-center gap-2 min-w-0">
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          metrics.ribbonMachineToday['Lintech']?.m2 > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
+                          (metrics.ribbonMachineToday?.['Lintech']?.m2 || 0) > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
                         }`}
                       />
                       <div className="min-w-0">
@@ -706,8 +706,8 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                       </div>
                     </div>
                     <span className="text-xs font-extrabold text-cyan-700 whitespace-nowrap ml-2">
-                      {metrics.ribbonMachineToday['Lintech']?.m2 > 0
-                        ? `${metrics.ribbonMachineToday['Lintech'].m2.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`
+                      {(metrics.ribbonMachineToday?.['Lintech']?.m2 || 0) > 0
+                        ? `${(metrics.ribbonMachineToday?.['Lintech']?.m2 || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`
                         : '0 m²'}
                     </span>
                   </div>
@@ -721,7 +721,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                     <div className="flex items-center gap-2 min-w-0">
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          metrics.ribbonMachineToday['Ghezzi']?.m2 > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
+                          (metrics.ribbonMachineToday?.['Ghezzi']?.m2 || 0) > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
                         }`}
                       />
                       <div className="min-w-0">
@@ -730,8 +730,8 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                       </div>
                     </div>
                     <span className="text-xs font-extrabold text-cyan-700 whitespace-nowrap ml-2">
-                      {metrics.ribbonMachineToday['Ghezzi']?.m2 > 0
-                        ? `${metrics.ribbonMachineToday['Ghezzi'].m2.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`
+                      {(metrics.ribbonMachineToday?.['Ghezzi']?.m2 || 0) > 0
+                        ? `${(metrics.ribbonMachineToday?.['Ghezzi']?.m2 || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`
                         : '0 m²'}
                     </span>
                   </div>
@@ -745,7 +745,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                     <div className="flex items-center gap-2 min-w-0">
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          metrics.ribbonMachineToday['Wultec']?.m2 > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
+                          (metrics.ribbonMachineToday?.['Wultec']?.m2 || 0) > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
                         }`}
                       />
                       <div className="min-w-0">
@@ -754,8 +754,8 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                       </div>
                     </div>
                     <span className="text-xs font-extrabold text-cyan-700 whitespace-nowrap ml-2">
-                      {metrics.ribbonMachineToday['Wultec']?.m2 > 0
-                        ? `${metrics.ribbonMachineToday['Wultec'].m2.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`
+                      {(metrics.ribbonMachineToday?.['Wultec']?.m2 || 0) > 0
+                        ? `${(metrics.ribbonMachineToday?.['Wultec']?.m2 || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`
                         : '0 m²'}
                     </span>
                   </div>

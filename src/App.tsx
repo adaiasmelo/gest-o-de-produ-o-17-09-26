@@ -3978,6 +3978,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   };
 
   const formatWeight = (val: number | null | undefined) => {
+    if (val === null || val === undefined || (typeof val === 'string' && val === '')) return '0 Kg';
     const num = Number(val);
     if (isNaN(num)) return '0 Kg';
     const absVal = Math.abs(num);
@@ -8174,7 +8175,7 @@ Atenciosamente,
     addGroupedSector('SETOR: EXTRUSÃO', 'extrusao', ['Cast 1', 'Cast 2'], ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'], 3);
 
     // 3. Reciclagem
-    addGroupedSector('SETOR: RECICLAGEM', 'reciclagem', ['Erema 1'], ['Diurno 1', 'Diurno 2'], 1);
+    addGroupedSector('SETOR: RECICLAGEM', 'reciclagem', ['Erema 1'], ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'], 1);
 
     // 4. Fita
     addGroupedSector('SETOR: FITA ADESIVA', 'fita', ['Ghezzi', 'Lintech', 'Wultec'], ['Diurno 1', 'Diurno 2', 'Comercial'], 2);
@@ -11007,7 +11008,7 @@ Atenciosamente,
     });
 
     // Reciclagem
-    ['Diurno 1', 'Diurno 2'].forEach(sh => {
+    ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].forEach(sh => {
       processGroup('Reciclagem', 'reciclagem', 'Erema 1', sh, 1);
     });
 
@@ -20492,8 +20493,8 @@ Atenciosamente,
                                               {item.machine}
                                             </span>
                                           </div>
-                                          <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item.prod.toLocaleString('pt-BR')} m²</span></p>
-                                          <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span></p>
+                                          <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span></p>
+                                          <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span></p>
                                           <p>⏱️ Tempo de Paradas: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
                                         </div>
                                       );
@@ -21633,10 +21634,19 @@ Atenciosamente,
                       </button>
                     )}
                 </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-emerald-50/30">
-                    {['Diurno 1', 'Diurno 2'].map(sh => (
-                        <div key={sh} className="bg-white p-6 rounded-[2rem] border border-emerald-100 shadow-sm">
-                            <p className="text-[11px] font-black text-emerald-800 uppercase text-center mb-4 tracking-widest">{sh}</p>
+                <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-emerald-50/30">
+                    {['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].map(sh => (
+                        <div key={sh} className={`p-5 rounded-[2rem] border shadow-sm ${sh.includes('Noturno') ? 'bg-[#064e3b]/40 border-emerald-800' : 'bg-white border-emerald-100'}`}>
+                            <div className="flex items-center justify-between mb-3">
+                              <p className={`text-[11px] font-black uppercase tracking-widest ${sh.includes('Noturno') ? 'text-emerald-300' : 'text-emerald-800'}`}>{sh}</p>
+                              <span className="text-[9px] font-bold text-emerald-500/80 uppercase">12x36</span>
+                            </div>
+                            <div className="flex justify-between items-center px-1 mb-2">
+                              <p className={`text-[10px] font-black uppercase tracking-widest ${sh.includes('Noturno') ? 'text-emerald-400' : 'text-slate-400'}`}>Erema 1</p>
+                              {canManagePersonnel && (
+                                <button className="text-emerald-500 hover:bg-emerald-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Reciclagem', machine: 'Erema 1', shift: sh, role: 'Operador de Reciclagem' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                              )}
+                            </div>
                             {renderMachineGroup('Reciclagem', 'Erema 1', sh, 1)}
                         </div>
                     ))}
@@ -23549,8 +23559,8 @@ Atenciosamente,
                                         {item.machine}
                                       </span>
                                     </div>
-                                    <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item.prod.toLocaleString('pt-BR')} m²</span></p>
-                                    <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span></p>
+                                    <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span></p>
+                                    <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span></p>
                                     <p>⏱️ Tempo de Paradas: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
                                   </div>
                                 );

@@ -1302,6 +1302,37 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       return;
     }
 
+    if (name === 'operator') {
+      const selectedOpName = value;
+      const opRecord = (employees || []).find(emp => (emp.name || '').trim().toLowerCase() === selectedOpName.trim().toLowerCase()) ||
+        filteredOperators.find(o => o.name.trim().toLowerCase() === selectedOpName.trim().toLowerCase());
+
+      let autoShift = '';
+      if (opRecord?.shift) {
+        const sNorm = opRecord.shift.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+        if (sNorm.includes('noturno') || sNorm.includes('noite')) {
+          autoShift = 'Noturno';
+        } else if (sNorm.includes('diurno') || sNorm.includes('dia')) {
+          autoShift = 'Diurno';
+        }
+      }
+
+      setFormData(prev => {
+        const next = {
+          ...prev,
+          operator: selectedOpName,
+          ...(autoShift ? { shift: autoShift } : {})
+        };
+        if (pendingEntries.length > 0) {
+          const newPending = [...pendingEntries];
+          newPending[currentIndex] = next;
+          setPendingEntries(newPending);
+        }
+        return next;
+      });
+      return;
+    }
+
     if (type === 'checkbox') {
       val = (e.target as HTMLInputElement).checked;
       
@@ -1760,11 +1791,15 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           ? (formData.machine ? `Nenhum operador na ${formData.machine}` : 'Nenhum operador encontrado') 
                           : 'Selecionar Operador...'}
                       </option>
-                      {filteredOperators.map(emp => (
-                        <option key={emp.id} value={emp.name}>
-                          {emp.name}
-                        </option>
-                      ))}
+                      {filteredOperators.map(emp => {
+                        const sNorm = (emp.shift || '').toLowerCase();
+                        const shiftLabel = sNorm.includes('noturno') ? 'Noturno' : sNorm.includes('diurno') ? 'Diurno' : emp.shift || '';
+                        return (
+                          <option key={emp.id} value={emp.name}>
+                            {emp.name} {shiftLabel ? `(${shiftLabel})` : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 ) : (

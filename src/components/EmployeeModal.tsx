@@ -82,7 +82,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
       return ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'];
     }
     if (secNorm.includes('recic')) {
-      return ['Diurno 1', 'Diurno 2'];
+      return ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'];
     }
     if (secNorm.includes('fita')) {
       return ['Diurno 1', 'Diurno 2', 'Comercial'];

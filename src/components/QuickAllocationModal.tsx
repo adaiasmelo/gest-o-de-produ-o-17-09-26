@@ -131,7 +131,7 @@ export const QuickAllocationModal: React.FC<QuickAllocationModalProps> = ({
       return ['Comercial', 'Comercial Flexível'];
     }
     if (s.includes('reciclagem')) {
-      return ['Diurno 1', 'Diurno 2'];
+      return ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'];
     }
     if (s.includes('fita')) {
       return ['Diurno 1', 'Diurno 2', 'Comercial'];
