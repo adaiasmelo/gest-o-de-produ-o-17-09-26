@@ -106,6 +106,100 @@ const QUICK_REASONS = [
   'Outras atividades extraordinárias'
 ];
 
+interface OvertimeInfoTooltipProps {
+  title: string;
+  description: string;
+  calculation?: string;
+  align?: 'left' | 'center' | 'right';
+  className?: string;
+}
+
+const OvertimeInfoTooltip: React.FC<OvertimeInfoTooltipProps> = ({
+  title,
+  description,
+  calculation,
+  align = 'center',
+  className = ''
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const alignClasses = {
+    left: 'left-0 origin-top-left',
+    center: 'left-1/2 -translate-x-1/2 origin-top',
+    right: 'right-0 origin-top-right'
+  }[align];
+
+  return (
+    <div 
+      ref={containerRef}
+      className={`relative inline-flex items-center ${className}`}
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen(!isOpen);
+        }}
+        className="w-4 h-4 rounded-full bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 inline-flex items-center justify-center transition-all cursor-pointer shrink-0 focus:outline-none focus:ring-1 focus:ring-blue-400 select-none"
+        aria-label={`Informações sobre ${title}`}
+        title={`Informações sobre ${title}`}
+      >
+        <Info size={10} className="stroke-[2.5]" />
+      </button>
+
+      {isOpen && (
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className={`absolute top-full mt-2 w-64 sm:w-72 p-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 z-[100] text-left pointer-events-auto transition-all animate-in fade-in zoom-in-95 duration-150 ${alignClasses}`}
+        >
+          {/* Seta indicativa */}
+          <div 
+            className={`absolute -top-1 w-2.5 h-2.5 bg-slate-900 border-t border-l border-slate-700/80 rotate-45 ${
+              align === 'left' ? 'left-3' : align === 'right' ? 'right-3' : 'left-1/2 -translate-x-1/2'
+            }`} 
+          />
+          
+          <div className="flex items-start gap-2 relative z-10">
+            <div className="w-5 h-5 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+              <Info size={12} className="stroke-[2.5]" />
+            </div>
+            <div className="space-y-1.5 flex-1 min-w-0">
+              <h5 className="text-[11px] font-black text-amber-300 uppercase tracking-tight leading-tight">
+                {title}
+              </h5>
+              <p className="text-[11px] text-slate-200 font-normal leading-relaxed">
+                {description}
+              </p>
+              {calculation && (
+                <div className="pt-1.5 mt-1 border-t border-slate-800 text-[9.5px] text-blue-200/90 font-medium leading-snug">
+                  {calculation}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   employees,
   loggedUser,
@@ -309,8 +403,19 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           ...docSnap.data()
         })) as any[];
 
-        // Exclui permanentemente quaisquer lançamentos que tenham sido apagados ou marcados com isDeleted
-        const list = rawList.filter((item) => item && !item.isDeleted && !deletedIds.has(item.id)) as OvertimeEntry[];
+        // Exclui permanentemente quaisquer lançamentos que tenham sido apagados ou que sejam IDs de teste legados (ot_XXX)
+        const list = rawList.filter((item) => {
+          if (!item || item.isDeleted || deletedIds.has(item.id)) return false;
+          // Purga IDs de teste mock do sistema (ot_001 a ot_022)
+          if (item.id && typeof item.id === 'string' && item.id.startsWith('ot_')) {
+            try {
+              deleteDoc(doc(db, 'overtime_entries', item.id));
+              recordDeletedOvertimeEntryId(item.id);
+            } catch {}
+            return false;
+          }
+          return true;
+        }) as OvertimeEntry[];
 
         // CRUCIAL: Se a lista for vazia (porque o usuário apagou lançamentos), mantém vazia!
         // Não semear automaticamente para não ressuscitar registros que o usuário excluiu.
@@ -2314,7 +2419,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 1: Total Horas Extras */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Horas Extras</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Horas Extras</span>
+                    <OvertimeInfoTooltip
+                      title="Total de Horas Extras"
+                      description="Soma líquida de todas as horas extraordinárias apuradas após o cumprimento da jornada regular do turno e com o desconto legal de 1 hora para refeição."
+                      calculation="Cálculo: (Saída Efetiva - Entrada Efetiva) - Duração Normal do Turno - 1h Refeição"
+                      align="left"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                     <Clock size={16} />
                   </div>
@@ -2331,7 +2444,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 2: Horas Trabalhando */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Trabalhando</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Trabalhando</span>
+                    <OvertimeInfoTooltip
+                      title="Horas Trabalhando (Permanência Presencial)"
+                      description="Tempo total bruto em que o colaborador permaneceu fisicamente na fábrica no dia (diferença direta entre horário de entrada e saída)."
+                      calculation="Conceito: Tempo presencial completo no parque fabril (jornada normal + sobrejornada + refeição)"
+                      align="left"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
                     <UserCheck size={16} />
                   </div>
@@ -2348,7 +2469,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 3: Horas Equivalentes (+60% e +110%) */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Equivalentes</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas Equivalentes</span>
+                    <OvertimeInfoTooltip
+                      title="Horas Equivalentes (+60% e +110%)"
+                      description="Horas extras convertidas pelo peso do adicional da Convenção Coletiva. Mede o impacto financeiro real na folha de pagamento."
+                      calculation="Ponderação: Dias úteis e sábados (1h = 1,60h eq.) | Domingos e feriados (1h = 2,10h eq.)"
+                      align="center"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
                     <Percent size={16} />
                   </div>
@@ -2365,7 +2494,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 4: Colaboradores & Média */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipe com HE</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipe com HE</span>
+                    <OvertimeInfoTooltip
+                      title="Equipe com Horas Extras"
+                      description="Número de colaboradores únicos que realizaram ao menos 1 apontamento no ciclo, juntamente com a média de horas por colaborador."
+                      calculation="Média = Volume total de horas extras ÷ Número de colaboradores únicos ativos"
+                      align="right"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
                     <Users size={16} />
                   </div>
@@ -2382,7 +2519,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 5: Divisão 60% vs 110% */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faixa de HE (% HE)</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faixa de HE (% HE)</span>
+                    <OvertimeInfoTooltip
+                      title="Faixas Percentuais de HE"
+                      description="Divisão do volume de horas entre a alíquota padrão de 60% (segunda a sábado) e 110% (domingos e feriados oficiais)."
+                      calculation="Regra CCT: Segunda a Sábado = 60% | Domingos e Feriados = 110%"
+                      align="left"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold">
                     <Zap size={16} />
                   </div>
@@ -2399,7 +2544,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 6: Setor Principal */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Setor Mais Demandado</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Setor Mais Demandado</span>
+                    <OvertimeInfoTooltip
+                      title="Setor Mais Demandado"
+                      description="Área produtiva com maior volume acumulado de horas extras no ciclo. Auxilia na alocação de equipe e eliminação de gargalos."
+                      calculation="Critério: Setor com maior somatório de horas extras no ciclo selecionado"
+                      align="left"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
                     <Building2 size={16} />
                   </div>
@@ -2418,7 +2571,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 7: Alerta de Fadiga & Sobrecarga */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alerta de Fadiga & Limites</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alerta de Fadiga & Limites</span>
+                    <OvertimeInfoTooltip
+                      title="Alerta Preventivo de Fadiga e Limites"
+                      description="Acompanhamento ergonômico de segurança do trabalho para prevenir fadiga e sobrejornada excessiva."
+                      calculation="Níveis: Alerta em >30h no ciclo | Nível Crítico em >40h (sugere revezamento e folga)"
+                      align="center"
+                    />
+                  </div>
                   <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
                     dashboardAnalytics.criticalEmployeesCount > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
                   }`}>
@@ -2447,7 +2608,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
               {/* Card 8: Total de Lançamentos */}
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total de Lançamentos</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total de Lançamentos</span>
+                    <OvertimeInfoTooltip
+                      title="Total de Apontamentos"
+                      description="Quantidade total de lançamentos registrados no período filtrado, detalhando aprovações e pendências."
+                      calculation="Composição: Total Geral = Apontamentos Aprovados + Apontamentos Pendentes"
+                      align="right"
+                    />
+                  </div>
                   <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold">
                     <FileText size={16} />
                   </div>
@@ -2529,9 +2698,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <TrendingUp size={16} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        Evolução Diária de Horas Extras (Linha Temporal)
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                          Evolução Diária de Horas Extras (Linha Temporal)
+                        </h4>
+                        <OvertimeInfoTooltip
+                          title="Evolução Diária de Horas Extras"
+                          description="Linha cronológica do acúmulo de horas extras no ciclo de folha de pagamento selecionado, permitindo visualizar picos diários e a separação entre dias normais (60%) e domingos/feriados (110%)."
+                          calculation="Granularidade: Total apurado dia a dia no ciclo ativo"
+                          align="left"
+                        />
+                      </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         Distribuição cronológica no ciclo ({stats.totalOvertimeHours}h acumuladas)
                       </p>
@@ -2602,9 +2779,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <Building2 size={16} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        Horas Extras por Setor da Fábrica
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                          Horas Extras por Setor da Fábrica
+                        </h4>
+                        <OvertimeInfoTooltip
+                          title="Horas Extras por Setor"
+                          description="Distribuição consolidada de sobrejornada em cada setor fabril (Extrusão, Mistura, Bobinamento, etc.), identificando as áreas mais demandadas e com maior impacto orçamentário."
+                          calculation="Volume acumulado de horas por setor no ciclo ativo"
+                          align="left"
+                        />
+                      </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         Volume acumulado (Divisão 60% e 110%)
                       </p>
@@ -2657,9 +2842,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <Calendar size={16} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        Distribuição por Dia da Semana (Seg a Dom)
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                          Distribuição por Dia da Semana (Seg a Dom)
+                        </h4>
+                        <OvertimeInfoTooltip
+                          title="Distribuição por Dia da Semana"
+                          description="Demonstra em quais dias da semana ocorrem os maiores volumes de horas extras. Permite distinguir a carga ordinária (segunda a sábado) do impacto de domingos e feriados."
+                          calculation="Agrupamento cumulativo de horas por dia da semana"
+                          align="left"
+                        />
+                      </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         Dias Normais 60% vs Domingos e Feriados 110%
                       </p>
@@ -2704,9 +2897,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                          Análise de Causa-Raiz (Pareto de Motivos)
-                        </h4>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                            Análise de Causa-Raiz (Pareto de Motivos)
+                          </h4>
+                          <OvertimeInfoTooltip
+                            title="Pareto 80/20 de Motivos e Causas"
+                            description="Identifica as causas prioritárias (as 'poucas vitais') responsáveis por até 80% do volume total de sobrejornada na fábrica, orientando ações corretivas focadas."
+                            calculation="Classificação decrescente por horas e percentual acumulado"
+                            align="left"
+                          />
+                        </div>
                         <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black uppercase">
                           Regra 80/20
                         </span>
@@ -2778,9 +2979,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <Briefcase size={16} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        Distribuição por Turnos de Trabalho
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                          Distribuição por Turnos de Trabalho
+                        </h4>
+                        <OvertimeInfoTooltip
+                          title="Distribuição por Turnos de Trabalho"
+                          description="Compara o volume de horas extras em cada turno da fábrica: Comercial Padrão (9h48), Comercial Flexível (10h), Diurno (12h) e Noturno (12h), além do tipo de sobrejornada (passando do horário vs turno integral)."
+                          calculation="Classificação oficial da convenção e escalas da fábrica"
+                          align="left"
+                        />
+                      </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         Comercial (Padrão/Flexível), Diurno e Noturno
                       </p>
@@ -2822,9 +3031,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                       <Clock size={16} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        Faixa de Horário de Início da Hora Extra
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                          Faixa de Horário de Início da Hora Extra
+                        </h4>
+                        <OvertimeInfoTooltip
+                          title="Faixa de Início da Hora Extra"
+                          description="Mapeia o horário de largada ou início da jornada extraordinária em 4 períodos: Madrugada (00h-06h), Manhã (06h-12h), Tarde (12h-18h) e Noite (18h-00h)."
+                          calculation="Segmentação cronológica de largada"
+                          align="left"
+                        />
+                      </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         Madrugada, Manhã, Tarde e Noite
                       </p>
@@ -2860,9 +3077,17 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     <Award size={18} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                      Ranking Completo de Colaboradores com Horas Extras
-                    </h4>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                        Ranking Completo de Colaboradores com Horas Extras
+                      </h4>
+                      <OvertimeInfoTooltip
+                        title="Ranking de Colaboradores"
+                        description="Visão consolidada individual dos operadores e colaboradores com sobrejornada no ciclo, exibindo horas a 60%, 110%, médias por apontamento e alertas ergonômicos de limite."
+                        calculation="Ordenação por total decrescente de horas extras"
+                        align="left"
+                      />
+                    </div>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                       Lista ordenada por volume acumulado de horas extras no ciclo
                     </p>
@@ -3262,9 +3487,39 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     <th className="px-4 py-3.5 select-none">Colaborador / Operador</th>
                     <th className="px-4 py-3.5 whitespace-nowrap select-none">Setor & Turno</th>
                     <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Modalidade & Horários</th>
-                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Horas Trab.</th>
-                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Horas Extras</th>
-                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">% HE</th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <span>Horas Trab.</span>
+                        <OvertimeInfoTooltip
+                          title="Horas Trabalhando (Permanência)"
+                          description="Tempo total bruto de permanência física do colaborador no parque fabril (diferença entre entrada e saída)."
+                          calculation="Entrada e Saída presenciais brutas"
+                          align="center"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <span>Horas Extras</span>
+                        <OvertimeInfoTooltip
+                          title="Horas Extras Apuradas"
+                          description="Horas extraordinárias líquidas calculadas com base no cumprimento do turno e abatimento do intervalo obrigatório de refeição (1h)."
+                          calculation="Excedente ao turno - 1h refeição"
+                          align="center"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <span>% HE</span>
+                        <OvertimeInfoTooltip
+                          title="Percentual da Hora Extra"
+                          description="Alíquota prevista em Convenção Coletiva: 60% para dias normais e sábados; 110% para domingos e feriados oficiais."
+                          calculation="Seg-Sáb: 60% | Dom/Fer: 110%"
+                          align="center"
+                        />
+                      </div>
+                    </th>
                     <th className="px-4 py-3.5 text-center whitespace-nowrap select-none">Status</th>
                     <th className="px-4 py-3.5 select-none">Cálculo & Motivo</th>
                     <th className="px-4 py-3.5 text-right whitespace-nowrap select-none">Excluir</th>
@@ -4067,13 +4322,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Horas Trabalhando</span>
+                      <div className="flex items-center justify-center gap-1 mb-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Horas Trabalhando</span>
+                        <OvertimeInfoTooltip
+                          title="Horas Trabalhando (Permanência)"
+                          description="Tempo total de permanência presencial do colaborador na fábrica no dia (diferença direta entre saída e entrada)."
+                          calculation="Entrada e Saída presenciais brutas"
+                          align="center"
+                        />
+                      </div>
                       <span className="text-base font-black text-indigo-700 font-mono">{workingHoursFormatted}</span>
                       <span className="text-[9px] text-slate-400 font-bold block">{workingHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h dec.</span>
                     </div>
 
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Horas Extras</span>
+                      <div className="flex items-center justify-center gap-1 mb-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Horas Extras</span>
+                        <OvertimeInfoTooltip
+                          title="Horas Extras Apuradas"
+                          description="Horas extraordinárias líquidas calculadas após o cumprimento da jornada regular do turno e abatimento do intervalo de 1h para refeição."
+                          calculation="Excedente ao turno - 1h refeição"
+                          align="center"
+                        />
+                      </div>
                       <span className="text-base font-black text-blue-600 font-mono">
                         {displayOvertimeValue ? `${displayOvertimeValue} ${overtimeUnit}` : overtimeHoursFormatted}
                       </span>
@@ -4081,13 +4352,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     </div>
 
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">HE (% HE)</span>
+                      <div className="flex items-center justify-center gap-1 mb-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">HE (% HE)</span>
+                        <OvertimeInfoTooltip
+                          title="Percentual da HE e Horas Equivalentes"
+                          description="Alíquota da convenção coletiva (+60% ou +110%) e horas equivalentes ponderadas pelo adicional para impacto em folha."
+                          calculation="60% (1,6x) ou 110% (2,1x)"
+                          align="center"
+                        />
+                      </div>
                       <span className="text-base font-black text-amber-600 font-mono">{overtimePercentage}%</span>
                       <span className="text-[9px] text-slate-400 font-bold block">{equivalentHours.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}h equiv.</span>
                     </div>
 
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Competência Folha</span>
+                      <div className="flex items-center justify-center gap-1 mb-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Competência Folha</span>
+                        <OvertimeInfoTooltip
+                          title="Competência da Folha"
+                          description="Ciclo mensal oficial da folha de pagamento Manupackaging: fechamento todo dia 24 do mês anterior até o dia 23 do mês corrente."
+                          calculation="Corte oficial no dia 24"
+                          align="center"
+                        />
+                      </div>
                       <span className="text-xs font-black text-slate-800 block mt-1">Folha {formDatePayrollCycle.monthName}</span>
                       <span className="text-[8.5px] text-slate-400 font-bold block">{formDatePayrollCycle.intervalLabel}</span>
                     </div>

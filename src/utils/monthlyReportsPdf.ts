@@ -1491,6 +1491,7 @@ export const generateIntegratedMonthlyReportPDF = async ({
   currentMonthProdData.forEach(e => {
     if (!e || e.isNoWorkDay || e.isMaintenanceEntry || !e.operator) return;
     const op = e.operator.trim().toUpperCase();
+    if (!op || op === 'OPERADOR (FÁBRICA)' || op === 'OPERADOR (FABRICA)' || op === 'OPERADOR') return;
     const isErema = (e.machine || '').toLowerCase().includes('erema');
     const target = isErema ? eremaOps : extOps;
 

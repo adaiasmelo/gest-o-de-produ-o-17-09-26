@@ -637,95 +637,43 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     <div className="space-y-2.5 pb-6 animate-in fade-in duration-200 font-sans">
       
       {/* ============================================================== */}
-      {/* CABEÇALHO COMPACTO E LIMPO COM MENU DE AÇÕES UNIFICADO */}
+      {/* ============================================================== */}
+      {/* CABEÇALHO COMPACTO E LIMPO COM APENAS ELEMENTOS ESSENCIAIS */}
       {/* ============================================================== */}
       <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/20 shrink-0">
             <Award size={18} />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
-                Gestão de Bônus de Produção
-              </h2>
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[9.5px] font-black uppercase tracking-wider border border-blue-200">
-                {summaryStats.totalCount} Colaboradores Efetivos do Quadro Geral
-              </span>
-            </div>
-            <p className="text-[10.5px] text-slate-500 font-medium leading-tight">
-              Vinculado estritamente aos {summaryStats.operadoresCount} operadores e {summaryStats.auxiliaresCount} auxiliares efetivos do Quadro Geral (exceto liderança). Regra por máquina e turno.
-            </p>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
+              Gestão de Bônus de Produção
+            </h2>
+            <button
+              type="button"
+              onClick={() => setIsRulesModalOpen(true)}
+              className="w-5 h-5 rounded-full bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-700 flex items-center justify-center transition-all cursor-pointer shrink-0"
+              title="Ver regras oficiais de corte e abatimento do bônus"
+              aria-label="Regras do Bônus"
+            >
+              <HelpCircle size={12} />
+            </button>
           </div>
         </div>
 
-        {/* Grupo de Ações Primárias & Menu */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Seletor de Período da Folha */}
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs">
-            <Calendar size={12} className="text-blue-600 shrink-0" />
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="bg-transparent text-[11px] font-black text-slate-700 outline-none cursor-pointer"
-            >
-              {getAvailablePayrollCycles().map(c => (
-                <option key={c.key} value={c.key}>
-                  {c.shortLabel} {c.isCurrent ? '⭐' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Configuração da Meta Base R$ 250 */}
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs">
-            <span className="text-[9px] font-black text-slate-400 uppercase">Meta:</span>
-            <span className="text-[10.5px] font-bold text-slate-500">R$</span>
-            <input
-              type="number"
-              min={0}
-              value={baseBonusAmount}
-              onChange={(e) => setBaseBonusAmount(Number(e.target.value) || 0)}
-              className="w-11 bg-transparent font-black text-[11px] text-slate-800 outline-none p-0 border-none"
-              title="Valor estimado da meta mensal de bônus por colaborador"
-            />
-          </div>
-
-          {/* Botão Registrar Ocorrência (Ação Primária Principal) */}
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => handleOpenIncidentModal()}
-              className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider shadow-xs shadow-blue-600/20 shrink-0"
-              title="Lançar Atestado, Falta, Atraso ou Penalidade de Meta"
-            >
-              <Plus size={13} />
-              <span>Ocorrência</span>
-            </button>
-          )}
-
-          {/* Botão de Explicativo das Regras */}
-          <button
-            type="button"
-            onClick={() => setIsRulesModalOpen(true)}
-            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
-            title="Ver Regras Oficiais de Corte e Abatimento do Bônus"
-          >
-            <HelpCircle size={13} className="text-amber-600" />
-            <span className="hidden sm:inline">Regras</span>
-          </button>
-
-          {/* MENU SUSPENSO DE AÇÕES (IMPRESSÃO, PDF, CSV, BOTÃO DE VOLTAR) */}
+        {/* Grupo de Ações Essenciais: Menu, Data, Meta e Ocorrência */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* MENU SUSPENSO DE AÇÕES (IMPRESSÃO, PDF, CSV) */}
           <div className="relative" ref={actionsMenuRef}>
             <button
               type="button"
               onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
-              className={`px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 text-[11px] font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs ${
+              className={`px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs ${
                 isActionsMenuOpen
                   ? 'bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-blue-500/20'
                   : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
               }`}
-              title="Menu de opções: Impressão, PDF, CSV e Voltar"
+              title="Menu de opções: Impressão, Relatório PDF e Excel CSV"
             >
               <SlidersHorizontal size={13} className="text-slate-600" />
               <span>Menu</span>
@@ -733,7 +681,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             </button>
 
             {isActionsMenuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
                 {/* 1. Impressão */}
                 <button
                   type="button"
@@ -781,71 +729,52 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                     <span className="text-[9px] text-slate-400 font-normal">Exportar dados tabulados</span>
                   </div>
                 </button>
-
-                <div className="my-1 border-t border-slate-100" />
-
-                {/* 4. Botão de Voltar ao Quadro Geral */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    onClose();
-                  }}
-                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <ArrowLeft size={15} className="text-rose-600 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-black uppercase text-[11px]">Voltar ao Quadro</span>
-                    <span className="text-[9px] text-slate-400 font-normal">Retornar à tela de Quadro Geral</span>
-                  </div>
-                </button>
               </div>
             )}
           </div>
 
-          {/* Botão de Atalho Rápido: Impressão */}
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
-            title="Imprimir Apuração de Bônus"
-          >
-            <Printer size={12} className="text-slate-600" />
-            <span className="hidden lg:inline">Imprimir</span>
-          </button>
+          {/* Seletor de Período da Folha */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
+            <Calendar size={13} className="text-blue-600 shrink-0" />
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="bg-transparent text-[11px] font-black text-slate-700 outline-none cursor-pointer"
+            >
+              {getAvailablePayrollCycles().map(c => (
+                <option key={c.key} value={c.key}>
+                  {c.shortLabel} {c.isCurrent ? '⭐' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          {/* Botão de Atalho Rápido: PDF */}
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
-            title="Exportar Relatório PDF"
-          >
-            <FileText size={12} className="text-blue-600" />
-            <span className="hidden lg:inline">PDF</span>
-          </button>
+          {/* Configuração da Meta Base R$ 250 */}
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
+            <span className="text-[9.5px] font-black text-slate-400 uppercase">Meta:</span>
+            <span className="text-[11px] font-bold text-slate-500">R$</span>
+            <input
+              type="number"
+              min={0}
+              value={baseBonusAmount}
+              onChange={(e) => setBaseBonusAmount(Number(e.target.value) || 0)}
+              className="w-12 bg-transparent font-black text-[11px] text-slate-800 outline-none p-0 border-none"
+              title="Valor estimado da meta mensal de bônus por colaborador"
+            />
+          </div>
 
-          {/* Botão de Atalho Rápido: CSV */}
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
-            title="Exportar Planilha Excel CSV"
-          >
-            <FileSpreadsheet size={12} className="text-emerald-600" />
-            <span className="hidden lg:inline">CSV</span>
-          </button>
-
-          {/* Botão Voltar Direto */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-2.5 py-1.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-700 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider"
-            title="Voltar ao Quadro Geral de Pessoal"
-          >
-            <ArrowLeft size={12} />
-            <span>Voltar</span>
-          </button>
+          {/* Botão Registrar Ocorrência */}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => handleOpenIncidentModal()}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider shadow-xs shadow-blue-600/20 shrink-0"
+              title="Lançar Atestado, Falta, Atraso ou Penalidade de Meta"
+            >
+              <Plus size={13} />
+              <span>Ocorrência</span>
+            </button>
+          )}
         </div>
       </div>
 
