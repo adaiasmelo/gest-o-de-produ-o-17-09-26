@@ -36,7 +36,7 @@ export const IMPORTED_COLLABORATORS: Omit<Collaborator, 'id' | 'updatedAt'>[] = 
   { registration: "1806", name: "FABIO ANDRE BELCHIOR MATOS", role: "Operador de Erema" },
   { registration: "1854", name: "FILIPE APARICIO DE SOUZA", role: "Analista Logística e Transp" },
   { registration: "1868", name: "FILIPE DE SOUZA MESQUITA", role: "Aprendiz" },
-  { registration: "1840", name: "FRANCISCO GEOVANY MOREIRA DA SILVA", role: "Operador I" },
+  { registration: "1840", name: "FRANCISCO GEOVANY MOREIRA DA SILVA", role: "Auxiliar de Produção" },
   { registration: "1859", name: "GENISON GOMES DA SILVA", role: "Auxiliar de Produção" },
   { registration: "1844", name: "GILCIMAR CARLOS CORREA ARAUJO", role: "Operador de Erema" },
   { registration: "1850", name: "GREISIANE PONTES OLIVEIRA", role: "Técnico Segurança do Trabalho" },

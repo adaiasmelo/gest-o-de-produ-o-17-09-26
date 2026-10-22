@@ -45,17 +45,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   { id: "e22", registration: "1796", name: "ALESSANDRO DE BRITO MARQUES", role: "Auxiliar de Produção", sector: "Extrusão", machine: "Cast 2", shift: "Noturno 2", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
  
   // RECICLAGEM
-  { id: "e23", registration: "0023", name: "Jocelan", role: "Operador 1", sector: "Reciclagem", machine: "Erema 1", shift: "Diurno 1", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
-  { id: "e24", registration: "1806", name: "FABIO ANDRE BELCHIOR MATOS", role: "Operador 1", sector: "Reciclagem", machine: "Erema 1", shift: "Diurno 2", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
- 
+  { id: "e23", registration: "1872", name: "ALESSANDRO NUNES DA SILVA", role: "Operador 1", sector: "Reciclagem", machine: "Erema 1", shift: "Diurno 1", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e24", registration: "1844", name: "GILCIMAR CARLOS CORREA ARAUJO", role: "Operador 1", sector: "Reciclagem", machine: "Erema 1", shift: "Diurno 2", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e24b", registration: "1806", name: "FABIO ANDRE BELCHIOR MATOS", role: "Operador 1", sector: "Reciclagem", machine: "Erema 1", shift: "Noturno 1", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e24c", registration: "1859", name: "GENISON GOMES DA SILVA", role: "Auxiliar de Produção", sector: "Reciclagem", machine: "Erema 1", shift: "Noturno 2", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+
   // FITA ADESIVA
-  { id: "e25", registration: "1795", name: "JORGE BARBOSA OLIVEIRA", role: "Operador 1", sector: "Fita", machine: "Ghezzi", shift: "Diurno 1", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
-  { id: "e26", registration: "1622", name: "MAURIZIO TAGLIATTI", role: "Auxiliar de Produção", sector: "Fita", machine: "Ghezzi", shift: "Diurno 1", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
-  { id: "e27", registration: "1575", name: "ANDRE PAULO DA SILVA", role: "Operador 1", sector: "Fita", machine: "Ghezzi", shift: "Diurno 2", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e25", registration: "1795", name: "JORGE BARBOSA OLIVEIRA", role: "Operador 1", sector: "Fita", machine: "Ghezzi", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e26", registration: "1622", name: "MAURIZIO TAGLIATTI", role: "Auxiliar de Produção", sector: "Fita", machine: "Ghezzi", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e27", registration: "1575", name: "ANDRE PAULO DA SILVA", role: "Operador 1", sector: "Fita", machine: "Ghezzi", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
   { id: "e28", registration: "1702", name: "KEVEN AUGUSTO SILVA E SILVA", role: "Operador 1", sector: "Fita", machine: "Lintech", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
-  { id: "e29", registration: "1840", name: "FRANCISCO GEOVANY MOREIRA DA SILVA", role: "Operador 1", sector: "Fita", machine: "Lintech", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
-  { id: "e30", registration: "1849", name: "ADMILSON SENA DA SILVA", role: "Auxiliar de Produção", sector: "Fita", machine: "Wultec", shift: "Diurno 1", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
-  { id: "e31", registration: "1857", name: "MARIO SANTOS DA SILVA JUNIOR", role: "Auxiliar de Produção", sector: "Fita", machine: "Wultec", shift: "Diurno 2", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" }
+  { id: "e29", registration: "1840", name: "FRANCISCO GEOVANY MOREIRA DA SILVA", role: "Auxiliar de Produção", sector: "Fita", machine: "Lintech", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e30", registration: "1849", name: "ADMILSON SENA DA SILVA", role: "Auxiliar de Produção", sector: "Fita", machine: "Wultec", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" },
+  { id: "e31", registration: "1857", name: "MARIO SANTOS DA SILVA JUNIOR", role: "Auxiliar de Produção", sector: "Fita", machine: "Wultec", shift: "Comercial", status: "Ativo", updatedAt: "2024-01-30T12:00:00Z" }
 ];
 
 export const INITIAL_LOGS: PersonnelLog[] = [

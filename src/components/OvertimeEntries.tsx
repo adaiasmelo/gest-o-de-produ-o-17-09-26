@@ -3100,12 +3100,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
               <div 
                 className="overflow-x-auto custom-scrollbar select-none" 
-                onSelectStart={(e) => e.preventDefault()}
                 onDragStart={(e) => e.preventDefault()}
                 style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
               >
                 <table 
-                  onSelectStart={(e) => e.preventDefault()}
                   onDragStart={(e) => e.preventDefault()}
                   className="w-full text-left text-xs border-collapse select-none cursor-default [&_*]:select-none [&_*]:cursor-default"
                 >
@@ -3444,7 +3442,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 onMouseLeave={handleTableMouseLeave}
                 onMouseUp={handleTableMouseUp}
                 onMouseMove={handleTableMouseMove}
-                onSelectStart={(e) => e.preventDefault()}
                 onDragStart={(e) => e.preventDefault()}
                 className={`overflow-x-auto custom-scrollbar select-none overtime-appointments-table ${isTableDragging ? 'cursor-grabbing select-none overtime-appointments-table-dragging' : 'cursor-default'}`}
                 style={{
@@ -3456,7 +3453,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                 }}
               >
                 <table 
-                  onSelectStart={(e) => e.preventDefault()}
                   onDragStart={(e) => e.preventDefault()}
                   className="w-full text-left text-xs border-collapse select-none cursor-default [&_*]:select-none"
                 >
@@ -3550,7 +3546,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
                     return (
                       <tr
                         key={item.id}
-                        onSelectStart={(e) => e.preventDefault()}
                         className={`transition-colors select-none cursor-default ${
                           isSelected ? 'bg-blue-50/50 hover:bg-blue-50/80' : 'hover:bg-blue-50/30'
                         }`}

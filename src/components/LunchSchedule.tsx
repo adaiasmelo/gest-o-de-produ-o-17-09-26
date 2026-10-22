@@ -48,9 +48,9 @@ const SECTOR_MACHINE_SHIFTS_METADATA = [
   { sector: 'Extrusão', machine: 'Cast 1', shifts: ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'] },
   { sector: 'Extrusão', machine: 'Cast 2', shifts: ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'] },
   { sector: 'Reciclagem', machine: 'Erema 1', shifts: ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'] },
-  { sector: 'Fita', machine: 'Ghezzi', shifts: ['Diurno 1', 'Diurno 2'] },
+  { sector: 'Fita', machine: 'Ghezzi', shifts: ['Comercial'] },
   { sector: 'Fita', machine: 'Lintech', shifts: ['Comercial'] },
-  { sector: 'Fita', machine: 'Wultec', shifts: ['Diurno 1', 'Diurno 2'] },
+  { sector: 'Fita', machine: 'Wultec', shifts: ['Comercial'] },
 ];
 
 const getSectorDisplayName = (sector: string) => {

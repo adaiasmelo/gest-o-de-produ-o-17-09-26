@@ -84,7 +84,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
     if (!openDropdown) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target) return;
+
       if (navRef.current && navRef.current.contains(target)) {
         return;
       }
@@ -104,8 +106,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
     };
 
     const handleScrollOrResize = (event: Event) => {
+      const target = event.target instanceof Node ? event.target : null;
       const portalEl = document.getElementById('top-navbar-dropdown-portal');
-      if (portalEl && portalEl.contains(event.target as Node)) {
+      if (portalEl && target && portalEl.contains(target)) {
         return; // Permite rolar a lista de opções interna do dropdown
       }
       setOpenDropdown(null);

@@ -13604,6 +13604,44 @@ Atenciosamente,
           onNavigateTab={handleCommandPaletteNavigate}
         />
 
+        {/* ==================== CARD DA FOTO DE CAPA (CONFIGURAÇÕES) ==================== */}
+        {activeTab === 'home' && (
+          <div className="w-full rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm bg-slate-900 relative group animate-in fade-in duration-300">
+            <div className="relative w-full h-40 sm:h-52 md:h-60 lg:h-64 overflow-hidden">
+              <img
+                src={systemCoverImage || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1600&q=80'}
+                alt="Foto de Capa do Sistema"
+                className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-[1.01]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/30 to-transparent pointer-events-none" />
+              
+              {/* Informações sobrepostas na foto de capa */}
+              <div className="absolute bottom-3 left-3 sm:bottom-4 sm:left-5 right-3 sm:right-5 flex items-end justify-between pointer-events-none">
+                <div className="text-white drop-shadow-md">
+                  <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg bg-black/40 backdrop-blur-md border border-white/20 inline-block mb-1.5 shadow-sm">
+                    {systemName || 'CONTROLE DE PRODUÇÃO'}
+                  </span>
+                  <p className="text-xs sm:text-sm font-extrabold text-slate-100 tracking-tight">
+                    Painel Industrial & Gestão Integrada
+                  </p>
+                </div>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsModalOpen(true)}
+                    className="pointer-events-auto px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-black/50 hover:bg-black/75 backdrop-blur-md text-white text-[10px] sm:text-xs font-black uppercase tracking-wider border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95"
+                    title="Alterar Imagem de Capa nas Configurações"
+                  >
+                    <Settings size={13} className="text-blue-400" />
+                    <span className="hidden sm:inline">Alterar Capa</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ==================== BARRA DE BOTÕES DOS MÓDULOS (VISÍVEL NO INÍCIO / SOME AO ENTRAR NOS MÓDULOS) ==================== */}
         {activeTab === 'home' && (
           <TopNavbar

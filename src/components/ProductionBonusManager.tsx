@@ -257,6 +257,99 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     return Array.from(set).sort();
   }, [eligibleBoardCollaborators]);
 
+  // REGRA DO USUÁRIO: EXTRAÇÃO DINÂMICA DE MÁQUINAS E TURNOS DIRETAMENTE DO QUADRO GERAL (PESSOAL / EMPLOYEES)
+  // Erema: Diurno 1, Noturno 1, Diurno 2, Noturno 2 (4 turnos)
+  // Ghezzi, Lintech, Wultec: Comercial
+  // Cast 1, Cast 2: Diurno 1, Noturno 1, Diurno 2, Noturno 2
+  const dynamicMachineShiftPairs = useMemo(() => {
+    const pairsMap = new Map<string, { machine: string; shift: string }>();
+
+    // 1. Extração direta de todos os colaboradores do Quadro Geral (employees)
+    employees.forEach(emp => {
+      const machine = (emp.machine || '').trim();
+      const shift = (emp.shift || '').trim();
+      if (!machine || machine.toLowerCase() === 'geral' || machine.toLowerCase() === 'nenhuma') return;
+      if (!shift || shift.toLowerCase() === 'todos' || shift.toLowerCase() === 'todos os turnos') return;
+      if (emp.name && emp.name.toLowerCase().includes('vaga excluída')) return;
+
+      let normMachine = machine;
+      if (/^ghezzi$/i.test(machine) || /^ghezz$/i.test(machine)) normMachine = 'Ghezzi';
+      else if (/^wultec$/i.test(machine) || /^wutec$/i.test(machine)) normMachine = 'Wultec';
+      else if (/^lintech$/i.test(machine)) normMachine = 'Lintech';
+      else if (/^erema$/i.test(machine) || /^erema\s*1$/i.test(machine)) normMachine = 'Erema 1';
+      else if (/^cast\s*1$/i.test(machine)) normMachine = 'Cast 1';
+      else if (/^cast\s*2$/i.test(machine)) normMachine = 'Cast 2';
+
+      let normShift = shift;
+      if (/^comercial$/i.test(shift)) normShift = 'Comercial';
+      else if (/^diurno\s*1$/i.test(shift)) normShift = 'Diurno 1';
+      else if (/^noturno\s*1$/i.test(shift)) normShift = 'Noturno 1';
+      else if (/^diurno\s*2$/i.test(shift)) normShift = 'Diurno 2';
+      else if (/^noturno\s*2$/i.test(shift)) normShift = 'Noturno 2';
+
+      const key = `${normMachine}___${normShift}`;
+      if (!pairsMap.has(key)) {
+        pairsMap.set(key, { machine: normMachine, shift: normShift });
+      }
+    });
+
+    // 2. Garantir todos os turnos e máquinas da fábrica definidos no Quadro Geral:
+    // Cast 1 e Cast 2 com 4 turnos; Erema 1 com 4 turnos (Diurno 1/2 e Noturno 1/2); Ghezzi, Lintech e Wultec Comercial
+    const factoryStandardPairs = [
+      { machine: 'Cast 1', shift: 'Diurno 1' },
+      { machine: 'Cast 1', shift: 'Noturno 1' },
+      { machine: 'Cast 1', shift: 'Diurno 2' },
+      { machine: 'Cast 1', shift: 'Noturno 2' },
+      { machine: 'Cast 2', shift: 'Diurno 1' },
+      { machine: 'Cast 2', shift: 'Noturno 1' },
+      { machine: 'Cast 2', shift: 'Diurno 2' },
+      { machine: 'Cast 2', shift: 'Noturno 2' },
+      { machine: 'Erema 1', shift: 'Diurno 1' },
+      { machine: 'Erema 1', shift: 'Noturno 1' },
+      { machine: 'Erema 1', shift: 'Diurno 2' },
+      { machine: 'Erema 1', shift: 'Noturno 2' },
+      { machine: 'Ghezzi', shift: 'Comercial' },
+      { machine: 'Lintech', shift: 'Comercial' },
+      { machine: 'Wultec', shift: 'Comercial' },
+    ];
+
+    factoryStandardPairs.forEach(p => {
+      const key = `${p.machine}___${p.shift}`;
+      if (!pairsMap.has(key)) {
+        pairsMap.set(key, p);
+      }
+    });
+
+    const machineOrder: Record<string, number> = {
+      'Cast 1': 1,
+      'Cast 2': 2,
+      'Erema 1': 3,
+      'Ghezzi': 4,
+      'Lintech': 5,
+      'Wultec': 6,
+    };
+
+    const shiftOrder: Record<string, number> = {
+      'Diurno 1': 1,
+      'Noturno 1': 2,
+      'Diurno 2': 3,
+      'Noturno 2': 4,
+      'Comercial': 5,
+      'Diurno': 6,
+      'Noturno': 7,
+    };
+
+    return Array.from(pairsMap.values()).sort((a, b) => {
+      const ordM1 = machineOrder[a.machine] || 99;
+      const ordM2 = machineOrder[b.machine] || 99;
+      if (ordM1 !== ordM2) return ordM1 - ordM2;
+      const ordS1 = shiftOrder[a.shift] || 99;
+      const ordS2 = shiftOrder[b.shift] || 99;
+      if (ordS1 !== ordS2) return ordS1 - ordS2;
+      return a.machine.localeCompare(b.machine) || a.shift.localeCompare(b.shift);
+    });
+  }, [employees]);
+
   // Incidências filtradas pelo período selecionado
   const periodIncidents = useMemo(() => {
     return incidents.filter(inc => inc.cyclePeriod === selectedPeriod);
@@ -1257,21 +1350,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[
-              { machine: 'Cast 1', shift: 'Diurno 1' },
-              { machine: 'Cast 1', shift: 'Noturno 1' },
-              { machine: 'Cast 1', shift: 'Diurno 2' },
-              { machine: 'Cast 1', shift: 'Noturno 2' },
-              { machine: 'Cast 2', shift: 'Diurno 1' },
-              { machine: 'Cast 2', shift: 'Noturno 1' },
-              { machine: 'Cast 2', shift: 'Diurno 2' },
-              { machine: 'Cast 2', shift: 'Noturno 2' },
-              { machine: 'Erema 1', shift: 'Diurno 1' },
-              { machine: 'Erema 1', shift: 'Diurno 2' },
-              { machine: 'Ghezzi', shift: 'Diurno 1' },
-              { machine: 'Lintech', shift: 'Comercial' },
-              { machine: 'Wultec', shift: 'Diurno 1' }
-            ].map(({ machine, shift }) => {
+            {dynamicMachineShiftPairs.map(({ machine, shift }) => {
               const goalKey = `${machine}_${shift}_${selectedPeriod}`;
               const goalCfg = machineGoals[goalKey] || {
                 id: goalKey,
@@ -1282,11 +1361,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                 abatementPercent: 30
               };
 
-              // Colaboradores específicos escalados nesta máquina e turno
-              const teamMembers = eligibleBoardCollaborators.filter(e => 
-                e.machine && e.machine.trim().toLowerCase() === machine.toLowerCase() &&
-                e.shift && e.shift.trim().toLowerCase() === shift.toLowerCase()
-              );
+              // Colaboradores específicos escalados nesta máquina e turno do Quadro Geral
+              const teamMembers = eligibleBoardCollaborators.filter(e => {
+                const m = (e.machine || '').trim().toLowerCase();
+                const s = (e.shift || '').trim().toLowerCase();
+                const targetM = machine.toLowerCase();
+                const targetS = shift.toLowerCase();
+                const matchM = m === targetM || 
+                  (targetM === 'ghezzi' && (m === 'ghezz' || m === 'ghezzi')) ||
+                  (targetM === 'wultec' && (m === 'wutec' || m === 'wultec')) ||
+                  (targetM === 'erema 1' && (m === 'erema' || m === 'erema 1'));
+                return matchM && s === targetS;
+              });
 
               return (
                 <div key={`${machine}_${shift}`} className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-3">
@@ -1313,11 +1399,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                       {teamMembers.length === 0 ? (
                         <span className="text-slate-400 text-[10px]">Sem operadores alocados neste turno</span>
                       ) : (
-                        teamMembers.map(m => (
-                          <span key={m.id} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[9.5px]">
-                            {m.name.split(' ')[0]} ({m.role?.includes('Operador') ? 'Op' : 'Aux'})
-                          </span>
-                        ))
+                        teamMembers.map(m => {
+                          const isOperator = m.role && /operador/i.test(m.role) && !/auxiliar/i.test(m.role);
+                          const roleTag = isOperator ? 'Op' : 'Aux';
+                          return (
+                            <span key={m.id} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[9.5px]">
+                              {m.name.split(' ')[0]} ({roleTag})
+                            </span>
+                          );
+                        })
                       )}
                     </div>
                   </div>
