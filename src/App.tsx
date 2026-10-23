@@ -1482,7 +1482,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   }>({ isOpen: false });
 
   const isAdmin = loggedUser?.registration === '1010' || loggedUser?.role === 'Administrador';
-  const isReadOnlyAccount = !isAdmin && !!loggedUser?.permissions?.isReadOnly;
+  const isReadOnlyAccount = !isAdmin && (
+    !!loggedUser?.permissions?.isReadOnly ||
+    loggedUser?.role === 'Modo Leitura' ||
+    (loggedUser?.role || '').toLowerCase().includes('leitura') ||
+    loggedUser?.registration === '9999'
+  );
 
   const handleBlockedReadOnlyAction = (title?: string, message?: string) => {
     setReadOnlyBlockedModal({
@@ -1992,6 +1997,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   }, []);
 
   const handleInstallClick = async () => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou instalar o aplicativo.');
+      return;
+    }
     setShowInstallExperience(true);
   };
 
@@ -4390,16 +4399,17 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       (personnelSubView === 'overtime' && userPerms.personnel.overtime) ||
       (personnelSubView === 'overtime_entries' && userPerms.personnel.overtimeEntries) ||
       (personnelSubView === 'evaluations' && userPerms.personnel.evaluations) ||
-      (personnelSubView === 'bonus' && userPerms.personnel.bonus !== false);
+      (personnelSubView === 'bonus' && !!userPerms.personnel.bonus);
 
     if (!isSubviewAllowed) {
-      if (userPerms.personnel.overtime) setPersonnelSubView('overtime');
-      else if (userPerms.personnel.overtimeEntries) setPersonnelSubView('overtime_entries');
-      else if (userPerms.personnel.board) setPersonnelSubView('board');
+      if (userPerms.personnel.board) setPersonnelSubView('board');
       else if (userPerms.personnel.vacations) setPersonnelSubView('vacations');
-      else if (userPerms.personnel.training) setPersonnelSubView('training');
       else if (userPerms.personnel.lunch) setPersonnelSubView('lunch');
+      else if (userPerms.personnel.overtime) setPersonnelSubView('overtime');
+      else if (userPerms.personnel.overtimeEntries) setPersonnelSubView('overtime_entries');
       else if (userPerms.personnel.evaluations) setPersonnelSubView('evaluations');
+      else if (userPerms.personnel.bonus) setPersonnelSubView('bonus');
+      else if (userPerms.personnel.training) setPersonnelSubView('training');
     }
   }, [activeTab, personnelSubView, userPerms, isAdmin]);
 
@@ -5691,7 +5701,10 @@ Atenciosamente,
   // Handle ribbon entry saving
   const handleSaveRibbonEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEditProduction) return;
+    if (isReadOnlyAccount || !canEditProduction) {
+      handleBlockedReadOnlyAction('Lançamento Bloqueado', 'O Modo de Leitura é exclusivo para consulta. Não é permitido criar ou salvar lançamentos.');
+      return;
+    }
 
     if (!ribbonOperator || !ribbonShift) {
       triggerHaptic('warning');
@@ -7459,6 +7472,10 @@ Atenciosamente,
   };
 
   const exportStockAndConciliationPDF = (stockDate: string) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -7860,6 +7877,10 @@ Atenciosamente,
   const [selectedEmployeeInfo, setSelectedEmployeeInfo] = useState<{ sector: string, machine: string, shift: string, role: string } | null>(null);
 
   const exportPersonnelToPDF = () => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     const doc = new jsPDF();
     const now = new Date().toLocaleDateString('pt-BR');
     const nowFull = new Date().toLocaleString('pt-BR');
@@ -8209,6 +8230,10 @@ Atenciosamente,
   };
 
   const exportMonthlyReportToPDF = async () => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -9275,6 +9300,10 @@ Atenciosamente,
   };
 
   const exportRibbonMonthlyReportToPDF = async () => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     try {
       const doc = await generateRibbonMonthlyReportPDF({
         dashboardMonth,
@@ -9301,6 +9330,10 @@ Atenciosamente,
   };
 
   const exportIntegratedMonthlyReportToPDF = async () => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     try {
       const doc = await generateIntegratedMonthlyReportPDF({
         dashboardMonth,
@@ -9332,6 +9365,10 @@ Atenciosamente,
   };
 
   const handleSaveTraining = async (data: Partial<TrainingRecord>) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Gravação Bloqueada', 'O Modo de Leitura não permite criar ou alterar fichas de treinamento.');
+      return;
+    }
     try {
       const id = data.id || doc(collection(db, 'training_records')).id;
       const isNew = !data.id;
@@ -9419,6 +9456,10 @@ Atenciosamente,
   };
 
   const exportPromotionEvaluationPDF = (operatorName: string) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     const [refYearStr, refMonthStr] = dashboardMonth.split('-');
     const refYear = parseInt(refYearStr, 10);
     const refMonth = parseInt(refMonthStr, 10);
@@ -10012,6 +10053,10 @@ Atenciosamente,
   };
 
   const handleSaveTrainingTemplate = async (template: TrainingTemplate) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Gravação Bloqueada', 'O Modo de Leitura não permite alterar o modelo de treinamento.');
+      return;
+    }
     try {
       await setDoc(doc(db, 'settings', 'training_template'), template);
       setIsTemplateModalOpen(false);
@@ -10021,6 +10066,10 @@ Atenciosamente,
   };
 
   const exportTrainingToPDF = async (training: TrainingRecord) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+      return;
+    }
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -10574,6 +10623,10 @@ Atenciosamente,
   };
 
   const handleAssignSubstitute = async (vacationingEmployeeId: string, substituteId: string | null) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Ação Bloqueada', 'No Modo de Leitura não é permitido alterar substituto de férias.');
+      return;
+    }
     try {
       const now = new Date().toISOString();
       const vacEmp = employees.find(e => e.id === vacationingEmployeeId);
@@ -10639,6 +10692,10 @@ Atenciosamente,
   };
 
   const handleSaveReturnDate = async (employeeId: string, newReturnDate: string, notes?: string) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Ação Bloqueada', 'No Modo de Leitura não é permitido alterar data de retorno de férias.');
+      return;
+    }
     try {
       const emp = employees.find(e => e.id === employeeId);
       if (!emp) return;
@@ -10694,6 +10751,10 @@ Atenciosamente,
   };
 
   const handleEndVacation = async (employeeId: string) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Ação Bloqueada', 'No Modo de Leitura não é permitido encerrar férias de colaboradores.');
+      return;
+    }
     try {
       const emp = employees.find(e => e.id === employeeId);
       if (!emp) return;
@@ -10753,6 +10814,10 @@ Atenciosamente,
   };
   
   const handleSaveVacation = async (vac: Vacation) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Gravação Bloqueada', 'O agendamento de férias não é permitido no Modo de Leitura.');
+      return;
+    }
     try {
       const docRef = doc(db, 'vacations', vac.id);
       await setDoc(docRef, vac);
@@ -11047,6 +11112,10 @@ Atenciosamente,
   };
 
   const handleSaveCustomSector = async (secData: Partial<CustomSector>) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Gravação Bloqueada', 'A criação ou alteração de setores não é permitida no Modo de Leitura.');
+      return;
+    }
     try {
       const saved = await saveCustomSectorToFirestore(secData);
       setCustomSectors(prev => {
@@ -11073,6 +11142,10 @@ Atenciosamente,
   };
 
   const handleDeleteCustomSector = async (sectorId: string) => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Exclusão Bloqueada', 'A exclusão de setores não é permitida no Modo de Leitura.');
+      return;
+    }
     try {
       const secToDelete = customSectors.find(s => s.id === sectorId);
       await deleteCustomSectorFromFirestore(sectorId);
@@ -13141,7 +13214,7 @@ Atenciosamente,
                   </p>
                   <div className="space-y-1">
                     {/* Baixar Sistema - Acesso para Todas as Funções (se não estiver baixado ainda) */}
-                    {!isStandalone && (
+                    {!isStandalone && !isReadOnlyAccount && (
                       <button
                         type="button"
                         onClick={() => {
@@ -13555,7 +13628,7 @@ Atenciosamente,
                       </button>
                     )}
 
-                    {(isAdmin || userPerms.ribbon.reports) && (
+                    {(isAdmin || (userPerms.ribbon.reports && !isReadOnlyAccount)) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -13569,7 +13642,7 @@ Atenciosamente,
                       </button>
                     )}
 
-                    {(isAdmin || userPerms.ribbon.reports) && (
+                    {(isAdmin || (userPerms.ribbon.reports && !isReadOnlyAccount)) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -13605,7 +13678,7 @@ Atenciosamente,
         />
 
         {/* ==================== CARD DA FOTO DE CAPA (CONFIGURAÇÕES) ==================== */}
-        {activeTab === 'home' && (
+        {(activeTab === 'home' || !canViewHome) && (
           <div className="w-full rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm bg-slate-900 relative group animate-in fade-in duration-300">
             <div className="relative w-full h-40 sm:h-52 md:h-60 lg:h-64 overflow-hidden">
               <img
@@ -13643,7 +13716,7 @@ Atenciosamente,
         )}
 
         {/* ==================== BARRA DE BOTÕES DOS MÓDULOS (VISÍVEL NO INÍCIO / SOME AO ENTRAR NOS MÓDULOS) ==================== */}
-        {activeTab === 'home' && (
+        {(activeTab === 'home' || !canViewHome) && (
           <TopNavbar
             activeTab={activeTab}
             extrusionSubTab={extrusionSubTab}
@@ -13652,7 +13725,20 @@ Atenciosamente,
             ribbonDashboardSubTab={ribbonDashboardSubTab}
             personnelSubView={personnelSubView}
             maintenanceSubTab={maintenanceSubTab}
-            onNavigateHome={() => setActiveTab('home')}
+            onNavigateHome={() => {
+              if (canViewHome) {
+                setActiveTab('home');
+              } else {
+                const landing = getInitialUserLanding(loggedUser?.permissions, isAdmin);
+                setActiveTab(landing.tab);
+                if (landing.extrusionSubTab) setExtrusionSubTab(landing.extrusionSubTab as any);
+                if (landing.dashboardSubTab) setDashboardSubTab(landing.dashboardSubTab as any);
+                if (landing.ribbonSubTab) setRibbonSubTab(landing.ribbonSubTab as any);
+                if (landing.ribbonDashboardSubTab) setRibbonDashboardSubTab(landing.ribbonDashboardSubTab as any);
+                if (landing.personnelSubView) setPersonnelSubView(landing.personnelSubView as any);
+                if (landing.maintenanceSubTab) setMaintenanceSubTab(landing.maintenanceSubTab as any);
+              }
+            }}
             onNavigateExtrusion={(subTab, dashSubTab) => {
               setActiveTab('extrusion');
               setExtrusionSubTab(subTab as any);
@@ -14669,6 +14755,10 @@ Atenciosamente,
               };
 
               const exportOperatorsMetricsPDF = () => {
+                if (isReadOnlyAccount) {
+                  handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+                  return;
+                }
                 const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                 const pageWidth = doc.internal.pageSize.getWidth();
                 const pageHeight = doc.internal.pageSize.getHeight();
@@ -14847,6 +14937,10 @@ Atenciosamente,
               };
 
               const exportSingleOperatorPDF = (operatorName: string) => {
+                if (isReadOnlyAccount) {
+                  handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar ou exportar relatórios.');
+                  return;
+                }
                 const opDataList = biFilteredData.filter(e => e.operator === operatorName);
                 
                 const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -22370,6 +22464,14 @@ Atenciosamente,
       }} accept=".json" className="hidden" />
 
       <LaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={async (e) => {
+        if (isReadOnlyAccount || !canEditProduction) {
+          handleBlockedReadOnlyAction(
+            'Lançamento Bloqueado',
+            'O Modo de Leitura é exclusivo para consulta. Não é permitido criar ou salvar lançamentos de produção.'
+          );
+          setIsModalOpen(false);
+          return;
+        }
         try {
           const isNew = !editingEntry;
           const id = editingEntry ? editingEntry.id : Math.random().toString(36).substr(2, 9);
@@ -22449,9 +22551,17 @@ Atenciosamente,
           alert("Ocorreu um erro ao salvar o lançamento.");
         }
         setEditingEntry(null);
-      }} collaborators={collaborators} employees={employees} vacations={vacations} activeMachines={activeMachines} availableShifts={availableShifts} initialData={editingEntry} dashboardMonth={dashboardMonth} productionEntries={productionData} ribbonEntries={ribbonEntries} />
+      }} collaborators={collaborators} employees={employees} vacations={vacations} activeMachines={activeMachines} availableShifts={availableShifts} initialData={editingEntry} dashboardMonth={dashboardMonth} productionEntries={productionData} ribbonEntries={ribbonEntries} isReadOnly={isReadOnlyAccount} />
       
       <EmployeeModal isOpen={isEmployeeModalOpen} onClose={() => { setIsEmployeeModalOpen(false); setSelectedEmployee(null); setSelectedSlot(null); }} onSave={async (data, action, details) => {
+          if (isReadOnlyAccount || !canManagePersonnel) {
+            handleBlockedReadOnlyAction(
+              'Ação Bloqueada',
+              'O Modo de Leitura é exclusivo para consulta. Não é permitido criar, alterar ou excluir colaboradores.'
+            );
+            setIsEmployeeModalOpen(false);
+            return;
+          }
           try {
             const now = new Date().toISOString();
             const empId = data.id || Math.random().toString(36).substr(2, 9);
@@ -22557,6 +22667,14 @@ Atenciosamente,
       }} availableShifts={availableShifts} availableMachines={activeMachines} availableRoles={availableRoles} collaborators={collaborators} customSectors={customSectors} initialData={selectedEmployee} slotInfo={selectedSlot} />
       
       <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={async (s) => {
+        if (isReadOnlyAccount || !canManageSettings) {
+          handleBlockedReadOnlyAction(
+            'Ação Bloqueada',
+            'O Modo de Leitura é exclusivo para consulta. Não é permitido criar ou alterar turnos.'
+          );
+          setIsShiftModalOpen(false);
+          return;
+        }
         try {
           const shiftId = Math.random().toString(36).substr(2, 9);
           await setDoc(doc(db, 'shifts', shiftId), { ...s, id: shiftId, userId: currentUser.uid });
@@ -22646,6 +22764,14 @@ Atenciosamente,
         machines={activeMachines}
         customSectors={customSectors}
         onAdd={async (newEmp) => {
+          if (isReadOnlyAccount || !canManagePersonnel) {
+            handleBlockedReadOnlyAction(
+              'Ação Bloqueada',
+              'O Modo de Leitura é exclusivo para consulta. Não é permitido adicionar colaboradores.'
+            );
+            setIsQuickAllocModalOpen(false);
+            return;
+          }
           try {
             const id = Math.random().toString(36).substring(2, 15);
             const now = new Date().toISOString();
@@ -23135,6 +23261,7 @@ Atenciosamente,
         isAdmin={isAdmin}
         canManage={canManagePersonnel || isAdmin}
         onFilterEmployee={handleCommandPaletteFilterEmployee}
+        isReadOnly={isReadOnlyAccount}
       />
 
       {/* Trilha de Auditoria & Rastreabilidade Operacional (ISO 9001) */}
@@ -23146,10 +23273,24 @@ Atenciosamente,
       {/* ==================== INÍCIO OPÇÃO 3: MINI DOCK FLUTUANTE (DESFAZER: OPÇÃO 3) ==================== */}
       <FloatingQuickDock
         onOpenProductionModal={() => {
+          if (isReadOnlyAccount || !canEditProduction) {
+            handleBlockedReadOnlyAction(
+              'Lançamento Bloqueado',
+              'O Modo de Leitura é exclusivo para consulta. Não é permitido lançar apontamentos de produção.'
+            );
+            return;
+          }
           setEditingEntry(null);
           setIsModalOpen(true);
         }}
         onNavigateOvertime={() => {
+          if (isReadOnlyAccount) {
+            handleBlockedReadOnlyAction(
+              'Solicitação Bloqueada',
+              'O Modo de Leitura não permite solicitar ou lançar horas extras.'
+            );
+            return;
+          }
           setActiveTab('personnel');
           setPersonnelSubView('overtime');
         }}
@@ -23158,6 +23299,9 @@ Atenciosamente,
         onOpenAuditTrail={() => setIsAuditTrailOpen(true)}
         isOnline={isOnline}
         isSyncing={productionSyncStatus.isSyncing}
+        canCreateEntry={canEditProduction && !isReadOnlyAccount}
+        canCreateOvertime={!isReadOnlyAccount && !!userPerms.personnel.overtime}
+        isReadOnly={isReadOnlyAccount}
       />
       {/* ==================== FIM OPÇÃO 3: MINI DOCK FLUTUANTE (DESFAZER: OPÇÃO 3) ==================== */}
 
@@ -24090,6 +24234,10 @@ const UserManagementModal: React.FC<{
   };
 
   const handleCreateOrUpdate = async () => {
+    if (loggedUser && (loggedUser.role === 'Modo Leitura' || (loggedUser.role || '').toLowerCase().includes('leitura') || loggedUser.registration === '9999' || !!loggedUser.permissions?.isReadOnly)) {
+      alert('Ação bloqueada: o Modo de Leitura é exclusivo para consulta. Não é permitido criar ou alterar usuários.');
+      return;
+    }
     if (!name.trim() || !registration.trim() || !role.trim()) {
       alert('Preencha todos os campos obrigatórios.');
       return;
@@ -24167,6 +24315,10 @@ const UserManagementModal: React.FC<{
   };
 
   const handleSaveInlinePerms = async (targetUser: SystemUser) => {
+    if (loggedUser && (loggedUser.role === 'Modo Leitura' || (loggedUser.role || '').toLowerCase().includes('leitura') || loggedUser.registration === '9999' || !!loggedUser.permissions?.isReadOnly)) {
+      alert('Ação bloqueada: o Modo de Leitura é exclusivo para consulta. Não é permitido alterar permissões.');
+      return;
+    }
     const updatedPerms = normalizeUserPermissions(inlinePerms[targetUser.id] || targetUser.permissions || defaultPermissions);
     setSavingInlineId(targetUser.id);
     try {
@@ -24190,6 +24342,10 @@ const UserManagementModal: React.FC<{
   };
 
   const handleDelete = async () => {
+    if (loggedUser && (loggedUser.role === 'Modo Leitura' || (loggedUser.role || '').toLowerCase().includes('leitura') || loggedUser.registration === '9999' || !!loggedUser.permissions?.isReadOnly)) {
+      alert('Ação bloqueada: o Modo de Leitura é exclusivo para consulta. Não é permitido excluir usuários.');
+      return;
+    }
     if (!userToDelete) return;
     const targetUserId = userToDelete.id;
     try {

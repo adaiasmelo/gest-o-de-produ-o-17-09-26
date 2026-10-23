@@ -103,6 +103,7 @@ interface LaunchModalProps {
   operatorRegistration?: string;
   onOperatorLogout?: () => void;
   onBackToMachineSelect?: () => void;
+  isReadOnly?: boolean;
 }
 
 interface StopItem {
@@ -251,7 +252,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
   isOpen, onClose, onSave, collaborators, employees, vacations = [], activeMachines, availableShifts, initialData, dashboardMonth,
   productionEntries = [], ribbonEntries = [], isStandaloneDowntimeInitial = false,
   presetOperator, presetShift, presetMachine, presetDate, isExternalOperatorMode = false,
-  operatorRegistration, onOperatorLogout, onBackToMachineSelect
+  operatorRegistration, onOperatorLogout, onBackToMachineSelect,
+  isReadOnly = false
 }) => {
   const [downtimeVersion, setDowntimeVersion] = useState(0);
 
@@ -964,6 +966,11 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) {
+      triggerHaptic('error');
+      alert('Modo de Leitura Ativo: Você possui acesso exclusivo para consulta. Não é permitido criar ou alterar lançamentos.');
+      return;
+    }
     if (!formData.operator && !formData.isNoWorkDay) {
       triggerHaptic('warning');
       alert('Por favor, selecione um operador.');
@@ -1668,6 +1675,16 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
         {/* Form Container */}
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden relative w-full">
+          {isReadOnly && (
+            <div className="bg-amber-500/15 border-b border-amber-500/30 text-amber-950 px-3 md:px-5 py-2 text-xs font-black flex items-center justify-between shrink-0 shadow-xs">
+              <div className="flex items-center gap-2">
+                <ShieldAlert size={16} className="text-amber-600 shrink-0" />
+                <span>MODO DE LEITURA ATIVO: Você possui acesso exclusivo para consulta. Não é permitido criar, editar ou excluir lançamentos.</span>
+              </div>
+              <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full uppercase font-bold">Bloqueado</span>
+            </div>
+          )}
+
           {/* Scrollable Form Body */}
           <div className="flex-1 overflow-y-auto p-2 md:p-3 custom-scrollbar relative space-y-2.5">
           {hasRestoredDraft && !initialData && (
@@ -2676,11 +2693,17 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           {/* Static bottom action buttons bar - always fixed at the bottom of the screen */}
           <div className="shrink-0 bg-white border-t border-slate-200 px-3 md:px-5 py-2.5 flex gap-3 z-30 shadow-lg">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl font-black text-xs uppercase hover:bg-slate-50 transition-all cursor-pointer shadow-2xs">
-              Cancelar
+              {isReadOnly ? 'Fechar Visualização' : 'Cancelar'}
             </button>
-            <button type="submit" className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-black text-xs uppercase shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer">
-              <Save size={16} /> {initialData ? 'Atualizar Lançamento' : (pendingEntries.length > 1 ? `Salvar (${pendingEntries.length}) Lançamentos` : 'Salvar Lançamento')}
-            </button>
+            {isReadOnly ? (
+              <button type="button" disabled className="flex-1 py-2.5 bg-slate-200 text-slate-500 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 cursor-not-allowed border border-slate-300">
+                Modo Leitura (Gravação Bloqueada)
+              </button>
+            ) : (
+              <button type="submit" className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-black text-xs uppercase shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer">
+                <Save size={16} /> {initialData ? 'Atualizar Lançamento' : (pendingEntries.length > 1 ? `Salvar (${pendingEntries.length}) Lançamentos` : 'Salvar Lançamento')}
+              </button>
+            )}
           </div>
         </form>
       </div>

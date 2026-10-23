@@ -48,6 +48,7 @@ export interface CommandPaletteProps {
   isAdmin: boolean;
   canManage: boolean;
   onFilterEmployee?: (employeeName: string) => void;
+  isReadOnly?: boolean;
 }
 
 type CommandCategory = 'all' | 'actions' | 'navigation' | 'employees' | 'machines' | 'documents';
@@ -80,7 +81,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   employees,
   isAdmin,
   canManage,
-  onFilterEmployee
+  onFilterEmployee,
+  isReadOnly = false
 }) => {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<CommandCategory>('all');
@@ -105,72 +107,74 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const allItems = useMemo<PaletteItem[]>(() => {
     const list: PaletteItem[] = [
       // ==========================================
-      // AÇÕES RÁPIDAS
+      // AÇÕES DE LANÇAMENTO (EXCLUÍDAS NO MODO LEITURA)
       // ==========================================
-      {
-        id: 'action-launch-prod',
-        category: 'actions',
-        title: 'Lançar Apontamento de Produção',
-        subtitle: 'Registrar bobina, peso ou metragem na Extrusão ou Corte de Fita',
-        badge: 'Operação',
-        badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
-        icon: <Plus size={18} />,
-        iconBg: 'bg-blue-500/10 text-blue-600',
-        iconColor: 'text-blue-600',
-        keywords: ['novo', 'apontamento', 'lancamento', 'producao', 'bobina', 'peso', 'metro', 'adicionar'],
-        action: () => {
-          onClose();
-          onOpenModal('launch_production');
+      ...(!isReadOnly ? [
+        {
+          id: 'action-launch-prod',
+          category: 'actions' as const,
+          title: 'Lançar Apontamento de Produção',
+          subtitle: 'Registrar bobina, peso ou metragem na Extrusão ou Corte de Fita',
+          badge: 'Operação',
+          badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+          icon: <Plus size={18} />,
+          iconBg: 'bg-blue-500/10 text-blue-600',
+          iconColor: 'text-blue-600',
+          keywords: ['novo', 'apontamento', 'lancamento', 'producao', 'bobina', 'peso', 'metro', 'adicionar'],
+          action: () => {
+            onClose();
+            onOpenModal('launch_production');
+          }
+        },
+        {
+          id: 'action-new-overtime',
+          category: 'actions' as const,
+          title: 'Nova Solicitação de Horas Extras (DOC 076)',
+          subtitle: 'Lançar hora extra com fechamento automático no dia 24 para o RH',
+          badge: 'DOC 076 • RH',
+          badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
+          icon: <Clock size={18} />,
+          iconBg: 'bg-amber-500/10 text-amber-600',
+          iconColor: 'text-amber-600',
+          keywords: ['hora extra', 'horas extras', 'doc 076', 'doc076', 'rh', 'fechamento 24', 'extra', 'solicitacao', 'plantao'],
+          action: () => {
+            onClose();
+            onNavigateTab('personnel', 'overtime');
+          }
+        },
+        {
+          id: 'action-new-overtime-entry',
+          category: 'actions' as const,
+          title: 'Novo Lançamento de Hora Extra (Base Mensal)',
+          subtitle: 'Apontamento de horas extras já realizadas com cálculo automático',
+          badge: 'Base Mensal',
+          badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+          icon: <Clock size={18} />,
+          iconBg: 'bg-blue-500/10 text-blue-600',
+          iconColor: 'text-blue-600',
+          keywords: ['lancamento', 'horas extras', 'apontamento', 'base mensal', 'he 50', 'he 100', 'novo lancamento'],
+          action: () => {
+            onClose();
+            onNavigateTab('personnel', 'overtime_entries');
+          }
+        },
+        {
+          id: 'action-new-training',
+          category: 'actions' as const,
+          title: 'Novo Treinamento / DDP (Diálogo de Produção)',
+          subtitle: 'Registrar presença, conteúdo programático ou duplicar ficha',
+          badge: 'DDP • Treinamento',
+          badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          icon: <Award size={18} />,
+          iconBg: 'bg-emerald-500/10 text-emerald-600',
+          iconColor: 'text-emerald-600',
+          keywords: ['ddp', 'treinamento', 'dialogo', 'capacitacao', 'seguranca', 'duplicar ddp', 'ficha'],
+          action: () => {
+            onClose();
+            onOpenModal('training');
+          }
         }
-      },
-      {
-        id: 'action-new-overtime',
-        category: 'actions',
-        title: 'Nova Solicitação de Horas Extras (DOC 076)',
-        subtitle: 'Lançar hora extra com fechamento automático no dia 24 para o RH',
-        badge: 'DOC 076 • RH',
-        badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
-        icon: <Clock size={18} />,
-        iconBg: 'bg-amber-500/10 text-amber-600',
-        iconColor: 'text-amber-600',
-        keywords: ['hora extra', 'horas extras', 'doc 076', 'doc076', 'rh', 'fechamento 24', 'extra', 'solicitacao', 'plantao'],
-        action: () => {
-          onClose();
-          onNavigateTab('personnel', 'overtime');
-        }
-      },
-      {
-        id: 'action-new-overtime-entry',
-        category: 'actions',
-        title: 'Novo Lançamento de Hora Extra (Base Mensal)',
-        subtitle: 'Apontamento de horas extras já realizadas com cálculo automático',
-        badge: 'Base Mensal',
-        badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
-        icon: <Clock size={18} />,
-        iconBg: 'bg-blue-500/10 text-blue-600',
-        iconColor: 'text-blue-600',
-        keywords: ['lancamento', 'horas extras', 'apontamento', 'base mensal', 'he 50', 'he 100', 'novo lancamento'],
-        action: () => {
-          onClose();
-          onNavigateTab('personnel', 'overtime_entries');
-        }
-      },
-      {
-        id: 'action-new-training',
-        category: 'actions',
-        title: 'Novo Treinamento / DDP (Diálogo de Produção)',
-        subtitle: 'Registrar presença, conteúdo programático ou duplicar ficha',
-        badge: 'DDP • Treinamento',
-        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-        icon: <Award size={18} />,
-        iconBg: 'bg-emerald-500/10 text-emerald-600',
-        iconColor: 'text-emerald-600',
-        keywords: ['ddp', 'treinamento', 'dialogo', 'capacitacao', 'seguranca', 'duplicar ddp', 'ficha'],
-        action: () => {
-          onClose();
-          onOpenModal('training');
-        }
-      },
+      ] : []),
       {
         id: 'action-cast1-calc',
         category: 'actions',
@@ -732,16 +736,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onNavigateTab('personnel', 'board');
         },
         quickButtons: [
-          {
+          ...(!isReadOnly ? [{
             label: 'Horas Extras',
             icon: <Clock size={12} />,
             title: `Lançar Hora Extra DOC 076 para ${cleanName}`,
-            onClick: (e) => {
+            onClick: (e: any) => {
               e.stopPropagation();
               onClose();
               onNavigateTab('personnel', 'overtime');
             }
-          },
+          }] : []),
           {
             label: 'Quadro',
             icon: <Users size={12} />,

@@ -1,5 +1,6 @@
 import { 
   UserPermissions, 
+  HomeCardPermissions,
   ExtrusionPermissions, 
   RibbonPermissions, 
   PersonnelPermissions, 
@@ -8,6 +9,18 @@ import {
   SettingsPermissions 
 } from '../types';
 
+export const DEFAULT_HOME_CARDS_PERMISSIONS: HomeCardPermissions = {
+  enabled: true,
+  productionSummary: true,
+  machines: true,
+  losses: true,
+  downtime: true,
+  workforce: true,
+  ribbonSummary: true,
+  quickActions: true,
+  pwa: true
+};
+
 export const DEFAULT_EXTRUSION_PERMISSIONS: ExtrusionPermissions = {
   enabled: true,
   summary: true,
@@ -15,6 +28,7 @@ export const DEFAULT_EXTRUSION_PERMISSIONS: ExtrusionPermissions = {
   comparison: true,
   reports: true,
   stock: true,
+  calculator: true,
   newEntry: true
 };
 
@@ -25,6 +39,9 @@ export const DEFAULT_RIBBON_PERMISSIONS: RibbonPermissions = {
   comparison: true,
   reports: true,
   productivity: true,
+  goals: true,
+  monthlyReport: true,
+  exportExcel: true,
   newEntry: true
 };
 
@@ -70,6 +87,7 @@ export const DEFAULT_FULL_PERMISSIONS: UserPermissions = {
   canManageSettings: false,
   canEditProduction: true,
   canManagePersonnel: false,
+  homeCards: { ...DEFAULT_HOME_CARDS_PERMISSIONS },
   extrusion: { ...DEFAULT_EXTRUSION_PERMISSIONS },
   ribbon: { ...DEFAULT_RIBBON_PERMISSIONS },
   personnel: { ...DEFAULT_PERSONNEL_PERMISSIONS },
@@ -88,6 +106,17 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       canManageSettings: false,
       canEditProduction: false,
       canManagePersonnel: false,
+      homeCards: {
+        enabled: false,
+        productionSummary: false,
+        machines: false,
+        losses: false,
+        downtime: false,
+        workforce: false,
+        ribbonSummary: false,
+        quickActions: false,
+        pwa: false
+      },
       extrusion: {
         enabled: false,
         summary: false,
@@ -95,6 +124,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: false,
         reports: false,
         stock: false,
+        calculator: false,
         newEntry: false
       },
       ribbon: {
@@ -104,6 +134,9 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: false,
         reports: false,
         productivity: false,
+        goals: false,
+        monthlyReport: false,
+        exportExcel: false,
         newEntry: false
       },
       personnel: {
@@ -115,6 +148,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         overtime: false,
         overtimeEntries: false,
         evaluations: false,
+        bonus: false,
         reports: false,
         manage: false
       },
@@ -147,6 +181,17 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       canManageSettings: false,
       canEditProduction: false,
       canManagePersonnel: false,
+      homeCards: {
+        enabled: true,
+        productionSummary: true,
+        machines: true,
+        losses: true,
+        downtime: true,
+        workforce: true,
+        ribbonSummary: true,
+        quickActions: false,
+        pwa: true
+      },
       extrusion: {
         enabled: true,
         summary: true,
@@ -154,6 +199,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: true,
         reports: true,
         stock: true,
+        calculator: true,
         newEntry: false
       },
       ribbon: {
@@ -163,6 +209,9 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: true,
         reports: true,
         productivity: true,
+        goals: false,
+        monthlyReport: true,
+        exportExcel: true,
         newEntry: false
       },
       personnel: {
@@ -174,6 +223,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         overtime: true,
         overtimeEntries: true,
         evaluations: true,
+        bonus: true,
         reports: true,
         manage: false
       },
@@ -206,6 +256,17 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       canManageSettings: false,
       canEditProduction: true,
       canManagePersonnel: false,
+      homeCards: {
+        enabled: true,
+        productionSummary: true,
+        machines: true,
+        losses: true,
+        downtime: true,
+        workforce: false,
+        ribbonSummary: true,
+        quickActions: true,
+        pwa: true
+      },
       extrusion: {
         enabled: true,
         summary: true,
@@ -213,6 +274,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: true,
         reports: true,
         stock: true,
+        calculator: true,
         newEntry: true
       },
       ribbon: {
@@ -222,6 +284,9 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: true,
         reports: true,
         productivity: true,
+        goals: false,
+        monthlyReport: false,
+        exportExcel: false,
         newEntry: true
       },
       personnel: {
@@ -233,6 +298,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         overtime: false,
         overtimeEntries: false,
         evaluations: false,
+        bonus: false,
         reports: false,
         manage: false
       },
@@ -265,6 +331,17 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       canManageSettings: true,
       canEditProduction: true,
       canManagePersonnel: true,
+      homeCards: {
+        enabled: true,
+        productionSummary: true,
+        machines: true,
+        losses: true,
+        downtime: true,
+        workforce: true,
+        ribbonSummary: true,
+        quickActions: true,
+        pwa: true
+      },
       extrusion: {
         enabled: true,
         summary: true,
@@ -272,6 +349,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: true,
         reports: true,
         stock: true,
+        calculator: true,
         newEntry: true
       },
       ribbon: {
@@ -281,6 +359,9 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         comparison: true,
         reports: true,
         productivity: true,
+        goals: true,
+        monthlyReport: true,
+        exportExcel: true,
         newEntry: true
       },
       personnel: {
@@ -292,6 +373,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         overtime: true,
         overtimeEntries: true,
         evaluations: true,
+        bonus: true,
         reports: true,
         manage: true
       },
@@ -324,6 +406,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
     canManageSettings: true,
     canEditProduction: true,
     canManagePersonnel: true,
+    homeCards: { ...DEFAULT_HOME_CARDS_PERMISSIONS },
     extrusion: {
       enabled: true,
       summary: true,
@@ -331,6 +414,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       comparison: true,
       reports: true,
       stock: true,
+      calculator: true,
       newEntry: true
     },
     ribbon: {
@@ -340,6 +424,9 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       comparison: true,
       reports: true,
       productivity: true,
+      goals: true,
+      monthlyReport: true,
+      exportExcel: true,
       newEntry: true
     },
     personnel: {
@@ -351,6 +438,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       overtime: true,
       overtimeEntries: true,
       evaluations: true,
+      bonus: true,
       reports: true,
       manage: true
     },
@@ -390,6 +478,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       canManageSettings: true,
       canEditProduction: true,
       canManagePersonnel: true,
+      homeCards: { ...DEFAULT_HOME_CARDS_PERMISSIONS },
       extrusion: {
         enabled: true,
         summary: true,
@@ -397,6 +486,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
         comparison: true,
         reports: true,
         stock: true,
+        calculator: true,
         newEntry: true
       },
       ribbon: {
@@ -406,6 +496,9 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
         comparison: true,
         reports: true,
         productivity: true,
+        goals: true,
+        monthlyReport: true,
+        exportExcel: true,
         newEntry: true
       },
       personnel: {
@@ -417,6 +510,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
         overtime: true,
         overtimeEntries: true,
         evaluations: true,
+        bonus: true,
         reports: true,
         manage: true
       },
@@ -440,22 +534,43 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
     };
   }
 
+  const isReadOnly = !isAdmin && (
+    !!perms?.isReadOnly || 
+    role === 'Modo Leitura' || 
+    (role || '').toLowerCase().includes('leitura') || 
+    registration === '9999'
+  );
+
   const legacyDash = perms?.canViewDashboard !== false;
   const legacyReports = perms?.canViewReports !== false;
   const legacyPersonnel = perms?.canViewPersonnel !== false;
-  const legacySettings = !!perms?.canManageSettings;
-  const legacyEdit = perms?.canEditProduction !== false;
-  const legacyManagePers = !!perms?.canManagePersonnel;
-  const isReadOnly = !!perms?.isReadOnly;
+  const legacySettings = !isReadOnly && !!perms?.canManageSettings;
+  const legacyEdit = !isReadOnly && perms?.canEditProduction !== false;
+  const legacyManagePers = !isReadOnly && !!perms?.canManagePersonnel;
 
   // Detecta se o objeto já utiliza o sistema granular de módulos
-  const hasGranular = !!perms && (
+  const hasGranular = !isReadOnly && !!perms && (
     perms.extrusion !== undefined || 
     perms.ribbon !== undefined || 
     perms.personnel !== undefined || 
     perms.maintenance !== undefined || 
-    perms.settings !== undefined
+    perms.settings !== undefined ||
+    perms.homeCards !== undefined
   );
+
+  // Cards da Tela de Início
+  const rawHome = perms?.homeCards;
+  const homeProdSummary = rawHome?.productionSummary !== undefined ? !!rawHome.productionSummary : true;
+  const homeMachines = rawHome?.machines !== undefined ? !!rawHome.machines : true;
+  const homeLosses = rawHome?.losses !== undefined ? !!rawHome.losses : true;
+  const homeDowntime = rawHome?.downtime !== undefined ? !!rawHome.downtime : true;
+  const homeWorkforce = rawHome?.workforce !== undefined ? !!rawHome.workforce : true;
+  const homeRibbonSummary = rawHome?.ribbonSummary !== undefined ? !!rawHome.ribbonSummary : true;
+  const homeQuickActions = !isReadOnly && (rawHome?.quickActions !== undefined ? !!rawHome.quickActions : true);
+  const homePwa = !isReadOnly && (rawHome?.pwa !== undefined ? !!rawHome.pwa : true);
+  const homeEnabled = rawHome?.enabled !== undefined 
+    ? (rawHome.enabled && (homeProdSummary || homeMachines || homeLosses || homeDowntime || homeWorkforce || homeRibbonSummary || homeQuickActions || homePwa))
+    : true;
 
   // Extrusão
   const rawExt = perms?.extrusion;
@@ -464,10 +579,10 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   const extComparison = rawExt ? !!rawExt.comparison : (hasGranular ? false : legacyDash);
   const extReports = rawExt ? !!rawExt.reports : (hasGranular ? false : legacyReports);
   const extStock = rawExt ? !!rawExt.stock : (hasGranular ? false : (legacyDash || legacyReports));
-  const extNewEntry = rawExt ? !!rawExt.newEntry : (hasGranular ? false : (legacyEdit && !isReadOnly));
-  const extEnabled = rawExt 
-    ? (rawExt.enabled && (extSummary || extCharts || extComparison || extReports || extStock || extNewEntry)) 
-    : (hasGranular ? false : (extSummary || extCharts || extComparison || extReports || extStock || extNewEntry));
+  const extCalculator = rawExt?.calculator !== undefined ? !!rawExt.calculator : (hasGranular ? false : legacyDash);
+  const extNewEntry = !isReadOnly && (rawExt ? !!rawExt.newEntry : (hasGranular ? false : legacyEdit));
+  const extHasAny = extSummary || extCharts || extComparison || extReports || extStock || extCalculator || extNewEntry;
+  const extEnabled = extHasAny || (rawExt?.enabled === true);
 
   // Ribbon
   const rawRib = perms?.ribbon;
@@ -476,10 +591,12 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   const ribComparison = rawRib ? !!rawRib.comparison : (hasGranular ? false : legacyDash);
   const ribReports = rawRib ? !!rawRib.reports : (hasGranular ? false : legacyReports);
   const ribProductivity = rawRib ? !!rawRib.productivity : (hasGranular ? false : legacyReports);
-  const ribNewEntry = rawRib ? !!rawRib.newEntry : (hasGranular ? false : (legacyEdit && !isReadOnly));
-  const ribEnabled = rawRib 
-    ? (rawRib.enabled && (ribSummary || ribCharts || ribComparison || ribReports || ribProductivity || ribNewEntry)) 
-    : (hasGranular ? false : (ribSummary || ribCharts || ribComparison || ribReports || ribProductivity || ribNewEntry));
+  const ribGoals = !isReadOnly && (rawRib?.goals !== undefined ? !!rawRib.goals : (hasGranular ? false : legacySettings));
+  const ribMonthlyReport = !isReadOnly && (rawRib?.monthlyReport !== undefined ? !!rawRib.monthlyReport : (hasGranular ? false : legacyReports));
+  const ribExportExcel = !isReadOnly && (rawRib?.exportExcel !== undefined ? !!rawRib.exportExcel : (hasGranular ? false : legacyReports));
+  const ribNewEntry = !isReadOnly && (rawRib ? !!rawRib.newEntry : (hasGranular ? false : legacyEdit));
+  const ribHasAny = ribSummary || ribCharts || ribComparison || ribReports || ribProductivity || ribGoals || ribMonthlyReport || ribExportExcel || ribNewEntry;
+  const ribEnabled = ribHasAny || (rawRib?.enabled === true);
 
   // Pessoal
   const rawPers = perms?.personnel;
@@ -487,23 +604,22 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   const persVacations = rawPers ? !!rawPers.vacations : (hasGranular ? false : legacyPersonnel);
   const persTraining = rawPers ? !!rawPers.training : (hasGranular ? false : legacyPersonnel);
   const persLunch = rawPers ? !!rawPers.lunch : (hasGranular ? false : legacyPersonnel);
-  const persOvertime = rawPers ? !!rawPers.overtime : (hasGranular ? false : legacyPersonnel);
-  const persOvertimeEntries = rawPers ? (rawPers.overtimeEntries !== undefined ? !!rawPers.overtimeEntries : !!rawPers.overtime) : (hasGranular ? false : legacyPersonnel);
+  const persOvertime = !isReadOnly && (rawPers ? !!rawPers.overtime : (hasGranular ? false : legacyPersonnel));
+  const persOvertimeEntries = !isReadOnly && (rawPers ? (rawPers.overtimeEntries !== undefined ? !!rawPers.overtimeEntries : !!rawPers.overtime) : (hasGranular ? false : legacyPersonnel));
   const persEvaluations = rawPers ? !!rawPers.evaluations : (hasGranular ? false : legacyPersonnel);
+  const persBonus = rawPers?.bonus !== undefined ? !!rawPers.bonus : (hasGranular ? false : legacyPersonnel);
   const persReports = rawPers ? (rawPers.reports !== undefined ? !!rawPers.reports : legacyReports) : (hasGranular ? false : legacyReports);
-  const persManage = rawPers ? !!rawPers.manage : (hasGranular ? false : (legacyManagePers && !isReadOnly));
-  const persEnabled = rawPers 
-    ? (rawPers.enabled && (persBoard || persVacations || persTraining || persLunch || persOvertime || persOvertimeEntries || persEvaluations || persReports || persManage)) 
-    : (hasGranular ? false : (persBoard || persVacations || persTraining || persLunch || persOvertime || persOvertimeEntries || persEvaluations || persReports || persManage));
+  const persManage = !isReadOnly && (rawPers ? !!rawPers.manage : (hasGranular ? false : legacyManagePers));
+  const persHasAny = persBoard || persVacations || persTraining || persLunch || persOvertime || persOvertimeEntries || persEvaluations || persBonus || persReports || persManage;
+  const persEnabled = persHasAny || (rawPers?.enabled === true);
 
   // Manutenção
   const rawMaint = perms?.maintenance;
   const maintRequests = rawMaint ? !!rawMaint.requests : (hasGranular ? false : true);
   const maintCauses = rawMaint ? !!rawMaint.causes : (hasGranular ? false : true);
-  const maintNewRequest = rawMaint ? !!rawMaint.newRequest : (hasGranular ? false : !isReadOnly);
-  const maintEnabled = rawMaint 
-    ? (rawMaint.enabled && (maintRequests || maintCauses || maintNewRequest)) 
-    : (hasGranular ? false : (maintRequests || maintCauses || maintNewRequest));
+  const maintNewRequest = !isReadOnly && (rawMaint ? !!rawMaint.newRequest : (hasGranular ? false : true));
+  const maintHasAny = maintRequests || maintCauses || maintNewRequest;
+  const maintEnabled = maintHasAny || (rawMaint?.enabled === true);
 
   // Projeção
   const rawProj = perms?.projection;
@@ -512,27 +628,37 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   // Configurações
   const rawSet = perms?.settings;
   const setFilters = rawSet ? !!rawSet.filters : (hasGranular ? false : legacySettings);
-  const setGoals = rawSet ? !!rawSet.goals : (hasGranular ? false : legacySettings);
-  const setConfig = rawSet ? !!rawSet.config : (hasGranular ? false : legacySettings);
-  const setSystem = rawSet ? !!rawSet.system : (hasGranular ? false : legacySettings);
-  const setApp = rawSet ? !!rawSet.app : (hasGranular ? false : legacySettings);
-  const setEnabled = rawSet 
-    ? (rawSet.enabled && (setFilters || setGoals || setConfig || setSystem || setApp)) 
-    : (hasGranular ? false : (legacySettings && (setFilters || setGoals || setConfig || setSystem || setApp)));
+  const setGoals = !isReadOnly && (rawSet ? !!rawSet.goals : (hasGranular ? false : legacySettings));
+  const setConfig = !isReadOnly && (rawSet ? !!rawSet.config : (hasGranular ? false : legacySettings));
+  const setSystem = !isReadOnly && (rawSet ? !!rawSet.system : (hasGranular ? false : legacySettings));
+  const setApp = !isReadOnly && (rawSet ? !!rawSet.app : (hasGranular ? false : legacySettings));
+  const setHasAny = setFilters || setGoals || setConfig || setSystem || setApp;
+  const setEnabled = !isReadOnly && (setHasAny || (rawSet?.enabled === true));
 
-  // O Painel Geral / Início depende do switch explícito canViewDashboard se definido, ou se o usuário possui acesso à Extrusão/Ribbon
+  // O Painel Geral / Início depende do switch explícito canViewDashboard se definido, ou se o usuário possui acesso aos cards
   const canViewHomeExplicit = perms?.canViewDashboard !== undefined 
     ? !!perms.canViewDashboard 
-    : (hasGranular ? false : ((extSummary || extCharts || ribSummary || ribCharts) && legacyDash));
+    : (hasGranular ? (homeEnabled || extEnabled || ribEnabled) : ((extSummary || extCharts || ribSummary || ribCharts) && legacyDash));
 
   return {
     isReadOnly,
     canViewDashboard: canViewHomeExplicit,
     canViewReports: extReports || ribReports || persReports,
     canViewPersonnel: persBoard,
-    canManageSettings: setEnabled,
+    canManageSettings: setEnabled && !isReadOnly,
     canEditProduction: (extNewEntry || ribNewEntry) && !isReadOnly,
     canManagePersonnel: persManage && !isReadOnly,
+    homeCards: {
+      enabled: homeEnabled,
+      productionSummary: homeProdSummary,
+      machines: homeMachines,
+      losses: homeLosses,
+      downtime: homeDowntime,
+      workforce: homeWorkforce,
+      ribbonSummary: homeRibbonSummary,
+      quickActions: homeQuickActions,
+      pwa: homePwa
+    },
     extrusion: {
       enabled: extEnabled,
       summary: extSummary,
@@ -540,6 +666,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       comparison: extComparison,
       reports: extReports,
       stock: extStock,
+      calculator: extCalculator,
       newEntry: extNewEntry
     },
     ribbon: {
@@ -549,6 +676,9 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       comparison: ribComparison,
       reports: ribReports,
       productivity: ribProductivity,
+      goals: ribGoals,
+      monthlyReport: ribMonthlyReport,
+      exportExcel: ribExportExcel,
       newEntry: ribNewEntry
     },
     personnel: {
@@ -560,6 +690,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       overtime: persOvertime,
       overtimeEntries: persOvertimeEntries,
       evaluations: persEvaluations,
+      bonus: persBonus,
       reports: persReports,
       manage: persManage
     },
@@ -589,7 +720,7 @@ export interface UserLandingTarget {
   dashboardSubTab?: 'summary' | 'charts' | 'comparison';
   ribbonSubTab?: 'dashboard' | 'reports' | 'productivity';
   ribbonDashboardSubTab?: 'summary' | 'charts' | 'comparison';
-  personnelSubView?: 'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations';
+  personnelSubView?: 'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations' | 'bonus';
   maintenanceSubTab?: 'requests' | 'causes';
 }
 
@@ -614,22 +745,17 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
   const canRibbonHome = hasRibbon && !!perms.ribbon?.summary;
   const canViewHome = perms.canViewDashboard && (canExtrusionHome || canRibbonHome);
 
-  // 1. Caso Especial Prioritário: Usuário com foco em Pessoal / Horas Extras (sem acesso à produção geral da fábrica)
+  // 1. Caso Especial: Usuário com foco em Pessoal (sem acesso à produção geral da fábrica)
   if (hasPersonnel && !canExtrusionHome && !canRibbonHome) {
-    if (perms.personnel.overtime && !perms.personnel.overtimeEntries && !perms.personnel.board) {
-      return { tab: 'personnel', personnelSubView: 'overtime' };
-    }
-    if (perms.personnel.overtimeEntries && !perms.personnel.overtime && !perms.personnel.board) {
-      return { tab: 'personnel', personnelSubView: 'overtime_entries' };
-    }
-    if (perms.personnel.overtimeEntries) return { tab: 'personnel', personnelSubView: 'overtime_entries' };
-    if (perms.personnel.overtime) return { tab: 'personnel', personnelSubView: 'overtime' };
     if (perms.personnel.board) return { tab: 'personnel', personnelSubView: 'board' };
     if (perms.personnel.vacations) return { tab: 'personnel', personnelSubView: 'vacations' };
-    if (perms.personnel.training) return { tab: 'personnel', personnelSubView: 'training' };
     if (perms.personnel.lunch) return { tab: 'personnel', personnelSubView: 'lunch' };
+    if (perms.personnel.overtime) return { tab: 'personnel', personnelSubView: 'overtime' };
+    if (perms.personnel.overtimeEntries) return { tab: 'personnel', personnelSubView: 'overtime_entries' };
     if (perms.personnel.evaluations) return { tab: 'personnel', personnelSubView: 'evaluations' };
-    return { tab: 'personnel', personnelSubView: 'overtime_entries' };
+    if (perms.personnel.bonus) return { tab: 'personnel', personnelSubView: 'bonus' };
+    if (perms.personnel.training) return { tab: 'personnel', personnelSubView: 'training' };
+    return { tab: 'personnel', personnelSubView: 'board' };
   }
 
   // 2. Se o usuário tem permissão para a tela inicial (Dashboard / Produção Geral) e possui Extrusão ou Ribbon ativos
@@ -639,13 +765,14 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
 
   // 3. Se o usuário tem acesso ao módulo de Pessoal e Equipe
   if (hasPersonnel) {
-    if (perms.personnel.overtimeEntries) return { tab: 'personnel', personnelSubView: 'overtime_entries' };
-    if (perms.personnel.overtime) return { tab: 'personnel', personnelSubView: 'overtime' };
     if (perms.personnel.board) return { tab: 'personnel', personnelSubView: 'board' };
     if (perms.personnel.vacations) return { tab: 'personnel', personnelSubView: 'vacations' };
-    if (perms.personnel.training) return { tab: 'personnel', personnelSubView: 'training' };
     if (perms.personnel.lunch) return { tab: 'personnel', personnelSubView: 'lunch' };
+    if (perms.personnel.overtime) return { tab: 'personnel', personnelSubView: 'overtime' };
+    if (perms.personnel.overtimeEntries) return { tab: 'personnel', personnelSubView: 'overtime_entries' };
     if (perms.personnel.evaluations) return { tab: 'personnel', personnelSubView: 'evaluations' };
+    if (perms.personnel.bonus) return { tab: 'personnel', personnelSubView: 'bonus' };
+    if (perms.personnel.training) return { tab: 'personnel', personnelSubView: 'training' };
     return { tab: 'personnel', personnelSubView: 'board' };
   }
 
@@ -681,5 +808,5 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
   }
 
   // Fallback padrão seguro
-  return { tab: 'personnel', personnelSubView: 'overtime_entries' };
+  return { tab: 'personnel', personnelSubView: 'board' };
 }

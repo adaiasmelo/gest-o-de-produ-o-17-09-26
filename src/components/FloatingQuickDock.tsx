@@ -22,6 +22,9 @@ export interface FloatingQuickDockProps {
   onOpenAuditTrail?: () => void;
   isOnline: boolean;
   isSyncing?: boolean;
+  canCreateEntry?: boolean;
+  canCreateOvertime?: boolean;
+  isReadOnly?: boolean;
 }
 
 export const FloatingQuickDock: React.FC<FloatingQuickDockProps> = ({
@@ -31,7 +34,10 @@ export const FloatingQuickDock: React.FC<FloatingQuickDockProps> = ({
   onOpenCommandPalette,
   onOpenAuditTrail,
   isOnline,
-  isSyncing = false
+  isSyncing = false,
+  canCreateEntry = true,
+  canCreateOvertime = true,
+  isReadOnly = false
 }) => {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -70,8 +76,8 @@ export const FloatingQuickDock: React.FC<FloatingQuickDockProps> = ({
             className="flex items-center gap-2 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 group"
             title="Expandir Dock de Ações Rápidas"
           >
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] font-black">Ações Rápidas</span>
+            <div className={`w-2 h-2 rounded-full ${isReadOnly ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
+            <span className="text-[11px] font-black">{isReadOnly ? 'Modo Leitura' : 'Ações Rápidas'}</span>
             <ChevronUp size={14} className="text-slate-400 group-hover:text-white transition-colors" />
           </motion.button>
         ) : (
@@ -83,29 +89,39 @@ export const FloatingQuickDock: React.FC<FloatingQuickDockProps> = ({
             transition={{ duration: 0.2 }}
             className="bg-slate-900/92 hover:bg-slate-900/96 text-white border border-slate-700/80 shadow-2xl rounded-2xl md:rounded-full p-1.5 sm:p-2 backdrop-blur-md flex items-center gap-1 sm:gap-2 text-xs transition-colors"
           >
-            {/* Botão + Lançamento */}
-            <button
-              type="button"
-              onClick={onOpenProductionModal}
-              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl md:rounded-full font-black text-[11px] uppercase tracking-wide transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
-              title="Novo Apontamento de Produção"
-            >
-              <Plus size={14} className="stroke-[3]" />
-              <span className="hidden sm:inline">Lançar</span>
-              <span className="sm:hidden">+ Bobina</span>
-            </button>
+            {isReadOnly && (
+              <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-xl md:rounded-full shrink-0">
+                Modo Leitura
+              </span>
+            )}
 
-            {/* Botão DOC 076 / Hora Extra */}
-            <button
-              type="button"
-              onClick={onNavigateOvertime}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-slate-800/90 hover:bg-amber-600 hover:text-white text-slate-200 rounded-xl md:rounded-full font-black text-[11px] uppercase tracking-wide transition-all active:scale-95 cursor-pointer whitespace-nowrap"
-              title="Solicitação de Horas Extras (DOC 076 - Fechamento dia 24)"
-            >
-              <Clock size={14} className="text-amber-400" />
-              <span className="hidden md:inline">DOC 076</span>
-              <span className="md:hidden text-[10px]">Hora Extra</span>
-            </button>
+            {/* Botão + Lançamento (BLOQUEADO E INVISÍVEL NO MODO DE LEITURA) */}
+            {!isReadOnly && canCreateEntry && (
+              <button
+                type="button"
+                onClick={onOpenProductionModal}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl md:rounded-full font-black text-[11px] uppercase tracking-wide transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+                title="Novo Apontamento de Produção"
+              >
+                <Plus size={14} className="stroke-[3]" />
+                <span className="hidden sm:inline">Lançar</span>
+                <span className="sm:hidden">+ Bobina</span>
+              </button>
+            )}
+
+            {/* Botão DOC 076 / Hora Extra (BLOQUEADO E INVISÍVEL NO MODO DE LEITURA) */}
+            {!isReadOnly && canCreateOvertime && (
+              <button
+                type="button"
+                onClick={onNavigateOvertime}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-slate-800/90 hover:bg-amber-600 hover:text-white text-slate-200 rounded-xl md:rounded-full font-black text-[11px] uppercase tracking-wide transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                title="Solicitação de Horas Extras (DOC 076 - Fechamento dia 24)"
+              >
+                <Clock size={14} className="text-amber-400" />
+                <span className="hidden md:inline">DOC 076</span>
+                <span className="md:hidden text-[10px]">Hora Extra</span>
+              </button>
+            )}
 
             {/* Botão Calculadora CAST 1 */}
             <button

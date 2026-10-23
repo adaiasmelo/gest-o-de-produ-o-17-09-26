@@ -253,13 +253,26 @@ export interface TrainingTemplate {
   logoBase64?: string;
 }
 
+export interface HomeCardPermissions {
+  enabled: boolean;          // Habilita visualização dos cards da tela de início
+  productionSummary: boolean;// Card 1: Produção Diária & Mensal Consolidada (Extrusão & Corte)
+  machines: boolean;         // Card 2: Máquinas em Operação (Cast 1, Cast 2, Erema, Lintech, Ghezzi, Wultec)
+  losses: boolean;           // Card 3: Refugo & Perdas
+  downtime: boolean;         // Card 4: Paradas de Máquina
+  workforce: boolean;        // Card 5: Equipe & DOC 076
+  ribbonSummary: boolean;    // Card 6: Resumo Corte de Fita
+  quickActions: boolean;     // Card 7: Ações Operacionais de Chão de Fábrica
+  pwa: boolean;              // Card 8: Experiência App / PWA
+}
+
 export interface ExtrusionPermissions {
   enabled: boolean;
   summary: boolean;      // Visão Geral
   charts: boolean;       // Gráficos
   comparison: boolean;   // Comparativos BI
-  reports: boolean;      // Relatórios
+  reports: boolean;      // Relatórios / Histórico
   stock: boolean;        // Estoque
+  calculator?: boolean;  // Calculadora CAST 1
   newEntry: boolean;     // Novo Lançamento
 }
 
@@ -270,32 +283,35 @@ export interface RibbonPermissions {
   comparison: boolean;   // Comparativos BI
   reports: boolean;      // Relatório Lançamentos
   productivity: boolean; // Produtividade de Máquina
+  goals?: boolean;       // Definir Metas
+  monthlyReport?: boolean;// Relatório Mensal (PDF)
+  exportExcel?: boolean; // Exportar Dados (Excel)
   newEntry: boolean;     // Novo Lançamento
 }
 
 export interface PersonnelPermissions {
   enabled: boolean;
   board: boolean;        // Quadro de Colaboradores / Presença
-  vacations: boolean;    // Escala de Férias
-  training: boolean;     // Treinamento Operacional
+  vacations: boolean;    // Controle de Férias & Retorno
+  training: boolean;     // Treinamento Operacional / DDP
   lunch: boolean;        // Escala de Almoço
-  overtime: boolean;     // Solicitação de Hora Extra
-  overtimeEntries: boolean; // Lançamentos de Horas Extras
+  overtime: boolean;     // Solicitação de Hora Extra (DOC 076)
+  overtimeEntries: boolean; // Lançamentos de Horas Extras (Apontamento)
   evaluations: boolean;  // Avaliações de Desempenho
-  bonus?: boolean;        // Gestão de Bônus de Produção
+  bonus: boolean;        // Gestão de Bônus de Produção
   reports?: boolean;     // Relatórios e PDF de Pessoal
   manage: boolean;       // Cadastrar / Gerir Colaboradores
 }
 
 export interface MaintenancePermissions {
   enabled: boolean;
-  requests: boolean;     // Solicitações de Manutenção
-  causes: boolean;       // Análise de Causas
+  requests: boolean;     // Solicitações / Ordens de Serviço
+  causes: boolean;       // Causas & Indicadores de Parada
   newRequest: boolean;   // Nova Solicitação
 }
 
 export interface ProjectionPermissions {
-  enabled: boolean;      // Projeção TV
+  enabled: boolean;      // Projeção TV Industrial (Smart TV)
 }
 
 export interface SettingsPermissions {
@@ -312,6 +328,7 @@ export interface UserPermissions {
   isReadOnly?: boolean;
 
   // Permissões detalhadas e granulares por módulo
+  homeCards?: HomeCardPermissions;
   extrusion?: ExtrusionPermissions;
   ribbon?: RibbonPermissions;
   personnel?: PersonnelPermissions;

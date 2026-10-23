@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { 
   Factory, BarChart3, Users, Wrench, Tv, Settings, 
-  Check, ChevronDown, ChevronRight, ShieldAlert, Sparkles, X, LayoutDashboard
+  Check, ChevronDown, ChevronRight, ShieldAlert, Sparkles, X, LayoutDashboard, LayoutGrid
 } from 'lucide-react';
 import { 
   UserPermissions, 
+  HomeCardPermissions,
   ExtrusionPermissions, 
   RibbonPermissions, 
   PersonnelPermissions, 
   MaintenancePermissions, 
   SettingsPermissions 
 } from '../types';
-import { normalizeUserPermissions } from '../utils/userPermissions';
+import { normalizeUserPermissions, createPresetPermissions } from '../utils/userPermissions';
 
 interface GranularPermissionsEditorProps {
   permissions: UserPermissions;
@@ -28,6 +29,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
 
   // Controle de expansão de cada seção
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    homeCards: true,
     extrusion: true,
     ribbon: true,
     personnel: true,
@@ -50,6 +52,63 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     });
   };
 
+  // --- Handlers de Seção Cards da Tela de Início ---
+  const handleHomeCardsMasterToggle = () => {
+    if (disabled) return;
+    const allActive = norm.homeCards?.productionSummary &&
+                      norm.homeCards?.machines &&
+                      norm.homeCards?.losses &&
+                      norm.homeCards?.downtime &&
+                      norm.homeCards?.workforce &&
+                      norm.homeCards?.ribbonSummary &&
+                      norm.homeCards?.quickActions &&
+                      norm.homeCards?.pwa;
+
+    const newVal = !allActive;
+    updatePerms({
+      homeCards: {
+        enabled: newVal,
+        productionSummary: newVal,
+        machines: newVal,
+        losses: newVal,
+        downtime: newVal,
+        workforce: newVal,
+        ribbonSummary: newVal,
+        quickActions: newVal,
+        pwa: newVal
+      }
+    });
+  };
+
+  const handleHomeCardsSubToggle = (key: keyof Omit<typeof norm.homeCards, 'enabled'>) => {
+    if (disabled) return;
+    const current = norm.homeCards || {
+      enabled: false,
+      productionSummary: false,
+      machines: false,
+      losses: false,
+      downtime: false,
+      workforce: false,
+      ribbonSummary: false,
+      quickActions: false,
+      pwa: false
+    };
+    const updated = {
+      ...current,
+      [key]: !current[key]
+    };
+    const anyActive = updated.productionSummary ||
+                      updated.machines ||
+                      updated.losses ||
+                      updated.downtime ||
+                      updated.workforce ||
+                      updated.ribbonSummary ||
+                      updated.quickActions ||
+                      updated.pwa;
+    updated.enabled = anyActive;
+    updatePerms({ homeCards: updated });
+  };
+
   // --- Handlers de Seção Extrusão ---
   const handleExtrusionMasterToggle = () => {
     if (disabled) return;
@@ -58,6 +117,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                       norm.extrusion?.comparison && 
                       norm.extrusion?.reports && 
                       norm.extrusion?.stock && 
+                      norm.extrusion?.calculator && 
                       norm.extrusion?.newEntry;
     
     const newVal = !allActive;
@@ -68,6 +128,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       comparison: newVal,
       reports: newVal,
       stock: newVal,
+      calculator: newVal,
       newEntry: newVal
     };
     updatePerms({ extrusion: newExt });
@@ -76,13 +137,13 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   const handleExtrusionSubToggle = (key: keyof Omit<ExtrusionPermissions, 'enabled'>) => {
     if (disabled) return;
     const current = norm.extrusion || {
-      enabled: false, summary: false, charts: false, comparison: false, reports: false, stock: false, newEntry: false
+      enabled: false, summary: false, charts: false, comparison: false, reports: false, stock: false, calculator: false, newEntry: false
     };
     const updated = {
       ...current,
       [key]: !current[key]
     };
-    const anyActive = updated.summary || updated.charts || updated.comparison || updated.reports || updated.stock || updated.newEntry;
+    const anyActive = updated.summary || updated.charts || updated.comparison || updated.reports || updated.stock || updated.calculator || updated.newEntry;
     updated.enabled = anyActive;
     updatePerms({ extrusion: updated });
   };
@@ -95,6 +156,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                       norm.ribbon?.comparison && 
                       norm.ribbon?.reports && 
                       norm.ribbon?.productivity && 
+                      norm.ribbon?.goals && 
+                      norm.ribbon?.monthlyReport && 
+                      norm.ribbon?.exportExcel && 
                       norm.ribbon?.newEntry;
     
     const newVal = !allActive;
@@ -105,6 +169,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       comparison: newVal,
       reports: newVal,
       productivity: newVal,
+      goals: newVal,
+      monthlyReport: newVal,
+      exportExcel: newVal,
       newEntry: newVal
     };
     updatePerms({ ribbon: newRib });
@@ -113,13 +180,13 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   const handleRibbonSubToggle = (key: keyof Omit<RibbonPermissions, 'enabled'>) => {
     if (disabled) return;
     const current = norm.ribbon || {
-      enabled: false, summary: false, charts: false, comparison: false, reports: false, productivity: false, newEntry: false
+      enabled: false, summary: false, charts: false, comparison: false, reports: false, productivity: false, goals: false, monthlyReport: false, exportExcel: false, newEntry: false
     };
     const updated = {
       ...current,
       [key]: !current[key]
     };
-    const anyActive = updated.summary || updated.charts || updated.comparison || updated.reports || updated.productivity || updated.newEntry;
+    const anyActive = updated.summary || updated.charts || updated.comparison || updated.reports || updated.productivity || updated.goals || updated.monthlyReport || updated.exportExcel || updated.newEntry;
     updated.enabled = anyActive;
     updatePerms({ ribbon: updated });
   };
@@ -134,6 +201,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                       norm.personnel?.overtime && 
                       norm.personnel?.overtimeEntries && 
                       norm.personnel?.evaluations && 
+                      norm.personnel?.bonus && 
                       norm.personnel?.reports && 
                       norm.personnel?.manage;
     
@@ -147,6 +215,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       overtime: newVal,
       overtimeEntries: newVal,
       evaluations: newVal,
+      bonus: newVal,
       reports: newVal,
       manage: newVal
     };
@@ -156,13 +225,13 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   const handlePersonnelSubToggle = (key: keyof Omit<PersonnelPermissions, 'enabled'>) => {
     if (disabled) return;
     const current = norm.personnel || {
-      enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, reports: false, manage: false
+      enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, bonus: false, reports: false, manage: false
     };
     const updated = {
       ...current,
       [key]: !current[key]
     };
-    const anyActive = updated.board || updated.vacations || updated.training || updated.lunch || updated.overtime || updated.overtimeEntries || updated.evaluations || updated.reports || updated.manage;
+    const anyActive = updated.board || updated.vacations || updated.training || updated.lunch || updated.overtime || updated.overtimeEntries || updated.evaluations || updated.bonus || updated.reports || updated.manage;
     updated.enabled = anyActive;
     updatePerms({ personnel: updated });
   };
@@ -246,110 +315,28 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   // --- Presets Rápidos ---
   const applyPreset = (preset: 'readOnly' | 'operator' | 'supervisor' | 'admin' | 'clear') => {
     if (disabled) return;
-
-    if (preset === 'clear') {
-      onChange({
-        isReadOnly: false,
-        canViewDashboard: false,
-        canViewReports: false,
-        canViewPersonnel: false,
-        canManageSettings: false,
-        canEditProduction: false,
-        canManagePersonnel: false,
-        extrusion: { enabled: false, summary: false, charts: false, comparison: false, reports: false, stock: false, newEntry: false },
-        ribbon: { enabled: false, summary: false, charts: false, comparison: false, reports: false, productivity: false, newEntry: false },
-        personnel: { enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, reports: false, manage: false },
-        maintenance: { enabled: false, requests: false, causes: false, newRequest: false },
-        projection: { enabled: false },
-        settings: { enabled: false, filters: false, goals: false, config: false, system: false, app: false }
-      });
-      return;
-    }
-
-    if (preset === 'readOnly') {
-      onChange({
-        isReadOnly: true,
-        canViewDashboard: true,
-        canViewReports: true,
-        canViewPersonnel: true,
-        canManageSettings: false,
-        canEditProduction: false,
-        canManagePersonnel: false,
-        extrusion: { enabled: true, summary: true, charts: true, comparison: true, reports: true, stock: true, newEntry: false },
-        ribbon: { enabled: true, summary: true, charts: true, comparison: true, reports: true, productivity: true, newEntry: false },
-        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, overtimeEntries: true, evaluations: true, reports: true, manage: false },
-        maintenance: { enabled: true, requests: true, causes: true, newRequest: false },
-        projection: { enabled: true },
-        settings: { enabled: false, filters: false, goals: false, config: false, system: false, app: false }
-      });
-      return;
-    }
-
-    if (preset === 'operator') {
-      onChange({
-        isReadOnly: false,
-        canViewDashboard: true,
-        canViewReports: true,
-        canViewPersonnel: false,
-        canManageSettings: false,
-        canEditProduction: true,
-        canManagePersonnel: false,
-        extrusion: { enabled: true, summary: true, charts: true, comparison: false, reports: false, stock: true, newEntry: true },
-        ribbon: { enabled: true, summary: true, charts: true, comparison: false, reports: false, productivity: false, newEntry: true },
-        personnel: { enabled: false, board: false, vacations: false, training: false, lunch: false, overtime: false, overtimeEntries: false, evaluations: false, reports: false, manage: false },
-        maintenance: { enabled: true, requests: true, causes: false, newRequest: true },
-        projection: { enabled: false },
-        settings: { enabled: false, filters: false, goals: false, config: false, system: false, app: false }
-      });
-      return;
-    }
-
-    if (preset === 'supervisor') {
-      onChange({
-        isReadOnly: false,
-        canViewDashboard: true,
-        canViewReports: true,
-        canViewPersonnel: true,
-        canManageSettings: true,
-        canEditProduction: true,
-        canManagePersonnel: true,
-        extrusion: { enabled: true, summary: true, charts: true, comparison: true, reports: true, stock: true, newEntry: true },
-        ribbon: { enabled: true, summary: true, charts: true, comparison: true, reports: true, productivity: true, newEntry: true },
-        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, overtimeEntries: true, evaluations: true, reports: true, manage: true },
-        maintenance: { enabled: true, requests: true, causes: true, newRequest: true },
-        projection: { enabled: true },
-        settings: { enabled: true, filters: true, goals: true, config: false, system: false, app: false }
-      });
-      return;
-    }
-
-    if (preset === 'admin') {
-      onChange({
-        isReadOnly: false,
-        canViewDashboard: true,
-        canViewReports: true,
-        canViewPersonnel: true,
-        canManageSettings: true,
-        canEditProduction: true,
-        canManagePersonnel: true,
-        extrusion: { enabled: true, summary: true, charts: true, comparison: true, reports: true, stock: true, newEntry: true },
-        ribbon: { enabled: true, summary: true, charts: true, comparison: true, reports: true, productivity: true, newEntry: true },
-        personnel: { enabled: true, board: true, vacations: true, training: true, lunch: true, overtime: true, overtimeEntries: true, evaluations: true, reports: true, manage: true },
-        maintenance: { enabled: true, requests: true, causes: true, newRequest: true },
-        projection: { enabled: true },
-        settings: { enabled: true, filters: true, goals: true, config: true, system: true, app: true }
-      });
-      return;
-    }
+    onChange(createPresetPermissions(preset));
   };
 
   // Contagens ativas para exibir nos cabeçalhos
+  const countHomeCards = [
+    norm.homeCards?.productionSummary,
+    norm.homeCards?.machines,
+    norm.homeCards?.losses,
+    norm.homeCards?.downtime,
+    norm.homeCards?.workforce,
+    norm.homeCards?.ribbonSummary,
+    norm.homeCards?.quickActions,
+    norm.homeCards?.pwa
+  ].filter(Boolean).length;
+
   const countExtrusion = [
     norm.extrusion?.summary,
     norm.extrusion?.charts,
     norm.extrusion?.comparison,
     norm.extrusion?.reports,
     norm.extrusion?.stock,
+    norm.extrusion?.calculator,
     norm.extrusion?.newEntry
   ].filter(Boolean).length;
 
@@ -359,17 +346,21 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     norm.ribbon?.comparison,
     norm.ribbon?.reports,
     norm.ribbon?.productivity,
+    norm.ribbon?.goals,
+    norm.ribbon?.monthlyReport,
+    norm.ribbon?.exportExcel,
     norm.ribbon?.newEntry
   ].filter(Boolean).length;
 
   const countPersonnel = [
     norm.personnel?.board,
     norm.personnel?.vacations,
-    norm.personnel?.training,
     norm.personnel?.lunch,
     norm.personnel?.overtime,
     norm.personnel?.overtimeEntries,
     norm.personnel?.evaluations,
+    norm.personnel?.bonus,
+    norm.personnel?.training,
     norm.personnel?.reports,
     norm.personnel?.manage
   ].filter(Boolean).length;
@@ -460,7 +451,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                   {norm.canViewDashboard ? 'Ativo' : 'Inativo'}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-slate-400">Exibição do Bento Grid com produção diária consolidada, gráficos e metas de fábrica</p>
+              <p className="text-[8.5px] font-medium text-slate-400">Exibição da tela inicial de produção, métricas integradas e atalhos rápidos</p>
             </div>
           </div>
 
@@ -476,6 +467,94 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
             {norm.canViewDashboard ? 'Ativado' : 'Desativado'}
           </button>
         </div>
+      </div>
+
+      {/* 0.1 CARDS DA FRENTE DA TELA DE INÍCIO */}
+      <div className={`rounded-2xl border transition-all overflow-hidden ${
+        norm.homeCards?.enabled ? 'bg-white border-sky-300 shadow-xs ring-1 ring-sky-100' : 'bg-slate-50/60 border-slate-200'
+      }`}>
+        <div className="flex items-center justify-between p-3 sm:p-3.5 bg-sky-50/60 border-b border-sky-100 gap-2">
+          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={() => toggleSection('homeCards')}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+              norm.homeCards?.enabled ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-200 text-slate-500'
+            }`}>
+              <LayoutGrid size={16} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Cards da Frente • Tela de Início</span>
+                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                  countHomeCards > 0 ? 'bg-sky-100 text-sky-800' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  {countHomeCards}/8 ativos
+                </span>
+              </div>
+              <p className="text-[8.5px] font-medium text-slate-400">Permissão individual para cada bloco e card exibido na página inicial</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleHomeCardsMasterToggle}
+              className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
+                countHomeCards === 8
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : countHomeCards > 0
+                    ? 'bg-sky-100 text-sky-800 hover:bg-sky-200'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {countHomeCards === 8 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleSection('homeCards')}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+            >
+              {expandedSections.homeCards ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {expandedSections.homeCards && (
+          <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              { key: 'productionSummary' as const, label: 'Produção Diária & Mensal', desc: 'Consolidado Extrusão Stretch e Fita' },
+              { key: 'machines' as const, label: 'Máquinas em Operação', desc: 'Status das 6 máquinas industriais' },
+              { key: 'losses' as const, label: 'Refugo & Perdas', desc: 'Balanço de massa e índice de perdas' },
+              { key: 'downtime' as const, label: 'Paradas de Máquina', desc: 'Horas paradas e atalho para abrir OS' },
+              { key: 'workforce' as const, label: 'Equipe & DOC 076', desc: 'Ativos, brigadistas e horas extras' },
+              { key: 'ribbonSummary' as const, label: 'Corte de Fita Resumo', desc: 'Produção do dia consolidada' },
+              { key: 'quickActions' as const, label: 'Ações de Chão de Fábrica', desc: 'Atalhos operacionais rápidos' },
+              { key: 'pwa' as const, label: 'Experiência App / PWA', desc: 'Instalação e atalho no celular' }
+            ].map(item => {
+              const active = !!norm.homeCards?.[item.key];
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => handleHomeCardsSubToggle(item.key)}
+                  className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    active 
+                      ? 'bg-sky-50/80 border-sky-300 text-sky-950 ring-1 ring-sky-100 shadow-xs' 
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className={`w-4 h-4 mt-0.5 rounded-md border flex items-center justify-center shrink-0 transition-all ${
+                    active ? 'bg-sky-600 border-sky-600' : 'bg-white border-slate-300'
+                  }`}>
+                    {active && <Check size={12} className="text-white" />}
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-tight block leading-tight">{item.label}</span>
+                    <span className="text-[8px] opacity-70 block mt-0.5">{item.desc}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 1. MÓDULO EXTRUSÃO */}
@@ -495,7 +574,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                   countExtrusion > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {countExtrusion}/6 ativas
+                  {countExtrusion}/7 ativas
                 </span>
               </div>
               <p className="text-[8.5px] font-medium text-slate-400">Páginas e apontamentos do módulo de Extrusão</p>
@@ -507,14 +586,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               type="button"
               onClick={handleExtrusionMasterToggle}
               className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
-                countExtrusion === 6
+                countExtrusion === 7
                   ? 'bg-blue-600 text-white shadow-xs'
                   : countExtrusion > 0
                     ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countExtrusion === 6 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countExtrusion === 7 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -530,10 +609,11 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
           <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
             {[
               { key: 'summary' as const, label: 'Visão Geral', desc: 'Resumo geral e metas de produção' },
-              { key: 'charts' as const, label: 'Gráficos', desc: 'Indicadores, refugo e taxa horária' },
-              { key: 'comparison' as const, label: 'Comparativos BI', desc: 'Comparação de operadores e turnos' },
+              { key: 'charts' as const, label: 'Gráfico', desc: 'Indicadores, refugo e taxa horária' },
+              { key: 'comparison' as const, label: 'Comparativo BI', desc: 'Comparação de operadores e turnos' },
               { key: 'reports' as const, label: 'Relatório', desc: 'Relatórios oficiais de apontamento' },
               { key: 'stock' as const, label: 'Estoque', desc: 'Controle de saldo e consumo' },
+              { key: 'calculator' as const, label: 'Calculadora CAST 1', desc: 'Cálculo de bobinas, gramatura e metragem' },
               { key: 'newEntry' as const, label: 'Novo Lançamento', desc: 'Apontar bobinas, aparas e paradas' }
             ].map(item => {
               const active = !!norm.extrusion?.[item.key];
@@ -577,14 +657,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Corte de Fita</span>
+                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Corte & Rebobinamento (Codifita)</span>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                   countRibbon > 0 ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {countRibbon}/6 ativas
+                  {countRibbon}/9 ativas
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-slate-400">Páginas e lançamentos do Corte de Fita</p>
+              <p className="text-[8.5px] font-medium text-slate-400">Páginas, relatórios e ferramentas do Corte de Fita</p>
             </div>
           </div>
 
@@ -593,14 +673,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               type="button"
               onClick={handleRibbonMasterToggle}
               className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
-                countRibbon === 6
+                countRibbon === 9
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : countRibbon > 0
                     ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countRibbon === 6 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countRibbon === 9 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -616,10 +696,13 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
           <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
             {[
               { key: 'summary' as const, label: 'Visão Geral', desc: 'Resumo e indicadores de corte' },
-              { key: 'charts' as const, label: 'Gráficos', desc: 'Produção, perdas e metas por máquina' },
-              { key: 'comparison' as const, label: 'Comparativos BI', desc: 'Análise entre operadores e turnos' },
-              { key: 'reports' as const, label: 'Relatório Lançamentos', desc: 'Histórico e exportações detalhadas' },
-              { key: 'productivity' as const, label: 'Produtividade de Máquina', desc: 'Ghezzi, Lintech, Wultec' },
+              { key: 'charts' as const, label: 'Gráfico', desc: 'Produção, perdas e taxas horárias' },
+              { key: 'comparison' as const, label: 'Comparativo BI', desc: 'Análise entre operadores e turnos' },
+              { key: 'reports' as const, label: 'Relatório', desc: 'Histórico de lançamentos detalhados' },
+              { key: 'goals' as const, label: 'Definir Metas', desc: 'Metas operacionais e por turno' },
+              { key: 'monthlyReport' as const, label: 'Relatório Mensal (PDF)', desc: 'Emissão oficial de relatório consolidado' },
+              { key: 'exportExcel' as const, label: 'Exportar Dados (Excel)', desc: 'Planilha Excel de apontamentos' },
+              { key: 'productivity' as const, label: 'Produtividade de Máquinas', desc: 'Ghezzi, Lintech, Wultec' },
               { key: 'newEntry' as const, label: 'Novo Lançamento', desc: 'Lançar bobinas e produção de fita' }
             ].map(item => {
               const active = !!norm.ribbon?.[item.key];
@@ -663,14 +746,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Pessoal / Equipe</span>
+                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Gestão de Pessoal</span>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                   countPersonnel > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {countPersonnel}/9 ativas
+                  {countPersonnel}/10 ativas
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-slate-400">Sub-módulos e menus da tela de Pessoal</p>
+              <p className="text-[8.5px] font-medium text-slate-400">Sub-módulos, escalas e ferramentas de equipe</p>
             </div>
           </div>
 
@@ -679,14 +762,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               type="button"
               onClick={handlePersonnelMasterToggle}
               className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
-                countPersonnel === 9
+                countPersonnel === 10
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : countPersonnel > 0
                     ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countPersonnel === 9 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countPersonnel === 10 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -701,15 +784,16 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         {expandedSections.personnel && (
           <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
             {[
-              { key: 'board' as const, label: 'Quadro da Equipe', desc: 'Presença, lista de colaboradores e escala' },
-              { key: 'vacations' as const, label: 'Escala de Férias', desc: 'Planejamento e mapa de férias' },
-              { key: 'training' as const, label: 'Treinamento Operacional', desc: 'Matriz DDP e fichas de capacitação' },
+              { key: 'board' as const, label: 'Quadro Geral', desc: 'Presença, lista de colaboradores e escala' },
+              { key: 'vacations' as const, label: 'Controle de Férias & Retorno', desc: 'Planejamento e mapa de férias' },
               { key: 'lunch' as const, label: 'Escala de Almoço', desc: 'Horários e organização de refeições' },
               { key: 'overtime' as const, label: 'Solicitação de Hora Extra', desc: 'DOC 076 e autorizações de turno' },
               { key: 'overtimeEntries' as const, label: 'Lançamento de Horas Extras', desc: 'Apontamento mensal e controle de horas extras' },
-              { key: 'evaluations' as const, label: 'Avaliações de Desempenho', desc: 'Matriz de promoção e avaliação técnica' },
+              { key: 'evaluations' as const, label: 'Avaliação de Desempenho', desc: 'Matriz de promoção e avaliação técnica' },
+              { key: 'bonus' as const, label: 'Gestão de Bônus de Produção', desc: 'Cálculo de metas, bonificação e elegibilidade' },
+              { key: 'training' as const, label: 'Treinamento / DDP', desc: 'Matriz DDP e fichas de capacitação' },
               { key: 'reports' as const, label: 'Relatórios / PDF de Pessoal', desc: 'Emissão e download de relatórios do setor' },
-              { key: 'manage' as const, label: 'Gerir Colaboradores', desc: 'Cadastrar, editar e excluir funcionários' }
+              { key: 'manage' as const, label: 'Cadastrar / Gerir Colaboradores', desc: 'Cadastrar, editar e excluir funcionários' }
             ].map(item => {
               const active = !!norm.personnel?.[item.key];
               return (

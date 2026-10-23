@@ -175,6 +175,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
     };
   };
 
+  const hasExtrusionAccess = isAdmin || !!userPerms.extrusion?.enabled || !!userPerms.extrusion?.summary || !!userPerms.extrusion?.charts || !!userPerms.extrusion?.comparison || !!userPerms.extrusion?.reports || !!userPerms.extrusion?.stock;
+  const hasRibbonAccess = isAdmin || !!userPerms.ribbon?.enabled || !!userPerms.ribbon?.summary || !!userPerms.ribbon?.charts || !!userPerms.ribbon?.comparison || !!userPerms.ribbon?.reports || !!userPerms.ribbon?.goals || !!userPerms.ribbon?.monthlyReport || !!userPerms.ribbon?.exportExcel || !!userPerms.ribbon?.productivity;
+  const hasPersonnelAccess = isAdmin || !!userPerms.personnel?.enabled || !!userPerms.personnel?.board || !!userPerms.personnel?.vacations || !!userPerms.personnel?.lunch || !!userPerms.personnel?.overtime || !!userPerms.personnel?.overtimeEntries || !!userPerms.personnel?.evaluations || !!userPerms.personnel?.bonus;
+  const hasMaintenanceAccess = isAdmin || !!userPerms.maintenance?.enabled || !!userPerms.maintenance?.requests || !!userPerms.maintenance?.causes;
+  const hasProjectionAccess = isAdmin || !!userPerms.projection?.enabled;
+
   return (
     <nav 
       ref={navRef}
@@ -191,7 +197,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         <div className="min-w-full w-max flex items-center justify-start md:justify-center gap-2 sm:gap-2.5 flex-nowrap px-1">
           
           {/* 1. EXTRUSÃO */}
-          {(isAdmin || userPerms.extrusion.enabled) && (
+          {hasExtrusionAccess && (
             <div className="shrink-0">
               <button
                 type="button"
@@ -225,7 +231,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
 
           {/* 2. CORTE DE FITA */}
-          {(isAdmin || userPerms.ribbon.enabled) && (
+          {hasRibbonAccess && (
             <div className="shrink-0">
               <button
                 type="button"
@@ -259,7 +265,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
 
           {/* 3. GESTÃO DE PESSOAL */}
-          {(isAdmin || userPerms.personnel.enabled) && (
+          {hasPersonnelAccess && (
             <div className="shrink-0">
               <button
                 type="button"
@@ -299,7 +305,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
 
           {/* 4. MANUTENÇÃO INDUSTRIAL */}
-          {(isAdmin || userPerms.maintenance.enabled) && (
+          {hasMaintenanceAccess && (
             <div className="shrink-0">
               <button
                 type="button"
@@ -333,7 +339,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
 
           {/* 5. PROJEÇÃO TV */}
-          {(isAdmin || userPerms.projection.enabled) && (
+          {hasProjectionAccess && (
             <div className="shrink-0">
               <button
                 type="button"
@@ -623,7 +629,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 )}
 
                 {/* Sub-ações de Metas e Relatórios Rápidos */}
-                {(isAdmin || (userPerms.settings.goals && !isReadOnlyAccount)) && onOpenRibbonGoals && (
+                {(isAdmin || !!userPerms.ribbon?.goals) && onOpenRibbonGoals && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(onOpenRibbonGoals)}
@@ -639,7 +645,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   </button>
                 )}
 
-                {(isAdmin || userPerms.ribbon.reports) && onExportRibbonPDF && (
+                {(isAdmin || !!userPerms.ribbon?.monthlyReport) && onExportRibbonPDF && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(onExportRibbonPDF)}
@@ -655,7 +661,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   </button>
                 )}
 
-                {(isAdmin || userPerms.ribbon.reports) && onExportRibbonExcel && (
+                {(isAdmin || !!userPerms.ribbon?.exportExcel) && onExportRibbonExcel && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(onExportRibbonExcel)}
@@ -711,7 +717,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 )}
 
                 {/* CONTROLE DE FÉRIAS E RETORNO */}
-                {onOpenPersonnelFerias && (
+                {(isAdmin || !!userPerms.personnel?.vacations) && onOpenPersonnelFerias && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(onOpenPersonnelFerias)}
@@ -830,7 +836,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   </button>
                 )}
 
-                {(isAdmin || userPerms.personnel.bonus !== false) && (
+                {(isAdmin || !!userPerms.personnel?.bonus) && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(() => onNavigatePersonnel('bonus'))}
@@ -869,49 +875,53 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               </div>
 
               <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => handleSelectOption(() => onNavigateMaintenance('requests'))}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
-                    activeTab === 'maintenance' && maintenanceSubTab === 'requests'
-                      ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
-                      : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                {(isAdmin || !!userPerms.maintenance?.requests) && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectOption(() => onNavigateMaintenance('requests'))}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
                       activeTab === 'maintenance' && maintenanceSubTab === 'requests'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
-                    }`}>
-                      <Wrench size={14} />
+                        ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
+                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeTab === 'maintenance' && maintenanceSubTab === 'requests'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
+                      }`}>
+                        <Wrench size={14} />
+                      </div>
+                      <span>Ordens de Serviço</span>
                     </div>
-                    <span>Ordens de Serviço</span>
-                  </div>
-                  <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-600" />
-                </button>
+                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-600" />
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectOption(() => onNavigateMaintenance('causes'))}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
-                    activeTab === 'maintenance' && maintenanceSubTab === 'causes'
-                      ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
-                      : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                {(isAdmin || !!userPerms.maintenance?.causes) && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectOption(() => onNavigateMaintenance('causes'))}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
                       activeTab === 'maintenance' && maintenanceSubTab === 'causes'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
-                    }`}>
-                      <AlertCircle size={14} />
+                        ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
+                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeTab === 'maintenance' && maintenanceSubTab === 'causes'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
+                      }`}>
+                        <AlertCircle size={14} />
+                      </div>
+                      <span>Causas & Paradas</span>
                     </div>
-                    <span>Causas & Paradas</span>
-                  </div>
-                  <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-amber-600" />
-                </button>
+                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-amber-600" />
+                  </button>
+                )}
               </div>
             </div>
           )}
