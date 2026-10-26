@@ -321,6 +321,7 @@ export interface SettingsPermissions {
   config: boolean;       // Cadastro (Colaboradores, Funções, Turnos, Motivos, Usuários)
   system: boolean;       // Sistema (Identidade, Logo, Banco, Backup)
   app: boolean;          // App / Versão / PWA
+  auditTrail?: boolean;  // Trilha de Auditoria (ISO 9001)
 }
 
 export interface UserPermissions {

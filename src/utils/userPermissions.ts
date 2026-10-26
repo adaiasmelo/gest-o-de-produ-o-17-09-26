@@ -76,7 +76,8 @@ export const DEFAULT_SETTINGS_PERMISSIONS: SettingsPermissions = {
   goals: false,
   config: false,
   system: false,
-  app: false
+  app: false,
+  auditTrail: false
 };
 
 export const DEFAULT_FULL_PERMISSIONS: UserPermissions = {
@@ -167,7 +168,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         goals: false,
         config: false,
         system: false,
-        app: false
+        app: false,
+        auditTrail: false
       }
     };
   }
@@ -242,7 +244,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         goals: false,
         config: false,
         system: false,
-        app: false
+        app: false,
+        auditTrail: false
       }
     };
   }
@@ -317,7 +320,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         goals: false,
         config: false,
         system: false,
-        app: false
+        app: false,
+        auditTrail: false
       }
     };
   }
@@ -392,7 +396,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         goals: true,
         config: false,
         system: false,
-        app: true
+        app: true,
+        auditTrail: false
       }
     };
   }
@@ -457,7 +462,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       goals: true,
       config: true,
       system: true,
-      app: true
+      app: true,
+      auditTrail: true
     }
   };
 }
@@ -529,7 +535,8 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
         goals: true,
         config: true,
         system: true,
-        app: true
+        app: true,
+        auditTrail: true
       }
     };
   }
@@ -632,7 +639,8 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   const setConfig = !isReadOnly && (rawSet ? !!rawSet.config : (hasGranular ? false : legacySettings));
   const setSystem = !isReadOnly && (rawSet ? !!rawSet.system : (hasGranular ? false : legacySettings));
   const setApp = !isReadOnly && (rawSet ? !!rawSet.app : (hasGranular ? false : legacySettings));
-  const setHasAny = setFilters || setGoals || setConfig || setSystem || setApp;
+  const setAuditTrail = !isReadOnly && (rawSet?.auditTrail !== undefined ? !!rawSet.auditTrail : (isAdmin ? true : false));
+  const setHasAny = setFilters || setGoals || setConfig || setSystem || setApp || setAuditTrail;
   const setEnabled = !isReadOnly && (setHasAny || (rawSet?.enabled === true));
 
   // O Painel Geral / Início depende do switch explícito canViewDashboard se definido, ou se o usuário possui acesso aos cards
@@ -709,7 +717,8 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       goals: setGoals,
       config: setConfig,
       system: setSystem,
-      app: setApp
+      app: setApp,
+      auditTrail: setAuditTrail
     }
   };
 }

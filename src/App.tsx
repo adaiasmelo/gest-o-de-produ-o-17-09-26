@@ -9,7 +9,7 @@ import {
   UserPlus, Download, AlertCircle, FileSpreadsheet, Scale, FileText, Menu, Fingerprint, Smartphone, Bell, Volume2, Share, ExternalLink, Mail, Copy, Filter,
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
-  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus
+  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus, Scissors
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -1051,7 +1051,7 @@ export const App: React.FC = () => {
   const handleCommandPaletteOpenModal = (modalName: string, payload?: any) => {
     switch (modalName) {
       case 'launch_production':
-        setIsModalOpen(true);
+        handleOpenSectorLaunchModal();
         break;
       case 'training':
         setIsTrainingModalOpen(true);
@@ -1585,6 +1585,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   };
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSectorLaunchModalOpen, setIsSectorLaunchModalOpen] = useState(false);
+  const [launchModalMachines, setLaunchModalMachines] = useState<string[]>(['Cast 1', 'Cast 2']);
+  const [launchModalPresetMachine, setLaunchModalPresetMachine] = useState<string>('Cast 1');
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
   // Seções retráteis do menu principal (drawer 4 barrinhas) - iniciam fechadas
   const [openMenuSections, setOpenMenuSections] = useState<{ [key: string]: boolean }>({
@@ -4365,6 +4368,59 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const canManagePersonnel = isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount);
   const canViewHome = isAdmin || (userPerms.canViewDashboard && ((userPerms.extrusion.enabled && userPerms.extrusion.summary) || (userPerms.ribbon.enabled && userPerms.ribbon.summary)));
 
+  const handleOpenSectorLaunchModal = () => {
+    if (isReadOnlyAccount || !canEditProduction) {
+      handleBlockedReadOnlyAction(
+        'Lançamento Bloqueado',
+        'O Modo de Leitura é exclusivo para consulta. Não é permitido criar ou salvar lançamentos de produção.'
+      );
+      return;
+    }
+    setIsSectorLaunchModalOpen(true);
+  };
+
+  const handleSelectLaunchSector = (sector: 'extrusion' | 'erema' | 'ribbon') => {
+    setIsSectorLaunchModalOpen(false);
+    if (sector === 'extrusion') {
+      setActiveTab('extrusion');
+      setLaunchModalMachines(['Cast 1', 'Cast 2']);
+      setLaunchModalPresetMachine('Cast 1');
+      setEditingEntry(null);
+      setIsModalOpen(true);
+    } else if (sector === 'erema') {
+      setActiveTab('extrusion');
+      setLaunchModalMachines(['Erema']);
+      setLaunchModalPresetMachine('Erema');
+      setEditingEntry(null);
+      setIsModalOpen(true);
+    } else if (sector === 'ribbon') {
+      setActiveTab('ribbon');
+      setEditingRibbonId(null);
+      setRibbonMachine('');
+      setRibbonOperator('');
+      setRibbonShift('');
+      setRibbonProducedM2('');
+      setRibbonRejectedM2('');
+      setRibbonWasteWeight('');
+      setRibbonJumboM2('');
+      setRibbonJumboType('');
+      setShowRibbonForm(true);
+    }
+  };
+
+  const handleOpenEditEntry = (entry: ProductionEntry) => {
+    setEditingEntry(entry);
+    const isErema = (entry.machine || '').toLowerCase().includes('erema');
+    if (isErema) {
+      setLaunchModalMachines(['Erema']);
+      setLaunchModalPresetMachine('Erema');
+    } else {
+      setLaunchModalMachines(['Cast 1', 'Cast 2']);
+      setLaunchModalPresetMachine(entry.machine || 'Cast 1');
+    }
+    setIsModalOpen(true);
+  };
+
   // Redireciona imediatamente o usuário caso ele caia em uma aba não permitida (ex: tela inicial 'home' para quem só tem permissão de horas extras)
   useEffect(() => {
     if (!loggedUser || isAdmin) return;
@@ -5668,11 +5724,11 @@ Atenciosamente,
       explicacao: ''
     };
     if (type === 'manutencao') {
-      setRibbonManutencaoStops(prev => [...prev, newItem]);
+      setRibbonManutencaoStops(prev => [newItem, ...prev]);
     } else if (type === 'processo') {
-      setRibbonProcessoStops(prev => [...prev, newItem]);
+      setRibbonProcessoStops(prev => [newItem, ...prev]);
     } else {
-      setRibbonOutrosStops(prev => [...prev, newItem]);
+      setRibbonOutrosStops(prev => [newItem, ...prev]);
     }
   };
 
@@ -12131,18 +12187,6 @@ Atenciosamente,
                 )}
             </div>
 
-            {/* Botão de Acesso Modo Leitura */}
-            <div className="mt-4 pt-4 border-t border-slate-100 space-y-2.5">
-              <button 
-                type="button"
-                id="btn-login-visitante"
-                onClick={handleGuestLogin}
-                className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-slate-200 active:scale-95 shadow-sm"
-              >
-                <Eye size={16} className="text-slate-500" /> Modo de Leitura
-              </button>
-            </div>
-
             <div className={`mt-2 pt-4 border-t border-slate-100 flex flex-col gap-2 items-center ${!discoveredUser && loginMatricula.length < 3 ? 'mt-1' : ''}`}>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">
                 Manupackaguing Fitasa e Amazônia desenvolvido por Adaias Melo
@@ -13214,7 +13258,7 @@ Atenciosamente,
                   </p>
                   <div className="space-y-1">
                     {/* Baixar Sistema - Acesso para Todas as Funções (se não estiver baixado ainda) */}
-                    {!isStandalone && !isReadOnlyAccount && (
+                    {!isStandalone && (
                       <button
                         type="button"
                         onClick={() => {
@@ -13250,24 +13294,26 @@ Atenciosamente,
                     )}
 
 
-                    {/* Trilha de Auditoria (ISO 9001) */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('selection');
-                        setIsAuditTrailOpen(true);
-                        setIsMainMenuOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <History size={18} className="text-blue-600 shrink-0" />
-                        <span>Trilha de Auditoria (ISO 9001)</span>
-                      </div>
-                      <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-black uppercase">
-                        Tempo Real
-                      </span>
-                    </button>
+                    {/* Trilha de Auditoria (ISO 9001) - Apenas para Usuários Autorizados */}
+                    {(isAdmin || userPerms.settings?.auditTrail) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('selection');
+                          setIsAuditTrailOpen(true);
+                          setIsMainMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <History size={18} className="text-blue-600 shrink-0" />
+                          <span>Trilha de Auditoria (ISO 9001)</span>
+                        </div>
+                        <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-black uppercase">
+                          Tempo Real
+                        </span>
+                      </button>
+                    )}
 
                     {/* Tela Cheia */}
                     <button
@@ -13298,24 +13344,6 @@ Atenciosamente,
                       <Fingerprint size={18} className="text-blue-600 shrink-0" />
                       <span>Cadastrar / Atualizar Biometria</span>
                     </button>
-
-                    {/* Baixar / Instalar Sistema para todas as funções */}
-                    {!isStandalone && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMainMenuOpen(false);
-                          handleInstallClick();
-                        }}
-                        className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer mt-1"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Download size={18} className="text-amber-300 animate-bounce" />
-                          <span>Baixar Sistema no Computador</span>
-                        </div>
-                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full font-bold">Instalar</span>
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -13457,10 +13485,8 @@ Atenciosamente,
                         <button
                           type="button"
                           onClick={() => {
-                            setActiveTab('extrusion');
-                            setEditingEntry(null);
-                            setIsModalOpen(true);
                             setIsExtrusionMenuOpen(false);
+                            handleOpenSectorLaunchModal();
                           }}
                           className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
                         >
@@ -13804,12 +13830,9 @@ Atenciosamente,
           <div className="mb-4 flex items-center justify-end animate-in fade-in duration-300">
             <button
               type="button"
-              onClick={() => {
-                setEditingEntry(null);
-                setIsModalOpen(true);
-              }}
+              onClick={handleOpenSectorLaunchModal}
               className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
-              title="Novo Lançamento de Produção (Extrusão)"
+              title="Novo Lançamento de Produção"
             >
               <Plus className="w-4 h-4" />
               <span>Novo Lançamento</span>
@@ -16751,7 +16774,7 @@ Atenciosamente,
                                         />
                                         {canEditProduction && (
                                           <button 
-                                            onClick={() => { setEditingEntry(entry); setIsModalOpen(true); }} 
+                                            onClick={() => handleOpenEditEntry(entry)} 
                                             className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
                                             title="Editar este dia"
                                           >
@@ -16829,7 +16852,7 @@ Atenciosamente,
                                     <td className="px-4 py-3 text-center">
                                           {canEditProduction && (
                                             <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => { setEditingEntry(entry); setIsModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-100 bg-blue-50/80 rounded-lg border border-blue-100" title="Editar Lançamento"><Edit2 size={13}/></button>
+                                              <button onClick={() => handleOpenEditEntry(entry)} className="p-1.5 text-blue-600 hover:bg-blue-100 bg-blue-50/80 rounded-lg border border-blue-100" title="Editar Lançamento"><Edit2 size={13}/></button>
                                               <button onClick={() => { 
                                                 openConfirm(
                                                   'Confirmar Exclusão',
@@ -22463,6 +22486,129 @@ Atenciosamente,
         }
       }} accept=".json" className="hidden" />
 
+      {/* Modal de Seleção de Setor para Novo Lançamento */}
+      <AnimatePresence>
+        {isSectorLaunchModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSectorLaunchModalOpen(false)}
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs cursor-pointer"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden z-10"
+            >
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse" />
+                    <h3 className="text-base font-black uppercase tracking-wider">Novo Lançamento</h3>
+                  </div>
+                  <p className="text-xs text-slate-300 font-medium mt-0.5">Selecione o setor para registrar a produção</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSectorLaunchModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer"
+                  title="Fechar"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-3.5">
+                {/* 1. EXTRUSÃO */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectLaunchSector('extrusion')}
+                  className="w-full group p-4 rounded-2xl border-2 border-slate-200 hover:border-blue-500 bg-slate-50/60 hover:bg-blue-50/50 transition-all text-left flex items-start gap-4 active:scale-[0.98] cursor-pointer shadow-xs"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
+                    <Factory size={24} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide group-hover:text-blue-600 transition-colors">
+                        Extrusão
+                      </h4>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 border border-blue-200">
+                        Cast 1 & 2
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-snug">
+                      Máquinas <strong className="text-slate-700">Cast 1</strong> e <strong className="text-slate-700">Cast 2</strong> com operadores exclusivos da extrusão
+                    </p>
+                  </div>
+                  <ChevronRight size={18} className="text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all self-center shrink-0" />
+                </button>
+
+                {/* 2. EREMA */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectLaunchSector('erema')}
+                  className="w-full group p-4 rounded-2xl border-2 border-slate-200 hover:border-teal-500 bg-slate-50/60 hover:bg-teal-50/50 transition-all text-left flex items-start gap-4 active:scale-[0.98] cursor-pointer shadow-xs"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-teal-500/20 group-hover:scale-105 transition-transform">
+                    <RefreshCw size={24} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide group-hover:text-teal-600 transition-colors">
+                        Erema
+                      </h4>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 border border-teal-200">
+                        Reciclagem
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-snug">
+                      Máquina <strong className="text-slate-700">Erema</strong> com pesagens e apenas operadores designados para a recuperação
+                    </p>
+                  </div>
+                  <ChevronRight size={18} className="text-slate-300 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all self-center shrink-0" />
+                </button>
+
+                {/* 3. CORTE DE FITA */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectLaunchSector('ribbon')}
+                  className="w-full group p-4 rounded-2xl border-2 border-slate-200 hover:border-purple-500 bg-slate-50/60 hover:bg-purple-50/50 transition-all text-left flex items-start gap-4 active:scale-[0.98] cursor-pointer shadow-xs"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-500/20 group-hover:scale-105 transition-transform">
+                    <Scissors size={24} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide group-hover:text-purple-600 transition-colors">
+                        Corte de Fita
+                      </h4>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200">
+                        3 Máquinas
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-snug">
+                      Máquinas <strong className="text-slate-700">Ghezzi, Lintech e Wultec</strong> com operadores exclusivos do corte
+                    </p>
+                  </div>
+                  <ChevronRight size={18} className="text-slate-300 group-hover:text-purple-600 group-hover:translate-x-0.5 transition-all self-center shrink-0" />
+                </button>
+              </div>
+
+              <div className="p-4 bg-slate-100 border-t border-slate-200 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Os formulários se adaptam automaticamente com as máquinas e operadores de cada setor
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <LaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={async (e) => {
         if (isReadOnlyAccount || !canEditProduction) {
           handleBlockedReadOnlyAction(
@@ -22551,7 +22697,7 @@ Atenciosamente,
           alert("Ocorreu um erro ao salvar o lançamento.");
         }
         setEditingEntry(null);
-      }} collaborators={collaborators} employees={employees} vacations={vacations} activeMachines={activeMachines} availableShifts={availableShifts} initialData={editingEntry} dashboardMonth={dashboardMonth} productionEntries={productionData} ribbonEntries={ribbonEntries} isReadOnly={isReadOnlyAccount} />
+      }} collaborators={collaborators} employees={employees} vacations={vacations} activeMachines={launchModalMachines} presetMachine={launchModalPresetMachine} availableShifts={availableShifts} initialData={editingEntry} dashboardMonth={dashboardMonth} productionEntries={productionData} ribbonEntries={ribbonEntries} isReadOnly={isReadOnlyAccount} />
       
       <EmployeeModal isOpen={isEmployeeModalOpen} onClose={() => { setIsEmployeeModalOpen(false); setSelectedEmployee(null); setSelectedSlot(null); }} onSave={async (data, action, details) => {
           if (isReadOnlyAccount || !canManagePersonnel) {
@@ -23265,24 +23411,16 @@ Atenciosamente,
       />
 
       {/* Trilha de Auditoria & Rastreabilidade Operacional (ISO 9001) */}
-      <AuditTrailModal
-        isOpen={isAuditTrailOpen}
-        onClose={() => setIsAuditTrailOpen(false)}
-      />
+      {(isAdmin || userPerms.settings?.auditTrail) && (
+        <AuditTrailModal
+          isOpen={isAuditTrailOpen}
+          onClose={() => setIsAuditTrailOpen(false)}
+        />
+      )}
 
       {/* ==================== INÍCIO OPÇÃO 3: MINI DOCK FLUTUANTE (DESFAZER: OPÇÃO 3) ==================== */}
       <FloatingQuickDock
-        onOpenProductionModal={() => {
-          if (isReadOnlyAccount || !canEditProduction) {
-            handleBlockedReadOnlyAction(
-              'Lançamento Bloqueado',
-              'O Modo de Leitura é exclusivo para consulta. Não é permitido lançar apontamentos de produção.'
-            );
-            return;
-          }
-          setEditingEntry(null);
-          setIsModalOpen(true);
-        }}
+        onOpenProductionModal={handleOpenSectorLaunchModal}
         onNavigateOvertime={() => {
           if (isReadOnlyAccount) {
             handleBlockedReadOnlyAction(
@@ -23296,7 +23434,7 @@ Atenciosamente,
         }}
         onOpenCast1Calculator={() => setIsCast1CalculatorOpen(true)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-        onOpenAuditTrail={() => setIsAuditTrailOpen(true)}
+        onOpenAuditTrail={(isAdmin || userPerms.settings?.auditTrail) ? () => setIsAuditTrailOpen(true) : undefined}
         isOnline={isOnline}
         isSyncing={productionSyncStatus.isSyncing}
         canCreateEntry={canEditProduction && !isReadOnlyAccount}

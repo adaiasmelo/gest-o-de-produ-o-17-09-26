@@ -556,11 +556,11 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     };
     setSelectedStopCategory(type);
     if (type === 'manutencao') {
-      setManutencaoStops(prev => [...prev, newItem]);
+      setManutencaoStops(prev => [newItem, ...prev]);
     } else if (type === 'processo') {
-      setProcessoStops(prev => [...prev, newItem]);
+      setProcessoStops(prev => [newItem, ...prev]);
     } else {
-      setOutrosStops(prev => [...prev, newItem]);
+      setOutrosStops(prev => [newItem, ...prev]);
     }
   };
 
@@ -1787,9 +1787,12 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     className={`w-full ${isExternalOperatorMode ? 'bg-slate-100 text-slate-900 font-black cursor-not-allowed border-blue-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat`}
                   >
                     <option value="" disabled>Selecionar Máquina</option>
-                    <option value="Cast 1">Cast 1</option>
-                    <option value="Cast 2">Cast 2</option>
-                    <option value="Erema">Erema</option>
+                    {(activeMachines && activeMachines.length > 0 
+                      ? activeMachines.filter(m => ['cast 1', 'cast 2', 'erema'].some(x => m.toLowerCase().includes(x)))
+                      : ['Cast 1', 'Cast 2', 'Erema']
+                    ).map(mach => (
+                      <option key={mach} value={mach}>{mach}</option>
+                    ))}
                   </select>
                 </div>
 

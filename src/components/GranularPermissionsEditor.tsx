@@ -284,7 +284,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                       norm.settings?.goals && 
                       norm.settings?.config && 
                       norm.settings?.system && 
-                      norm.settings?.app;
+                      norm.settings?.app &&
+                      norm.settings?.auditTrail;
     
     const newVal = !allActive;
     const newSet: SettingsPermissions = {
@@ -293,7 +294,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       goals: newVal,
       config: newVal,
       system: newVal,
-      app: newVal
+      app: newVal,
+      auditTrail: newVal
     };
     updatePerms({ settings: newSet });
   };
@@ -301,13 +303,13 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   const handleSettingsSubToggle = (key: keyof Omit<SettingsPermissions, 'enabled'>) => {
     if (disabled) return;
     const current = norm.settings || {
-      enabled: false, filters: false, goals: false, config: false, system: false, app: false
+      enabled: false, filters: false, goals: false, config: false, system: false, app: false, auditTrail: false
     };
     const updated = {
       ...current,
       [key]: !current[key]
     };
-    const anyActive = updated.filters || updated.goals || updated.config || updated.system || updated.app;
+    const anyActive = updated.filters || updated.goals || updated.config || updated.system || updated.app || updated.auditTrail;
     updated.enabled = anyActive;
     updatePerms({ settings: updated });
   };
@@ -376,7 +378,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     norm.settings?.goals,
     norm.settings?.config,
     norm.settings?.system,
-    norm.settings?.app
+    norm.settings?.app,
+    norm.settings?.auditTrail
   ].filter(Boolean).length;
 
   return (
@@ -980,7 +983,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countSettings === 5 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countSettings === 6 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -999,7 +1002,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               { key: 'goals' as const, label: 'Metas', desc: 'Metas de extrusão, corte e refugo' },
               { key: 'config' as const, label: 'Cadastros', desc: 'Colaboradores, Funções, Turnos, Motivos e Usuários' },
               { key: 'system' as const, label: 'Sistema', desc: 'Identidade visual, Logo, Banco e Backup' },
-              { key: 'app' as const, label: 'App / Versão', desc: 'Instalação PWA, versão e atualizações' }
+              { key: 'app' as const, label: 'App / Versão', desc: 'Instalação PWA, versão e atualizações' },
+              { key: 'auditTrail' as const, label: 'Trilha de Auditoria (ISO 9001)', desc: 'Auditoria em tempo real de logs de acesso e ações' }
             ].map(item => {
               const active = !!norm.settings?.[item.key];
               return (
