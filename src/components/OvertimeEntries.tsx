@@ -282,6 +282,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
   // Menu de Opções Suspenso (Excel, PDF, Importar Ponto c/ IA)
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState<boolean>(false);
+  // Banner de confirmação de salvamento em lote via IA
+  const [saveBatchSuccessBanner, setSaveBatchSuccessBanner] = useState<{
+    count: number;
+    employeeName: string;
+    totalHours: number;
+  } | null>(null);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1234,22 +1240,70 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
   };
 
-  // Salvar apontamentos em lote importados via IA (cada dia salvo individualmente conforme solicitado)
+  // Salvar apontamentos em lote importados via IA (cada dia salvo individualmente no banco de dados)
   const handleSaveBatchFromAi = async (batchList: Array<Omit<OvertimeEntry, 'id'>>) => {
-    for (const item of batchList) {
-      const docRef = await addDoc(collection(db, 'overtime_entries'), item);
-      logAuditEvent({
-        action: 'CREATE',
-        module: 'Horas Extras',
-        targetTitle: `Hora Extra (IA) - ${item.employeeName} (${item.overtimeHours}h - ${item.date})`,
-        targetId: docRef.id,
-        userName: loggedUser?.name || 'Sistema',
-        userRole: loggedUser?.role,
-        newState: { ...item, id: docRef.id },
-        reason: item.reason,
+    try {
+      const savedList: OvertimeEntry[] = [];
+      for (const item of batchList) {
+        const docRef = await addDoc(collection(db, 'overtime_entries'), item);
+        const savedItem: OvertimeEntry = { ...item, id: docRef.id };
+        savedList.push(savedItem);
+
+        logAuditEvent({
+          action: 'CREATE',
+          module: 'Horas Extras',
+          targetTitle: `Hora Extra (IA) - ${item.employeeName} (${item.overtimeHours}h - ${item.date})`,
+          targetId: docRef.id,
+          userName: loggedUser?.name || 'Sistema',
+          userRole: loggedUser?.role,
+          newState: savedItem,
+          reason: item.reason,
+        });
+      }
+
+      // 1. Atualização otimista imediata no estado local para exibição instantânea
+      setEntries(prev => {
+        const existingIds = new Set(prev.map(e => e.id));
+        const newOnes = savedList.filter(e => !existingIds.has(e.id));
+        const combined = [...newOnes, ...prev];
+        combined.sort((a, b) => {
+          const d = new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (d !== 0) return d;
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        });
+        return combined;
       });
+
+      // 2. CRUCIAL: Ajustar o ciclo de folha para o ciclo das datas salvas para que apareçam na tela!
+      if (batchList.length > 0 && batchList[0].date) {
+        const targetCycle = getPayrollCycleFromDate(batchList[0].date);
+        setFilterMonth(targetCycle.key);
+      } else {
+        setFilterMonth('todos');
+      }
+
+      // 3. Resetar filtros que poderiam esconder os lançamentos
+      setQuickFilter('all');
+      setFilterSector('todos');
+      setFilterShift('todos');
+      setFilterMode('todos');
+      setSearchTerm(batchList[0]?.employeeName || '');
+
+      // 4. Mudar para a aba de Tabela de Apontamentos
+      setActiveSubTab('records');
+
+      // 5. Exibir banner de confirmação com resumo
+      setSaveBatchSuccessBanner({
+        count: batchList.length,
+        employeeName: batchList[0]?.employeeName || 'Colaborador',
+        totalHours: batchList.reduce((acc, curr) => acc + (curr.overtimeHours || 0), 0)
+      });
+
+      triggerHaptic('success');
+    } catch (err: any) {
+      console.error('Erro ao salvar apontamentos via IA no banco:', err);
+      throw err;
     }
-    setActiveSubTab('records');
   };
 
   // Aprovação em 1 clique
@@ -3316,6 +3370,33 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
           </div>
         ) : (
+        <div className="space-y-4">
+          {saveBatchSuccessBanner && (
+            <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950 shadow-sm animate-in fade-in duration-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
+                  <CheckCircle2 size={22} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase text-emerald-900 tracking-wide flex items-center gap-2 flex-wrap">
+                    <span>{saveBatchSuccessBanner.count} Apontamentos Salvos Separadamente com Sucesso!</span>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-900 text-[10px] font-black uppercase">No Banco de Dados</span>
+                  </h4>
+                  <p className="text-[11px] text-emerald-800 font-semibold mt-0.5">
+                    Colaborador: <strong>{saveBatchSuccessBanner.employeeName}</strong> • Volume Total: <strong>{saveBatchSuccessBanner.totalHours.toFixed(2)}h extras</strong>. O ciclo de folha e filtros foram ajustados automaticamente para exibir os novos lançamentos destacados abaixo.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveBatchSuccessBanner(null)}
+                className="px-3.5 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0"
+              >
+                Fechar Aviso
+              </button>
+            </div>
+          )}
+
         /* ============================================================== */
         /* TABELA DE LANÇAMENTOS */
         /* ============================================================== */
@@ -3765,6 +3846,7 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             </div>
             </>
           )}
+        </div>
         </div>
         )}
       </div>

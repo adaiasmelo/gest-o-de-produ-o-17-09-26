@@ -3,7 +3,7 @@ import {
   Sparkles, Upload, FileText, CheckCircle2, AlertCircle, 
   Clock, Calendar, User, Users, X, Loader2, ArrowRight,
   Check, Trash2, Eye, ShieldCheck, ChevronDown, CheckSquare,
-  Zap, Info, CornerDownRight, RefreshCw, Copy
+  Zap, Info, CornerDownRight, RefreshCw, Copy, Plus
 } from 'lucide-react';
 import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
 import { triggerHaptic } from '../utils/haptics';
@@ -79,6 +79,35 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Limpa completamente o estado do scanner para novo uso limpo
+  const resetScannerState = () => {
+    setSelectedFile(null);
+    setImagePreview(null);
+    setIsScanning(false);
+    setScanStep('');
+    setErrorMessage(null);
+    setSelectedEmployeeId('');
+    setEmployeeName('');
+    setRegistration('');
+    setRole('');
+    setSector('Extrusão');
+    setPeriod('');
+    setContractSchedule('');
+    setParsedEvents([]);
+    setBatchCommonReason('');
+    setIsSaving(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Sempre que o modal for fechado, zera o estado para não reabrir com dados antigos
+  useEffect(() => {
+    if (!isOpen) {
+      resetScannerState();
+    }
+  }, [isOpen]);
 
   // Escuta colar de imagem (Ctrl+V) no modal
   useEffect(() => {
@@ -431,6 +460,7 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
       // Salva cada apontamento separadamente conforme solicitado
       await onSaveBatchEntries(payloadList);
       triggerHaptic('success');
+      resetScannerState();
       onClose();
     } catch (err: any) {
       console.error('Erro ao salvar apontamentos em lote:', err);
@@ -679,24 +709,54 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
               <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
                   <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
-                    {employeeName.charAt(0)}
+                    {employeeName ? employeeName.charAt(0) : 'C'}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-base font-black text-slate-900 uppercase">
                         {employeeName}
                       </h4>
-                      <span className="px-2.5 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-mono font-black border border-blue-200">
-                        Matrícula: {registration}
-                      </span>
+                      {registration && (
+                        <span className="px-2.5 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-mono font-black border border-blue-200">
+                          Matrícula: {registration}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                      {role} • Setor: {sector} • Período: {period || 'Vigente'}
+                      {role} • Setor: {sector} • Período: {period || '25/09/2026 a 24/10/2026'}
                     </p>
+
+                    {/* SELETOR RÁPIDO PARA ATRIBUIR A QUALQUER COLABORADOR */}
+                    <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider">
+                        Atribuir a outro colaborador:
+                      </span>
+                      <select
+                        value={selectedEmployeeId}
+                        onChange={(e) => handleSelectEmployee(e.target.value)}
+                        className="bg-white border border-blue-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs cursor-pointer"
+                      >
+                        <option value="">(Manter colaborador atual)</option>
+                        {employees && employees.slice().sort((a, b) => a.name.localeCompare(b.name)).map(emp => (
+                          <option key={emp.id || emp.registration || emp.name} value={emp.id || emp.registration || emp.name}>
+                            {emp.name} • {emp.role || 'Colaborador'} {emp.registration ? `(Matr. ${emp.registration})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 text-right">
+                <div className="flex items-center gap-3 text-right flex-wrap">
+                  <button
+                    type="button"
+                    onClick={resetScannerState}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Limpar leitura atual e escanear nova folha de ponto"
+                  >
+                    <RefreshCw size={13} className="text-slate-500" />
+                    <span>Nova Leitura / Limpar</span>
+                  </button>
                   <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
                       Horas Extras Detectadas
@@ -785,6 +845,15 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
                       className="text-slate-500 hover:underline cursor-pointer"
                     >
                       Desmarcar Todos
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={handleAddManualEvent}
+                      className="px-2.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                      title="Adicionar mais um dia de hora extra manualmente"
+                    >
+                      <Plus size={12} /> Adicionar Dia
                     </button>
                   </div>
                 </div>
