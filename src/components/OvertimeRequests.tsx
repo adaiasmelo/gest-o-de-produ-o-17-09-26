@@ -1562,7 +1562,7 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
   const getSupervisorSignature = (req: OvertimeRequest): string => {
     const raw = req.requesterName || '';
     const clean = raw.trim();
-    if (!clean) return 'Adaías de Alencar Melo – Supervisor de Produção';
+    if (!clean) return loggedUser?.name ? `${loggedUser.name} – Supervisor` : 'Líder / Supervisor de Produção';
     if (clean.toLowerCase().includes('adaias') || clean.toLowerCase().includes('adahias')) {
       return 'Adaías de Alencar Melo – Supervisor de Produção';
     }
@@ -1611,7 +1611,7 @@ ${req.isEmergency ? '🚨 *Caráter da Solicitação:* SITUAÇÃO EMERGENCIAL (D
 • *Justificativa Detalhada:* ${req.reasonDetails || '-'}
 
 *4. AUTORIZAÇÃO E RESPONSÁVEIS (ETAPA 3)*
-• *Líder / Supervisor Solicitante:* ${req.requesterName || 'Adaías de Alencar Melo'}
+• *Líder / Supervisor Solicitante:* ${req.requesterName || loggedUser?.name || 'Líder / Supervisor Solicitante'}
 ${req.managerName && req.managerName !== '-' ? `• *Gestor Responsável:* ${req.managerName}\n` : ''}${req.notes ? `• *Observações:* _${req.notes}_\n` : ''}━━━━━━━━━━━━━━━━━━━━━━
 *Registro emitido conforme o Procedimento Operacional Padrão DOC 076*
 Gestão e Controle de Produção • ${supervisorSignature}`;
@@ -1655,7 +1655,7 @@ ${req.isEmergency ? '• Caráter da Solicitação: SITUAÇÃO EMERGENCIAL (DOC 
 • Justificativa Detalhada: ${req.reasonDetails || '-'}
 
 4. AUTORIZAÇÃO E RESPONSÁVEIS (ETAPA 3)
-• Líder / Supervisor Solicitante: ${req.requesterName || 'Adaías de Alencar Melo'}
+• Líder / Supervisor Solicitante: ${req.requesterName || loggedUser?.name || 'Líder / Supervisor Solicitante'}
 ${req.managerName && req.managerName !== '-' ? `• Gestor Responsável: ${req.managerName}\n` : ''}${req.notes ? `• Observações: ${req.notes}\n` : ''}
 ======================================================================
 Registro emitido conforme o Procedimento Operacional Padrão DOC 076
@@ -1702,7 +1702,7 @@ Gestão e Controle de Produção • ${supervisorSignature}`;
   <div style="margin-bottom: 14px; text-align: justify;"><strong>&bull; Justificativa Detalhada:</strong> ${req.reasonDetails || '-'}</div>
 
   <div style="margin-bottom: 6px;"><strong>4. AUTORIZAÇÃO E RESPONSÁVEIS (ETAPA 3)</strong></div>
-  <div style="margin-bottom: 2px;"><strong>&bull; Líder / Supervisor Solicitante:</strong> ${req.requesterName || 'Adaías de Alencar Melo'}</div>
+  <div style="margin-bottom: 2px;"><strong>&bull; Líder / Supervisor Solicitante:</strong> ${req.requesterName || loggedUser?.name || 'Líder / Supervisor Solicitante'}</div>
   ${req.managerName && req.managerName !== '-' ? `<div style="margin-bottom: 2px;"><strong>&bull; Gestor Responsável:</strong> ${req.managerName}</div>` : ''}
   ${req.notes ? `<div style="margin-bottom: 2px;"><strong>&bull; Observações:</strong> ${req.notes}</div>` : ''}
 

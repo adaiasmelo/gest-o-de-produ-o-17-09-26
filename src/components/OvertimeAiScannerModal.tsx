@@ -65,6 +65,7 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // Dados extraídos
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [employeeName, setEmployeeName] = useState<string>('');
   const [registration, setRegistration] = useState<string>('');
   const [role, setRole] = useState<string>('');
@@ -141,326 +142,59 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
     });
   };
 
-  const getBuiltinTimesheetData = () => ({
-    employeeName: "ADAIAS DE ALENCAR MELO",
-    registration: "1487",
-    role: "SUPERVISOR DE PRODUCAO",
-    sector: "Produção",
-    period: "25/09/2026 a 19/10/2026",
-    contractSchedule: "08:00 12:00 13:12 18:00",
-    employer: "MANUPACKAGING DA AMAZONIA INDUSTRIA DE E",
-    totalOvertimeHoursSum: "14:35",
-    overtimeEvents: [
-      {
-        date: "2026-09-28",
-        dayOfWeek: "SEG",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "07:07",
-        endTime: "19:39",
-        overtimeHoursRaw: "00:09",
-        overtimeHoursDecimal: 0.15,
-        overtimeHoursFormatted: "0h 09min",
-        overtimePercentage: 60,
-        workingHoursRaw: "04:53",
-        workingHoursDecimal: 4.88,
-        isNightShift: false,
-        markingsText: "07:07 12:00 19:30 19:39 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (28/09)"
-      },
-      {
-        date: "2026-09-29",
-        dayOfWeek: "TER",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "07:32",
-        endTime: "18:20",
-        overtimeHoursRaw: "00:48",
-        overtimeHoursDecimal: 0.8,
-        overtimeHoursFormatted: "0h 48min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "07:32 12:00 13:12 18:20 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (29/09)"
-      },
-      {
-        date: "2026-09-30",
-        dayOfWeek: "QUA",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "05:58",
-        endTime: "17:54",
-        overtimeHoursRaw: "01:56",
-        overtimeHoursDecimal: 1.93,
-        overtimeHoursFormatted: "1h 56min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:50",
-        workingHoursDecimal: 8.83,
-        isNightShift: true,
-        markingsText: "05:58 12:00 13:12 17:54 Horas Extras 60% N (Adic.Not 00:02)",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (30/09 - c/ Adic. Noturno)"
-      },
-      {
-        date: "2026-10-01",
-        dayOfWeek: "QUI",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:41",
-        endTime: "19:30",
-        overtimeHoursRaw: "02:49",
-        overtimeHoursDecimal: 2.82,
-        overtimeHoursFormatted: "2h 49min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:41 12:00 13:12 19:30 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (01/10)"
-      },
-      {
-        date: "2026-10-02",
-        dayOfWeek: "SEX",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:14",
-        endTime: "16:17",
-        overtimeHoursRaw: "00:16",
-        overtimeHoursDecimal: 0.27,
-        overtimeHoursFormatted: "0h 16min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:14 12:00 13:12 16:17 Interjornada 50%",
-        reason: "",
-        notes: "Interjornada 50% extraída do ponto"
-      },
-      {
-        date: "2026-10-03",
-        dayOfWeek: "SAB",
-        isSaturday: true,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "integral",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:30",
-        endTime: "09:57",
-        overtimeHoursRaw: "03:27",
-        overtimeHoursDecimal: 3.45,
-        overtimeHoursFormatted: "3h 27min",
-        overtimePercentage: 60,
-        workingHoursRaw: "03:27",
-        workingHoursDecimal: 3.45,
-        isNightShift: false,
-        markingsText: "06:30 09:57 Horas Extras 60% (Sábado)",
-        reason: "",
-        notes: "Turno Integral em Sábado Compensado"
-      },
-      {
-        date: "2026-10-05",
-        dayOfWeek: "SEG",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:02",
-        endTime: "16:25",
-        overtimeHoursRaw: "00:23",
-        overtimeHoursDecimal: 0.38,
-        overtimeHoursFormatted: "0h 23min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:02 12:00 13:12 16:25 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (05/10)"
-      },
-      {
-        date: "2026-10-08",
-        dayOfWeek: "QUI",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:00",
-        endTime: "16:10",
-        overtimeHoursRaw: "00:10",
-        overtimeHoursDecimal: 0.17,
-        overtimeHoursFormatted: "0h 10min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:00 12:00 13:12 16:10 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (08/10)"
-      },
-      {
-        date: "2026-10-09",
-        dayOfWeek: "SEX",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:00",
-        endTime: "16:06",
-        overtimeHoursRaw: "00:06",
-        overtimeHoursDecimal: 0.1,
-        overtimeHoursFormatted: "0h 06min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:00 12:00 13:12 16:06 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (09/10)"
-      },
-      {
-        date: "2026-10-10",
-        dayOfWeek: "SAB",
-        isSaturday: true,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "integral",
-        shiftTypeChoice: "Comercial",
-        startTime: "07:19",
-        endTime: "09:20",
-        overtimeHoursRaw: "02:01",
-        overtimeHoursDecimal: 2.02,
-        overtimeHoursFormatted: "2h 01min",
-        overtimePercentage: 60,
-        workingHoursRaw: "02:01",
-        workingHoursDecimal: 2.02,
-        isNightShift: false,
-        markingsText: "07:19 09:20 Horas Extras 60% (Sábado)",
-        reason: "",
-        notes: "Turno Integral em Sábado Compensado"
-      },
-      {
-        date: "2026-10-12",
-        dayOfWeek: "SEG",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: true,
-        holidayName: "Nossa Sra. Aparecida (Feriado Nacional)",
-        overtimeMode: "integral",
-        shiftTypeChoice: "Comercial",
-        startTime: "07:53",
-        endTime: "09:49",
-        overtimeHoursRaw: "01:56",
-        overtimeHoursDecimal: 1.93,
-        overtimeHoursFormatted: "1h 56min",
-        overtimePercentage: 110,
-        workingHoursRaw: "01:56",
-        workingHoursDecimal: 1.93,
-        isNightShift: false,
-        markingsText: "07:53 09:49 Horas Extras 120% (Feriado 12/10)",
-        reason: "",
-        notes: "Feriado Nacional (Nossa Sra. Aparecida) • Horas Extras 110%/120%"
-      },
-      {
-        date: "2026-10-13",
-        dayOfWeek: "TER",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:05",
-        endTime: "16:28",
-        overtimeHoursRaw: "00:23",
-        overtimeHoursDecimal: 0.38,
-        overtimeHoursFormatted: "0h 23min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:05 12:00 13:12 16:28 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (13/10)"
-      },
-      {
-        date: "2026-10-14",
-        dayOfWeek: "QUA",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:18",
-        endTime: "16:36",
-        overtimeHoursRaw: "00:18",
-        overtimeHoursDecimal: 0.3,
-        overtimeHoursFormatted: "0h 18min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:18 12:00 13:12 16:36 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (14/10)"
-      },
-      {
-        date: "2026-10-15",
-        dayOfWeek: "QUI",
-        isSaturday: false,
-        isSunday: false,
-        isHoliday: false,
-        holidayName: "",
-        overtimeMode: "pos_turno",
-        shiftTypeChoice: "Comercial",
-        startTime: "06:08",
-        endTime: "16:17",
-        overtimeHoursRaw: "00:09",
-        overtimeHoursDecimal: 0.15,
-        overtimeHoursFormatted: "0h 09min",
-        overtimePercentage: 60,
-        workingHoursRaw: "08:48",
-        workingHoursDecimal: 8.8,
-        isNightShift: false,
-        markingsText: "06:08 12:00 13:12 16:17 Horas Extras 60%",
-        reason: "",
-        notes: "Extraído do Cartão Ponto (15/10)"
-      }
-    ]
-  });
+  // Selecionar colaborador manualmente ou deixar a IA detectar
+  const handleSelectEmployee = (empId: string) => {
+    setSelectedEmployeeId(empId);
+    if (!empId) {
+      setEmployeeName('');
+      setRegistration('');
+      setRole('');
+      setSector('Produção');
+      return;
+    }
+    const emp = employees.find(e => 
+      (e.id && e.id === empId) || 
+      (e.collaboratorId && e.collaboratorId === empId) || 
+      (e.registration && e.registration === empId) || 
+      e.name === empId
+    );
+    if (emp) {
+      setEmployeeName(emp.name);
+      setRegistration(emp.registration || '');
+      setRole(emp.role || 'Operador');
+      setSector(emp.sector || 'Produção');
+    }
+  };
+
+  // Permite adicionar uma nova linha de hora extra manualmente para ajuste ou conferência
+  const handleAddManualEvent = () => {
+    const today = new Date().toISOString().substring(0, 10);
+    const newEv: ParsedOvertimeEvent = {
+      id: `manual_ev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      selected: true,
+      date: today,
+      dayOfWeek: 'SEG',
+      isSaturday: false,
+      isSunday: false,
+      isHoliday: false,
+      holidayName: '',
+      overtimeMode: 'pos_turno',
+      shiftTypeChoice: 'Comercial',
+      startTime: '07:30',
+      endTime: '18:20',
+      overtimeHoursRaw: '01:00',
+      overtimeHoursDecimal: 1.0,
+      overtimeHoursFormatted: '1h 00min',
+      overtimePercentage: 60,
+      workingHoursRaw: '08:48',
+      workingHoursDecimal: 8.8,
+      isNightShift: false,
+      markingsText: '',
+      reason: batchCommonReason || '',
+      notes: 'Lançamento manual / conferência'
+    };
+    setParsedEvents(prev => [...prev, newEv]);
+  };
 
   const handleProcessFile = (file: File) => {
     setErrorMessage(null);
@@ -484,20 +218,6 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
     }
   };
 
-  // Carregar imagem de exemplo oficial (Folha de Ponto Adaías Melo)
-  const handleLoadSampleCard = async () => {
-    setErrorMessage(null);
-    try {
-      const response = await fetch('/assets/aistudio/image_701c5952.png');
-      const blob = await response.blob();
-      const file = new File([blob], 'Cartao_Ponto_Exemplo.png', { type: 'image/png' });
-      handleProcessFile(file);
-    } catch (err) {
-      console.error('Erro ao carregar imagem de exemplo:', err);
-      setErrorMessage('Não foi possível carregar a imagem de exemplo.');
-    }
-  };
-
   // Disparar análise via Inteligência Artificial
   const handleScanImage = async () => {
     if (!imagePreview) {
@@ -513,7 +233,7 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
       setScanStep('Lendo cabeçalho cadastral e matrícula do colaborador...');
       await new Promise(r => setTimeout(r, 400));
 
-      setScanStep('Mapeando linhas, batidas de ponto e turnos do período...');
+      setScanStep('Identificando batidas de ponto, horários e apuração de horas extras...');
       
       let json: any = null;
       try {
@@ -523,7 +243,11 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             base64Image: optimizedImage,
-            mimeType: 'image/jpeg'
+            mimeType: 'image/jpeg',
+            selectedEmployeeName: employeeName || undefined,
+            selectedRegistration: registration || undefined,
+            selectedRole: role || undefined,
+            selectedSector: sector || undefined
           })
         });
 
@@ -541,94 +265,83 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
 
       setScanStep('Processando apuração de horas extras...');
 
-      // Se a resposta da API não estiver disponível ou falhar, ativa fallback estruturado contínuo
-      if (!json || !json.data || !json.data.overtimeEvents || json.data.overtimeEvents.length === 0) {
-        console.info('Ativando motor estruturado inteligente para leitura de folha de ponto');
-        json = {
-          success: true,
-          source: 'smart-parser-engine',
-          data: getBuiltinTimesheetData()
-        };
-      }
+      if (json && json.success && json.data) {
+        const data = json.data;
+        const extractedName = (data.employeeName && data.employeeName !== 'Colaborador') ? data.employeeName : (employeeName || 'Colaborador');
+        const extractedReg = data.registration || registration || '';
+        const extractedRole = data.role || role || 'Operador';
+        const extractedSector = data.sector || sector || 'Produção';
 
-      const data = json.data;
-      setEmployeeName(data.employeeName || 'Colaborador');
-      setRegistration(data.registration || '');
-      setRole(data.role || '');
-      setSector(data.sector || 'Produção');
-      setPeriod(data.period || '');
-      setContractSchedule(data.contractSchedule || '');
+        setEmployeeName(extractedName);
+        setRegistration(extractedReg);
+        setRole(extractedRole);
+        setSector(extractedSector);
+        if (data.period) setPeriod(data.period);
+        if (data.contractSchedule) setContractSchedule(data.contractSchedule);
 
-      // Tenta cruzar com funcionário cadastrado no banco para pegar o setor e cargo oficiais
-      if (data.registration && employees && employees.length > 0) {
-        const found = employees.find(e => e && (e.registration || '').trim() === String(data.registration).trim());
-        if (found) {
-          if (found.sector) setSector(found.sector);
-          if (found.role) setRole(found.role);
+        // Tenta cruzar com funcionário cadastrado no banco por matrícula ou nome
+        if (extractedReg && employees && employees.length > 0) {
+          const found = employees.find(e => (e.registration || '').trim() === String(extractedReg).trim());
+          if (found) {
+            setSelectedEmployeeId(found.id || found.collaboratorId || found.registration || '');
+            if (found.name) setEmployeeName(found.name);
+            if (found.sector) setSector(found.sector);
+            if (found.role) setRole(found.role);
+          }
+        } else if (extractedName && employees && employees.length > 0) {
+          const foundByName = employees.find(e => e.name.toLowerCase().trim() === extractedName.toLowerCase().trim());
+          if (foundByName) {
+            setSelectedEmployeeId(foundByName.id || foundByName.collaboratorId || foundByName.registration || '');
+            if (foundByName.sector) setSector(foundByName.sector);
+            if (foundByName.role) setRole(foundByName.role);
+          }
+        }
+
+        const rawEvents = data.overtimeEvents || [];
+        if (rawEvents.length > 0) {
+          const events: ParsedOvertimeEvent[] = rawEvents.map((ev: any, idx: number) => ({
+            id: `ai_ev_${Date.now()}_${idx}`,
+            selected: true,
+            date: ev.date,
+            dayOfWeek: ev.dayOfWeek || '',
+            isSaturday: Boolean(ev.isSaturday),
+            isSunday: Boolean(ev.isSunday),
+            isHoliday: Boolean(ev.isHoliday),
+            holidayName: ev.holidayName || '',
+            overtimeMode: (ev.overtimeMode === 'integral' ? 'integral' : 'pos_turno') as OvertimeMode,
+            shiftTypeChoice: (ev.shiftTypeChoice || 'Comercial') as any,
+            startTime: ev.startTime || '07:30',
+            endTime: ev.endTime || '18:20',
+            overtimeHoursRaw: ev.overtimeHoursRaw || `${ev.overtimeHoursDecimal}h`,
+            overtimeHoursDecimal: Number(ev.overtimeHoursDecimal) || 0,
+            overtimeHoursFormatted: ev.overtimeHoursFormatted || `${ev.overtimeHoursDecimal}h`,
+            overtimePercentage: Number(ev.overtimePercentage) || (ev.isSunday || ev.isHoliday ? 110 : 60),
+            workingHoursRaw: ev.workingHoursRaw,
+            workingHoursDecimal: ev.workingHoursDecimal,
+            isNightShift: Boolean(ev.isNightShift),
+            markingsText: ev.markingsText || '',
+            reason: '', // Deixar em branco para preenchimento do usuário
+            notes: ev.notes || ''
+          }));
+          setParsedEvents(events);
+          triggerHaptic('success');
+        } else {
+          setErrorMessage('A IA leu a folha mas não detectou horas extras discriminadas. Você pode selecionar o colaborador e adicionar manualmente os dias extras abaixo.');
+          handleAddManualEvent();
+        }
+      } else {
+        const errorDetail = json?.error || 'A IA não conseguiu ler automaticamente as informações desta folha com clareza.';
+        setErrorMessage(`${errorDetail} Selecione o colaborador no campo correspondente e confira os lançamentos.`);
+        if (employeeName) {
+          handleAddManualEvent();
         }
       }
-
-      const events: ParsedOvertimeEvent[] = (data.overtimeEvents || []).map((ev: any, idx: number) => ({
-        id: `ai_ev_${Date.now()}_${idx}`,
-        selected: true,
-        date: ev.date,
-        dayOfWeek: ev.dayOfWeek || '',
-        isSaturday: Boolean(ev.isSaturday),
-        isSunday: Boolean(ev.isSunday),
-        isHoliday: Boolean(ev.isHoliday),
-        holidayName: ev.holidayName || '',
-        overtimeMode: (ev.overtimeMode === 'integral' ? 'integral' : 'pos_turno') as OvertimeMode,
-        shiftTypeChoice: (ev.shiftTypeChoice || 'Comercial') as any,
-        startTime: ev.startTime || '07:30',
-        endTime: ev.endTime || '18:20',
-        overtimeHoursRaw: ev.overtimeHoursRaw || `${ev.overtimeHoursDecimal}h`,
-        overtimeHoursDecimal: Number(ev.overtimeHoursDecimal) || 0,
-        overtimeHoursFormatted: ev.overtimeHoursFormatted || `${ev.overtimeHoursDecimal}h`,
-        overtimePercentage: Number(ev.overtimePercentage) || (ev.isSunday || ev.isHoliday ? 110 : 60),
-        workingHoursRaw: ev.workingHoursRaw,
-        workingHoursDecimal: ev.workingHoursDecimal,
-        isNightShift: Boolean(ev.isNightShift),
-        markingsText: ev.markingsText || '',
-        reason: '', // REGRA DO USUÁRIO: A ÚNICA COISA QUE FICA SEM PREENCHER É O MOTIVO E ATIVIDADE
-        notes: ev.notes || ''
-      }));
-
-      setParsedEvents(events);
-      triggerHaptic('success');
     } catch (err: any) {
       console.error('Erro na leitura da folha de ponto:', err);
-      // Mesmo em erro inesperado, carrega os dados estruturados da folha do usuário
-      const fallback = getBuiltinTimesheetData();
-      setEmployeeName(fallback.employeeName);
-      setRegistration(fallback.registration);
-      setRole(fallback.role);
-      setSector(fallback.sector);
-      setPeriod(fallback.period);
-      setContractSchedule(fallback.contractSchedule);
-      setParsedEvents(fallback.overtimeEvents.map((ev, idx) => ({
-        id: `ai_ev_fb_${Date.now()}_${idx}`,
-        selected: true,
-        date: ev.date,
-        dayOfWeek: ev.dayOfWeek,
-        isSaturday: ev.isSaturday,
-        isSunday: ev.isSunday,
-        isHoliday: ev.isHoliday,
-        holidayName: ev.holidayName,
-        overtimeMode: ev.overtimeMode as OvertimeMode,
-        shiftTypeChoice: ev.shiftTypeChoice as any,
-        startTime: ev.startTime,
-        endTime: ev.endTime,
-        overtimeHoursRaw: ev.overtimeHoursRaw,
-        overtimeHoursDecimal: ev.overtimeHoursDecimal,
-        overtimeHoursFormatted: ev.overtimeHoursFormatted,
-        overtimePercentage: ev.overtimePercentage,
-        workingHoursRaw: ev.workingHoursRaw,
-        workingHoursDecimal: ev.workingHoursDecimal,
-        isNightShift: ev.isNightShift,
-        markingsText: ev.markingsText,
-        reason: '',
-        notes: ev.notes
-      })));
+      setErrorMessage('Falha ao processar a imagem com IA. Selecione o colaborador e adicione os lançamentos manualmente.');
+      if (employeeName) {
+        handleAddManualEvent();
+      }
     } finally {
       setIsScanning(false);
       setScanStep('');
@@ -780,9 +493,57 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
             </div>
           )}
 
-          {/* ÁREA DE CARREGAMENTO / UPLOAD DA IMAGEM */}
           {parsedEvents.length === 0 ? (
             <div className="space-y-6">
+
+              {/* SELETOR DE COLABORADOR */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <User size={16} className="text-blue-600" />
+                    <span>Colaborador da Folha de Ponto</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">
+                    Selecione ou deixe a IA identificar
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <select
+                      value={selectedEmployeeId}
+                      onChange={(e) => handleSelectEmployee(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="">✨ Detectar Automaticamente pela IA no Documento</option>
+                      {employees && employees.slice().sort((a, b) => a.name.localeCompare(b.name)).map(emp => (
+                        <option key={emp.id || emp.registration || emp.name} value={emp.id || emp.registration || emp.name}>
+                          {emp.name} • {emp.role || 'Colaborador'} {emp.registration ? `(Matr. ${emp.registration})` : ''} - {emp.sector || 'Produção'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Nome manual se não listado"
+                      value={employeeName}
+                      onChange={(e) => setEmployeeName(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400 placeholder:font-normal"
+                    />
+                  </div>
+                </div>
+
+                {employeeName && (
+                  <div className="flex items-center gap-2 pt-1 text-[11px] text-emerald-700 font-bold">
+                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                    <span>Colaborador: <strong>{employeeName}</strong> {role ? `(${role})` : ''} {registration ? `• Matrícula ${registration}` : ''}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ÁREA DE CARREGAMENTO / UPLOAD DA IMAGEM */}
               <div 
                 onClick={() => fileInputRef.current?.click()}
                 className={`border-2 border-dashed rounded-3xl p-6 sm:p-10 flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
@@ -825,30 +586,39 @@ export const OvertimeAiScannerModal: React.FC<OvertimeAiScannerModalProps> = ({
                         Arraste ou clique para selecionar a Imagem PNG do Cartão de Ponto
                       </h4>
                       <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                        Suporta arquivos PNG, JPEG ou colar direto da área de transferência (<strong>Ctrl + V</strong>).
+                        Suporta qualquer colaborador (Auxiliar, Operador, Líder, etc.) via PNG, JPEG ou Ctrl + V.
                       </p>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Botões de Ação para Iniciar Leitura ou Usar Exemplo */}
+              {/* Botões de Ação para Iniciar Leitura ou Limpar */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleLoadSampleCard}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-2xs"
-                  title="Carregar imagem oficial de folha de ponto enviada (Adaías Melo)"
-                >
-                  <Eye size={15} className="text-blue-600" />
-                  <span>Testar com Folha de Ponto Exemplo (Adaías Melo)</span>
-                </button>
+                {imagePreview ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImagePreview(null);
+                      setSelectedFile(null);
+                      setParsedEvents([]);
+                    }}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-2xs"
+                  >
+                    <RefreshCw size={14} className="text-slate-500" />
+                    <span>Trocar / Limpar Imagem</span>
+                  </button>
+                ) : (
+                  <div className="text-[11px] text-slate-400 font-semibold">
+                    Envie a folha de ponto do auxiliar, operador ou supervisor
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={handleScanImage}
                   disabled={!imagePreview || isScanning}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-purple-600/25 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-purple-600/25 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
                 >
                   {isScanning ? (
                     <>
