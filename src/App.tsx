@@ -1246,6 +1246,7 @@ export const App: React.FC = () => {
   const [ribbonFilterShift, setRibbonFilterShift] = useState('all');
   const [ribbonFilterMachine, setRibbonFilterMachine] = useState('all');
   const [ribbonFilterJumboType, setRibbonFilterJumboType] = useState('all');
+  const [ribbonFilterDay, setRibbonFilterDay] = useState('');
   const [ribbonSubTab, setRibbonSubTab] = useState<'dashboard' | 'reports' | 'productivity'>('dashboard');
   const [ribbonDashboardSubTab, setRibbonDashboardSubTab] = useState<'summary' | 'charts' | 'comparison'>('summary');
   const [ribbonBiOperatorFilter, setRibbonBiOperatorFilter] = useState<string>('all');
@@ -1306,9 +1307,30 @@ export const App: React.FC = () => {
     }
   });
   const [dashboardMonth, setDashboardMonth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlMonth = urlParams.get('mes') || urlParams.get('month') || urlParams.get('m');
+        if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) return urlMonth;
+
+        const saved = localStorage.getItem('manupackaging_dashboard_month');
+        if (saved) return saved;
+      }
+    } catch {}
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+
+  useEffect(() => {
+    if (dashboardMonth) {
+      try {
+        localStorage.setItem('manupackaging_dashboard_month', dashboardMonth);
+      } catch {}
+      if (currentUser || loggedUser) {
+        setDoc(doc(db, 'settings', 'global'), { dashboardMonth }, { merge: true }).catch(() => {});
+      }
+    }
+  }, [dashboardMonth, currentUser, loggedUser]);
 
   const downtimeSuggestions = useMemo(() => {
     return extractDowntimeMotives(productionData, ribbonEntries);
@@ -2275,7 +2297,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   }, []);
 
   useEffect(() => {
-    if (!currentUser) return;
+    // Permite sincronização contínua de dados em tempo real para Smart TVs (/tv), telões e acessos externos sem login
+    if (!currentUser && !isExternalTvView && !isExternalTvRoute() && !isExternalCalculatorRoute() && !isExternalOperatorRoute()) return;
 
     const audioRef = { current: new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') };
     audioRef.current.volume = 0.5;
@@ -2583,6 +2606,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           }
           setAvailableRoles(rolesList);
         }
+        if (data.dashboardMonth && typeof data.dashboardMonth === 'string') {
+          setDashboardMonth(data.dashboardMonth);
+          try {
+            localStorage.setItem('manupackaging_dashboard_month', data.dashboardMonth);
+          } catch {}
+        }
 
         // Detector de Atualizações e Edições do Sistema em Tempo Real (PC e Mobile)
         const remoteVersion = data.appBuildTime || data.systemVersion || data.lastUpdated || APP_BUILD_TIME;
@@ -2731,7 +2760,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       unsubNotices();
       unsubCustomSectors();
     };
-  }, [currentUser]);
+  }, [currentUser, isExternalTvView]);
 
   // Auto-migrar funcionários existentes para colaboradores se não existirem
   const migrationRef = useRef(false);
@@ -4485,13 +4514,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   // Corte de fita derived States & Memos
   const filteredRibbonEntries = useMemo(() => {
     return ribbonEntries.filter(entry => {
+      if (!entry || !entry.date) return false;
+      const matchDay = ribbonFilterDay ? entry.date === ribbonFilterDay : true;
+      const matchMonth = !ribbonFilterDay ? entry.date.startsWith(dashboardMonth) : true;
       const matchOp = ribbonFilterOperator === 'all' || entry.operator === ribbonFilterOperator;
       const matchShift = ribbonFilterShift === 'all' || entry.shift === ribbonFilterShift;
       const matchMachine = matchRibbonMachine(entry.machine, ribbonFilterMachine);
       const matchJumboType = ribbonFilterJumboType === 'all' || entry.jumboType === ribbonFilterJumboType;
-      return matchOp && matchShift && matchMachine && matchJumboType;
+      return matchDay && matchMonth && matchOp && matchShift && matchMachine && matchJumboType;
     });
-  }, [ribbonEntries, ribbonFilterOperator, ribbonFilterShift, ribbonFilterMachine, ribbonFilterJumboType]);
+  }, [ribbonEntries, dashboardMonth, ribbonFilterDay, ribbonFilterOperator, ribbonFilterShift, ribbonFilterMachine, ribbonFilterJumboType]);
 
   const ribbonStats = useMemo(() => {
     let totProd = 0;
@@ -20851,7 +20883,9 @@ Atenciosamente,
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-50 pb-4">
                 <div>
                   <h4 className="text-sm font-black uppercase text-indigo-950">Relatório de Lançamentos de Corte de Fita</h4>
-                  <p className="text-[11px] text-slate-400 font-medium">Histórico do setor e parâmetros de processo</p>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Histórico do setor • Mês de Referência: <span className="font-bold text-slate-700">{dashboardMonth ? dashboardMonth.split('-').reverse().join('/') : ''}</span> ({filteredRibbonEntries.length} lançamentos)
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -20864,6 +20898,41 @@ Atenciosamente,
                       <Trash2 className="w-3.5 h-3.5" /> Excluir Selecionados ({selectedRibbonIds.length})
                     </button>
                   )}
+
+                  {/* Filtro Mês de Referência */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5" title="Mês de Referência do Corte de Fita">
+                    <Calendar size={13} className="text-slate-400" />
+                    <input
+                      type="month"
+                      value={dashboardMonth}
+                      onChange={(e) => {
+                        setDashboardMonth(e.target.value);
+                        setRibbonFilterDay('');
+                      }}
+                      className="text-xs font-black text-slate-700 bg-transparent outline-none cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Filtro Dia Específico (Opcional) */}
+                  <div className="relative flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5" title="Filtrar Dia Específico">
+                    <input
+                      type="date"
+                      value={ribbonFilterDay}
+                      onChange={(e) => setRibbonFilterDay(e.target.value)}
+                      className="text-xs font-black text-slate-700 bg-transparent outline-none cursor-pointer"
+                    />
+                    {ribbonFilterDay && (
+                      <button
+                        type="button"
+                        onClick={() => setRibbonFilterDay('')}
+                        className="p-0.5 text-slate-400 hover:text-red-500 rounded transition-colors"
+                        title="Limpar dia"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+
                   {/* Filtro Operador */}
                   <div className="min-w-[120px]">
                     <select
@@ -20898,12 +20967,13 @@ Atenciosamente,
                     </select>
                   </div>
 
-                  {(ribbonFilterOperator !== 'all' || ribbonFilterShift !== 'all') && (
+                  {(ribbonFilterOperator !== 'all' || ribbonFilterShift !== 'all' || ribbonFilterDay !== '') && (
                     <button
                       type="button"
                       onClick={() => {
                         setRibbonFilterOperator('all');
                         setRibbonFilterShift('all');
+                        setRibbonFilterDay('');
                       }}
                       className="text-[11px] font-black uppercase text-red-500 hover:underline px-2"
                     >
