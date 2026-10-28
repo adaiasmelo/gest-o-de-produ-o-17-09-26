@@ -1119,44 +1119,7 @@ export const App: React.FC = () => {
   const [screensaverSettings, setScreensaverSettings] = useState<ScreensaverSettings>(() => getScreensaverSettings());
   const lastUserActivityRef = useRef<number>(Date.now());
 
-  // Detecta inatividade no computador e ativa a projeção TV como protetor de tela
-  useEffect(() => {
-    if (!screensaverSettings.enabled || !loggedUser) return;
-
-    const onUserActivity = () => {
-      lastUserActivityRef.current = Date.now();
-    };
-
-    window.addEventListener('mousemove', onUserActivity, { passive: true });
-    window.addEventListener('mousedown', onUserActivity, { passive: true });
-    window.addEventListener('keydown', onUserActivity, { passive: true });
-    window.addEventListener('touchstart', onUserActivity, { passive: true });
-    window.addEventListener('wheel', onUserActivity, { passive: true });
-
-    const idleInterval = setInterval(() => {
-      // Se estiver na tela externa do operador de lançamento ou projeção, protetor NUNCA é ativado
-      if (isExternalOperatorView || isExternalCalculatorView || isExternalTvView || activeTab === 'projection' || isScreensaverActive) return;
-
-      // Executa apenas quando usado no computador (desktop/laptop)
-      if (!isComputerDevice()) return;
-
-      const idleLimitMs = (screensaverSettings.idleMinutes || 2) * 60 * 1000;
-      const elapsed = Date.now() - lastUserActivityRef.current;
-
-      if (elapsed >= idleLimitMs) {
-        setIsScreensaverActive(true);
-      }
-    }, 2000);
-
-    return () => {
-      window.removeEventListener('mousemove', onUserActivity);
-      window.removeEventListener('mousedown', onUserActivity);
-      window.removeEventListener('keydown', onUserActivity);
-      window.removeEventListener('touchstart', onUserActivity);
-      window.removeEventListener('wheel', onUserActivity);
-      clearInterval(idleInterval);
-    };
-  }, [screensaverSettings, loggedUser, activeTab, isScreensaverActive]);
+  // Protetor de tela desativado permanentemente conforme solicitado
 
   const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations' | 'bonus'>(() => {
     try {
@@ -25604,70 +25567,7 @@ const SettingsModal: React.FC<{
                   </p>
                 </div>
 
-                {/* Protetor de Tela (Projeção TV) */}
-                <div className="p-6 bg-slate-900 text-white rounded-3xl border border-slate-800 space-y-4 shadow-xl">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
-                        <Tv size={20} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-wider text-white">Protetor de Tela (Projeção TV)</p>
-                        <p className="text-[10px] text-slate-400 font-medium">Inicia automaticamente após 2 minutos sem qualquer ação do usuário no computador</p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={screensaverSettings?.enabled ?? true}
-                        onChange={(e) => {
-                          const updated = {
-                            ...(screensaverSettings || { idleMinutes: 2 }),
-                            enabled: e.target.checked
-                          };
-                          setScreensaverSettings?.(updated);
-                          saveScreensaverSettings(updated);
-                        }}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
-                  <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px]">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 font-bold">Tempo de Inatividade:</span>
-                      <select
-                        value={screensaverSettings?.idleMinutes ?? 2}
-                        onChange={(e) => {
-                          const updated = {
-                            ...(screensaverSettings || { enabled: true }),
-                            idleMinutes: Number(e.target.value) || 2
-                          };
-                          setScreensaverSettings?.(updated);
-                          saveScreensaverSettings(updated);
-                        }}
-                        className="bg-slate-800 text-white font-bold text-xs rounded-xl px-3 py-1.5 border border-slate-700 outline-none cursor-pointer"
-                      >
-                        <option value={1}>1 minuto</option>
-                        <option value={2}>2 minutos (Padrão)</option>
-                        <option value={3}>3 minutos</option>
-                        <option value={5}>5 minutos</option>
-                      </select>
-                    </div>
-                    {onTriggerScreensaverTest && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onTriggerScreensaverTest();
-                        }}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-md"
-                      >
-                        <Tv size={14} /> Testar Protetor de Tela Agora
-                      </button>
-                    )}
-                  </div>
-                </div>
+
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
