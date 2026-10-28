@@ -231,10 +231,17 @@ if ('serviceWorker' in navigator) {
           console.log('PWA: Novo worker pronto. Mantendo sessão ativa do operador para não perder nenhum dado de lançamento.');
           return;
         }
+
+        // Apenas recarrega se foi o próprio usuário que acionou a atualização (evita reloads surpresa)
+        const isUserRequestedUpdate = Date.now() - Number(sessionStorage.getItem('last_update_ts') || '0') < 5000;
+        if (!isUserRequestedUpdate) {
+          console.log('PWA: Novo worker ativo em segundo plano. Não interrompendo a navegação do usuário.');
+          return;
+        }
       } catch (e) {}
 
       refreshing = true;
-      console.log('PWA: Novo controller assumiu o controle! Recarregando sistema...');
+      console.log('PWA: Novo controller assumiu o controle após solicitação. Recarregando sistema...');
       window.location.reload();
     }
   });

@@ -135,7 +135,8 @@ import {
   LOCAL_BUILD_TIME, 
   fetchRemoteVersion, 
   isNewerVersion, 
-  executeAppUpdate 
+  executeAppUpdate,
+  dismissVersion
 } from './utils/updateManager';
 import {
   loadProductionCache,
@@ -2108,14 +2109,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     (window as any).checkSystemUpdate = checkCloudflareUpdate;
 
-    // Checagem inicial após 500ms
-    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 500);
-    // Intervalo de verificação a cada 5 segundos
-    const updateInterval = setInterval(checkCloudflareUpdate, 5000);
+    // Checagem inicial tranquila após 15 segundos do carregamento
+    const initialCheckTimer = setTimeout(checkCloudflareUpdate, 15000);
+    // Intervalo de verificação a cada 15 minutos (evita requisições frenéticas e loops de reload)
+    const updateInterval = setInterval(checkCloudflareUpdate, 15 * 60 * 1000);
 
-    // Checagem imediata quando o usuário retorna à janela/aba ou desbloqueia o aparelho
+    // Checagem ao retornar à janela com controle de frequência (máximo uma vez a cada 10 minutos)
+    let lastFocusCheck = Date.now();
     const handleFocusOrVisible = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && Date.now() - lastFocusCheck > 10 * 60 * 1000) {
+        lastFocusCheck = Date.now();
         checkCloudflareUpdate();
       }
     };
@@ -2614,28 +2617,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         }
 
         // Detector de Atualizações e Edições do Sistema em Tempo Real (PC e Mobile)
-        const remoteVersion = data.appBuildTime || data.systemVersion || data.lastUpdated || APP_BUILD_TIME;
+        const remoteVersion = data.appBuildTime || data.systemVersion;
         
-        if (!sessionLoadedBuildTimeRef.current) {
-          sessionLoadedBuildTimeRef.current = remoteVersion;
-        } else if (remoteVersion !== sessionLoadedBuildTimeRef.current) {
-          console.log('App: Nova alteração/atualização de sistema detectada!', remoteVersion);
-          setIsUpdateAvailable(true);
-          setUpdateDismissed(false);
-          if (data.updateNotes) {
-            setUpdateNotes(data.updateNotes);
-          }
-
-          // Notificação nativa em dispositivos/navegadores que deram permissão
-          if ('Notification' in window && Notification.permission === 'granted') {
-            try {
-              new Notification('🚀 Nova Atualização do Sistema!', {
-                body: data.updateNotes || 'Uma nova alteração ou versão do sistema de produção foi disponibilizada. Clique no aplicativo para atualizar.',
-                icon: data.systemLogo || 'https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png',
-                tag: 'system-update'
-              });
-            } catch (err) {
-              console.warn('Erro ao disparar notificação nativa:', err);
+        if (remoteVersion) {
+          if (!sessionLoadedBuildTimeRef.current) {
+            sessionLoadedBuildTimeRef.current = remoteVersion;
+          } else if (remoteVersion !== sessionLoadedBuildTimeRef.current) {
+            console.log('App: Nova versão de sistema transmitida:', remoteVersion);
+            setIsUpdateAvailable(true);
+            if (data.updateNotes) {
+              setUpdateNotes(data.updateNotes);
             }
           }
         }
@@ -22917,6 +22908,7 @@ Atenciosamente,
         versionTag={updateVersionTag}
         onClose={() => {
           setUpdateDismissed(true);
+          dismissVersion(updateVersionTag || 'dismissed');
         }} 
         onUpdate={() => {
           executeAppUpdate();

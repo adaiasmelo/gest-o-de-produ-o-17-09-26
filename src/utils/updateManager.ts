@@ -61,16 +61,38 @@ export async function fetchRemoteVersion(): Promise<VersionInfo | null> {
   }
 }
 
+export function dismissVersion(versionOrTag?: string): void {
+  if (typeof window !== 'undefined' && versionOrTag) {
+    try {
+      sessionStorage.setItem('manupackaging_acknowledged_version', versionOrTag);
+    } catch {}
+  }
+}
+
 /**
- * Verifica se a versão remota do Cloudflare é mais recente ou diferente da atualmente em execução
+ * Verifica se a versão remota do Cloudflare é estritamente mais recente que a local
  */
 export function isNewerVersion(remote: VersionInfo | null | undefined): boolean {
   if (!remote) return false;
+
+  if (typeof window !== 'undefined') {
+    // Se acabou de atualizar nos últimos 90 segundos, bloqueia qualquer novo disparo
+    const lastUpdateTs = Number(sessionStorage.getItem('last_update_ts') || '0');
+    if (Date.now() - lastUpdateTs < 90000) {
+      return false;
+    }
+    // Se a versão já foi aceita ou pausada nesta sessão
+    const acknowledged = sessionStorage.getItem('manupackaging_acknowledged_version');
+    if (acknowledged && (acknowledged === String(remote.version) || acknowledged === remote.tag || acknowledged === remote.buildTime)) {
+      return false;
+    }
+  }
   
-  // 1. Se os timestamps numéricos forem válidos e diferentes
+  // 1. Se os timestamps numéricos forem válidos
   if (remote.version && LOCAL_BUILD_TIMESTAMP > 0) {
-    if (remote.version !== LOCAL_BUILD_TIMESTAMP) {
-      console.log('[UpdateManager] Nova versão detectada por timestamp:', {
+    // Só é nova versão se for ESTRITAMENTE maior que a compilação local
+    if (remote.version > LOCAL_BUILD_TIMESTAMP) {
+      console.log('[UpdateManager] Nova versão detectada por timestamp maior:', {
         remote: remote.version,
         local: LOCAL_BUILD_TIMESTAMP,
         tag: remote.tag
@@ -80,18 +102,25 @@ export function isNewerVersion(remote: VersionInfo | null | undefined): boolean 
     return false;
   }
 
-  // 2. Se a data/hora ISO de build for diferente
-  if (remote.buildTime && remote.buildTime !== LOCAL_BUILD_TIME) {
-    console.log('[UpdateManager] Nova versão detectada por buildTime:', {
-      remote: remote.buildTime,
-      local: LOCAL_BUILD_TIME
-    });
-    return true;
+  // 2. Se a data/hora ISO de build remota for mais recente
+  if (remote.buildTime && LOCAL_BUILD_TIME && remote.buildTime !== LOCAL_BUILD_TIME) {
+    const remoteDate = new Date(remote.buildTime).getTime();
+    const localDate = new Date(LOCAL_BUILD_TIME).getTime();
+    if (!isNaN(remoteDate) && !isNaN(localDate)) {
+      if (remoteDate > localDate) {
+        console.log('[UpdateManager] Nova versão detectada por buildTime mais recente:', {
+          remote: remote.buildTime,
+          local: LOCAL_BUILD_TIME
+        });
+        return true;
+      }
+      return false;
+    }
   }
 
-  // 3. Se a tag for diferente
-  if (remote.tag && LOCAL_BUILD_TAG && remote.tag !== LOCAL_BUILD_TAG) {
-    console.log('[UpdateManager] Nova versão detectada por tag:', {
+  // 3. Se a tag for diferente e estritamente maior
+  if (remote.tag && LOCAL_BUILD_TAG && remote.tag > LOCAL_BUILD_TAG) {
+    console.log('[UpdateManager] Nova versão detectada por tag superior:', {
       remote: remote.tag,
       local: LOCAL_BUILD_TAG
     });
@@ -108,8 +137,12 @@ export function isNewerVersion(remote: VersionInfo | null | undefined): boolean 
  * 3. Recarrega a aplicação com os novos assets do Cloudflare
  */
 export async function executeAppUpdate(): Promise<void> {
-  console.log('[UpdateManager] Executando atualização forçada do sistema...');
+  console.log('[UpdateManager] Executando atualização do sistema solicitada pelo usuário...');
   try {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('last_update_ts', Date.now().toString());
+    }
+
     // 1. Notificar Service Worker para assumir controle imediatamente
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
