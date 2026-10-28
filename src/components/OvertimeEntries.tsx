@@ -209,7 +209,14 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   onBlockedAction,
   onNavigateToRequests
 }) => {
-  const [entries, setEntries] = useState<OvertimeEntry[]>([]);
+  const [entries, setEntries] = useState<OvertimeEntry[]>(() => {
+    try {
+      const cached = localStorage.getItem('manupack_overtime_entries');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Modais
@@ -226,7 +233,29 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [filterSector, setFilterSector] = useState<string>('todos');
   const [filterShift, setFilterShift] = useState<string>('todos');
   const [filterMode, setFilterMode] = useState<string>('todos');
-  const [filterMonth, setFilterMonth] = useState<string>(() => getCurrentPayrollCycleKey());
+  const [filterMonth, setFilterMonth] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('manupack_overtime_filter_month');
+      if (saved) return saved;
+      const cached = localStorage.getItem('manupack_overtime_entries');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.date) {
+          return getPayrollCycleFromDate(parsed[0].date).key;
+        }
+      }
+    } catch {}
+    return getCurrentPayrollCycleKey();
+  });
+
+  // Salva no localStorage quando o usuário altera o ciclo de folha
+  useEffect(() => {
+    if (filterMonth) {
+      try {
+        localStorage.setItem('manupack_overtime_filter_month', filterMonth);
+      } catch {}
+    }
+  }, [filterMonth]);
 
   // Campos do Formulário de Lançamento
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
@@ -282,12 +311,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
   // Menu de Opções Suspenso (Excel, PDF, Importar Ponto c/ IA)
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState<boolean>(false);
-  // Banner de confirmação de salvamento em lote via IA
-  const [saveBatchSuccessBanner, setSaveBatchSuccessBanner] = useState<{
-    count: number;
-    employeeName: string;
-    totalHours: number;
-  } | null>(null);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -441,6 +464,26 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         });
 
         setEntries(list);
+        try {
+          localStorage.setItem('manupack_overtime_entries', JSON.stringify(list));
+        } catch {}
+
+        // Se o ciclo atualmente selecionado não contiver nenhum lançamento, mas existirem lançamentos no banco,
+        // ajusta automaticamente para o ciclo dos lançamentos para que nada desapareça da tela após refresh!
+        if (list.length > 0) {
+          setFilterMonth((currentCycle) => {
+            const hasMatches = currentCycle === 'todos' || list.some((item) => isDateInPayrollCycle(item.date, currentCycle));
+            if (!hasMatches && list[0]?.date) {
+              const bestCycle = getPayrollCycleFromDate(list[0].date).key;
+              try {
+                localStorage.setItem('manupack_overtime_filter_month', bestCycle);
+              } catch {}
+              return bestCycle;
+            }
+            return currentCycle;
+          });
+        }
+
         setIsLoading(false);
       },
       (err) => {
@@ -1271,6 +1314,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           if (d !== 0) return d;
           return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
         });
+        try {
+          localStorage.setItem('manupack_overtime_entries', JSON.stringify(combined));
+        } catch {}
         return combined;
       });
 
@@ -1278,8 +1324,14 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       if (batchList.length > 0 && batchList[0].date) {
         const targetCycle = getPayrollCycleFromDate(batchList[0].date);
         setFilterMonth(targetCycle.key);
+        try {
+          localStorage.setItem('manupack_overtime_filter_month', targetCycle.key);
+        } catch {}
       } else {
         setFilterMonth('todos');
+        try {
+          localStorage.setItem('manupack_overtime_filter_month', 'todos');
+        } catch {}
       }
 
       // 3. Resetar filtros que poderiam esconder os lançamentos
@@ -1291,13 +1343,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
 
       // 4. Mudar para a aba de Tabela de Apontamentos
       setActiveSubTab('records');
-
-      // 5. Exibir banner de confirmação com resumo
-      setSaveBatchSuccessBanner({
-        count: batchList.length,
-        employeeName: batchList[0]?.employeeName || 'Colaborador',
-        totalHours: batchList.reduce((acc, curr) => acc + (curr.overtimeHours || 0), 0)
-      });
 
       triggerHaptic('success');
     } catch (err: any) {
@@ -3371,36 +3416,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           </div>
         ) : (
         <div className="space-y-4">
-          {saveBatchSuccessBanner && (
-            <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950 shadow-sm animate-in fade-in duration-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
-                  <CheckCircle2 size={22} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-black uppercase text-emerald-900 tracking-wide flex items-center gap-2 flex-wrap">
-                    <span>{saveBatchSuccessBanner.count} Apontamentos Salvos Separadamente com Sucesso!</span>
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-900 text-[10px] font-black uppercase">No Banco de Dados</span>
-                  </h4>
-                  <p className="text-[11px] text-emerald-800 font-semibold mt-0.5">
-                    Colaborador: <strong>{saveBatchSuccessBanner.employeeName}</strong> • Volume Total: <strong>{saveBatchSuccessBanner.totalHours.toFixed(2)}h extras</strong>. O ciclo de folha e filtros foram ajustados automaticamente para exibir os novos lançamentos destacados abaixo.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSaveBatchSuccessBanner(null)}
-                className="px-3.5 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0"
-              >
-                Fechar Aviso
-              </button>
-            </div>
-          )}
-
-        /* ============================================================== */
-        /* TABELA DE LANÇAMENTOS */
-        /* ============================================================== */
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* TABELA DE LANÇAMENTOS */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
               <Loader2 className="animate-spin text-blue-600" size={32} />

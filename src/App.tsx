@@ -1101,6 +1101,10 @@ export const App: React.FC = () => {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'extrusion' | 'ribbon' | 'personnel' | 'evaluations' | 'maintenance' | 'projection'>(() => {
     try {
+      const savedTab = localStorage.getItem('manupack_last_active_tab');
+      if (savedTab && ['home', 'extrusion', 'ribbon', 'personnel', 'evaluations', 'maintenance', 'projection'].includes(savedTab)) {
+        return savedTab as any;
+      }
       const saved = localStorage.getItem('manupackaging_user');
       if (saved) {
         const u = JSON.parse(saved);
@@ -1111,6 +1115,15 @@ export const App: React.FC = () => {
     } catch (e) {}
     return 'home';
   });
+
+  useEffect(() => {
+    if (activeTab) {
+      try {
+        localStorage.setItem('manupack_last_active_tab', activeTab);
+      } catch {}
+    }
+  }, [activeTab]);
+
   const [maintenanceSubTab, setMaintenanceSubTab] = useState<'requests' | 'causes'>('requests');
   const [maintenanceInitialCreateOpen, setMaintenanceInitialCreateOpen] = useState<boolean>(false);
   // Protetor de Tela (Projeção TV após 2 minutos de inatividade no computador)
@@ -1123,6 +1136,10 @@ export const App: React.FC = () => {
 
   const [personnelSubView, setPersonnelSubView] = useState<'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations' | 'bonus'>(() => {
     try {
+      const savedSubView = localStorage.getItem('manupack_last_personnel_subview');
+      if (savedSubView && ['board', 'vacations', 'training', 'lunch', 'overtime', 'overtime_entries', 'evaluations', 'bonus'].includes(savedSubView)) {
+        return savedSubView as any;
+      }
       const saved = localStorage.getItem('manupackaging_user');
       if (saved) {
         const u = JSON.parse(saved);
@@ -1133,6 +1150,14 @@ export const App: React.FC = () => {
     } catch (e) {}
     return 'board';
   });
+
+  useEffect(() => {
+    if (personnelSubView) {
+      try {
+        localStorage.setItem('manupack_last_personnel_subview', personnelSubView);
+      } catch {}
+    }
+  }, [personnelSubView]);
   const [isExtrusionMenuOpen, setIsExtrusionMenuOpen] = useState(false);
   const [extrusionMenuPos, setExtrusionMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [isRibbonMenuOpen, setIsRibbonMenuOpen] = useState(false);
@@ -12148,6 +12173,18 @@ Atenciosamente,
                     </button>
                   </div>
                 )}
+            </div>
+
+            {/* Botão de Acesso Modo Somente Leitura */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleGuestLogin}
+                className="w-full py-4 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-xs active:scale-95"
+              >
+                <Eye size={18} className="text-slate-500" />
+                <span>Entrar em Modo Somente Leitura</span>
+              </button>
             </div>
 
             <div className={`mt-2 pt-4 border-t border-slate-100 flex flex-col gap-2 items-center ${!discoveredUser && loginMatricula.length < 3 ? 'mt-1' : ''}`}>
