@@ -21319,6 +21319,7 @@ Atenciosamente,
           ) : personnelSubView === 'bonus' ? (
             <ProductionBonusManager
               employees={employees}
+              productionData={productionData}
               onClose={() => setPersonnelSubView('board')}
               canManage={canManagePersonnel}
               isReadOnly={isReadOnlyAccount}

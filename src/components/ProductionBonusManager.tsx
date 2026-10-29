@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Award, AlertTriangle, CheckCircle2, XCircle, Clock, FileText, 
   Calendar, Filter, Search, Plus, Trash2, ArrowLeft,
   ShieldAlert, FileCheck, Users, Printer, ChevronDown, 
   X, Info, Layers, AlertOctagon, HelpCircle, FileSpreadsheet,
   SlidersHorizontal, HardHat, Briefcase, Palmtree, Download,
-  ExternalLink, Check, DollarSign, Activity
+  ExternalLink, Check, DollarSign, Activity, Zap
 } from 'lucide-react';
 import { Employee } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -57,6 +58,7 @@ export interface MachineGoalConfig {
 
 interface ProductionBonusManagerProps {
   employees: Employee[];
+  productionData?: any[];
   onClose: () => void;
   canManage: boolean;
   isReadOnly?: boolean;
@@ -72,16 +74,34 @@ const MONTH_NAMES = [
 const DEFAULT_MACHINES = ["Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"];
 const DEFAULT_SHIFTS = ["Todos", "Diurno 1", "Noturno 1", "Diurno 2", "Noturno 2", "Comercial"];
 
+// Helper formats identical to BiAnalyticsView
+const formatWeight = (val: number | null | undefined) => {
+  const num = Number(val);
+  if (isNaN(num)) return '0 Kg';
+  const absVal = Math.abs(num);
+  if (absVal >= 1000) {
+    return (num / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(',', '.') + ' T';
+  }
+  return num.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' Kg';
+};
+
+const formatPercent = (val: number | null | undefined) => {
+  const num = Number(val);
+  if (isNaN(num)) return '0,00%';
+  return `${num.toFixed(2).replace('.', ',')}%`;
+};
+
 export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   employees = [],
+  productionData = [],
   onClose,
   canManage = true,
   isReadOnly = false,
   onBlockedAction,
   loggedUser
 }) => {
-  // Navigation tabs: 'overview' | 'incidents' | 'machine_goals' | 'payroll' | 'settings'
-  const [activeTab, setActiveTab] = useState<'overview' | 'incidents' | 'machine_goals' | 'payroll' | 'settings'>('overview');
+  // Navigation tabs: 'overview' | 'teams_evolution' | 'payroll' | 'incidents' | 'machine_goals' | 'settings'
+  const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents' | 'machine_goals' | 'settings'>('overview');
 
   // Cycle period state (defaults to October 2026 or current active cycle)
   const [selectedCycle, setSelectedCycle] = useState<string>(() => {
@@ -202,6 +222,209 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     } catch {}
   };
 
+  // Reference value for operator monthly bonus (single meta of R$ 250, editable)
+  const [metaMensalBonus, setMetaMensalBonus] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_bonus_base_meta');
+      if (saved) return Number(saved) || 250;
+    } catch {}
+    return 250;
+  });
+
+  const [operatorSearch, setOperatorSearch] = useState('');
+
+  // 100% Consistent Filter replicating App.tsx / BiAnalyticsView logic for data validity
+  const processedDataFiltered = useMemo(() => {
+    if (!Array.isArray(productionData)) return [];
+    return productionData.filter(e => {
+      if (!e || !e.date) return false;
+      const year = parseInt(e.date.split('-')[0], 10);
+      if (isNaN(year) || year < 2026) return false;
+      const isExcludedMonth = e.date.substring(5, 7) === '05' || e.date.substring(5, 7) === '06';
+      const isExistingPastEntry = !e.updatedAt || e.updatedAt < '2026-06-12T17:44:00Z';
+      if (isExcludedMonth && (e.machine || '').toLowerCase().includes('cast 2') && isExistingPastEntry) {
+        return false;
+      }
+      return true;
+    });
+  }, [productionData]);
+
+  // Operator Consistency database
+  const operatorMetrics = useMemo(() => {
+    const acc: Record<string, Record<string, {
+      operator: string;
+      month: string;
+      netProd: number;
+      waste: number;
+      ecoA: number;
+      ecoB: number;
+      borra: number;
+      logsCount: number;
+    }>> = {};
+
+    processedDataFiltered.forEach(e => {
+      if (!e.operator || (e.machine || '').toLowerCase().includes('erema')) return;
+      const m = e.date.substring(0, 7);
+      if (!acc[e.operator]) {
+        acc[e.operator] = {};
+      }
+      if (!acc[e.operator][m]) {
+        acc[e.operator][m] = {
+          operator: e.operator,
+          month: m,
+          netProd: 0,
+          waste: 0,
+          ecoA: 0,
+          ecoB: 0,
+          borra: 0,
+          logsCount: 0
+        };
+      }
+
+      acc[e.operator][m].netProd += (e.netWeight || 0);
+      const entryEcoA = e.ecoA || 0;
+      const entryEcoB = (e.ecoBP || 0) + (e.ecoBM || 0);
+      const entryBorra = e.borraTotal || 0;
+      acc[e.operator][m].waste += (entryEcoA + entryEcoB + entryBorra);
+      acc[e.operator][m].ecoA += entryEcoA;
+      acc[e.operator][m].ecoB += entryEcoB;
+      acc[e.operator][m].borra += entryBorra;
+      acc[e.operator][m].logsCount += 1;
+    });
+
+    const list: any[] = [];
+    Object.keys(acc).forEach(op => {
+      const monthRecords = acc[op];
+      const sortedMonths = Object.keys(monthRecords).sort();
+      
+      let totalProd = 0;
+      let totalWaste = 0;
+      let totalEcoA = 0;
+      let totalEcoB = 0;
+      let totalBorra = 0;
+      const history: any[] = [];
+
+      sortedMonths.forEach(m => {
+        const item = monthRecords[m];
+        totalProd += item.netProd;
+        totalWaste += item.waste;
+        totalEcoA += item.ecoA;
+        totalEcoB += item.ecoB;
+        totalBorra += item.borra;
+        const wasteIdx = item.netProd + item.waste === 0 ? 0 : (item.waste / (item.netProd + item.waste)) * 100;
+        
+        history.push({
+          month: m,
+          netProd: item.netProd,
+          waste: item.waste,
+          ecoA: item.ecoA,
+          ecoB: item.ecoB,
+          borra: item.borra,
+          wasteIdx
+        });
+      });
+
+      // Calculate MoM stability / volatility
+      let sumDiffSq = 0;
+      let count = 0;
+      for (let i = 1; i < history.length; i++) {
+        const prev = history[i - 1].netProd;
+        const curr = history[i].netProd;
+        const varPct = prev === 0 ? 0 : ((curr - prev) / prev) * 100;
+        sumDiffSq += (varPct * varPct);
+        count++;
+      }
+      const volatility = count > 0 ? Math.sqrt(sumDiffSq / count) : 0;
+
+      list.push({
+        operator: op,
+        history,
+        totalProd,
+        totalWaste,
+        totalEcoA,
+        totalEcoB,
+        totalBorra,
+        averageWasteIdx: totalProd + totalWaste === 0 ? 0 : (totalWaste / (totalProd + totalWaste)) * 100,
+        volatility,
+        monthsActive: sortedMonths.length
+      });
+    });
+
+    return list.sort((a,b) => b.totalProd - a.totalProd);
+  }, [processedDataFiltered]);
+
+  const filteredOperators = useMemo(() => {
+    if (!operatorSearch.trim()) return operatorMetrics;
+    const term = operatorSearch.toLowerCase();
+    return operatorMetrics.filter(o => (o.operator || '').toLowerCase().includes(term));
+  }, [operatorMetrics, operatorSearch]);
+
+  const { minWaste, maxWaste, wasteRange } = useMemo(() => {
+    const wasteIndexes = operatorMetrics.map(o => o.averageWasteIdx);
+    const minW = wasteIndexes.length > 0 ? Math.min(...wasteIndexes) : 0;
+    const maxW = wasteIndexes.length > 0 ? Math.max(...wasteIndexes) : 0;
+    return {
+      minWaste: minW,
+      maxWaste: maxW,
+      wasteRange: maxW - minW
+    };
+  }, [operatorMetrics]);
+
+  // Helper to extract operator level and corresponding bonus reference
+  const getOperatorDetails = (opName?: string) => {
+    if (!opName) {
+      return { level: 1, roleName: 'Operador 1', bonusRef: metaMensalBonus };
+    }
+    const listEmps = employees || [];
+    const targetName = String(opName).trim().toLowerCase();
+    const emp = listEmps.find(e => e && e.name && String(e.name).trim().toLowerCase() === targetName);
+    if (!emp) {
+      return { level: 1, roleName: 'Operador 1', bonusRef: metaMensalBonus };
+    }
+    const roleStr = String(emp.role || '').toLowerCase();
+    let level = 1;
+    let roleDisplay = emp.role || 'Operador 1';
+    if (roleStr.includes('3') || roleStr.includes('iii') || roleStr.includes('operador 3')) {
+      level = 3;
+    } else if (roleStr.includes('2') || roleStr.includes('ii') || roleStr.includes('operador 2')) {
+      level = 2;
+    } else if (roleStr.includes('1') || roleStr.includes('i') || roleStr.includes('operador 1')) {
+      level = 1;
+    }
+    return { level, roleName: roleDisplay, bonusRef: metaMensalBonus };
+  };
+
+  // Helper to match an employee with their operator metrics
+  const findOperatorPerformance = (empName?: string, reg?: string) => {
+    if (!empName) return null;
+    const normEmp = empName.trim().toLowerCase();
+    const parts = normEmp.split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || '';
+    const lastName = parts.length > 1 ? parts[parts.length - 1] : '';
+
+    const found = operatorMetrics.find(o => {
+      const normOp = o.operator.trim().toLowerCase();
+      if (normOp === normEmp) return true;
+      if (normOp.includes(normEmp) || normEmp.includes(normOp)) return true;
+      if (firstName && lastName && normOp.includes(firstName) && normOp.includes(lastName)) return true;
+      if (parts.length === 1 && normOp === firstName) return true;
+      return false;
+    });
+
+    if (!found) return null;
+
+    const discountPct = wasteRange === 0 ? 0 : ((found.averageWasteIdx - minWaste) / wasteRange) * 100;
+    const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
+    const lossAmt = metaMensalBonus * (discountPct / 100);
+
+    return {
+      ...found,
+      discountPct,
+      bonusAmt,
+      lossAmt
+    };
+  };
+
   // Cycle incidents and machine goals
   const cycleIncidents = useMemo(() => {
     return incidents.filter(i => i.cyclePeriod === selectedCycle);
@@ -216,10 +439,19 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     return employees.filter(e => e.status === 'Ativo');
   }, [employees]);
 
-  // Calculation per employee
+  // Format currency
+  const formatBRL = (val: number | null | undefined) => {
+    const num = Number(val) || 0;
+    return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // Calculation per employee with Performance Deductions Interlinked
   const payrollData = useMemo(() => {
     return activeEmployees.map(emp => {
       const baseAmount = getBaseBonus(emp.role);
+
+      // Find operator metric from historical performance
+      const perf = findOperatorPerformance(emp.name, emp.registration);
 
       // Direct personal incidents
       const personalIncidents = cycleIncidents.filter(
@@ -271,6 +503,16 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         reasonsList.push(`Meta Não Batida (${g.machine} - ${g.shift}) (${pct}%)`);
       });
 
+      // Performance linear discount deduction from historical teams evolution
+      let perfDiscountPct = 0;
+      let perfLossAmount = 0;
+      if (perf && perf.discountPct > 0) {
+        perfDiscountPct = perf.discountPct;
+        perfLossAmount = (baseAmount * perfDiscountPct) / 100;
+        totalDeductionPercent += perfDiscountPct;
+        reasonsList.push(`Desconto Linear Desempenho Extrusão (${perf.discountPct.toFixed(1)}% - Perda: ${perf.averageWasteIdx.toFixed(2)}% | -${formatBRL(perfLossAmount)})`);
+      }
+
       totalDeductionPercent = Math.min(100, Math.max(0, totalDeductionPercent));
       const deductionAmount = (baseAmount * totalDeductionPercent) / 100;
       const finalAmount = Math.max(0, baseAmount - deductionAmount);
@@ -287,10 +529,43 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         isEligible,
         status,
         personalIncidents,
+        perf,
+        perfDiscountPct,
+        perfLossAmount,
         reasonsText: reasonsList.join(' • ') || 'Sem ocorrências (100% da meta)'
       };
     });
-  }, [activeEmployees, cycleIncidents, cycleMachineGoals, baseBonusValues]);
+  }, [activeEmployees, cycleIncidents, cycleMachineGoals, baseBonusValues, operatorMetrics, wasteRange, minWaste, metaMensalBonus]);
+
+  // Automatically generate incident records for operators with linear performance deductions
+  const autoPerformanceIncidents = useMemo(() => {
+    return payrollData
+      .filter(item => item.perf && item.perf.discountPct > 0)
+      .map(item => ({
+        id: `auto_perf_${item.employee.id}_${selectedCycle}`,
+        employeeId: item.employee.id,
+        employeeName: item.employee.name,
+        registration: item.employee.registration,
+        sector: item.employee.sector || 'Extrusão',
+        machine: item.employee.machine || 'Cast',
+        shift: item.employee.shift || 'Todos',
+        type: 'meta_maquina_nao_atingida' as BonusIncidentType,
+        date: `${selectedCycle}-01`,
+        cyclePeriod: selectedCycle,
+        description: `Desconto Linear Histórico de Equipe: Coeficiente de Perda de ${item.perf!.averageWasteIdx.toFixed(2)}% (Descarte Acum.: ${formatWeight(item.perf!.totalWaste)} | Borra: ${formatWeight(item.perf!.totalBorra)}) gerando perda de ${formatBRL(item.perfLossAmount)} (${item.perf!.discountPct.toFixed(1)}% de desconto).`,
+        documentNumber: 'BI-DESEMPENHO',
+        documentDetails: `Produção: ${formatWeight(item.perf!.totalProd)} | Histórico: ${item.perf!.monthsActive} meses`,
+        isJustified: false,
+        penaltyRatePercent: Number(item.perf!.discountPct.toFixed(1)),
+        registeredBy: 'Automático (Evolução Histórica BI)',
+        isAutomatic: true,
+        createdAt: new Date().toISOString()
+      }));
+  }, [payrollData, selectedCycle]);
+
+  const combinedIncidents = useMemo(() => {
+    return [...cycleIncidents, ...autoPerformanceIncidents];
+  }, [cycleIncidents, autoPerformanceIncidents]);
 
   // Filtered payroll rows
   const filteredPayroll = useMemo(() => {
@@ -332,10 +607,6 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     };
   }, [payrollData]);
 
-  // Format currency
-  const formatBRL = (val: number) => {
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  };
 
   // Open incident registration modal
   const handleOpenAddIncident = (emp?: Employee) => {
@@ -516,6 +787,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       `${inc.penaltyRatePercent ?? 100}%`
     ]);
 
+    if (item.perf && item.perf.discountPct > 0) {
+      incidentRows.push([
+        `${selectedCycle}-01`,
+        'DESCONTO LINEAR HISTÓRICO',
+        `Evolução de Equipe (Perda Média: ${item.perf.averageWasteIdx.toFixed(2)}% | Descarte: ${formatWeight(item.perf.totalWaste)})`,
+        `-${item.perf.discountPct.toFixed(1)}% (- ${formatBRL(item.perfLossAmount)})`
+      ]);
+    }
+
     if (incidentRows.length === 0) {
       incidentRows.push(['—', 'REGULAR', 'Nenhuma ocorrência ou desconto registrado no período', '0%']);
     }
@@ -534,9 +814,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
     // Calculation summary
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(14, finalY + 10, 182, 35, 3, 3, 'F');
+    doc.roundedRect(14, finalY + 10, 182, 38, 3, 3, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(14, finalY + 10, 182, 35, 3, 3, 'D');
+    doc.roundedRect(14, finalY + 10, 182, 38, 3, 3, 'D');
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
@@ -547,11 +827,19 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
     doc.text(`Valor Base Estipulado: ${formatBRL(item.baseAmount)}`, 20, finalY + 26);
-    doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, finalY + 32);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, finalY + 38);
+    
+    if (item.perf && item.perf.discountPct > 0) {
+      doc.text(`Desconto Linear de Desempenho (BI): - ${formatBRL(item.perfLossAmount)} (${item.perf.discountPct.toFixed(1)}% desc. | Perda: ${item.perf.averageWasteIdx.toFixed(2)}%)`, 20, finalY + 31);
+      doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, finalY + 36);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, finalY + 42);
+    } else {
+      doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, finalY + 32);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, finalY + 38);
+    }
 
     // Signatures
     doc.line(20, finalY + 65, 80, finalY + 65);
@@ -712,7 +1000,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       {/* ======================================================== */}
       {/* NAVIGATION TABS BAR                                      */}
       {/* ======================================================== */}
-      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-fit shadow-xs">
+      <div className="flex flex-wrap items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-fit shadow-xs">
         <button
           onClick={() => setActiveTab('overview')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -723,6 +1011,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         >
           <Activity className="w-4 h-4" />
           <span>Visão Geral & KPIs</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('teams_evolution')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'teams_evolution'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Users className="w-4 h-4 text-blue-600" />
+          <span>Evolução Histórica das Equipes</span>
         </button>
 
         <button
@@ -746,7 +1046,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           }`}
         >
           <ShieldAlert className="w-4 h-4" />
-          <span>Apontamentos ({cycleIncidents.length})</span>
+          <span>Apontamentos ({combinedIncidents.length})</span>
         </button>
 
         <button
@@ -877,6 +1177,329 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       )}
 
       {/* ======================================================== */}
+      {/* TAB: EVOLUÇÃO HISTÓRICA DAS EQUIPES (EXATA DO BI)       */}
+      {/* ======================================================== */}
+      {activeTab === 'teams_evolution' && (
+        <motion.div 
+          key="teams_evolution" 
+          initial={{ opacity: 0, y: 10 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          exit={{ opacity: 0, y: -10 }} 
+          className="space-y-6"
+        >
+          {/* Operator stability and performance trackers */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-150 shadow-sm space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
+                  <Users className="text-blue-600" size={16} /> Evolução Histórica de Desempenho e Consistência de Operadores
+                </h3>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Meta Mensal Única de R$ 250 com bolinha explicativa da regra */}
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 shadow-2xs">
+                  <Award className="text-amber-500 shrink-0" size={16} />
+                  <div className="flex flex-col min-w-[125px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider leading-none">Meta Mensal</span>
+                      {/* Bolinha explicativa interativa ao passar o mouse */}
+                      <div className="group relative inline-flex items-center cursor-help">
+                        <span className="w-3.5 h-3.5 rounded-full bg-slate-200 hover:bg-blue-600 text-slate-600 hover:text-white flex items-center justify-center text-[9px] font-black transition-colors" title="Como funciona o cálculo da meta e bônus">
+                          ?
+                        </span>
+                        <div className="pointer-events-none absolute right-0 top-full mt-2 w-80 sm:w-96 p-4 bg-slate-900/95 backdrop-blur-md border border-slate-700 text-white text-[10px] font-medium rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] normal-case tracking-normal space-y-2.5 leading-relaxed">
+                          <div className="flex items-center gap-2 text-amber-400 font-black uppercase text-[11px] pb-1 border-b border-slate-800">
+                            <Award size={14} className="text-amber-400" />
+                            <span>Cálculo da Regra de Bônus (Meta R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</span>
+                          </div>
+                          <p className="text-slate-300">
+                            O bônus individual é calculado com base na <strong>Meta Mensal de R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> por operador, aplicando o modelo de <strong>Desconto Linear Proporcional</strong> conforme o coeficiente de perda de cada colaborador:
+                          </p>
+                          <div className="space-y-1.5">
+                            <div className="p-2 bg-emerald-950/60 border border-emerald-500/30 rounded-xl">
+                              <span className="font-bold text-emerald-400 block text-[10.5px]">Melhor Perda (Mínimo Desperdício):</span>
+                              <span className="text-slate-300 text-[9.5px]">Aplica <strong>0% de desconto</strong>. O operador recebe 100% da meta: <strong>R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>.</span>
+                            </div>
+                            <div className="p-2 bg-rose-950/60 border border-rose-500/30 rounded-xl">
+                              <span className="font-bold text-rose-400 block text-[10.5px]">Pior Perda (Máximo Desperdício):</span>
+                              <span className="text-slate-300 text-[9.5px]">Aplica <strong>100% de desconto</strong>, resultando em <strong>R$ 0,00</strong>.</span>
+                            </div>
+                            <div className="p-2 bg-blue-950/60 border border-blue-500/30 rounded-xl">
+                              <span className="font-bold text-blue-400 block text-[10.5px]">Desempenho Intermediário:</span>
+                              <span className="text-slate-300 text-[9.5px]">O desconto varia linearmente entre 0% e 100% conforme a posição relativa entre a melhor e pior perda.</span>
+                            </div>
+                          </div>
+                          <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between font-mono">
+                            <span>Fórmula:</span>
+                            <span className="text-slate-200">Bônus = R$ {metaMensalBonus} × (1 - Desconto% / 100)</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-[10px] font-bold text-slate-500">R$</span>
+                      <input 
+                        type="number" 
+                        min={0}
+                        value={metaMensalBonus} 
+                        onChange={e => {
+                          const val = Number(e.target.value) || 0;
+                          setMetaMensalBonus(val);
+                          try {
+                            localStorage.setItem('manupackaging_bonus_base_meta', String(val));
+                          } catch {}
+                        }} 
+                        className="bg-transparent font-black text-xs text-slate-800 outline-none w-16 p-0 border-none focus:ring-0 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <input 
+                    type="text" 
+                    placeholder="Pesquisar operador..." 
+                    value={operatorSearch} 
+                    onChange={e => setOperatorSearch(e.target.value)} 
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 w-full sm:w-52"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-150">
+              <table className="w-full text-left text-[11px] border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200">
+                    <th className="px-5 py-3">
+                      <div className="flex items-center gap-1">
+                        Operador de Produção
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full left-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Nome do operador encarregado do apontamento de produção.
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Produção Acumulada Cast
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Soma total de peso líquido gerado pelo respectivo profissional.
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Descarte Acumulado
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Peso total de refugo e borra não aproveitado, bem como a discriminação individualizada de cada tipo de descarte.
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Média Coeficiente de Perda
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Coeficiente médio de desperdício em relação ao volume bruto produzido (Menor é melhor).
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right text-amber-600">
+                      <div className="flex items-center justify-end gap-1">
+                        Desconto Linear
+                        <span className="group relative inline-block cursor-help align-middle text-slate-400">
+                          <Info size={10} className="hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Desconto aplicado de forma proporcional linear, variando de 0% (Melhor Média de Perdas do período) até 100% (Pior Média de Perdas).
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right text-emerald-600">
+                      <div className="flex items-center justify-end gap-1">
+                        Bônus Estimado
+                        <span className="group relative inline-block cursor-help align-middle text-slate-400">
+                          <Info size={10} className="hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Valor final do bônus proporcional recebido após o desconto proporcional linear do mês com base no valor de referência.
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Volatilidade Evolutiva (▲ MoM SD)
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Desvio padrão das variações mensais (Sinaliza coerência ou se o operador possui ciclos de extrema oscilação).
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Atividades (Meses)
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Número de meses em que o operador possui pelo menos um apontamento registrado.
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        Classificação Operacional
+                        <span className="group relative inline-block cursor-help align-middle">
+                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
+                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-56 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                            Diagnóstico automatizado baseado no cruzamento de volume entregue e estabilidade de perda.
+                          </span>
+                        </span>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                  {filteredOperators.length > 0 ? (
+                    filteredOperators.map((op) => {
+                      // Classify operator consistency profile
+                      let badgeColor = 'bg-slate-100 text-slate-500';
+                      let label = 'Médio Produtor';
+
+                      if (op.totalProd > 25000 && op.averageWasteIdx <= 4.0) {
+                        badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                        label = 'Alta Performance e Baixa Perda';
+                      } else if (op.volatility > 15 && op.averageWasteIdx > 5.5) {
+                        badgeColor = 'bg-rose-100 text-rose-800 border-rose-200';
+                        label = 'Forte Instabilidade / Alta Perda';
+                      } else if (op.averageWasteIdx <= 3.5) {
+                        badgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
+                        label = 'Operação Limpa e Consistente';
+                      } else if (op.totalProd > 30000) {
+                        badgeColor = 'bg-purple-100 text-purple-800 border-purple-200';
+                        label = 'Alto Volume Gerado';
+                      }
+
+                      const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
+                      const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
+                      const lossAmt = metaMensalBonus * (discountPct / 100);
+
+                      return (
+                        <tr key={op.operator} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-slate-900 font-black uppercase flex items-center gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                {op.operator}
+                                {op.totalProd > 35000 && (
+                                  <Zap className="text-amber-500 fill-amber-500" size={13} title="Destaque de Produtividade" />
+                                )}
+                              </div>
+                              <div className="text-[9px] text-indigo-500 font-black mt-0.5 tracking-wider uppercase">
+                                {getOperatorDetails(op.operator).roleName}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-right font-medium">{formatWeight(op.totalProd)}</td>
+                          <td className="px-4 py-4 text-right">
+                            <div className="font-extrabold text-slate-800">{formatWeight(op.totalWaste)}</div>
+                            <div className="text-[9px] text-slate-400 font-bold uppercase mt-1 space-y-0.5">
+                              <div>Eco A: {formatWeight(op.totalEcoA)}</div>
+                              <div>Eco B: {formatWeight(op.totalEcoB)}</div>
+                              <div>Borra: {formatWeight(op.totalBorra)}</div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-right text-rose-500 font-black">{formatPercent(op.averageWasteIdx)}</td>
+                          <td className="px-4 py-4 text-right">
+                            {(() => {
+                              if (discountPct === 0) {
+                                return <span className="text-emerald-600 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (Melhor)</span>;
+                              }
+                              if (discountPct === 100) {
+                                return (
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-rose-500 font-black bg-rose-50 px-2 py-1 rounded-lg">100,0% (Máx.)</span>
+                                    <span className="text-[9px] text-rose-500 font-bold mt-0.5">- {formatBRL(lossAmt)}</span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="flex flex-col items-end">
+                                  <span className="text-slate-600 font-bold">{discountPct.toFixed(1).replace('.', ',')}%</span>
+                                  <span className="text-[9px] text-rose-500 font-bold mt-0.5">- {formatBRL(lossAmt)}</span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            {(() => {
+                              if (discountPct === 0) {
+                                return (
+                                  <div className="flex justify-end items-center gap-1">
+                                    <span className="text-emerald-600 font-black text-xs flex flex-col items-end bg-emerald-50 px-2.5 py-1 rounded-xl">
+                                      <span className="flex items-center gap-0.5"><Award size={12} className="text-amber-500 fill-amber-500 inline mr-0.5" /> {formatBRL(bonusAmt)}</span>
+                                      <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">Sem desconto (Meta R$ {metaMensalBonus})</span>
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              if (discountPct === 100) {
+                                return (
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-slate-400 font-normal">R$ 0,00</span>
+                                    <span className="text-[8px] text-rose-400 font-bold block mt-0.5">100% desconto (Pior perda)</span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="flex flex-col items-end">
+                                  <span className="text-slate-700 font-extrabold text-xs">{formatBRL(bonusAmt)}</span>
+                                  <span className="text-[8px] text-slate-400 font-semibold">Meta: {formatBRL(metaMensalBonus)}</span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <span className={op.volatility > 12 ? "text-rose-500" : "text-emerald-600"}>
+                              {op.volatility === 0 ? 'Estável' : `± ${op.volatility.toFixed(1)}%`}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right text-slate-500">{op.monthsActive} {op.monthsActive === 1 ? 'Mês' : 'Meses'}</td>
+                          <td className="px-5 py-4">
+                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${badgeColor}`}>
+                              {label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="px-5 py-8 text-center text-slate-300 font-bold uppercase tracking-wider">
+                        Nenhum operador encontrado com esse nome.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ======================================================== */}
       {/* TAB 2: PAYROLL & COLLABORATORS TABLE                     */}
       {/* ======================================================== */}
       {activeTab === 'payroll' && (
@@ -974,9 +1597,16 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                           </td>
                           <td className="py-3 px-4 text-center">
                             {item.totalDeductionPercent > 0 ? (
-                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">
-                                -{item.totalDeductionPercent.toFixed(0)}% ({formatBRL(item.deductionAmount)})
-                              </span>
+                              <div className="flex flex-col items-center">
+                                <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">
+                                  -{item.totalDeductionPercent.toFixed(0)}% ({formatBRL(item.deductionAmount)})
+                                </span>
+                                {item.perf && item.perf.discountPct > 0 && (
+                                  <span className="text-[9px] text-rose-500 font-bold mt-0.5 whitespace-nowrap" title={`Perda Média: ${item.perf.averageWasteIdx.toFixed(2)}% | Descarte: ${formatWeight(item.perf.totalWaste)}`}>
+                                    Perda Linear: -{formatBRL(item.perfLossAmount)} ({item.perf.discountPct.toFixed(1)}%)
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-slate-400 font-semibold">—</span>
                             )}
@@ -1071,45 +1701,62 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {cycleIncidents.length > 0 ? (
-                    cycleIncidents.map(inc => (
-                      <tr key={inc.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-600">
-                          {inc.date}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-bold text-slate-800 block">{inc.employeeName}</span>
-                          {inc.registration && (
-                            <span className="text-[10px] text-slate-400 font-mono">Mat. {inc.registration}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
-                            {inc.type.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600">
-                          {inc.description}
-                        </td>
-                        <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                          {inc.documentNumber ? `Nº ${inc.documentNumber}` : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-center font-bold text-amber-600">
-                          -{inc.penaltyRatePercent ?? 100}%
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          {canManage && (
-                            <button
-                              onClick={() => handleDeleteIncident(inc.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-                              title="Excluir Ocorrência"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                  {combinedIncidents.length > 0 ? (
+                    combinedIncidents.map(inc => {
+                      const isAuto = (inc as any).isAutomatic;
+                      return (
+                        <tr key={inc.id} className={`hover:bg-slate-50/80 transition-colors ${isAuto ? 'bg-blue-50/20' : ''}`}>
+                          <td className="py-3 px-4 font-semibold text-slate-600">
+                            {inc.date}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-bold text-slate-800 block">{inc.employeeName}</span>
+                            {inc.registration && (
+                              <span className="text-[10px] text-slate-400 font-mono">Mat. {inc.registration}</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            {isAuto ? (
+                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                                Perda Linear BI
+                              </span>
+                            ) : (
+                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
+                                {inc.type.replace('_', ' ')}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">
+                            {inc.description}
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
+                            {isAuto ? (
+                              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">Automático</span>
+                            ) : (
+                              inc.documentNumber ? `Nº ${inc.documentNumber}` : '—'
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center font-bold text-rose-600">
+                            -{inc.penaltyRatePercent ?? 100}%
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {isAuto ? (
+                              <span className="text-[10px] text-slate-400 font-bold italic">Integrado BI</span>
+                            ) : (
+                              canManage && (
+                                <button
+                                  onClick={() => handleDeleteIncident(inc.id)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Excluir Ocorrência"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-xs text-slate-400 font-semibold">

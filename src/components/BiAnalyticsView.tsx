@@ -18,6 +18,7 @@ interface BiAnalyticsViewProps {
   employees?: Employee[];
   onOpenDowntimeAnalytics?: () => void;
   onOpenDowntimeReasons?: () => void;
+  standaloneSection?: 'matrix' | 'mom_yoy' | 'stoppages' | 'operators' | 'eco_b_vs_tubetes';
 }
 
 // Helper formats
@@ -63,7 +64,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   goals, 
   employees,
   onOpenDowntimeAnalytics,
-  onOpenDowntimeReasons
+  onOpenDowntimeReasons,
+  standaloneSection
 }) => {
   // 100% Consistent Filter replicating App.tsx logic for data validity
   const processedDataFiltered = useMemo(() => {
@@ -104,7 +106,9 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   const [periodB, setPeriodB] = useState<string>(() => monthsList[monthsList.length - 1] || monthsList[0] || '');
   
   // Tab for BI subsections
-  const [biActiveSection, setBiActiveSection] = useState<'matrix' | 'mom_yoy' | 'stoppages' | 'operators' | 'eco_b_vs_tubetes'>('matrix');
+  const [biActiveSection, setBiActiveSection] = useState<'matrix' | 'mom_yoy' | 'stoppages' | 'operators' | 'eco_b_vs_tubetes'>(
+    standaloneSection || 'matrix'
+  );
 
   // State for matrix filter mode: 'all' (Todos), 'related' (Qualquer relação com A/B), 'active' (Apenas A vs B)
   const [matrixFilterMode, setMatrixFilterMode] = useState<'all' | 'related' | 'active'>('related');
@@ -279,7 +283,20 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   }, [processedDataFiltered]);
 
   // Reference value for operator monthly bonus (single meta of R$ 250)
-  const [metaMensalBonus, setMetaMensalBonus] = useState<number>(250);
+  const [metaMensalBonus, setMetaMensalBonus] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_bonus_base_meta');
+      if (saved) return Number(saved) || 250;
+    } catch {}
+    return 250;
+  });
+
+  const updateMetaMensalBonus = (val: number) => {
+    setMetaMensalBonus(val);
+    try {
+      localStorage.setItem('manupackaging_bonus_base_meta', String(val));
+    } catch {}
+  };
 
   // Helper to extract operator level and corresponding bonus reference from employees allocations database
   const getOperatorDetails = (opName?: string) => {
@@ -660,22 +677,19 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Upper Welcome Header */}
-      <div className="bg-[#1e293b] text-white p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col justify-between border border-slate-700/40">
-        <div className="absolute right-0 top-0 -mr-12 -mt-12 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl" />
-        <div className="absolute left-1/3 bottom-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
-        
-        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
+      {standaloneSection ? (
+        <div className="bg-[#1e293b] text-white p-6 sm:p-7 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-700/40">
+          <div className="absolute right-0 top-0 -mr-12 -mt-12 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative">
             <div className="flex items-center gap-2 text-[10px] uppercase font-black tracking-[0.2em] text-blue-400 mb-1">
-              <Activity size={12} className="animate-pulse" /> Inteligência Operacional de BI
+              <Users size={12} className="animate-pulse" /> Inteligência de Equipes & Bônus
             </div>
-            <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Analytics de Comparação Periódica</h2>
+            <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Evolução Histórica das Equipes</h2>
             <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
-              Compare e cruze diferentes períodos produtivos combinatoriamente. Avalie a eficiência física de descarte, o aproveitamento do Eco A, o perfil de indisponibilidade de paradas de forma análoga aos cálculos DAX de Time Intelligence.
+              Cálculo analítico idêntico e sincronizado ao BI Extrusão. Descontos lineares e bônus estimado por operador calculados com base no volume entregue e coeficiente de perdas.
             </p>
           </div>
-          
-          <div className="flex items-center gap-3 bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60 max-w-sm shrink-0">
+          <div className="flex items-center gap-3 bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60 shrink-0">
             <Scale className="text-emerald-400 shrink-0" size={20} />
             <div className="leading-tight">
               <span className="text-[9px] uppercase font-black text-slate-400 block tracking-widest">Base de BI</span>
@@ -683,7 +697,32 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-[#1e293b] text-white p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col justify-between border border-slate-700/40">
+          <div className="absolute right-0 top-0 -mr-12 -mt-12 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl" />
+          <div className="absolute left-1/3 bottom-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
+          
+          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] uppercase font-black tracking-[0.2em] text-blue-400 mb-1">
+                <Activity size={12} className="animate-pulse" /> Inteligência Operacional de BI
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Analytics de Comparação Periódica</h2>
+              <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
+                Compare e cruze diferentes períodos produtivos combinatoriamente. Avalie a eficiência física de descarte, o aproveitamento do Eco A, o perfil de indisponibilidade de paradas de forma análoga aos cálculos DAX de Time Intelligence.
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-3 bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60 max-w-sm shrink-0">
+              <Scale className="text-emerald-400 shrink-0" size={20} />
+              <div className="leading-tight">
+                <span className="text-[9px] uppercase font-black text-slate-400 block tracking-widest">Base de BI</span>
+                <span className="text-xs font-black text-white">{monthsList.length} meses apurados</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Slicers / Interactive Selectors Panel */}
       <div className="bg-white p-5 rounded-3xl border border-slate-150 shadow-sm flex flex-col gap-5">
@@ -1582,7 +1621,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                           type="number" 
                           min={0}
                           value={metaMensalBonus} 
-                          onChange={e => setMetaMensalBonus(Number(e.target.value) || 0)} 
+                          onChange={e => updateMetaMensalBonus(Number(e.target.value) || 0)} 
                           className="bg-transparent font-black text-xs text-slate-800 outline-none w-16 p-0 border-none focus:ring-0 focus:outline-none"
                         />
                       </div>
