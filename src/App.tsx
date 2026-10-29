@@ -20890,20 +20890,6 @@ Atenciosamente,
                     </button>
                   )}
 
-                  {/* Filtro Mês de Referência */}
-                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5" title="Mês de Referência do Corte de Fita">
-                    <Calendar size={13} className="text-slate-400" />
-                    <input
-                      type="month"
-                      value={dashboardMonth}
-                      onChange={(e) => {
-                        setDashboardMonth(e.target.value);
-                        setRibbonFilterDay('');
-                      }}
-                      className="text-xs font-black text-slate-700 bg-transparent outline-none cursor-pointer"
-                    />
-                  </div>
-
                   {/* Filtro Dia Específico (Opcional) */}
                   <div className="relative flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5" title="Filtrar Dia Específico">
                     <input

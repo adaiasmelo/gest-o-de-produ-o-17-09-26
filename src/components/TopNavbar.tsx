@@ -77,7 +77,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [dropdownHeight, setDropdownHeight] = useState<number>(0);
   const navRef = useRef<HTMLDivElement>(null);
+  const dropdownPortalRef = useRef<HTMLDivElement>(null);
 
   // Fecha o dropdown ao clicar fora ou pressionar ESC
   useEffect(() => {
@@ -92,16 +94,18 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
       }
       const portalEl = document.getElementById('top-navbar-dropdown-portal');
       if (portalEl && portalEl.contains(target)) {
-        return;
+        return; // Permite rolar a lista de opções interna do dropdown
       }
       setOpenDropdown(null);
       setAnchorRect(null);
+      setDropdownHeight(0);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenDropdown(null);
         setAnchorRect(null);
+        setDropdownHeight(0);
       }
     };
 
@@ -113,6 +117,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
       }
       setOpenDropdown(null);
       setAnchorRect(null);
+      setDropdownHeight(0);
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -128,51 +133,101 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
     };
   }, [openDropdown]);
 
+  // Medição precisa da altura real do dropdown para ajuste dinâmico
+  useEffect(() => {
+    if (openDropdown && dropdownPortalRef.current) {
+      const measured = dropdownPortalRef.current.offsetHeight;
+      if (measured > 0 && Math.abs(measured - dropdownHeight) > 4) {
+        setDropdownHeight(measured);
+      }
+    }
+  }, [openDropdown, anchorRect]);
+
   const toggleDropdown = (name: string, event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (openDropdown === name) {
       setOpenDropdown(null);
       setAnchorRect(null);
+      setDropdownHeight(0);
     } else {
       const rect = event.currentTarget.getBoundingClientRect();
       setAnchorRect(rect);
       setOpenDropdown(name);
+      setDropdownHeight(0);
     }
   };
 
   const handleSelectOption = (action: () => void) => {
     setOpenDropdown(null);
     setAnchorRect(null);
+    setDropdownHeight(0);
     action();
   };
 
-  // Posicionamento inteligente do Dropdown (fixo na tela, nunca cortado e sem scrollbars artificiais)
-  const getDropdownStyle = (): React.CSSProperties => {
-    if (!anchorRect) return { display: 'none' };
+  // Altura aproximada estimada por menu para pré-decisão antes da medição de DOM
+  const getApproxMenuHeight = (name: string | null): number => {
+    switch (name) {
+      case 'personnel': return 520;
+      case 'ribbon': return 460;
+      case 'extrusion': return 350;
+      case 'maintenance': return 220;
+      default: return 320;
+    }
+  };
+
+  // Posicionamento inteligente bidirecional:
+  // Se estiver no limite da tela de baixo, abre para CIMA, em primeiro plano absoluto (zIndex 99999)
+  const getDropdownPlacement = (): { isUpwards: boolean; style: React.CSSProperties } => {
+    if (!anchorRect) return { isUpwards: false, style: { display: 'none' } };
     
-    const width = Math.min(310, typeof window !== 'undefined' ? window.innerWidth - 24 : 310);
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+    const width = Math.min(310, viewportWidth - 24);
     let left = anchorRect.left;
     
-    if (typeof window !== 'undefined') {
-      if (left + width > window.innerWidth - 12) {
-        left = Math.max(12, window.innerWidth - width - 12);
-      }
-      if (left < 12) {
-        left = 12;
-      }
+    if (left + width > viewportWidth - 12) {
+      left = Math.max(12, viewportWidth - width - 12);
     }
-    
-    const top = anchorRect.bottom + 8;
-    const maxHeight = typeof window !== 'undefined' ? Math.max(200, window.innerHeight - top - 16) : 420;
+    if (left < 12) {
+      left = 12;
+    }
 
-    return {
-      position: 'fixed',
-      top: `${top}px`,
-      left: `${left}px`,
-      width: `${width}px`,
-      maxHeight: `${maxHeight}px`,
-      zIndex: 9999,
-    };
+    const spaceBelow = viewportHeight - anchorRect.bottom - 16;
+    const spaceAbove = anchorRect.top - 16;
+    const targetHeight = dropdownHeight > 0 ? dropdownHeight : getApproxMenuHeight(openDropdown);
+
+    // Se o conteúdo atingir o limite inferior da tela (espaço insuficiente) e houver mais espaço acima,
+    // ou se o espaço abaixo for menor que 280px e acima for favorável: inverte para CIMA!
+    const isUpwards = (spaceBelow < targetHeight && spaceAbove > spaceBelow) || (spaceBelow < 260 && spaceAbove > 180);
+
+    if (isUpwards) {
+      const maxHeight = Math.max(180, Math.min(spaceAbove, 650));
+      return {
+        isUpwards: true,
+        style: {
+          position: 'fixed',
+          bottom: `${viewportHeight - anchorRect.top + 8}px`,
+          left: `${left}px`,
+          width: `${width}px`,
+          maxHeight: `${maxHeight}px`,
+          zIndex: 99999, // Super primeiro plano sobre qualquer imagem ou elemento
+        }
+      };
+    } else {
+      const maxHeight = Math.max(180, Math.min(spaceBelow, 650));
+      return {
+        isUpwards: false,
+        style: {
+          position: 'fixed',
+          top: `${anchorRect.bottom + 8}px`,
+          left: `${left}px`,
+          width: `${width}px`,
+          maxHeight: `${maxHeight}px`,
+          zIndex: 99999, // Super primeiro plano sobre qualquer imagem ou elemento
+        }
+      };
+    }
   };
 
   const hasExtrusionAccess = isAdmin || !!userPerms.extrusion?.enabled || !!userPerms.extrusion?.summary || !!userPerms.extrusion?.charts || !!userPerms.extrusion?.comparison || !!userPerms.extrusion?.reports || !!userPerms.extrusion?.stock;
@@ -379,12 +434,18 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         - Não é cortada pelo scroll horizontal nem empurra layout
         - Visual tecnológico glassmorphism elegante
       */}
-      {openDropdown && anchorRect && typeof document !== 'undefined' && createPortal(
-        <div 
-          id="top-navbar-dropdown-portal"
-          style={getDropdownStyle()}
-          className="bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-slate-900/25 border border-slate-200/90 p-2 z-[9999] animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-150 ease-out overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-        >
+      {(() => {
+        if (!openDropdown || !anchorRect || typeof document === 'undefined') return null;
+        const placement = getDropdownPlacement();
+        return createPortal(
+          <div 
+            id="top-navbar-dropdown-portal"
+            ref={dropdownPortalRef}
+            style={placement.style}
+            className={`bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-slate-900/30 border border-slate-200/90 p-2 z-[99999] animate-in fade-in zoom-in-95 ${
+              placement.isUpwards ? 'slide-in-from-bottom-2' : 'slide-in-from-top-2'
+            } duration-150 ease-out overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
+          >
           {/* OPÇÕES: EXTRUSÃO */}
           {openDropdown === 'extrusion' && (
             <div>
@@ -927,7 +988,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
         </div>,
         document.body
-      )}
+        );
+      })()}
     </nav>
   );
 };

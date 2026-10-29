@@ -4,7 +4,8 @@ import {
   Calendar, Filter, Search, Plus, Trash2, ArrowLeft,
   ShieldAlert, FileCheck, Users, Printer, ChevronDown, 
   X, Info, Layers, AlertOctagon, HelpCircle, FileSpreadsheet,
-  SlidersHorizontal, HardHat, Briefcase, Palmtree
+  SlidersHorizontal, HardHat, Briefcase, Palmtree, Download,
+  ExternalLink, Check, DollarSign, Activity
 } from 'lucide-react';
 import { Employee } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -59,141 +60,121 @@ interface ProductionBonusManagerProps {
   onClose: () => void;
   canManage: boolean;
   isReadOnly?: boolean;
-  onBlockedAction?: (title?: string, message?: string) => void;
-  loggedUser?: any;
+  onBlockedAction?: () => void;
+  loggedUser?: { username?: string; name?: string; role?: string } | null;
 }
 
-// Helpers de Períodos da Folha (Ciclos de Fechamento dia 24)
-const getAvailablePayrollCycles = () => {
-  return [
-    { key: '2026-10', label: 'Outubro/2026 (25/09 a 24/10)', shortLabel: 'Out/2026', isCurrent: true },
-    { key: '2026-09', label: 'Setembro/2026 (25/08 a 24/09)', shortLabel: 'Set/2026', isCurrent: false },
-    { key: '2026-08', label: 'Agosto/2026 (25/07 a 24/08)', shortLabel: 'Ago/2026', isCurrent: false },
-    { key: '2026-11', label: 'Novembro/2026 (25/10 a 24/11)', shortLabel: 'Nov/2026', isCurrent: false },
-  ];
-};
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
 
-const STANDARD_MACHINES = ['Cast 1', 'Cast 2', 'Erema 1', 'Ghezzi', 'Lintech', 'Wultec'];
-const STANDARD_SHIFTS = ['Todos os Turnos', 'Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2', 'Comercial'];
+const DEFAULT_MACHINES = ["Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"];
+const DEFAULT_SHIFTS = ["Todos", "Diurno 1", "Noturno 1", "Diurno 2", "Noturno 2", "Comercial"];
 
 export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
-  employees,
+  employees = [],
   onClose,
-  canManage,
+  canManage = true,
   isReadOnly = false,
   onBlockedAction,
   loggedUser
 }) => {
-  // Estado de Período e Metas
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('2026-10');
-  const [baseBonusAmount, setBaseBonusAmount] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('manupack_bonus_base_value');
-      return saved ? Number(saved) : 250;
-    } catch {
-      return 250;
-    }
+  // Navigation tabs: 'overview' | 'incidents' | 'machine_goals' | 'payroll' | 'settings'
+  const [activeTab, setActiveTab] = useState<'overview' | 'incidents' | 'machine_goals' | 'payroll' | 'settings'>('overview');
+
+  // Cycle period state (defaults to October 2026 or current active cycle)
+  const [selectedCycle, setSelectedCycle] = useState<string>(() => {
+    return localStorage.getItem('manupackaging_bonus_cycle') || '2026-10';
   });
 
-  // Ocorrências e Metas de Máquinas do Firestore/Local
-  const [incidents, setIncidents] = useState<BonusIncident[]>([]);
-  const [machineGoals, setMachineGoals] = useState<Record<string, MachineGoalConfig>>({});
-  const [, setIsLoading] = useState<boolean>(true);
-
-  // Filtros de visualização
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterSector, setFilterSector] = useState<string>('todos');
-  const [filterMachine, setFilterMachine] = useState<string>('todas');
-  const [filterShift, setFilterShift] = useState<string>('todos');
-  const [filterStatus, setFilterStatus] = useState<'todos' | 'integral' | 'parcial' | 'zerado'>('todos');
-  const [activeTab, setActiveTab] = useState<'ranking' | 'incidents' | 'machines'>('ranking');
-
-  // Menu de Ações e Exportações Dropdown
-  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState<boolean>(false);
-  const actionsMenuRef = useRef<HTMLDivElement>(null);
-
-  // Modais
-  const [isIncidentModalOpen, setIsIncidentModalOpen] = useState<boolean>(false);
-  const [editingIncident, setEditingIncident] = useState<BonusIncident | null>(null);
-  const [isRulesModalOpen, setIsRulesModalOpen] = useState<boolean>(false);
-  const [viewEmployeeHistory, setViewEmployeeHistory] = useState<Employee | null>(null);
-
-  // Formulário de Incidência
-  const [formEmployeeId, setFormEmployeeId] = useState<string>('');
-  const [formType, setFormType] = useState<BonusIncidentType>('atestado');
-  const [formDate, setFormDate] = useState<string>(() => new Date().toISOString().substring(0, 10));
-  const [formDescription, setFormDescription] = useState<string>('');
-  const [formDocNumber, setFormDocNumber] = useState<string>('');
-  const [formDocDetails, setFormDocDetails] = useState<string>('');
-  const [formIsJustified, setFormIsJustified] = useState<boolean>(false);
-  const [formTargetMachine, setFormTargetMachine] = useState<string>('Cast 1');
-  const [formTargetShift, setFormTargetShift] = useState<string>('Todos os Turnos');
-  const [formPenaltyRate, setFormPenaltyRate] = useState<number>(100);
-
-  // Fecha menu ao clicar fora
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
-        setIsActionsMenuOpen(false);
-      }
+    localStorage.setItem('manupackaging_bonus_cycle', selectedCycle);
+  }, [selectedCycle]);
+
+  // Base bonus configurations by role
+  const [baseBonusValues, setBaseBonusValues] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_bonus_base_values');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      'Operador 1': 300,
+      'Operador 2': 300,
+      'Operador I': 300,
+      'Operador II': 300,
+      'Operador Líder': 350,
+      'Auxiliar 1': 250,
+      'Auxiliar 2': 250,
+      'Auxiliar de Produção': 250,
+      'Líder': 350,
+      'Supervisor': 400,
+      'default': 250
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  });
 
-  // Salvar baseBonusAmount em localStorage
-  useEffect(() => {
+  const getBaseBonus = (roleName: string): number => {
+    return baseBonusValues[roleName] || baseBonusValues['default'] || 250;
+  };
+
+  // State: Incidents and Machine Goals
+  const [incidents, setIncidents] = useState<BonusIncident[]>(() => {
     try {
-      localStorage.setItem('manupack_bonus_base_value', String(baseBonusAmount));
-    } catch {
-      // ignore
-    }
-  }, [baseBonusAmount]);
+      const saved = localStorage.getItem('manupackaging_bonus_incidents');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
 
-  // Sincronização em tempo real do Firestore: Incidências
-  useEffect(() => {
-    setIsLoading(true);
-    let unsubIncidents: () => void = () => {};
-    let unsubMachineGoals: () => void = () => {};
-
+  const [machineGoals, setMachineGoals] = useState<MachineGoalConfig[]>(() => {
     try {
-      const incidentsCol = collection(db, 'bonus_incidents');
-      unsubIncidents = onSnapshot(incidentsCol, (snap) => {
-        const loaded: BonusIncident[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as BonusIncident));
-        setIncidents(loaded);
-        setIsLoading(false);
-      }, (err) => {
-        console.warn('Erro ao carregar do Firestore bonus_incidents, usando cache local:', err);
-        try {
-          const cached = localStorage.getItem('cached_bonus_incidents');
-          if (cached) setIncidents(JSON.parse(cached));
-        } catch {
-          // ignore
-        }
-        setIsLoading(false);
-      });
+      const saved = localStorage.getItem('manupackaging_bonus_machine_goals');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
 
-      const goalsCol = collection(db, 'bonus_machine_goals');
-      unsubMachineGoals = onSnapshot(goalsCol, (snap) => {
-        const dict: Record<string, MachineGoalConfig> = {};
-        snap.docs.forEach(d => {
-          const data = d.data() as MachineGoalConfig;
-          dict[d.id] = { ...data, id: d.id };
-        });
-        setMachineGoals(dict);
-      }, (err) => {
-        console.warn('Erro ao carregar do Firestore bonus_machine_goals:', err);
-        try {
-          const cached = localStorage.getItem('cached_bonus_machine_goals');
-          if (cached) setMachineGoals(JSON.parse(cached));
-        } catch {
-          // ignore
-        }
-      });
-    } catch (e) {
-      console.warn('Falha na inicialização Firestore:', e);
-      setIsLoading(false);
-    }
+  // Filter states
+  const [searchFilter, setSearchFilter] = useState('');
+  const [sectorFilter, setSectorFilter] = useState('all');
+  const [shiftFilter, setShiftFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'full' | 'partial' | 'zero'>('all');
+
+  // Modals
+  const [isIncidentModalOpen, setIsIncidentModalOpen] = useState(false);
+  const [editingIncident, setEditingIncident] = useState<BonusIncident | null>(null);
+  const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<Employee | null>(null);
+
+  // Form State for Incident
+  const [formMode, setFormMode] = useState<'individual' | 'machine'>('individual');
+  const [targetEmployeeId, setTargetEmployeeId] = useState('');
+  const [incidentType, setIncidentType] = useState<BonusIncidentType>('atestado');
+  const [incidentDate, setIncidentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [incidentDescription, setIncidentDescription] = useState('');
+  const [documentNumber, setDocumentNumber] = useState('');
+  const [documentDetails, setDocumentDetails] = useState('');
+  const [isJustified, setIsJustified] = useState(true);
+  const [targetMachine, setTargetMachine] = useState('Cast 1');
+  const [targetShift, setTargetShift] = useState('Todos');
+  const [customPenaltyPercent, setCustomPenaltyPercent] = useState<number>(100);
+
+  // Firestore synchronization
+  useEffect(() => {
+    const unsubIncidents = onSnapshot(collection(db, 'bonus_incidents'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as BonusIncident));
+        setIncidents(list);
+        localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(list));
+      }
+    }, () => {});
+
+    const unsubMachineGoals = onSnapshot(collection(db, 'machine_goal_configs'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MachineGoalConfig));
+        setMachineGoals(list);
+        localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(list));
+      }
+    }, () => {});
 
     return () => {
       unsubIncidents();
@@ -201,514 +182,446 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     };
   }, []);
 
-  // REGRA DO USUÁRIO: FILTRAGEM ESTRITA DOS COLABORADORES EFETIVOS DO QUADRO GERAL
-  // "ele deve estar linkado somente a todos aqueles que estão na tela quadro geral de pessoal...
-  // 16 operadores, 22 auxiliares, um está de férias, então somente nesses 37 colaboradores.
-  // Não deve se aplicar ao cargo de liderança, mas deve se aplicar ao setor de extrusão dividido por máquina e turno"
-  const eligibleBoardCollaborators = useMemo(() => {
-    return employees.filter(emp => {
-      if (!emp || !emp.name) return false;
-      const nameNorm = emp.name.toLowerCase().trim();
-      if (!nameNorm || nameNorm.includes('vaga') || nameNorm.includes('aberto')) return false;
+  const persistIncidents = async (list: BonusIncident[]) => {
+    setIncidents(list);
+    localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(list));
+    try {
+      for (const item of list) {
+        await setDoc(doc(db, 'bonus_incidents', item.id), item);
+      }
+    } catch {}
+  };
 
-      // Status permitidos: Ativo, Férias ou Atestado (exclui Desligado, Vaga Excluída)
-      const statusNorm = (emp.status || 'Ativo').toLowerCase().trim();
-      const isEmployed = ['ativo', 'ferias', 'atestado'].includes(statusNorm);
-      if (!isEmployed) return false;
+  const persistMachineGoals = async (list: MachineGoalConfig[]) => {
+    setMachineGoals(list);
+    localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(list));
+    try {
+      for (const item of list) {
+        await setDoc(doc(db, 'machine_goal_configs', item.id), item);
+      }
+    } catch {}
+  };
 
-      // Exclui colaboradores silenciados
-      if (emp.isSilenced) return false;
+  // Cycle incidents and machine goals
+  const cycleIncidents = useMemo(() => {
+    return incidents.filter(i => i.cyclePeriod === selectedCycle);
+  }, [incidents, selectedCycle]);
 
-      const sectorNorm = (emp.sector || '').toLowerCase().trim();
-      const roleNorm = (emp.role || '').toLowerCase().trim();
+  const cycleMachineGoals = useMemo(() => {
+    return machineGoals.filter(g => g.cyclePeriod === selectedCycle);
+  }, [machineGoals, selectedCycle]);
 
-      // Regra estrita: NÃO SE APLICA AO CARGO DE LIDERANÇA (Gerente, Supervisor, Líder)
-      if (sectorNorm === 'lideranca' || sectorNorm === 'liderança') return false;
-      if (roleNorm.includes('gerente') || roleNorm.includes('supervisor') || roleNorm === 'líder' || roleNorm === 'lider') return false;
-
-      return true;
-    });
+  // Active production employees
+  const activeEmployees = useMemo(() => {
+    return employees.filter(e => e.status === 'Ativo');
   }, [employees]);
 
-  // Lista de setores dos colaboradores elegíveis
-  const availableSectors = useMemo(() => {
-    const set = new Set<string>();
-    eligibleBoardCollaborators.forEach(e => {
-      if (e.sector && e.sector.trim()) set.add(e.sector.trim());
-    });
-    return Array.from(set).sort();
-  }, [eligibleBoardCollaborators]);
+  // Calculation per employee
+  const payrollData = useMemo(() => {
+    return activeEmployees.map(emp => {
+      const baseAmount = getBaseBonus(emp.role);
 
-  // Lista de máquinas dos colaboradores elegíveis
-  const availableMachines = useMemo(() => {
-    const set = new Set<string>(STANDARD_MACHINES);
-    eligibleBoardCollaborators.forEach(e => {
-      if (e.machine && e.machine.trim()) set.add(e.machine.trim());
-    });
-    return Array.from(set).sort();
-  }, [eligibleBoardCollaborators]);
-
-  // Lista de turnos dos colaboradores elegíveis
-  const availableShifts = useMemo(() => {
-    const set = new Set<string>();
-    eligibleBoardCollaborators.forEach(e => {
-      if (e.shift && e.shift.trim()) set.add(e.shift.trim());
-    });
-    return Array.from(set).sort();
-  }, [eligibleBoardCollaborators]);
-
-  // REGRA DO USUÁRIO: EXTRAÇÃO DINÂMICA DE MÁQUINAS E TURNOS DIRETAMENTE DO QUADRO GERAL (PESSOAL / EMPLOYEES)
-  // Erema: Diurno 1, Noturno 1, Diurno 2, Noturno 2 (4 turnos)
-  // Ghezzi, Lintech, Wultec: Comercial
-  // Cast 1, Cast 2: Diurno 1, Noturno 1, Diurno 2, Noturno 2
-  const dynamicMachineShiftPairs = useMemo(() => {
-    const pairsMap = new Map<string, { machine: string; shift: string }>();
-
-    // 1. Extração direta de todos os colaboradores do Quadro Geral (employees)
-    employees.forEach(emp => {
-      const machine = (emp.machine || '').trim();
-      const shift = (emp.shift || '').trim();
-      if (!machine || machine.toLowerCase() === 'geral' || machine.toLowerCase() === 'nenhuma') return;
-      if (!shift || shift.toLowerCase() === 'todos' || shift.toLowerCase() === 'todos os turnos') return;
-      if (emp.name && emp.name.toLowerCase().includes('vaga excluída')) return;
-
-      let normMachine = machine;
-      if (/^ghezzi$/i.test(machine) || /^ghezz$/i.test(machine)) normMachine = 'Ghezzi';
-      else if (/^wultec$/i.test(machine) || /^wutec$/i.test(machine)) normMachine = 'Wultec';
-      else if (/^lintech$/i.test(machine)) normMachine = 'Lintech';
-      else if (/^erema$/i.test(machine) || /^erema\s*1$/i.test(machine)) normMachine = 'Erema 1';
-      else if (/^cast\s*1$/i.test(machine)) normMachine = 'Cast 1';
-      else if (/^cast\s*2$/i.test(machine)) normMachine = 'Cast 2';
-
-      let normShift = shift;
-      if (/^comercial$/i.test(shift)) normShift = 'Comercial';
-      else if (/^diurno\s*1$/i.test(shift)) normShift = 'Diurno 1';
-      else if (/^noturno\s*1$/i.test(shift)) normShift = 'Noturno 1';
-      else if (/^diurno\s*2$/i.test(shift)) normShift = 'Diurno 2';
-      else if (/^noturno\s*2$/i.test(shift)) normShift = 'Noturno 2';
-
-      const key = `${normMachine}___${normShift}`;
-      if (!pairsMap.has(key)) {
-        pairsMap.set(key, { machine: normMachine, shift: normShift });
-      }
-    });
-
-    // 2. Garantir todos os turnos e máquinas da fábrica definidos no Quadro Geral:
-    // Cast 1 e Cast 2 com 4 turnos; Erema 1 com 4 turnos (Diurno 1/2 e Noturno 1/2); Ghezzi, Lintech e Wultec Comercial
-    const factoryStandardPairs = [
-      { machine: 'Cast 1', shift: 'Diurno 1' },
-      { machine: 'Cast 1', shift: 'Noturno 1' },
-      { machine: 'Cast 1', shift: 'Diurno 2' },
-      { machine: 'Cast 1', shift: 'Noturno 2' },
-      { machine: 'Cast 2', shift: 'Diurno 1' },
-      { machine: 'Cast 2', shift: 'Noturno 1' },
-      { machine: 'Cast 2', shift: 'Diurno 2' },
-      { machine: 'Cast 2', shift: 'Noturno 2' },
-      { machine: 'Erema 1', shift: 'Diurno 1' },
-      { machine: 'Erema 1', shift: 'Noturno 1' },
-      { machine: 'Erema 1', shift: 'Diurno 2' },
-      { machine: 'Erema 1', shift: 'Noturno 2' },
-      { machine: 'Ghezzi', shift: 'Comercial' },
-      { machine: 'Lintech', shift: 'Comercial' },
-      { machine: 'Wultec', shift: 'Comercial' },
-    ];
-
-    factoryStandardPairs.forEach(p => {
-      const key = `${p.machine}___${p.shift}`;
-      if (!pairsMap.has(key)) {
-        pairsMap.set(key, p);
-      }
-    });
-
-    const machineOrder: Record<string, number> = {
-      'Cast 1': 1,
-      'Cast 2': 2,
-      'Erema 1': 3,
-      'Ghezzi': 4,
-      'Lintech': 5,
-      'Wultec': 6,
-    };
-
-    const shiftOrder: Record<string, number> = {
-      'Diurno 1': 1,
-      'Noturno 1': 2,
-      'Diurno 2': 3,
-      'Noturno 2': 4,
-      'Comercial': 5,
-      'Diurno': 6,
-      'Noturno': 7,
-    };
-
-    return Array.from(pairsMap.values()).sort((a, b) => {
-      const ordM1 = machineOrder[a.machine] || 99;
-      const ordM2 = machineOrder[b.machine] || 99;
-      if (ordM1 !== ordM2) return ordM1 - ordM2;
-      const ordS1 = shiftOrder[a.shift] || 99;
-      const ordS2 = shiftOrder[b.shift] || 99;
-      if (ordS1 !== ordS2) return ordS1 - ordS2;
-      return a.machine.localeCompare(b.machine) || a.shift.localeCompare(b.shift);
-    });
-  }, [employees]);
-
-  // Incidências filtradas pelo período selecionado
-  const periodIncidents = useMemo(() => {
-    return incidents.filter(inc => inc.cyclePeriod === selectedPeriod);
-  }, [incidents, selectedPeriod]);
-
-  // Cálculo individual do Bônus para cada um dos colaboradores elegíveis do Quadro Geral
-  const collaboratorsBonusCalculations = useMemo(() => {
-    return eligibleBoardCollaborators.map(emp => {
-      const empId = emp.id;
-      const empName = emp.name;
-      const empMachine = emp.machine ? emp.machine.trim() : '';
-      const empShift = emp.shift ? emp.shift.trim() : '';
-
-      // Ocorrências individuais deste colaborador
-      const empIncidents = periodIncidents.filter(inc => 
-        inc.employeeId === empId || 
-        (inc.registration && emp.registration && inc.registration.trim() === emp.registration.trim()) ||
-        (!inc.employeeId && inc.employeeName.trim().toLowerCase() === empName.trim().toLowerCase())
+      // Direct personal incidents
+      const personalIncidents = cycleIncidents.filter(
+        i => i.employeeId === emp.id || (i.registration && i.registration === emp.registration)
       );
 
-      // REGRA DO USUÁRIO: PENALIDADE DE MÁQUINA DIVIDIDA POR MÁQUINA E TURNO
-      // "se houver diminuição no bônus por conta do Cast 1 Diurno 1, então essa diminuição vai se aplicar ao Marcelo,
-      // ao Railan, ao Maxi e ao Márcio, somente a esses. Somente a esses, por máquina e turno."
-      const machineIncidents = empMachine ? periodIncidents.filter(inc => {
-        if (inc.type !== 'meta_maquina_nao_atingida') return false;
-        const matchesMachine = inc.targetMachine && inc.targetMachine.trim().toLowerCase() === empMachine.toLowerCase();
-        if (!matchesMachine) return false;
+      // Machine goal incidents / penalties affecting this employee's sector/machine/shift
+      const machineIncidents = cycleIncidents.filter(i => {
+        if (i.type !== 'meta_maquina_nao_atingida') return false;
+        const matchesMachine = !i.targetMachine || i.targetMachine === emp.machine;
+        const matchesShift = !i.targetShift || i.targetShift === 'Todos' || i.targetShift === emp.shift;
+        return matchesMachine && matchesShift;
+      });
 
-        // Se a penalidade for para um turno específico, checa se bate com o turno do colaborador
-        if (inc.targetShift && inc.targetShift !== 'Todos os Turnos' && inc.targetShift !== 'Todos') {
-          return inc.targetShift.trim().toLowerCase() === empShift.toLowerCase();
+      // Check machine goals config for the cycle
+      const unfulfilledGoals = cycleMachineGoals.filter(g => {
+        if (g.goalMet) return false;
+        const matchesMachine = g.machine === emp.machine;
+        const matchesShift = g.shift === 'Todos' || g.shift === emp.shift;
+        return matchesMachine && matchesShift;
+      });
+
+      // Total deduction calculation
+      let totalDeductionPercent = 0;
+      const reasonsList: string[] = [];
+
+      personalIncidents.forEach(inc => {
+        let pct = inc.penaltyRatePercent ?? 100;
+        if (inc.type === 'atestado' || inc.type === 'falta_injustificada' || inc.type === 'falta_justificada') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 100;
+        } else if (inc.type === 'atraso_injustificado') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 20;
+        } else if (inc.type === 'atraso_justificado') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 5;
         }
-        return true;
-      }) : [];
+        totalDeductionPercent += pct;
+        reasonsList.push(`${inc.type.replace('_', ' ').toUpperCase()} (${pct}%)`);
+      });
 
-      // Checa configuração direta de meta por máquina e turno
-      const machineSpecificShiftGoalKey = `${empMachine}_${empShift}_${selectedPeriod}`;
-      const machineGeneralGoalKey = `${empMachine}_${selectedPeriod}`;
-      const machineGoalCfg = machineGoals[machineSpecificShiftGoalKey] || machineGoals[machineGeneralGoalKey];
+      machineIncidents.forEach(inc => {
+        const pct = inc.penaltyRatePercent ?? 30;
+        totalDeductionPercent += pct;
+        reasonsList.push(`Meta Máquina Não Atingida [${inc.targetMachine}] (${pct}%)`);
+      });
 
-      // Contagem de eventos desqualificadores
-      const atestados = empIncidents.filter(i => i.type === 'atestado');
-      const faltasInjustificadas = empIncidents.filter(i => i.type === 'falta_injustificada' && !i.isJustified);
-      const faltasJustificadas = empIncidents.filter(i => i.type === 'falta_justificada' || (i.type === 'falta_injustificada' && i.isJustified));
-      const atrasosInjustificados = empIncidents.filter(i => i.type === 'atraso_injustificado' && !i.isJustified);
-      const atrasosJustificados = empIncidents.filter(i => i.type === 'atraso_justificado' || (i.type === 'atraso_injustificado' && i.isJustified));
+      unfulfilledGoals.forEach(g => {
+        const pct = g.abatementPercent ?? 30;
+        totalDeductionPercent += pct;
+        reasonsList.push(`Meta Não Batida (${g.machine} - ${g.shift}) (${pct}%)`);
+      });
 
-      // Aplicação estrita das Regras do Usuário:
-      // 1. Apresentou atestado -> CORTA TODO O BÔNUS (100% de desconto)
-      // 2. Falta não justificada -> CORTA O BÔNUS (100% de desconto)
-      // 3. Atrasos sucessivos no mesmo mês (2 ou mais) -> CORTA O BÔNUS (100% de desconto)
-      //    1 atraso injustificado -> tolerância/aviso com abatimento leve de 25%
-      // 4. Se a máquina/turno não cumpriu a meta de produção -> abatimento proporcional para a equipe específica
-      let isZeroed = false;
-      let zeroReason = '';
-      let discountRate = 0; // em %
-
-      if (atestados.length > 0) {
-        isZeroed = true;
-        discountRate = 100;
-        zeroReason = `Atestado Médico apresentado (${atestados.length}x)`;
-      } else if (faltasInjustificadas.length > 0) {
-        isZeroed = true;
-        discountRate = 100;
-        zeroReason = `Falta Injustificada (${faltasInjustificadas.length}x)`;
-      } else if (atrasosInjustificados.length >= 2) {
-        isZeroed = true;
-        discountRate = 100;
-        zeroReason = `Atrasos Sucessivos no Mês (${atrasosInjustificados.length}x sem justificativa)`;
-      } else if (atrasosInjustificados.length === 1) {
-        discountRate += 25; // Abatimento parcial de 25% pelo 1º atraso
-      }
-
-      // Se não estiver zerado por conduta, avalia meta da máquina/turno do colaborador
-      let machinePenaltyApplied = 0;
-      let machinePenaltyReason = '';
-
-      if (!isZeroed && empMachine) {
-        if (machineGoalCfg && !machineGoalCfg.goalMet) {
-          machinePenaltyApplied = machineGoalCfg.abatementPercent || 50;
-          machinePenaltyReason = `Meta da Máquina ${empMachine} (${machineGoalCfg.shift || 'Geral'}) não atingida (-${machinePenaltyApplied}%)`;
-        } else if (machineIncidents.length > 0) {
-          const maxPenalty = Math.max(...machineIncidents.map(m => m.penaltyRatePercent || 50));
-          machinePenaltyApplied = maxPenalty;
-          const incidentShift = machineIncidents[0].targetShift;
-          machinePenaltyReason = `Penalidade de equipe: ${empMachine} ${incidentShift && incidentShift !== 'Todos os Turnos' ? `(${incidentShift})` : ''} (-${machinePenaltyApplied}%)`;
-        }
-      }
-
-      // Soma dos descontos limitando a 100%
-      const totalDiscountPercent = isZeroed ? 100 : Math.min(100, discountRate + machinePenaltyApplied);
-      const finalBonusAmount = isZeroed 
-        ? 0 
-        : Number((baseBonusAmount * (1 - totalDiscountPercent / 100)).toFixed(2));
-
-      let statusBadge: 'integral' | 'parcial' | 'zerado' = 'integral';
-      if (finalBonusAmount === 0 || totalDiscountPercent >= 100) {
-        statusBadge = 'zerado';
-      } else if (finalBonusAmount < baseBonusAmount) {
-        statusBadge = 'parcial';
-      }
+      totalDeductionPercent = Math.min(100, Math.max(0, totalDeductionPercent));
+      const deductionAmount = (baseAmount * totalDeductionPercent) / 100;
+      const finalAmount = Math.max(0, baseAmount - deductionAmount);
+      const isEligible = finalAmount > 0;
+      const status: 'full' | 'partial' | 'zero' = 
+        totalDeductionPercent === 0 ? 'full' : totalDeductionPercent < 100 ? 'partial' : 'zero';
 
       return {
         employee: emp,
-        empIncidents,
-        atestadosCount: atestados.length,
-        faltasInjustificadasCount: faltasInjustificadas.length,
-        faltasJustificadasCount: faltasJustificadas.length,
-        atrasosInjustificadosCount: atrasosInjustificados.length,
-        atrasosJustificadosCount: atrasosJustificados.length,
-        isZeroed,
-        zeroReason,
-        discountRate,
-        machinePenaltyApplied,
-        machinePenaltyReason,
-        totalDiscountPercent,
-        baseBonusAmount,
-        finalBonusAmount,
-        statusBadge
+        baseAmount,
+        totalDeductionPercent,
+        deductionAmount,
+        finalAmount,
+        isEligible,
+        status,
+        personalIncidents,
+        reasonsText: reasonsList.join(' • ') || 'Sem ocorrências (100% da meta)'
       };
     });
-  }, [eligibleBoardCollaborators, periodIncidents, machineGoals, selectedPeriod, baseBonusAmount]);
+  }, [activeEmployees, cycleIncidents, cycleMachineGoals, baseBonusValues]);
 
-  // Lista de colaboradores filtrada para a tabela
-  const filteredCalculations = useMemo(() => {
-    return collaboratorsBonusCalculations.filter(item => {
+  // Filtered payroll rows
+  const filteredPayroll = useMemo(() => {
+    return payrollData.filter(item => {
       const emp = item.employee;
-      const matchSearch = 
-        !searchTerm || 
-        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.registration && emp.registration.includes(searchTerm)) ||
-        (emp.role && emp.role.toLowerCase().includes(searchTerm.toLowerCase()));
-
-      const matchSector = filterSector === 'todos' || emp.sector === filterSector;
-      const matchMachine = filterMachine === 'todas' || emp.machine === filterMachine;
-      const matchShift = filterShift === 'todos' || emp.shift === filterShift;
-      const matchStatus = filterStatus === 'todos' || item.statusBadge === filterStatus;
-
-      return matchSearch && matchSector && matchMachine && matchShift && matchStatus;
+      const matchesSearch = !searchFilter || 
+        emp.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        emp.registration.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        emp.role.toLowerCase().includes(searchFilter.toLowerCase());
+      const matchesSector = sectorFilter === 'all' || emp.sector === sectorFilter;
+      const matchesShift = shiftFilter === 'all' || emp.shift === shiftFilter;
+      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+      return matchesSearch && matchesSector && matchesShift && matchesStatus;
     });
-  }, [collaboratorsBonusCalculations, searchTerm, filterSector, filterMachine, filterShift, filterStatus]);
+  }, [payrollData, searchFilter, sectorFilter, shiftFilter, statusFilter]);
 
-  // Estatísticas executivas do bônus
-  const summaryStats = useMemo(() => {
-    const totalCount = eligibleBoardCollaborators.length;
-    const operadoresCount = eligibleBoardCollaborators.filter(c => (c.role || '').toLowerCase().includes('operador')).length;
-    const auxiliaresCount = eligibleBoardCollaborators.filter(c => (c.role || '').toLowerCase().includes('auxiliar')).length;
-    const feriasCount = eligibleBoardCollaborators.filter(c => (c.status || '').toLowerCase() === 'férias' || (c.status || '').toLowerCase() === 'ferias').length;
+  // Overall statistics
+  const stats = useMemo(() => {
+    const totalCount = payrollData.length;
+    const fullBonusCount = payrollData.filter(d => d.status === 'full').length;
+    const partialCount = payrollData.filter(d => d.status === 'partial').length;
+    const zeroCount = payrollData.filter(d => d.status === 'zero').length;
 
-    const integralCount = collaboratorsBonusCalculations.filter(c => c.statusBadge === 'integral').length;
-    const parcialCount = collaboratorsBonusCalculations.filter(c => c.statusBadge === 'parcial').length;
-    const zeradoCount = collaboratorsBonusCalculations.filter(c => c.statusBadge === 'zerado').length;
-    
-    const totalPayable = collaboratorsBonusCalculations.reduce((acc, c) => acc + c.finalBonusAmount, 0);
+    const totalBaseBudget = payrollData.reduce((acc, d) => acc + d.baseAmount, 0);
+    const totalDeductions = payrollData.reduce((acc, d) => acc + d.deductionAmount, 0);
+    const totalFinalPayout = payrollData.reduce((acc, d) => acc + d.finalAmount, 0);
+
+    const overallAttainment = totalBaseBudget > 0 ? (totalFinalPayout / totalBaseBudget) * 100 : 100;
 
     return {
       totalCount,
-      operadoresCount,
-      auxiliaresCount,
-      feriasCount,
-      integralCount,
-      parcialCount,
-      zeradoCount,
-      totalPayable
+      fullBonusCount,
+      partialCount,
+      zeroCount,
+      totalBaseBudget,
+      totalDeductions,
+      totalFinalPayout,
+      overallAttainment
     };
-  }, [eligibleBoardCollaborators, collaboratorsBonusCalculations]);
+  }, [payrollData]);
 
-  // Abertura do formulário de Incidência
-  const handleOpenIncidentModal = (employee?: Employee) => {
-    if (isReadOnly) {
-      onBlockedAction?.('Ação Bloqueada', 'Usuário com perfil somente leitura não pode registrar ocorrências.');
+  // Format currency
+  const formatBRL = (val: number) => {
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // Open incident registration modal
+  const handleOpenAddIncident = (emp?: Employee) => {
+    if (isReadOnly && onBlockedAction) {
+      onBlockedAction();
       return;
     }
     setEditingIncident(null);
-    if (employee) {
-      setFormEmployeeId(employee.id);
-      setFormTargetMachine(employee.machine || 'Cast 1');
-      setFormTargetShift(employee.shift || 'Todos os Turnos');
+    if (emp) {
+      setFormMode('individual');
+      setTargetEmployeeId(emp.id);
+      setTargetMachine(emp.machine || 'Cast 1');
+      setTargetShift(emp.shift || 'Todos');
     } else {
-      setFormEmployeeId('');
-      setFormTargetMachine('Cast 1');
-      setFormTargetShift('Todos os Turnos');
+      setFormMode('individual');
+      setTargetEmployeeId(activeEmployees[0]?.id || '');
     }
-    setFormType('atestado');
-    setFormDate(new Date().toISOString().substring(0, 10));
-    setFormDescription('');
-    setFormDocNumber('');
-    setFormDocDetails('');
-    setFormIsJustified(false);
-    setFormPenaltyRate(100);
+    setIncidentType('atestado');
+    setIncidentDate(new Date().toISOString().split('T')[0]);
+    setIncidentDescription('');
+    setDocumentNumber('');
+    setDocumentDetails('');
+    setIsJustified(true);
+    setCustomPenaltyPercent(100);
     setIsIncidentModalOpen(true);
   };
 
-  // Salvar Incidência no Firestore
-  const handleSaveIncident = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isReadOnly) return;
+  // Save Incident
+  const handleSaveIncident = () => {
+    if (isReadOnly && onBlockedAction) {
+      onBlockedAction();
+      return;
+    }
 
-    let targetEmp: Employee | undefined;
-    if (formType !== 'meta_maquina_nao_atingida') {
-      targetEmp = eligibleBoardCollaborators.find(emp => emp.id === formEmployeeId);
-      if (!targetEmp) {
-        alert('Por favor, selecione um colaborador válido do Quadro Geral.');
+    if (formMode === 'individual') {
+      const emp = activeEmployees.find(e => e.id === targetEmployeeId);
+      if (!emp) {
+        alert('Selecione um colaborador válido.');
         return;
       }
-    }
 
-    const incidentId = editingIncident ? editingIncident.id : `inc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    
-    const payload: BonusIncident = {
-      id: incidentId,
-      employeeId: targetEmp ? targetEmp.id : '',
-      employeeName: targetEmp ? targetEmp.name : `Equipe Máquina ${formTargetMachine} (${formTargetShift})`,
-      registration: targetEmp?.registration || '',
-      sector: targetEmp?.sector || 'Extrusão',
-      machine: targetEmp?.machine || formTargetMachine,
-      shift: targetEmp?.shift || formTargetShift,
-      type: formType,
-      date: formDate,
-      cyclePeriod: selectedPeriod,
-      description: formDescription.trim() || 'Ocorrência registrada no ciclo de apuração.',
-      documentNumber: formDocNumber.trim(),
-      documentDetails: formDocDetails.trim(),
-      isJustified: formIsJustified || formType === 'atraso_justificado' || formType === 'falta_justificada',
-      targetMachine: formType === 'meta_maquina_nao_atingida' ? formTargetMachine : targetEmp?.machine,
-      targetShift: formType === 'meta_maquina_nao_atingida' ? formTargetShift : targetEmp?.shift,
-      penaltyRatePercent: formType === 'meta_maquina_nao_atingida' ? Number(formPenaltyRate) : (formType === 'atraso_injustificado' ? 25 : 100),
-      registeredBy: loggedUser?.name || 'Administração RH',
-      createdAt: editingIncident?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+      const newInc: BonusIncident = {
+        id: editingIncident ? editingIncident.id : `inc_${Date.now()}`,
+        employeeId: emp.id,
+        employeeName: emp.name,
+        registration: emp.registration,
+        sector: emp.sector,
+        machine: emp.machine,
+        shift: emp.shift,
+        type: incidentType,
+        date: incidentDate,
+        cyclePeriod: selectedCycle,
+        description: incidentDescription || `Ocorrência de ${incidentType.replace('_', ' ')}`,
+        documentNumber: documentNumber || undefined,
+        documentDetails: documentDetails || undefined,
+        isJustified,
+        penaltyRatePercent: customPenaltyPercent,
+        registeredBy: loggedUser?.name || 'Gestão de Produção',
+        createdAt: editingIncident ? editingIncident.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-    try {
-      await setDoc(doc(db, 'bonus_incidents', incidentId), payload);
-      const updated = incidents.filter(i => i.id !== incidentId);
-      updated.push(payload);
-      setIncidents(updated);
-      try {
-        localStorage.setItem('cached_bonus_incidents', JSON.stringify(updated));
-      } catch {
-        // ignore
+      if (editingIncident) {
+        persistIncidents(incidents.map(i => i.id === newInc.id ? newInc : i));
+      } else {
+        persistIncidents([newInc, ...incidents]);
       }
-      setIsIncidentModalOpen(false);
-    } catch (err) {
-      console.error('Erro ao salvar ocorrência:', err);
-      const updated = incidents.filter(i => i.id !== incidentId);
-      updated.push(payload);
-      setIncidents(updated);
-      localStorage.setItem('cached_bonus_incidents', JSON.stringify(updated));
-      setIsIncidentModalOpen(false);
-    }
-  };
+    } else {
+      // Machine mode
+      const newInc: BonusIncident = {
+        id: editingIncident ? editingIncident.id : `inc_mach_${Date.now()}`,
+        employeeName: `Equipe da Máquina: ${targetMachine}`,
+        sector: 'Extrusão',
+        machine: targetMachine,
+        shift: targetShift,
+        targetMachine,
+        targetShift,
+        type: 'meta_maquina_nao_atingida',
+        date: incidentDate,
+        cyclePeriod: selectedCycle,
+        description: incidentDescription || `Meta de Produção Não Atingida - ${targetMachine} (${targetShift})`,
+        isJustified: false,
+        penaltyRatePercent: customPenaltyPercent || 30,
+        registeredBy: loggedUser?.name || 'Gestão de Produção',
+        createdAt: editingIncident ? editingIncident.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-  // Excluir Incidência
-  const handleDeleteIncident = async (incidentId: string) => {
-    if (isReadOnly) return;
-    if (!confirm('Deseja realmente remover esta ocorrência de bônus?')) return;
-
-    try {
-      await deleteDoc(doc(db, 'bonus_incidents', incidentId));
-      const updated = incidents.filter(i => i.id !== incidentId);
-      setIncidents(updated);
-      localStorage.setItem('cached_bonus_incidents', JSON.stringify(updated));
-    } catch (err) {
-      console.error('Erro ao remover incidência:', err);
-      const updated = incidents.filter(i => i.id !== incidentId);
-      setIncidents(updated);
-      localStorage.setItem('cached_bonus_incidents', JSON.stringify(updated));
-    }
-  };
-
-  // Salvar Status de Meta da Máquina e Turno (Cast 1, Cast 2, etc.)
-  const handleSaveMachineGoal = async (machineName: string, shiftName: string, goalMet: boolean, abatementPercent: number) => {
-    if (isReadOnly) return;
-    const goalId = `${machineName}_${shiftName}_${selectedPeriod}`;
-    const payload: MachineGoalConfig = {
-      id: goalId,
-      machine: machineName,
-      shift: shiftName,
-      cyclePeriod: selectedPeriod,
-      goalMet,
-      abatementPercent,
-      updatedAt: new Date().toISOString()
-    };
-
-    try {
-      await setDoc(doc(db, 'bonus_machine_goals', goalId), payload);
-      setMachineGoals(prev => ({ ...prev, [goalId]: payload }));
-      try {
-        localStorage.setItem('cached_bonus_machine_goals', JSON.stringify({ ...machineGoals, [goalId]: payload }));
-      } catch {
-        // ignore
+      if (editingIncident) {
+        persistIncidents(incidents.map(i => i.id === newInc.id ? newInc : i));
+      } else {
+        persistIncidents([newInc, ...incidents]);
       }
-    } catch (err) {
-      console.error('Erro ao salvar meta de máquina:', err);
-      setMachineGoals(prev => ({ ...prev, [goalId]: payload }));
-      localStorage.setItem('cached_bonus_machine_goals', JSON.stringify({ ...machineGoals, [goalId]: payload }));
+    }
+
+    setIsIncidentModalOpen(false);
+  };
+
+  // Delete incident
+  const handleDeleteIncident = (id: string) => {
+    if (isReadOnly && onBlockedAction) {
+      onBlockedAction();
+      return;
+    }
+    if (confirm('Deseja excluir este lançamento de ocorrência?')) {
+      const updated = incidents.filter(i => i.id !== id);
+      persistIncidents(updated);
+      try {
+        deleteDoc(doc(db, 'bonus_incidents', id));
+      } catch {}
     }
   };
 
-  // Exportar Relatório em PDF
-  const handleExportPDF = () => {
-    const doc = new jsPDF('landscape');
-    const cycleInfo = getAvailablePayrollCycles().find(c => c.key === selectedPeriod);
+  // Toggle machine goal
+  const handleToggleMachineGoal = (machine: string, shift: string) => {
+    if (isReadOnly && onBlockedAction) {
+      onBlockedAction();
+      return;
+    }
+    const goalId = `${machine}_${shift}_${selectedCycle}`;
+    const existing = machineGoals.find(g => g.id === goalId);
+    let updated: MachineGoalConfig[];
 
+    if (existing) {
+      updated = machineGoals.map(g => g.id === goalId ? { ...g, goalMet: !g.goalMet, updatedAt: new Date().toISOString() } : g);
+    } else {
+      const newGoal: MachineGoalConfig = {
+        id: goalId,
+        machine,
+        shift,
+        cyclePeriod: selectedCycle,
+        goalMet: false, // defaulted to not met if toggling from unset
+        abatementPercent: 30,
+        updatedAt: new Date().toISOString()
+      };
+      updated = [...machineGoals, newGoal];
+    }
+    persistMachineGoals(updated);
+  };
+
+  // PDF Generation for Individual Employee Statement
+  const generateEmployeeStatementPDF = (item: typeof payrollData[0]) => {
+    const doc = new jsPDF();
+    const emp = item.employee;
+
+    // Header bar
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, 210, 26, 'F');
+    doc.setTextColor(255, 255, 255);
     doc.setFontSize(14);
-    doc.setTextColor(30, 41, 59);
-    doc.text('MANUPACKAGING DA AMAZÔNIA - APURAÇÃO DE BÔNUS DE PRODUÇÃO', 14, 14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('EXTRATO DE BONIFICAÇÃO E METAS DE PRODUÇÃO', 14, 17);
 
     doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Período: ${cycleInfo ? cycleInfo.label : selectedPeriod} | Meta Base: R$ ${baseBonusAmount.toFixed(2)} | Total Colaboradores do Quadro: ${summaryStats.totalCount}`, 14, 20);
-    doc.text(`Aptos (100%): ${summaryStats.integralCount} | Parciais: ${summaryStats.parcialCount} | Zerados: ${summaryStats.zeradoCount} | Total Folha: R$ ${summaryStats.totalPayable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 25);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Período: ${selectedCycle}`, 160, 17);
 
-    const tableRows = filteredCalculations.map(item => [
-      item.employee.registration || '-',
-      item.employee.name,
-      item.employee.sector || 'Geral',
-      item.employee.machine || '-',
-      item.employee.shift || 'Padrão',
-      item.employee.role || '-',
-      item.atestadosCount > 0 ? `Sim (${item.atestadosCount})` : 'Não',
-      item.faltasInjustificadasCount > 0 ? `${item.faltasInjustificadasCount}` : '0',
-      item.atrasosInjustificadosCount > 0 ? `${item.atrasosInjustificadosCount}` : '0',
-      item.machinePenaltyApplied > 0 ? `-${item.machinePenaltyApplied}%` : 'Ok',
-      item.statusBadge === 'zerado' ? 'ZERADO (0%)' : item.statusBadge === 'parcial' ? `PARCIAL (${100 - item.totalDiscountPercent}%)` : 'INTEGRAL (100%)',
-      `R$ ${item.finalBonusAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    // Employee Data Box
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DADOS DO COLABORADOR', 14, 36);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Nome: ${emp.name}`, 14, 43);
+    doc.text(`Matrícula: ${emp.registration}`, 14, 49);
+    doc.text(`Cargo / Função: ${emp.role}`, 14, 55);
+    doc.text(`Setor: ${emp.sector}`, 120, 43);
+    doc.text(`Máquina / Turno: ${emp.machine || '—'} / ${emp.shift || '—'}`, 120, 49);
+    doc.text(`Base de Bonificação: ${formatBRL(item.baseAmount)}`, 120, 55);
+
+    // Incidents Table
+    const incidentRows = item.personalIncidents.map(inc => [
+      inc.date,
+      inc.type.replace('_', ' ').toUpperCase(),
+      inc.description + (inc.documentNumber ? ` (Doc: ${inc.documentNumber})` : ''),
+      `${inc.penaltyRatePercent ?? 100}%`
+    ]);
+
+    if (incidentRows.length === 0) {
+      incidentRows.push(['—', 'REGULAR', 'Nenhuma ocorrência ou desconto registrado no período', '0%']);
+    }
+
+    autoTable(doc, {
+      startY: 65,
+      head: [['Data', 'Tipo de Ocorrência', 'Descrição / Documento', 'Desconto']],
+      body: incidentRows,
+      theme: 'striped',
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 8 }
+    });
+
+    // @ts-ignore
+    const finalY = (doc as any).lastAutoTable?.finalY || 120;
+
+    // Calculation summary
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, finalY + 10, 182, 35, 3, 3, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, finalY + 10, 182, 35, 3, 3, 'D');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('RESUMO DO CÁLCULO DE FECHAMENTO', 20, finalY + 18);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Valor Base Estipulado: ${formatBRL(item.baseAmount)}`, 20, finalY + 26);
+    doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, finalY + 32);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, finalY + 38);
+
+    // Signatures
+    doc.line(20, finalY + 65, 80, finalY + 65);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Assinatura do Colaborador', 25, finalY + 70);
+
+    doc.line(130, finalY + 65, 190, finalY + 65);
+    doc.text('Gestão de Produção / RH', 135, finalY + 70);
+
+    doc.save(`Extrato_Bonus_${emp.name.replace(/\s+/g, '_')}_${selectedCycle}.pdf`);
+  };
+
+  // Full Month Summary PDF
+  const generateMonthSummaryPDF = () => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, 297, 24, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RELATÓRIO GERAL DE FECHAMENTO DE BÔNUS DE PRODUÇÃO', 14, 16);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Período de Referência: ${selectedCycle} | Emitido em: ${new Date().toLocaleDateString('pt-BR')}`, 190, 16);
+
+    const rows = filteredPayroll.map(d => [
+      d.employee.registration,
+      d.employee.name,
+      d.employee.role,
+      d.employee.sector,
+      d.employee.machine || '—',
+      d.employee.shift || '—',
+      formatBRL(d.baseAmount),
+      `${d.totalDeductionPercent.toFixed(1)}%`,
+      `- ${formatBRL(d.deductionAmount)}`,
+      formatBRL(d.finalAmount),
+      d.status === 'full' ? 'Integral' : d.status === 'partial' ? 'Parcial' : 'Sem Bônus'
     ]);
 
     autoTable(doc, {
-      startY: 30,
-      head: [['Matrícula', 'Colaborador', 'Setor', 'Máquina', 'Turno', 'Cargo', 'Atestado', 'Faltas', 'Atrasos', 'Meta Equipe', 'Status', 'Valor Final']],
-      body: tableRows,
+      startY: 32,
+      head: [['Matrícula', 'Colaborador', 'Cargo', 'Setor', 'Máq', 'Turno', 'Base', 'Desc %', 'Desc R$', 'Final R$', 'Situação']],
+      body: rows,
       theme: 'grid',
-      headStyles: { fillColor: [30, 58, 138], textColor: 255, fontSize: 8, fontStyle: 'bold' },
-      styles: { fontSize: 7, cellPadding: 1.5 },
-      alternateRowStyles: { fillColor: [248, 250, 252] }
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 7 }
     });
 
-    doc.save(`Relatorio_Bonus_Producao_${selectedPeriod}.pdf`);
+    doc.save(`Fechamento_Geral_Bonus_${selectedCycle}.pdf`);
   };
 
-  // Exportar CSV
+  // Export CSV
   const handleExportCSV = () => {
-    const headers = ['Matrícula', 'Colaborador', 'Setor', 'Máquina', 'Turno', 'Cargo', 'Atestados', 'Faltas Injustificadas', 'Atrasos Injustificados', 'Desconto %', 'Status', 'Valor Bônus (R$)'];
-    
-    const rows = filteredCalculations.map(item => [
-      `"${item.employee.registration || ''}"`,
-      `"${item.employee.name}"`,
-      `"${item.employee.sector || ''}"`,
-      `"${item.employee.machine || ''}"`,
-      `"${item.employee.shift || ''}"`,
-      `"${item.employee.role || ''}"`,
-      item.atestadosCount,
-      item.faltasInjustificadasCount,
-      item.atrasosInjustificadosCount,
-      `${item.totalDiscountPercent}%`,
-      `"${item.statusBadge.toUpperCase()}"`,
-      item.finalBonusAmount.toFixed(2).replace('.', ',')
+    const headers = ['Matrícula', 'Colaborador', 'Cargo', 'Setor', 'Máquina', 'Turno', 'Base R$', 'Desconto %', 'Desconto R$', 'Final R$', 'Situação', 'Motivos'];
+    const rows = filteredPayroll.map(d => [
+      `"${d.employee.registration}"`,
+      `"${d.employee.name}"`,
+      `"${d.employee.role}"`,
+      `"${d.employee.sector}"`,
+      `"${d.employee.machine || ''}"`,
+      `"${d.employee.shift || ''}"`,
+      d.baseAmount.toFixed(2),
+      d.totalDeductionPercent.toFixed(1),
+      d.deductionAmount.toFixed(2),
+      d.finalAmount.toFixed(2),
+      d.status === 'full' ? 'Integral' : d.status === 'partial' ? 'Parcial' : 'Sem Bônus',
+      `"${d.reasonsText.replace(/"/g, '""')}"`
     ]);
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -716,998 +629,645 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Bonus_Producao_${selectedPeriod}.csv`;
+    link.download = `Fechamento_Bonus_${selectedCycle}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
-  // Impressão Direta da Apuração Oficial
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
-    <div className="space-y-2.5 pb-6 animate-in fade-in duration-200 font-sans">
-      
-      {/* ============================================================== */}
-      {/* ============================================================== */}
-      {/* CABEÇALHO COMPACTO E LIMPO COM APENAS ELEMENTOS ESSENCIAIS */}
-      {/* ============================================================== */}
-      <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white flex items-center justify-center shadow-xs shadow-amber-500/20 shrink-0">
-            <Award size={18} />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* ======================================================== */}
+      {/* HEADER & TOP CONTROLS                                    */}
+      {/* ======================================================== */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onClose}
+            className="p-3 hover:bg-slate-100 rounded-2xl text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+            title="Voltar ao Quadro Geral"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700">
+                RH & Operação
+              </span>
+              <span className="text-xs text-slate-400 font-semibold">• Módulo Integrado</span>
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2 mt-0.5">
+              <Award className="w-6 h-6 text-amber-500" />
               Gestão de Bônus de Produção
             </h2>
-            <button
-              type="button"
-              onClick={() => setIsRulesModalOpen(true)}
-              className="w-5 h-5 rounded-full bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-700 flex items-center justify-center transition-all cursor-pointer shrink-0"
-              title="Ver regras oficiais de corte e abatimento do bônus"
-              aria-label="Regras do Bônus"
-            >
-              <HelpCircle size={12} />
-            </button>
           </div>
         </div>
 
-        {/* Grupo de Ações Essenciais: Menu, Data, Meta e Ocorrência */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* MENU SUSPENSO DE AÇÕES (IMPRESSÃO, PDF, CSV) */}
-          <div className="relative" ref={actionsMenuRef}>
-            <button
-              type="button"
-              onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
-              className={`px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider border cursor-pointer active:scale-95 shadow-2xs ${
-                isActionsMenuOpen
-                  ? 'bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-blue-500/20'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-              }`}
-              title="Menu de opções: Impressão, Relatório PDF e Excel CSV"
-            >
-              <SlidersHorizontal size={13} className="text-slate-600" />
-              <span>Menu</span>
-              <ChevronDown size={12} className={`text-slate-400 transition-transform ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isActionsMenuOpen && (
-              <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
-                {/* 1. Impressão */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    handlePrint();
-                  }}
-                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <Printer size={15} className="text-slate-700 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-black uppercase text-[11px]">Impressão</span>
-                    <span className="text-[9px] text-slate-400 font-normal">Imprimir apuração em papel</span>
-                  </div>
-                </button>
-
-                {/* 2. Relatório PDF */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    handleExportPDF();
-                  }}
-                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <FileText size={15} className="text-blue-600 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-black uppercase text-[11px]">Relatório PDF</span>
-                    <span className="text-[9px] text-slate-400 font-normal">Baixar folha oficial consolidada</span>
-                  </div>
-                </button>
-
-                {/* 3. Exportar Excel CSV */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    handleExportCSV();
-                  }}
-                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <FileSpreadsheet size={15} className="text-emerald-600 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-black uppercase text-[11px]">Excel (CSV)</span>
-                    <span className="text-[9px] text-slate-400 font-normal">Exportar dados tabulados</span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Seletor de Período da Folha */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
-            <Calendar size={13} className="text-blue-600 shrink-0" />
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="bg-transparent text-[11px] font-black text-slate-700 outline-none cursor-pointer"
-            >
-              {getAvailablePayrollCycles().map(c => (
-                <option key={c.key} value={c.key}>
-                  {c.shortLabel} {c.isCurrent ? '⭐' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Configuração da Meta Base R$ 250 */}
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
-            <span className="text-[9.5px] font-black text-slate-400 uppercase">Meta:</span>
-            <span className="text-[11px] font-bold text-slate-500">R$</span>
+        {/* Cycle & Action Buttons */}
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {/* Cycle Selector */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 shadow-xs">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ciclo:</span>
             <input
-              type="number"
-              min={0}
-              value={baseBonusAmount}
-              onChange={(e) => setBaseBonusAmount(Number(e.target.value) || 0)}
-              className="w-12 bg-transparent font-black text-[11px] text-slate-800 outline-none p-0 border-none"
-              title="Valor estimado da meta mensal de bônus por colaborador"
+              type="month"
+              value={selectedCycle}
+              onChange={(e) => setSelectedCycle(e.target.value)}
+              className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
             />
           </div>
 
-          {/* Botão Registrar Ocorrência */}
+          {/* New Incident Button */}
           {canManage && (
             <button
-              type="button"
-              onClick={() => handleOpenIncidentModal()}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1 text-[11px] font-black uppercase tracking-wider shadow-xs shadow-blue-600/20 shrink-0"
-              title="Lançar Atestado, Falta, Atraso ou Penalidade de Meta"
+              onClick={() => handleOpenAddIncident()}
+              className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-2xl font-black text-xs uppercase flex items-center gap-2 shadow-sm hover:shadow-md active:scale-95 transition-all cursor-pointer"
             >
-              <Plus size={13} />
-              <span>Ocorrência</span>
+              <Plus className="w-4 h-4" />
+              <span>Lançar Ocorrência</span>
             </button>
           )}
+
+          {/* Export PDF Summary */}
+          <button
+            onClick={generateMonthSummaryPDF}
+            className="px-3.5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            title="Exportar Relatório PDF Consolidado"
+          >
+            <Printer className="w-4 h-4 text-slate-500" />
+            <span>Relatório</span>
+          </button>
+
+          {/* Export CSV */}
+          <button
+            onClick={handleExportCSV}
+            className="px-3.5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            title="Exportar CSV para Excel"
+          >
+            <Download className="w-4 h-4 text-slate-500" />
+            <span>CSV</span>
+          </button>
         </div>
       </div>
 
-      {/* ============================================================== */}
-      {/* CARDS DE INDICADORES EXECUTIVOS (COMPACTOS E DIRECIONADOS) */}
-      {/* ============================================================== */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-2.5">
-        
-        {/* Card 1: Total da Folha & Colaboradores do Quadro */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Folha de Bônus</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <Award size={13} />
-            </div>
-          </div>
-          <div className="text-lg sm:text-xl font-black text-slate-900 tracking-tight mt-0.5">
-            R$ {summaryStats.totalPayable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </div>
-          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
-            <span className="text-slate-500 font-bold">{summaryStats.totalCount} no Quadro Geral</span>
-            <span className="text-emerald-700 font-black">{summaryStats.operadoresCount} Op. • {summaryStats.auxiliaresCount} Aux.</span>
-          </div>
-        </div>
+      {/* ======================================================== */}
+      {/* NAVIGATION TABS BAR                                      */}
+      {/* ======================================================== */}
+      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-fit shadow-xs">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'overview'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>Visão Geral & KPIs</span>
+        </button>
 
-        {/* Card 2: Bônus Integral (100%) */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bônus Integral (100%)</span>
-            <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <CheckCircle2 size={13} />
-            </div>
-          </div>
-          <div className="text-lg sm:text-xl font-black text-blue-600 tracking-tight mt-0.5">
-            {summaryStats.integralCount} <span className="text-[11px] text-slate-400 font-semibold">colab.</span>
-          </div>
-          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
-            <span className="text-slate-500 font-bold">Sem faltas ou atestados</span>
-            <span className="text-blue-700 font-black">R$ {baseBonusAmount.toFixed(2)}/cada</span>
-          </div>
-        </div>
+        <button
+          onClick={() => setActiveTab('payroll')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'payroll'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Extrato de Colaboradores</span>
+        </button>
 
-        {/* Card 3: Bônus Parcial (Abatimento de Meta) */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bônus Parcial</span>
-            <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-              <AlertTriangle size={13} />
-            </div>
-          </div>
-          <div className="text-lg sm:text-xl font-black text-amber-600 tracking-tight mt-0.5">
-            {summaryStats.parcialCount} <span className="text-[11px] text-slate-400 font-semibold">colab.</span>
-          </div>
-          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
-            <span className="text-slate-500 font-bold">1 atraso ou meta máq.</span>
-            <span className="text-amber-700 font-black">Abatido</span>
-          </div>
-        </div>
+        <button
+          onClick={() => setActiveTab('incidents')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'incidents'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4" />
+          <span>Apontamentos ({cycleIncidents.length})</span>
+        </button>
 
-        {/* Card 4: Bônus Zerados (0%) */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Bônus Zerados (0%)</span>
-            <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-              <XCircle size={13} />
-            </div>
-          </div>
-          <div className="text-lg sm:text-xl font-black text-rose-600 tracking-tight mt-0.5">
-            {summaryStats.zeradoCount} <span className="text-[11px] text-slate-400 font-semibold">colab.</span>
-          </div>
-          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
-            <span className="text-slate-500 font-bold">Atestado, falta ou atrasos</span>
-            <span className="text-rose-700 font-black">Corte 100%</span>
-          </div>
-        </div>
-
+        <button
+          onClick={() => setActiveTab('machine_goals')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'machine_goals'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          <span>Metas por Máquina</span>
+        </button>
       </div>
 
-      {/* ============================================================== */}
-      {/* SELETOR DE SUB-ABAS (COMPACTO) */}
-      {/* ============================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab('ranking')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'ranking'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Users size={14} />
-            <span>Apuração do Quadro Geral ({filteredCalculations.length})</span>
-          </button>
+      {/* ======================================================== */}
+      {/* TAB 1: OVERVIEW & KPIS                                   */}
+      {/* ======================================================== */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Top 4 Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-1">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Avaliados</div>
+              <div className="text-3xl font-black text-slate-800">{stats.totalCount}</div>
+              <div className="text-xs text-slate-500 font-semibold">{stats.fullBonusCount} com 100% da meta</div>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('machines')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'machines'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Layers size={14} />
-            <span>Metas por Máquina & Turno</span>
-          </button>
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-1">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Orçamento Previsto</div>
+              <div className="text-3xl font-black text-slate-800">{formatBRL(stats.totalBaseBudget)}</div>
+              <div className="text-xs text-slate-500 font-semibold">Teto máximo sem descontos</div>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('incidents')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'incidents'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <ShieldAlert size={14} />
-            <span>Ocorrências ({periodIncidents.length})</span>
-          </button>
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-1">
+              <div className="text-[10px] font-black uppercase tracking-wider text-amber-600">Total de Descontos</div>
+              <div className="text-3xl font-black text-amber-600">{formatBRL(stats.totalDeductions)}</div>
+              <div className="text-xs text-amber-600 font-semibold">{stats.partialCount + stats.zeroCount} colaboradores com abatimento</div>
+            </div>
+
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-1">
+              <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Montante Final a Pagar</div>
+              <div className="text-3xl font-black text-emerald-600">{formatBRL(stats.totalFinalPayout)}</div>
+              <div className="text-xs text-slate-500 font-semibold">{stats.overallAttainment.toFixed(1)}% do orçamento atingido</div>
+            </div>
+          </div>
+
+          {/* Breakdown Rows */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Status distribution */}
+            <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-xs space-y-4">
+              <h3 className="text-base font-black text-slate-800 tracking-tight flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                Distribuição de Elegibilidade
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold mb-1">
+                    <span className="text-slate-700">Bonificação Integral (100%)</span>
+                    <span className="text-emerald-600">{stats.fullBonusCount} ({stats.totalCount > 0 ? ((stats.fullBonusCount/stats.totalCount)*100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 rounded-full"
+                      style={{ width: `${stats.totalCount > 0 ? (stats.fullBonusCount/stats.totalCount)*100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold mb-1">
+                    <span className="text-slate-700">Desconto Parcial (&gt; 0% e &lt; 100%)</span>
+                    <span className="text-amber-600">{stats.partialCount} ({stats.totalCount > 0 ? ((stats.partialCount/stats.totalCount)*100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-500 rounded-full"
+                      style={{ width: `${stats.totalCount > 0 ? (stats.partialCount/stats.totalCount)*100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold mb-1">
+                    <span className="text-slate-700">Perda Total (100% de Desconto)</span>
+                    <span className="text-rose-600">{stats.zeroCount} ({stats.totalCount > 0 ? ((stats.zeroCount/stats.totalCount)*100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-rose-500 rounded-full"
+                      style={{ width: `${stats.totalCount > 0 ? (stats.zeroCount/stats.totalCount)*100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Action & Information Box */}
+            <div className="bg-gradient-to-br from-amber-50 via-white to-amber-50/30 border border-amber-200/60 rounded-3xl p-6 shadow-xs flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-amber-800 font-black text-sm">
+                  <Info className="w-5 h-5 text-amber-600" />
+                  Regras Gerais da Bonificação Operacional
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  O bônus de produção premia a assiduidade e o cumprimento das metas por máquina. Apresentação de <strong>atestados médicos</strong> ou <strong>faltas injustificadas</strong> acarreta desconto integral (100%) conforme diretriz corporativa. Metas de máquina não atingidas abatem percentual da equipe daquela linha/turno.
+                </p>
+              </div>
+
+              <div className="pt-4 flex items-center gap-3">
+                <button
+                  onClick={() => setActiveTab('payroll')}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Ver Extrato Completo
+                </button>
+                <button
+                  onClick={() => setActiveTab('incidents')}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Gerenciar Ocorrências
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="text-[10px] text-slate-400 font-bold px-2 hidden md:block">
-          {summaryStats.feriasCount > 0 ? `* ${summaryStats.feriasCount} colaborador em férias incluso no quadro` : ''}
-        </div>
-      </div>
-
-      {/* ============================================================== */}
-      {/* ABA 1: TABELA GERAL DE APURAÇÃO (APENAS QUADRO GERAL DE PESSOAL) */}
-      {/* ============================================================== */}
-      {activeTab === 'ranking' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden space-y-3 p-4">
-          
-          {/* BARRA DE FILTROS INTEGRADOS E COMPACTOS */}
-          <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
-            {/* Campo de Busca */}
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+      {/* ======================================================== */}
+      {/* TAB 2: PAYROLL & COLLABORATORS TABLE                     */}
+      {/* ======================================================== */}
+      {activeTab === 'payroll' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Filters Bar */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex-1 min-w-[240px] relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por colaborador, matrícula..."
-                className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Pesquisar por colaborador, matrícula ou função..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-amber-500"
               />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                >
-                  <X size={12} />
-                </button>
-              )}
             </div>
 
-            {/* Filtro de Máquina */}
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-              <Layers size={13} className="text-slate-500 shrink-0" />
+            <div className="flex flex-wrap items-center gap-2">
               <select
-                value={filterMachine}
-                onChange={(e) => setFilterMachine(e.target.value)}
-                className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer"
+                value={sectorFilter}
+                onChange={(e) => setSectorFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none"
               >
-                <option value="todas">Todas Máquinas</option>
-                {availableMachines.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
+                <option value="all">Todos Setores</option>
+                <option value="Extrusão">Extrusão</option>
+                <option value="Fita Adesiva">Fita Adesiva</option>
+                <option value="Corte de Fita">Corte de Fita</option>
+                <option value="Reciclagem">Reciclagem</option>
+              </select>
+
+              <select
+                value={shiftFilter}
+                onChange={(e) => setShiftFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none"
+              >
+                <option value="all">Todos Turnos</option>
+                <option value="Diurno 1">Diurno 1</option>
+                <option value="Noturno 1">Noturno 1</option>
+                <option value="Diurno 2">Diurno 2</option>
+                <option value="Noturno 2">Noturno 2</option>
+                <option value="Comercial">Comercial</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none"
+              >
+                <option value="all">Todas Situações</option>
+                <option value="full">100% Integral</option>
+                <option value="partial">Com Desconto</option>
+                <option value="zero">Sem Bônus</option>
               </select>
             </div>
-
-            {/* Filtro de Turno */}
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-              <Clock size={13} className="text-slate-500 shrink-0" />
-              <select
-                value={filterShift}
-                onChange={(e) => setFilterShift(e.target.value)}
-                className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer"
-              >
-                <option value="todos">Todos Turnos</option>
-                {availableShifts.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filtro de Setor */}
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-              <Filter size={13} className="text-slate-500 shrink-0" />
-              <select
-                value={filterSector}
-                onChange={(e) => setFilterSector(e.target.value)}
-                className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer"
-              >
-                <option value="todos">Todos Setores</option>
-                {availableSectors.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filtro de Status de Bônus */}
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-              <Award size={13} className="text-amber-500 shrink-0" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer"
-              >
-                <option value="todos">Todos Status</option>
-                <option value="integral">Integral (100%)</option>
-                <option value="parcial">Parcial (Abatido)</option>
-                <option value="zerado">Zerado (0%)</option>
-              </select>
-            </div>
-
-            {/* Limpar Filtros */}
-            {(searchTerm || filterSector !== 'todos' || filterMachine !== 'todas' || filterShift !== 'todos' || filterStatus !== 'todos') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchTerm('');
-                  setFilterSector('todos');
-                  setFilterMachine('todas');
-                  setFilterShift('todos');
-                  setFilterStatus('todos');
-                }}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-              >
-                <X size={11} />
-                <span>Limpar</span>
-              </button>
-            )}
           </div>
 
-          {/* TABELA DE APURAÇÃO COMPACTA */}
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[9.5px] font-black border-b border-slate-200">
-                  <th className="px-3 py-2.5">Colaborador / Matrícula</th>
-                  <th className="px-2.5 py-2.5">Máquina & Turno</th>
-                  <th className="px-2.5 py-2.5">Função</th>
-                  <th className="px-2 py-2.5 text-center">Atestados</th>
-                  <th className="px-2 py-2.5 text-center">Faltas</th>
-                  <th className="px-2 py-2.5 text-center">Atrasos</th>
-                  <th className="px-2.5 py-2.5 text-center">Meta Equipe</th>
-                  <th className="px-3 py-2.5 text-right">Desconto</th>
-                  <th className="px-3 py-2.5 text-right">Bônus a Receber</th>
-                  <th className="px-2.5 py-2.5 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredCalculations.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
-                      Nenhum colaborador encontrado com os filtros selecionados.
-                    </td>
+          {/* Table */}
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="py-3 px-4">Colaborador</th>
+                    <th className="py-3 px-4">Matrícula</th>
+                    <th className="py-3 px-4">Função</th>
+                    <th className="py-3 px-4">Alocação</th>
+                    <th className="py-3 px-4 text-right">Meta Base</th>
+                    <th className="py-3 px-4 text-center">Desconto</th>
+                    <th className="py-3 px-4 text-right">Valor Final</th>
+                    <th className="py-3 px-4 text-center">Situação</th>
+                    <th className="py-3 px-4 text-right">Ações</th>
                   </tr>
-                ) : (
-                  filteredCalculations.map((item) => {
-                    const emp = item.employee;
-                    const isOp = (emp.role || '').toLowerCase().includes('operador');
-                    const isAux = (emp.role || '').toLowerCase().includes('auxiliar');
-                    const isFerias = (emp.status || '').toLowerCase().includes('férias') || (emp.status || '').toLowerCase().includes('ferias');
-
-                    return (
-                      <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors">
-                        
-                        {/* Colaborador */}
-                        <td className="px-3 py-2">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-black text-slate-900 uppercase text-xs">
-                                {emp.name}
-                              </span>
-                              {isFerias && (
-                                <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 text-[8px] font-black uppercase border border-amber-200">
-                                  Férias
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9.5px] text-slate-400 font-semibold">
-                              Matrícula: {emp.registration || '-'} • {emp.sector || 'Geral'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Máquina & Turno */}
-                        <td className="px-2.5 py-2">
-                          <div className="flex flex-col">
-                            {emp.machine ? (
-                              <span className="font-black text-blue-700 text-[11px] uppercase">
-                                {emp.machine}
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredPayroll.length > 0 ? (
+                    filteredPayroll.map(item => {
+                      const emp = item.employee;
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 font-bold text-slate-900">
+                            {emp.name}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-semibold text-slate-500">
+                            {emp.registration}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">
+                            {emp.role}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">
+                            <span className="font-semibold text-slate-700">{emp.sector}</span>
+                            <span className="text-slate-400 text-[10px] block">{emp.machine || '—'} • {emp.shift || '—'}</span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-slate-800">
+                            {formatBRL(item.baseAmount)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {item.totalDeductionPercent > 0 ? (
+                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">
+                                -{item.totalDeductionPercent.toFixed(0)}% ({formatBRL(item.deductionAmount)})
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-[10px]">Geral</span>
+                              <span className="text-slate-400 font-semibold">—</span>
                             )}
-                            <span className="text-[9.5px] text-slate-500 font-bold">
-                              {emp.shift || 'Padrão'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Cargo */}
-                        <td className="px-2.5 py-2">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ${
-                            isOp 
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200' 
-                              : isAux 
-                              ? 'bg-orange-50 text-orange-700 border border-orange-200' 
-                              : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {isOp ? <HardHat size={10} /> : <Briefcase size={10} />}
-                            {emp.role || 'Colaborador'}
-                          </span>
-                        </td>
-
-                        {/* Atestados */}
-                        <td className="px-2 py-2 text-center">
-                          {item.atestadosCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                              <ShieldAlert size={10} /> {item.atestadosCount}x
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 font-semibold text-[11px]">-</span>
-                          )}
-                        </td>
-
-                        {/* Faltas */}
-                        <td className="px-2 py-2 text-center">
-                          {item.faltasInjustificadasCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                              <XCircle size={10} /> {item.faltasInjustificadasCount}x
-                            </span>
-                          ) : item.faltasJustificadasCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                              <FileCheck size={10} className="text-emerald-600" /> {item.faltasJustificadasCount}x
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 font-semibold text-[11px]">-</span>
-                          )}
-                        </td>
-
-                        {/* Atrasos */}
-                        <td className="px-2 py-2 text-center">
-                          {item.atrasosInjustificadosCount >= 2 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-black bg-rose-100 text-rose-800 border border-rose-200" title="Atrasos sucessivos cortam 100% do bônus">
-                              <AlertOctagon size={10} /> {item.atrasosInjustificadosCount}x
-                            </span>
-                          ) : item.atrasosInjustificadosCount === 1 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200" title="1º atraso injustificado (-25%)">
-                              <Clock size={10} /> 1x
-                            </span>
-                          ) : item.atrasosJustificadosCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                              <FileCheck size={10} className="text-blue-500" /> {item.atrasosJustificadosCount}x
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 font-semibold text-[11px]">-</span>
-                          )}
-                        </td>
-
-                        {/* Meta da Equipe / Máquina */}
-                        <td className="px-2.5 py-2 text-center">
-                          {item.machinePenaltyApplied > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={item.machinePenaltyReason}>
-                              <Layers size={10} /> -{item.machinePenaltyApplied}%
-                            </span>
-                          ) : emp.machine ? (
-                            <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
-                              <CheckCircle2 size={11} /> Ok
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 text-[9.5px]">-</span>
-                          )}
-                        </td>
-
-                        {/* Desconto */}
-                        <td className="px-3 py-2 text-right">
-                          {item.totalDiscountPercent === 0 ? (
-                            <span className="text-emerald-700 font-black text-xs">
-                              0%
-                            </span>
-                          ) : (
-                            <div className="flex flex-col items-end">
-                              <span className={`font-black text-xs ${item.totalDiscountPercent >= 100 ? 'text-rose-600' : 'text-amber-600'}`}>
-                                -{item.totalDiscountPercent}%
+                          </td>
+                          <td className="py-3 px-4 text-right font-black text-sm text-slate-900">
+                            {formatBRL(item.finalAmount)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {item.status === 'full' && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-700">
+                                Integral
                               </span>
-                              {item.zeroReason && (
-                                <span className="text-[8.5px] text-rose-500 font-bold max-w-[120px] truncate" title={item.zeroReason}>
-                                  {item.zeroReason}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Bônus Final */}
-                        <td className="px-3 py-2 text-right">
-                          {item.statusBadge === 'zerado' ? (
-                            <div className="flex flex-col items-end">
-                              <span className="text-xs font-black text-rose-600">
-                                R$ 0,00
-                              </span>
-                              <span className="text-[8px] text-rose-400 font-bold uppercase">
-                                Zerado
-                              </span>
-                            </div>
-                          ) : item.statusBadge === 'parcial' ? (
-                            <div className="flex flex-col items-end">
-                              <span className="text-xs font-black text-amber-700">
-                                R$ {item.finalBonusAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                              </span>
-                              <span className="text-[8px] text-amber-500 font-bold uppercase">
+                            )}
+                            {item.status === 'partial' && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">
                                 Parcial
                               </span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-end">
-                              <span className="text-xs font-black text-emerald-700">
-                                R$ {item.finalBonusAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            )}
+                            {item.status === 'zero' && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700">
+                                Zerado
                               </span>
-                              <span className="text-[8px] text-emerald-500 font-bold uppercase">
-                                Integral (100%)
-                              </span>
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Ações */}
-                        <td className="px-2.5 py-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
                             <button
-                              type="button"
-                              onClick={() => setViewEmployeeHistory(emp)}
-                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-blue-600 rounded-md transition-colors cursor-pointer"
-                              title="Ver histórico de ocorrências"
+                              onClick={() => generateEmployeeStatementPDF(item)}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="Gerar Extrato Individual PDF"
                             >
-                              <FileText size={13} />
+                              PDF
                             </button>
                             {canManage && (
                               <button
-                                type="button"
-                                onClick={() => handleOpenIncidentModal(emp)}
-                                className="p-1 hover:bg-blue-50 text-slate-500 hover:text-blue-600 rounded-md transition-colors cursor-pointer"
-                                title="Lançar Atestado, Falta ou Atraso"
+                                onClick={() => handleOpenAddIncident(emp)}
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                title="Lançar Ocorrência para este Colaborador"
                               >
-                                <Plus size={13} />
+                                + Ocorrência
                               </button>
                             )}
-                          </div>
-                        </td>
-
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* ABA 2: METAS POR MÁQUINA E TURNO (REGRA DO USUÁRIO) */}
-      {/* ============================================================== */}
-      {activeTab === 'machines' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 space-y-4">
-          <div className="pb-2 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
-              <Layers size={15} className="text-blue-600" />
-              Metas de Produção por Máquina & Turno
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Conforme a regra industrial, quando uma máquina e turno não atingem a meta de produção, o abatimento se aplica exclusivamente à equipe escalada naquele turno e máquina (ex: Cast 1 - Diurno 1 com Marcelo, Railan, Maxi e Márcio).
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {dynamicMachineShiftPairs.map(({ machine, shift }) => {
-              const goalKey = `${machine}_${shift}_${selectedPeriod}`;
-              const goalCfg = machineGoals[goalKey] || {
-                id: goalKey,
-                machine,
-                shift,
-                cyclePeriod: selectedPeriod,
-                goalMet: true,
-                abatementPercent: 30
-              };
-
-              // Colaboradores específicos escalados nesta máquina e turno do Quadro Geral
-              const teamMembers = eligibleBoardCollaborators.filter(e => {
-                const m = (e.machine || '').trim().toLowerCase();
-                const s = (e.shift || '').trim().toLowerCase();
-                const targetM = machine.toLowerCase();
-                const targetS = shift.toLowerCase();
-                const matchM = m === targetM || 
-                  (targetM === 'ghezzi' && (m === 'ghezz' || m === 'ghezzi')) ||
-                  (targetM === 'wultec' && (m === 'wutec' || m === 'wultec')) ||
-                  (targetM === 'erema 1' && (m === 'erema' || m === 'erema 1'));
-                return matchM && s === targetS;
-              });
-
-              return (
-                <div key={`${machine}_${shift}`} className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                        {machine} • {shift}
-                      </h4>
-                      <span className="text-[9.5px] text-slate-400 font-bold uppercase">
-                        {teamMembers.length} colaborador(es) nesta equipe
-                      </span>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${
-                      goalCfg.goalMet ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {goalCfg.goalMet ? 'Meta Cumprida' : `Abatimento (-${goalCfg.abatementPercent}%)`}
-                    </span>
-                  </div>
-
-                  {/* Lista de colaboradores da equipe */}
-                  <div className="bg-white p-2.5 rounded-xl border border-slate-150 text-[10px] space-y-1">
-                    <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Equipe Escalada:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {teamMembers.length === 0 ? (
-                        <span className="text-slate-400 text-[10px]">Sem operadores alocados neste turno</span>
-                      ) : (
-                        teamMembers.map(m => {
-                          const isOperator = m.role && /operador/i.test(m.role) && !/auxiliar/i.test(m.role);
-                          const roleTag = isOperator ? 'Op' : 'Aux';
-                          return (
-                            <span key={m.id} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[9.5px]">
-                              {m.name.split(' ')[0]} ({roleTag})
-                            </span>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Controles para Alternar Cumprimento de Meta */}
-                  {canManage && (
-                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-                      <span className="text-[10px] font-bold text-slate-600">Status:</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleSaveMachineGoal(machine, shift, true, 0)}
-                          className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase cursor-pointer transition-all ${
-                            goalCfg.goalMet
-                              ? 'bg-emerald-600 text-white shadow-2xs'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          100% Ok
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSaveMachineGoal(machine, shift, false, goalCfg.abatementPercent || 30)}
-                          className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase cursor-pointer transition-all ${
-                            !goalCfg.goalMet
-                              ? 'bg-rose-600 text-white shadow-2xs'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          Não Atingida
-                        </button>
-                      </div>
-                    </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-xs text-slate-400 font-semibold">
+                        Nenhum colaborador encontrado com os filtros aplicados.
+                      </td>
+                    </tr>
                   )}
-
-                </div>
-              );
-            })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* ABA 3: HISTÓRICO DE OCORRÊNCIAS LANÇADAS */}
-      {/* ============================================================== */}
+      {/* ======================================================== */}
+      {/* TAB 3: INCIDENTS / OCORRÊNCIAS                           */}
+      {/* ======================================================== */}
       {activeTab === 'incidents' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <div>
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
-                <ShieldAlert size={15} className="text-amber-600" />
-                Histórico de Ocorrências • Ciclo {selectedPeriod}
-              </h3>
-              <p className="text-[10.5px] text-slate-500">
-                Atestados médicos, faltas e atrasos registrados no período.
-              </p>
-            </div>
+        <div className="space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-black text-slate-800 tracking-tight">
+              Histórico de Apontamentos do Ciclo ({selectedCycle})
+            </h3>
             {canManage && (
               <button
-                type="button"
-                onClick={() => handleOpenIncidentModal()}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer flex items-center gap-1 shadow-xs transition-all"
+                onClick={() => handleOpenAddIncident()}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
-                <Plus size={13} />
-                <span>Nova Ocorrência</span>
+                <Plus className="w-4 h-4" />
+                <span>Novo Apontamento</span>
               </button>
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[9.5px] font-black border-b border-slate-200">
-                  <th className="px-3 py-2">Data</th>
-                  <th className="px-3 py-2">Colaborador / Alvo</th>
-                  <th className="px-2.5 py-2">Tipo</th>
-                  <th className="px-3 py-2">Justificativa / Documento</th>
-                  <th className="px-3 py-2">Motivo / Descrição</th>
-                  <th className="px-2 py-2 text-center">Impacto</th>
-                  {canManage && <th className="px-2 py-2 text-center">Ações</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {periodIncidents.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      Nenhuma ocorrência registrada para o período selecionado.
-                    </td>
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="py-3 px-4">Data</th>
+                    <th className="py-3 px-4">Alvo / Colaborador</th>
+                    <th className="py-3 px-4">Tipo</th>
+                    <th className="py-3 px-4">Descrição / Justificativa</th>
+                    <th className="py-3 px-4">Doc / Atestado</th>
+                    <th className="py-3 px-4 text-center">Desconto</th>
+                    <th className="py-3 px-4 text-right">Ações</th>
                   </tr>
-                ) : (
-                  periodIncidents.map(inc => (
-                    <tr key={inc.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-3 py-2 font-mono font-bold text-slate-700 text-xs">
-                        {inc.date ? inc.date.split('-').reverse().join('/') : '-'}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-col">
-                          <span className="font-black text-slate-900 uppercase text-xs">
-                            {inc.employeeName}
-                          </span>
-                          <span className="text-[9.5px] text-slate-400">
-                            {inc.sector} {inc.machine ? `• ${inc.machine}` : ''} {inc.shift ? `(${inc.shift})` : ''}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-2.5 py-2">
-                        {inc.type === 'atestado' && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                            Atestado Médico
-                          </span>
-                        )}
-                        {inc.type === 'falta_injustificada' && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                            Falta Injustificada
-                          </span>
-                        )}
-                        {inc.type === 'falta_justificada' && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            Falta Justificada
-                          </span>
-                        )}
-                        {inc.type === 'atraso_injustificado' && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                            Atraso Injustificado
-                          </span>
-                        )}
-                        {inc.type === 'atraso_justificado' && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                            Atraso Justificado
-                          </span>
-                        )}
-                        {inc.type === 'meta_maquina_nao_atingida' && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                            Meta {inc.targetMachine} {inc.targetShift ? `(${inc.targetShift})` : ''}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {inc.isJustified ? (
-                          <div className="flex flex-col text-emerald-700">
-                            <span className="font-bold flex items-center gap-1 text-[10px]">
-                              <FileCheck size={11} /> Justificado com Doc
-                            </span>
-                            {inc.documentNumber && (
-                              <span className="text-[9.5px] text-slate-500 font-mono">
-                                {inc.documentNumber} {inc.documentDetails ? `• ${inc.documentDetails}` : ''}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-rose-600 font-bold text-[10px] flex items-center gap-1">
-                            <XCircle size={11} /> Sem Justificativa
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 font-medium text-xs">
-                        {inc.description}
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        {inc.type === 'atestado' || inc.type === 'falta_injustificada' ? (
-                          <span className="font-black text-rose-600 text-xs">Corta 100%</span>
-                        ) : inc.type === 'atraso_injustificado' ? (
-                          <span className="font-bold text-amber-600 text-xs">-25% (ou 100% se 2+)</span>
-                        ) : inc.type === 'meta_maquina_nao_atingida' ? (
-                          <span className="font-black text-purple-700 text-xs">-{inc.penaltyRatePercent || 50}%</span>
-                        ) : (
-                          <span className="font-bold text-emerald-600 text-xs">Abonado</span>
-                        )}
-                      </td>
-                      {canManage && (
-                        <td className="px-2 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteIncident(inc.id)}
-                            className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer"
-                            title="Remover ocorrência"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {cycleIncidents.length > 0 ? (
+                    cycleIncidents.map(inc => (
+                      <tr key={inc.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 font-semibold text-slate-600">
+                          {inc.date}
                         </td>
-                      )}
+                        <td className="py-3 px-4">
+                          <span className="font-bold text-slate-800 block">{inc.employeeName}</span>
+                          {inc.registration && (
+                            <span className="text-[10px] text-slate-400 font-mono">Mat. {inc.registration}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
+                            {inc.type.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          {inc.description}
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
+                          {inc.documentNumber ? `Nº ${inc.documentNumber}` : '—'}
+                        </td>
+                        <td className="py-3 px-4 text-center font-bold text-amber-600">
+                          -{inc.penaltyRatePercent ?? 100}%
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {canManage && (
+                            <button
+                              onClick={() => handleDeleteIncident(inc.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="Excluir Ocorrência"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-slate-400 font-semibold">
+                        Nenhum apontamento registrado para o ciclo {selectedCycle}.
+                      </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* MODAL: REGISTRAR NOVA OCORRÊNCIA */}
-      {/* ============================================================== */}
-      {isIncidentModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                  <ShieldAlert size={18} />
+      {/* ======================================================== */}
+      {/* TAB 4: METAS POR MÁQUINA                                 */}
+      {/* ======================================================== */}
+      {activeTab === 'machine_goals' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-black text-slate-800 tracking-tight">
+                Metas Operacionais por Máquina & Turno ({selectedCycle})
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                O cumprimento das metas da máquina impacta diretamente a bonificação da equipe alocada na linha.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {DEFAULT_MACHINES.map(mach => (
+              <div key={mach} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-blue-600" />
+                    {mach}
+                  </h4>
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Ciclo {selectedCycle}</span>
                 </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase">
-                    Registrar Ocorrência de Bônus
-                  </h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">
-                    Ciclo: {selectedPeriod}
-                  </p>
+
+                <div className="space-y-2.5">
+                  {['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].map(shift => {
+                    const goalId = `${mach}_${shift}_${selectedCycle}`;
+                    const config = machineGoals.find(g => g.id === goalId);
+                    const isMet = config ? config.goalMet : true; // Default is met unless toggled
+
+                    return (
+                      <div key={shift} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-xs font-bold text-slate-700">{shift}</span>
+                        <button
+                          onClick={() => handleToggleMachineGoal(mach, shift)}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                            isMet
+                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                              : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                          }`}
+                        >
+                          {isMet ? 'Meta Cumprida' : 'Não Atingida (-30%)'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: REGISTRAR OCORRÊNCIA / APONTAMENTO                 */}
+      {/* ======================================================== */}
+      {isIncidentModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 border border-slate-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                  Lançar Ocorrência / Apontamento
+                </h3>
+                <p className="text-xs text-slate-500 font-semibold">Ciclo: {selectedCycle}</p>
+              </div>
               <button
-                type="button"
                 onClick={() => setIsIncidentModalOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X size={16} />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveIncident} className="space-y-3 mt-3">
-              
-              {/* Tipo de Ocorrência */}
+            <div className="space-y-4 text-xs">
+              {/* Mode switch: individual vs machine */}
               <div>
-                <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                  Tipo de Ocorrência
-                </label>
-                <select
-                  value={formType}
-                  onChange={(e) => {
-                    const val = e.target.value as BonusIncidentType;
-                    setFormType(val);
-                    if (val === 'atestado' || val === 'falta_injustificada') {
-                      setFormIsJustified(false);
-                      setFormPenaltyRate(100);
-                    } else if (val === 'atraso_injustificado') {
-                      setFormIsJustified(false);
-                      setFormPenaltyRate(25);
-                    } else if (val === 'atraso_justificado' || val === 'falta_justificada') {
-                      setFormIsJustified(true);
-                      setFormPenaltyRate(0);
-                    }
-                  }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                >
-                  <option value="atestado">🏥 Atestado Médico (Corta 100% do bônus)</option>
-                  <option value="falta_injustificada">🚫 Falta Não Justificada (Corta 100% do bônus)</option>
-                  <option value="falta_justificada">📄 Falta Justificada com Documento (Abonado)</option>
-                  <option value="atraso_injustificado">⏰ Atraso Sem Justificativa (Sucessivos zeram o bônus)</option>
-                  <option value="atraso_justificado">📑 Atraso Justificado com Documento (Abonado)</option>
-                  <option value="meta_maquina_nao_atingida">⚙️ Meta Não Atingida por Máquina & Turno</option>
-                </select>
+                <label className="font-bold text-slate-700 block mb-1.5">Escopo da Ocorrência</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormMode('individual')}
+                    className={`py-2 rounded-xl font-bold border transition-all cursor-pointer ${
+                      formMode === 'individual'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Individual (Colaborador)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormMode('machine')}
+                    className={`py-2 rounded-xl font-bold border transition-all cursor-pointer ${
+                      formMode === 'machine'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Por Máquina / Turno
+                  </button>
+                </div>
               </div>
 
-              {/* Seleção do Colaborador do Quadro Geral */}
-              {formType !== 'meta_maquina_nao_atingida' ? (
+              {formMode === 'individual' ? (
                 <div>
-                  <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                    Colaborador do Quadro Geral ({eligibleBoardCollaborators.length} aptos)
-                  </label>
+                  <label className="font-bold text-slate-700 block mb-1">Colaborador</label>
                   <select
-                    value={formEmployeeId}
-                    onChange={(e) => setFormEmployeeId(e.target.value)}
-                    required
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                    value={targetEmployeeId}
+                    onChange={(e) => setTargetEmployeeId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none focus:ring-1 focus:ring-amber-500"
                   >
-                    <option value="">-- Selecione o Colaborador --</option>
-                    {eligibleBoardCollaborators.map(emp => (
+                    {activeEmployees.map(emp => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.name} ({emp.role || 'Colaborador'} • {emp.machine ? `${emp.machine} • ` : ''}{emp.shift || 'Padrão'})
+                        {emp.name} (Mat. {emp.registration}) • {emp.sector}
                       </option>
                     ))}
                   </select>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                      Máquina Alvo
-                    </label>
+                    <label className="font-bold text-slate-700 block mb-1">Máquina Alvo</label>
                     <select
-                      value={formTargetMachine}
-                      onChange={(e) => setFormTargetMachine(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none cursor-pointer"
+                      value={targetMachine}
+                      onChange={(e) => setTargetMachine(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
                     >
-                      {availableMachines.map(m => (
+                      {DEFAULT_MACHINES.map(m => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                      Turno Alvo
-                    </label>
+                    <label className="font-bold text-slate-700 block mb-1">Turno Alvo</label>
                     <select
-                      value={formTargetShift}
-                      onChange={(e) => setFormTargetShift(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none cursor-pointer"
+                      value={targetShift}
+                      onChange={(e) => setTargetShift(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
                     >
-                      {STANDARD_SHIFTS.map(s => (
+                      {DEFAULT_SHIFTS.map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>
@@ -1715,269 +1275,114 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                 </div>
               )}
 
-              {/* Data e Desconto */}
-              <div className="grid grid-cols-2 gap-2.5">
+              {/* Type */}
+              {formMode === 'individual' && (
                 <div>
-                  <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                    Data da Ocorrência
-                  </label>
-                  <input
-                    type="date"
-                    value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                    required
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                    % Abatimento / Penalidade
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={formPenaltyRate}
-                    onChange={(e) => setFormPenaltyRate(Number(e.target.value) || 0)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-slate-800 outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Documento / Comprovante */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10.5px] font-black uppercase text-slate-700">
-                    Comprovante Oficial / Documento
-                  </span>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={formIsJustified}
-                      onChange={(e) => setFormIsJustified(e.target.checked)}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>Possui Documento Válido</span>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={formDocNumber}
-                    onChange={(e) => setFormDocNumber(e.target.value)}
-                    placeholder="Nº Atestado / CRM / Protocolo"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={formDocDetails}
-                    onChange={(e) => setFormDocDetails(e.target.value)}
-                    placeholder="Clínica / Emissor / CID"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Descrição */}
-              <div>
-                <label className="block text-[10.5px] font-black uppercase text-slate-700 tracking-wider mb-1">
-                  Observações Detalhadas
-                </label>
-                <textarea
-                  rows={2}
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Descreva o motivo da ausência, atraso ou não cumprimento de meta..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 outline-none resize-none"
-                />
-              </div>
-
-              {/* Botões do Formulário */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsIncidentModalOpen(false)}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all cursor-pointer"
-                >
-                  Salvar Ocorrência
-                </button>
-              </div>
-
-            </form>
-
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MODAL: HISTÓRICO DO COLABORADOR */}
-      {/* ============================================================== */}
-      {viewEmployeeHistory && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-3">
-            
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div>
-                <h3 className="text-sm font-black text-slate-900 uppercase">
-                  {viewEmployeeHistory.name}
-                </h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">
-                  Matrícula: {viewEmployeeHistory.registration || '-'} • {viewEmployeeHistory.machine ? `${viewEmployeeHistory.machine} • ` : ''}{viewEmployeeHistory.shift || 'Padrão'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewEmployeeHistory(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-[10px] font-black uppercase text-slate-400 block">
-                Ocorrências no Ciclo {selectedPeriod}:
-              </span>
-              {periodIncidents.filter(i => 
-                i.employeeId === viewEmployeeHistory.id || 
-                (i.registration && viewEmployeeHistory.registration && i.registration === viewEmployeeHistory.registration)
-              ).length === 0 ? (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-bold text-center">
-                  ✅ Nenhuma ocorrência! Bônus integral de 100% (R$ {baseBonusAmount.toFixed(2)}).
-                </div>
-              ) : (
-                <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                  {periodIncidents.filter(i => 
-                    i.employeeId === viewEmployeeHistory.id || 
-                    (i.registration && viewEmployeeHistory.registration && i.registration === viewEmployeeHistory.registration)
-                  ).map(inc => (
-                    <div key={inc.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-0.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-800 font-mono text-[10.5px]">
-                          {inc.date ? inc.date.split('-').reverse().join('/') : '-'}
-                        </span>
-                        <span className={`px-2 py-0.2 rounded-full text-[8.5px] font-black uppercase ${
-                          inc.type === 'atestado' || inc.type === 'falta_injustificada' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {inc.type.replace('_', ' ')}
-                        </span>
-                      </div>
-                      <p className="text-slate-600 text-[11px]">{inc.description}</p>
-                      {inc.documentNumber && (
-                        <div className="text-[9.5px] text-slate-500 font-mono pt-1">
-                          Doc: {inc.documentNumber}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  <label className="font-bold text-slate-700 block mb-1">Tipo de Ocorrência</label>
+                  <select
+                    value={incidentType}
+                    onChange={(e) => {
+                      const t = e.target.value as BonusIncidentType;
+                      setIncidentType(t);
+                      if (t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada') {
+                        setCustomPenaltyPercent(100);
+                      } else if (t === 'atraso_injustificado') {
+                        setCustomPenaltyPercent(20);
+                      } else if (t === 'atraso_justificado') {
+                        setCustomPenaltyPercent(5);
+                      }
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
+                  >
+                    <option value="atestado">Atestado Médico (-100%)</option>
+                    <option value="falta_injustificada">Falta Injustificada (-100%)</option>
+                    <option value="falta_justificada">Falta Justificada (-100%)</option>
+                    <option value="atraso_injustificado">Atraso Injustificado (-20%)</option>
+                    <option value="atraso_justificado">Atraso Justificado (-5%)</option>
+                  </select>
                 </div>
               )}
-            </div>
 
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setViewEmployeeHistory(null)}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                Fechar
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MODAL: REGRAS DO BÔNUS */}
-      {/* ============================================================== */}
-      {isRulesModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-3">
-            
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                  <Award size={18} />
+              {/* Date & Penalty % */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Data da Ocorrência</label>
+                  <input
+                    type="date"
+                    value={incidentDate}
+                    onChange={(e) => setIncidentDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
+                  />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase">
-                    Regulamento Oficial do Bônus
-                  </h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">
-                    Meta Base: R$ {baseBonusAmount.toFixed(2)} • Quadro Geral de Pessoal
-                  </p>
+                  <label className="font-bold text-slate-700 block mb-1">Desconto Aplicado (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={customPenaltyPercent}
+                    onChange={(e) => setCustomPenaltyPercent(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-bold outline-none"
+                  />
                 </div>
               </div>
+
+              {/* Document number / CID */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Nº Doc / Protocolo / CID</label>
+                  <input
+                    type="text"
+                    value={documentNumber}
+                    onChange={(e) => setDocumentNumber(e.target.value)}
+                    placeholder="Ex: CID Z76.0 ou Nº 1042"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Instituição / Médico</label>
+                  <input
+                    type="text"
+                    value={documentDetails}
+                    onChange={(e) => setDocumentDetails(e.target.value)}
+                    placeholder="Ex: Pronto Atendimento / Dr. Silva"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Observações / Motivo</label>
+                <textarea
+                  value={incidentDescription}
+                  onChange={(e) => setIncidentDescription(e.target.value)}
+                  placeholder="Descreva detalhes relevantes sobre este apontamento..."
+                  rows={2}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsRulesModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-xl cursor-pointer"
+                onClick={() => setIsIncidentModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
               >
-                <X size={16} />
+                Cancelar
               </button>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-slate-600 leading-relaxed">
-              <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-0.5">
-                <span className="font-black text-blue-900 uppercase text-[10.5px]">
-                  Público-Alvo
-                </span>
-                <p className="text-slate-700 text-[11px]">
-                  Aplica-se aos colaboradores efetivos do Quadro Geral (operadores e auxiliares). Cargos de gestão e liderança não participam deste bônus de produção.
-                </p>
-              </div>
-
-              <div className="p-2.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-0.5">
-                <span className="font-black text-rose-800 uppercase text-[10.5px]">
-                  Atestados e Faltas Não Justificadas
-                </span>
-                <p className="text-slate-700 text-[11px]">
-                  Qualquer apresentação de atestado médico ou falta injustificada no mês <strong>corta 100% do bônus</strong> (R$ 0,00). Faltas comprovadas com documento legal são abonadas.
-                </p>
-              </div>
-
-              <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-0.5">
-                <span className="font-black text-amber-800 uppercase text-[10.5px]">
-                  Atrasos Sucessivos
-                </span>
-                <p className="text-slate-700 text-[11px]">
-                  2 ou mais atrasos não justificados no mesmo mês <strong>cortam 100% do bônus</strong>. 1 atraso isolado acarreta abatimento de 25%. Atrasos documentados são abonados.
-                </p>
-              </div>
-
-              <div className="p-2.5 bg-purple-50/70 border border-purple-200 rounded-xl space-y-0.5">
-                <span className="font-black text-purple-800 uppercase text-[10.5px]">
-                  Regra de Equipe por Máquina & Turno
-                </span>
-                <p className="text-slate-700 text-[11px]">
-                  Se a máquina e turno não atingirem a meta produtiva, o desconto aplica-se exclusivamente aos colaboradores escalados naquele turno e máquina (ex: Cast 1 Diurno 1 com Marcelo, Railan, Maxi e Márcio).
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
-                onClick={() => setIsRulesModalOpen(false)}
-                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase cursor-pointer"
+                onClick={handleSaveIncident}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer"
               >
-                Entendido
+                Salvar Lançamento
               </button>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 };

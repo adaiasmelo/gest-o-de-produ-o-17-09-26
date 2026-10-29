@@ -88,8 +88,14 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterSector, setFilterSector] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
-  // Filtro de mês baseado no fechamento da folha no dia 24 (inicia automaticamente no ciclo vigente)
-  const [filterMonth, setFilterMonth] = useState<string>(() => getCurrentPayrollCycleKey());
+  // Filtro de mês baseado no fechamento da folha no dia 24 (padrão 'todos' para exibir os lançamentos existentes)
+  const [filterMonth, setFilterMonth] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('manupack_overtime_requests_filter_month');
+      if (saved) return saved;
+    } catch {}
+    return 'todos';
+  });
 
   // Campos do Formulário
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');

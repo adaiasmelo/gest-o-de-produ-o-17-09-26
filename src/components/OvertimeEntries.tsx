@@ -212,10 +212,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const [entries, setEntries] = useState<OvertimeEntry[]>(() => {
     try {
       const cached = localStorage.getItem('manupack_overtime_entries');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_OVERTIME_ENTRIES;
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -245,7 +247,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         }
       }
     } catch {}
-    return getCurrentPayrollCycleKey();
+    if (INITIAL_OVERTIME_ENTRIES.length > 0 && INITIAL_OVERTIME_ENTRIES[0]?.date) {
+      return getPayrollCycleFromDate(INITIAL_OVERTIME_ENTRIES[0].date).key;
+    }
+    return 'todos';
   });
 
   // Salva no localStorage quando o usuário altera o ciclo de folha
@@ -451,7 +456,13 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         markOvertimeAsInitialized();
 
         if (list.length === 0) {
-          setEntries([]);
+          const deletedIds = getDeletedOvertimeEntryIds();
+          const base = INITIAL_OVERTIME_ENTRIES.filter(item => !deletedIds.has(item.id));
+          if (base.length > 0) {
+            setEntries(base);
+          } else {
+            setEntries([]);
+          }
           setIsLoading(false);
           return;
         }
@@ -490,7 +501,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         console.error('Erro ao sincronizar overtime_entries:', err);
         if (isMounted) {
           const deletedIds = getDeletedOvertimeEntryIds();
-          setEntries((prev) => prev.filter((item) => !deletedIds.has(item.id)));
+          setEntries((prev) => {
+            const base = prev.length > 0 ? prev : INITIAL_OVERTIME_ENTRIES;
+            return base.filter((item) => !deletedIds.has(item.id));
+          });
           setIsLoading(false);
         }
       }
@@ -500,6 +514,36 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       isMounted = false;
       unsub();
     };
+  }, []);
+
+  // Sincronização em segundo plano via servidor para garantir persistência mesmo com instabilidade do Firestore
+  useEffect(() => {
+    fetch('/api/sync/overtime')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+          const deletedIds = getDeletedOvertimeEntryIds();
+          setEntries(prev => {
+            const idMap = new Map();
+            prev.forEach(e => idMap.set(e.id, e));
+            let hasNew = false;
+            data.entries.forEach((e: OvertimeEntry) => {
+              if (e && e.id && !deletedIds.has(e.id) && !idMap.has(e.id)) {
+                idMap.set(e.id, e);
+                hasNew = true;
+              }
+            });
+            if (!hasNew) return prev;
+            const merged = Array.from(idMap.values()) as OvertimeEntry[];
+            merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            try {
+              localStorage.setItem('manupack_overtime_entries', JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Lista de colaboradores reais da fábrica para autocompletar e busca rápida
@@ -1319,6 +1363,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         } catch {}
         return combined;
       });
+
+      fetch('/api/sync/overtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: savedList })
+      }).catch(() => {});
 
       // 2. CRUCIAL: Ajustar o ciclo de folha para o ciclo das datas salvas para que apareçam na tela!
       if (batchList.length > 0 && batchList[0].date) {

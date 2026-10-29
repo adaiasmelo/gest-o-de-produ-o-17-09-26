@@ -186,6 +186,32 @@ async function startServer() {
     }
   }
 
+  const SHARED_OVERTIME_FILE = path.join(process.cwd(), 'data', 'shared_overtime_entries.json');
+
+  function readSharedOvertime(): any[] {
+    try {
+      if (fs.existsSync(SHARED_OVERTIME_FILE)) {
+        const content = fs.readFileSync(SHARED_OVERTIME_FILE, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && Array.isArray(parsed.entries)) return parsed.entries;
+      }
+    } catch (err) {
+      console.warn("Erro ao ler shared_overtime_entries:", err);
+    }
+    return [];
+  }
+
+  function writeSharedOvertime(entries: any[]): void {
+    try {
+      const dir = path.dirname(SHARED_OVERTIME_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(SHARED_OVERTIME_FILE, JSON.stringify(entries, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn("Erro ao gravar shared_overtime_entries:", err);
+    }
+  }
+
   function deduplicateEntriesServer(entries: any[]): any[] {
     const idMap = new Map<string, any>();
     const bizMap = new Map<string, any>();
@@ -292,6 +318,38 @@ async function startServer() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erro ao registrar exclusão' });
+    }
+  });
+
+  // Endpoint de Sincronização de Horas Extras
+  app.get("/api/sync/overtime", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    const entries = readSharedOvertime();
+    res.json({
+      status: "ok",
+      count: entries.length,
+      entries
+    });
+  });
+
+  app.post("/api/sync/overtime", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    try {
+      const incoming = Array.isArray(req.body?.entries) ? req.body.entries : [];
+      if (incoming.length > 0) {
+        const current = readSharedOvertime();
+        const idMap = new Map();
+        [...current, ...incoming].forEach(item => {
+          if (item && item.id) idMap.set(item.id, item);
+        });
+        const merged = Array.from(idMap.values());
+        writeSharedOvertime(merged);
+        return res.json({ status: "ok", count: merged.length, entries: merged });
+      }
+      res.json({ status: "ok", count: 0 });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erro ao sincronizar horas extras' });
     }
   });
 
