@@ -61,6 +61,7 @@ export const saveIntroVideo = async (file: File | Blob, name?: string): Promise<
     putReq.onsuccess = () => {
       const url = URL.createObjectURL(file);
       try {
+        localStorage.setItem('manupackaging_has_intro_video', 'true');
         localStorage.setItem(
           'manupackaging_intro_video_meta',
           JSON.stringify({
@@ -81,6 +82,19 @@ export const saveIntroVideo = async (file: File | Blob, name?: string): Promise<
   });
 };
 
+export const hasStoredIntroVideo = (): boolean => {
+  try {
+    if (typeof window === 'undefined') return false;
+    const flag = localStorage.getItem('manupackaging_has_intro_video');
+    if (flag === 'true') return true;
+    const meta = localStorage.getItem('manupackaging_intro_video_meta');
+    if (meta && meta.includes('"hasVideo":true')) return true;
+    return false;
+  } catch {
+    return false;
+  }
+};
+
 export const getIntroVideoUrl = async (): Promise<{ url: string; name: string; size: number } | null> => {
   try {
     const db = await openDB();
@@ -93,12 +107,18 @@ export const getIntroVideoUrl = async (): Promise<{ url: string; name: string; s
         const result = getReq.result as StoredVideo | undefined;
         if (result && result.blob) {
           const url = URL.createObjectURL(result.blob);
+          try {
+            localStorage.setItem('manupackaging_has_intro_video', 'true');
+          } catch {}
           resolve({
             url,
             name: result.name || 'Vídeo de Abertura',
             size: result.size || result.blob.size,
           });
         } else {
+          try {
+            localStorage.removeItem('manupackaging_has_intro_video');
+          } catch {}
           resolve(null);
         }
       };
@@ -123,6 +143,7 @@ export const deleteIntroVideo = async (): Promise<void> => {
 
       delReq.onsuccess = () => {
         try {
+          localStorage.removeItem('manupackaging_has_intro_video');
           localStorage.removeItem('manupackaging_intro_video_meta');
           localStorage.removeItem('manupackaging_intro_video_url');
         } catch {}

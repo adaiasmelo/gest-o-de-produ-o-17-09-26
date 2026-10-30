@@ -161,7 +161,7 @@ import {
   isSupabaseConfigured 
 } from './lib/supabase';
 import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
-import { saveIntroVideo, getIntroVideoUrl, deleteIntroVideo } from './lib/videoStorage';
+import { saveIntroVideo, getIntroVideoUrl, deleteIntroVideo, hasStoredIntroVideo } from './lib/videoStorage';
 import { SystemIntroVideoPlayer } from './components/SystemIntroVideoPlayer';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
@@ -921,7 +921,7 @@ export const App: React.FC = () => {
       return null;
     }
   });
-  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState(false);
+  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState(() => hasStoredIntroVideo());
 
   // Carrega vídeo de abertura do IndexedDB no início da aplicação
   useEffect(() => {
@@ -935,10 +935,13 @@ export const App: React.FC = () => {
         if (savedUrl) {
           setSystemIntroVideo(savedUrl);
           setIsIntroVideoPlaying(true);
+        } else {
+          setIsIntroVideoPlaying(false);
         }
       }
     }).catch((err) => {
       console.warn('Erro ao inicializar vídeo de introdução:', err);
+      setIsIntroVideoPlaying(false);
     });
   }, []);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
@@ -12020,14 +12023,21 @@ Atenciosamente,
     );
   }
 
-  if (isIntroVideoPlaying && systemIntroVideo) {
-    return (
-      <SystemIntroVideoPlayer
-        videoSrc={systemIntroVideo}
-        onFinish={() => setIsIntroVideoPlaying(false)}
-        systemName={systemName}
-      />
-    );
+  if (isIntroVideoPlaying) {
+    if (systemIntroVideo) {
+      return (
+        <SystemIntroVideoPlayer
+          videoSrc={systemIntroVideo}
+          onFinish={() => {
+            setIsIntroVideoPlaying(false);
+            setIsInitializing(false);
+          }}
+        />
+      );
+    }
+    // Enquanto o arquivo de vídeo é recuperado do armazenamento local (uma fração de segundo),
+    // mantém a tela preta pura em tela cheia, SEM NUNCA exibir a tela de carregando ambiente/sistema!
+    return <div className="fixed inset-0 z-[9999999] bg-black w-screen h-screen select-none cursor-none" />;
   }
 
   if (isInitializing && !loggedUser) {
