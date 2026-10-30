@@ -141,12 +141,12 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
 
     startPlayback();
 
-    // Fallback de segurança para não travar
+    // Fallback de segurança para não travar: 11 segundos (o vídeo possui 10s)
     const maxTimer = setTimeout(() => {
       if (!isTransitioningRef.current) {
         startSuctionTransition();
       }
-    }, 18000);
+    }, 11000);
 
     return () => {
       clearTimeout(maxTimer);
@@ -155,8 +155,9 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-[9999999] overflow-hidden select-none pointer-events-none transition-opacity duration-500 ease-out ${
-        isPulling ? 'bg-black/0' : 'bg-black'
+      onClick={startSuctionTransition}
+      className={`fixed inset-0 z-[9999999] overflow-hidden select-none cursor-pointer transition-opacity duration-500 ease-out ${
+        isPulling ? 'bg-black/0 pointer-events-none' : 'bg-black pointer-events-auto'
       }`}
     >
       {/* Container do vídeo que sofre a transformação de sucção em direção ao logo */}
@@ -176,6 +177,22 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
           playsInline
           className="w-full h-full object-cover block m-0 p-0 border-0 outline-none"
           onEnded={startSuctionTransition}
+          onTimeUpdate={(e) => {
+            const v = e.currentTarget;
+            if (v && v.duration && isFinite(v.duration) && v.currentTime >= v.duration - 0.25) {
+              startSuctionTransition();
+            }
+          }}
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v && v.duration && isFinite(v.duration)) {
+              setTimeout(() => {
+                if (!isTransitioningRef.current) {
+                  startSuctionTransition();
+                }
+              }, (v.duration + 0.6) * 1000);
+            }
+          }}
           onError={() => {
             console.warn('Erro ao carregar ou reproduzir arquivo de vídeo.');
             startSuctionTransition();

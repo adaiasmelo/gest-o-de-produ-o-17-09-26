@@ -110,6 +110,7 @@ import { IndustrialBentoGrid } from './components/IndustrialBentoGrid';
 // ==================== FIM OPÇÃO 1 E 3: IMPORTS (DESFAZER) ====================
 import { normalizeUserPermissions, DEFAULT_FULL_PERMISSIONS, createPresetPermissions, getInitialUserLanding } from './utils/userPermissions';
 import { SettingsPermissions } from './types';
+import { SystemInfoModal } from './components/SystemInfoModal';
 
 
 
@@ -935,7 +936,8 @@ export const App: React.FC = () => {
       return null;
     }
   });
-  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState(() => hasStoredIntroVideo());
+  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState(false);
+  const [isSystemInfoModalOpen, setIsSystemInfoModalOpen] = useState(false);
 
   // Carrega vídeo de abertura do IndexedDB no início da aplicação
   useEffect(() => {
@@ -1162,6 +1164,15 @@ export const App: React.FC = () => {
   };
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // Garante que o estado de carregamento inicial nunca trave a aplicação
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setIsInitializing(false);
+    }, 1000);
+    return () => clearTimeout(safetyTimer);
+  }, []);
+
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'extrusion' | 'ribbon' | 'personnel' | 'evaluations' | 'maintenance' | 'projection'>(() => {
     try {
@@ -12052,29 +12063,13 @@ Atenciosamente,
     );
   }
 
-  if (isIntroVideoPlaying && !systemIntroVideo) {
-    // Enquanto o arquivo de vídeo é recuperado do armazenamento local (uma fração de segundo),
-    // mantém a tela preta pura em tela cheia, SEM NUNCA exibir a tela de carregando ambiente/sistema!
-    return <div className="fixed inset-0 z-[9999999] bg-black w-screen h-screen select-none cursor-none" />;
-  }
-
-  if (isInitializing && !loggedUser && !isIntroVideoPlaying) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 shadow-2xl"></div>
-        <h2 className="text-white font-black text-xs uppercase tracking-widest animate-pulse">Iniciando Sistema...</h2>
-        <p className="text-slate-500 text-[10px] uppercase font-bold mt-4 tracking-tighter">Estamos preparando seu ambiente de trabalho</p>
-      </div>
-    );
-  }
-
   if (!loggedUser) {
     return (
       <div className="h-screen max-h-screen w-screen overflow-hidden flex items-center justify-center p-2 sm:p-4 select-none relative bg-slate-950">
         {/* Imagem de Fundo da Tela exatamente como estava */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <img 
-            src={systemCoverImage || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1600&q=80'} 
+            src={systemCoverImage || '/assets/aistudio/image_4577cc3d.png' || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1600&q=80'} 
             alt="Fundo do Sistema" 
             className="w-full h-full object-cover object-center filter brightness-[0.35] blur-[1px] scale-105"
           />
@@ -12296,9 +12291,17 @@ Atenciosamente,
 
             <div className="mt-2.5 pt-2 border-t border-cyan-950/80 flex flex-col gap-0.5 items-center">
               <p className="text-[8px] sm:text-[8.5px] font-bold text-slate-300 uppercase tracking-wider text-center">
-                Manupackaging Fitasa e Amazônia desenvolvido por Adaias Melo
+                Manupackaging Fitasa e Amazônia
               </p>
-              <p className="text-[7px] sm:text-[7.5px] font-bold text-slate-500 uppercase tracking-widest opacity-80">Versão 2.0.0 • Pública</p>
+              <button
+                type="button"
+                onClick={() => setIsSystemInfoModalOpen(true)}
+                className="text-[7.5px] sm:text-[8px] font-bold text-cyan-400 hover:text-cyan-300 uppercase tracking-widest transition-colors cursor-pointer flex items-center gap-1 hover:underline group"
+                title="Clique para ver informações sobre o sistema e versão"
+              >
+                <span>Versão 2.0.0</span>
+                <Info size={10} className="text-cyan-400/70 group-hover:text-cyan-300 inline" />
+              </button>
             </div>
         </div>
  
@@ -12493,22 +12496,18 @@ Atenciosamente,
             }}
           />
         )}
+
+        {/* Modal Informativo Sobre o Sistema / Versão 2.0.0 */}
+        <SystemInfoModal
+          isOpen={isSystemInfoModalOpen}
+          onClose={() => setIsSystemInfoModalOpen(false)}
+          systemLogo={systemLogo}
+          systemName={loginSystemName}
+        />
       </div>
     );
   }
 
-
-  if (isInitializing && !isIntroVideoPlaying) return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-      <div className="w-20 h-20 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl mb-8 animate-pulse">
-         <Activity size={40} />
-      </div>
-      <div className="w-16 h-1 border-2 border-blue-500/20 rounded-full overflow-hidden w-48">
-        <div className="h-full bg-blue-500 animate-loading-bar"></div>
-      </div>
-      <p className="mt-6 text-blue-400 font-black text-[10px] uppercase tracking-widest">Carregando Ambiente</p>
-    </div>
-  );
 
   return (
     <div className={`min-h-screen bg-[#f8fafc] ${isStandalone ? 'pt-safe' : ''} ${isIntroVideoPlaying ? 'h-screen max-h-screen overflow-hidden' : 'pb-24'} w-full max-w-full overflow-x-hidden relative`}>
@@ -22342,15 +22341,30 @@ Atenciosamente,
           </div>
           <div className="text-center md:text-right flex flex-col items-center md:items-end gap-1">
             <p className="text-slate-600 font-bold text-xs uppercase tracking-wide">
-              Manupackaguing Fitasa e Amazônia
+              Manupackaging Fitasa e Amazônia
             </p>
-            <p className="text-blue-600 font-black text-sm tracking-wider uppercase">
+            <p className="text-blue-600 font-bold text-xs tracking-wider uppercase">
               desenvolvido por Adaias Melo
             </p>
-            <p className="text-[8px] text-slate-300 font-mono">© 2026 • Versão Produção</p>
+            <button
+              type="button"
+              onClick={() => setIsSystemInfoModalOpen(true)}
+              className="text-[8px] text-slate-400 font-mono hover:text-blue-600 hover:underline cursor-pointer"
+              title="Ver informações sobre o sistema e versão"
+            >
+              © 2026 • Versão 2.0.0
+            </button>
           </div>
         </div>
       </footer>
+
+      {/* Modal Informativo Sobre o Sistema / Versão 2.0.0 */}
+      <SystemInfoModal
+        isOpen={isSystemInfoModalOpen}
+        onClose={() => setIsSystemInfoModalOpen(false)}
+        systemLogo={systemLogo}
+        systemName={systemName}
+      />
 
       {/* Modal de Detalhes do Colaborador (Popup Informativo) */}
       {isDetailModalOpen && employeeDetailData && (
