@@ -13,6 +13,7 @@ import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firesto
 import { db } from '../lib/firebase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { BiAnalyticsView } from './BiAnalyticsView';
 
 export type BonusIncidentType = 
   | 'atestado' 
@@ -59,6 +60,7 @@ export interface MachineGoalConfig {
 interface ProductionBonusManagerProps {
   employees: Employee[];
   productionData?: any[];
+  goals?: Record<string, number>;
   onClose: () => void;
   canManage: boolean;
   isReadOnly?: boolean;
@@ -94,6 +96,7 @@ const formatPercent = (val: number | null | undefined) => {
 export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   employees = [],
   productionData = [],
+  goals = {},
   onClose,
   canManage = true,
   isReadOnly = false,
@@ -265,6 +268,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     processedDataFiltered.forEach(e => {
       if (!e.operator || (e.machine || '').toLowerCase().includes('erema')) return;
       const m = e.date.substring(0, 7);
+      if (m !== selectedCycle) return;
       if (!acc[e.operator]) {
         acc[e.operator] = {};
       }
@@ -351,7 +355,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     });
 
     return list.sort((a,b) => b.totalProd - a.totalProd);
-  }, [processedDataFiltered]);
+  }, [processedDataFiltered, selectedCycle]);
 
   const filteredOperators = useMemo(() => {
     if (!operatorSearch.trim()) return operatorMetrics;
@@ -394,21 +398,14 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     return { level, roleName: roleDisplay, bonusRef: metaMensalBonus };
   };
 
-  // Helper to match an employee with their operator metrics
+  // Helper to match an employee with their operator metrics strictly
   const findOperatorPerformance = (empName?: string, reg?: string) => {
     if (!empName) return null;
     const normEmp = empName.trim().toLowerCase();
-    const parts = normEmp.split(/\s+/).filter(Boolean);
-    const firstName = parts[0] || '';
-    const lastName = parts.length > 1 ? parts[parts.length - 1] : '';
 
     const found = operatorMetrics.find(o => {
       const normOp = o.operator.trim().toLowerCase();
-      if (normOp === normEmp) return true;
-      if (normOp.includes(normEmp) || normEmp.includes(normOp)) return true;
-      if (firstName && lastName && normOp.includes(firstName) && normOp.includes(lastName)) return true;
-      if (parts.length === 1 && normOp === firstName) return true;
-      return false;
+      return normOp === normEmp;
     });
 
     if (!found) return null;
@@ -1187,315 +1184,12 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           exit={{ opacity: 0, y: -10 }} 
           className="space-y-6"
         >
-          {/* Operator stability and performance trackers */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-150 shadow-sm space-y-6">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2">
-              <div>
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
-                  <Users className="text-blue-600" size={16} /> Evolução Histórica de Desempenho e Consistência de Operadores
-                </h3>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                {/* Meta Mensal Única de R$ 250 com bolinha explicativa da regra */}
-                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 shadow-2xs">
-                  <Award className="text-amber-500 shrink-0" size={16} />
-                  <div className="flex flex-col min-w-[125px]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider leading-none">Meta Mensal</span>
-                      {/* Bolinha explicativa interativa ao passar o mouse */}
-                      <div className="group relative inline-flex items-center cursor-help">
-                        <span className="w-3.5 h-3.5 rounded-full bg-slate-200 hover:bg-blue-600 text-slate-600 hover:text-white flex items-center justify-center text-[9px] font-black transition-colors" title="Como funciona o cálculo da meta e bônus">
-                          ?
-                        </span>
-                        <div className="pointer-events-none absolute right-0 top-full mt-2 w-80 sm:w-96 p-4 bg-slate-900/95 backdrop-blur-md border border-slate-700 text-white text-[10px] font-medium rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] normal-case tracking-normal space-y-2.5 leading-relaxed">
-                          <div className="flex items-center gap-2 text-amber-400 font-black uppercase text-[11px] pb-1 border-b border-slate-800">
-                            <Award size={14} className="text-amber-400" />
-                            <span>Cálculo da Regra de Bônus (Meta R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</span>
-                          </div>
-                          <p className="text-slate-300">
-                            O bônus individual é calculado com base na <strong>Meta Mensal de R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> por operador, aplicando o modelo de <strong>Desconto Linear Proporcional</strong> conforme o coeficiente de perda de cada colaborador:
-                          </p>
-                          <div className="space-y-1.5">
-                            <div className="p-2 bg-emerald-950/60 border border-emerald-500/30 rounded-xl">
-                              <span className="font-bold text-emerald-400 block text-[10.5px]">Melhor Perda (Mínimo Desperdício):</span>
-                              <span className="text-slate-300 text-[9.5px]">Aplica <strong>0% de desconto</strong>. O operador recebe 100% da meta: <strong>R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>.</span>
-                            </div>
-                            <div className="p-2 bg-rose-950/60 border border-rose-500/30 rounded-xl">
-                              <span className="font-bold text-rose-400 block text-[10.5px]">Pior Perda (Máximo Desperdício):</span>
-                              <span className="text-slate-300 text-[9.5px]">Aplica <strong>100% de desconto</strong>, resultando em <strong>R$ 0,00</strong>.</span>
-                            </div>
-                            <div className="p-2 bg-blue-950/60 border border-blue-500/30 rounded-xl">
-                              <span className="font-bold text-blue-400 block text-[10.5px]">Desempenho Intermediário:</span>
-                              <span className="text-slate-300 text-[9.5px]">O desconto varia linearmente entre 0% e 100% conforme a posição relativa entre a melhor e pior perda.</span>
-                            </div>
-                          </div>
-                          <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between font-mono">
-                            <span>Fórmula:</span>
-                            <span className="text-slate-200">Bônus = R$ {metaMensalBonus} × (1 - Desconto% / 100)</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <span className="text-[10px] font-bold text-slate-500">R$</span>
-                      <input 
-                        type="number" 
-                        min={0}
-                        value={metaMensalBonus} 
-                        onChange={e => {
-                          const val = Number(e.target.value) || 0;
-                          setMetaMensalBonus(val);
-                          try {
-                            localStorage.setItem('manupackaging_bonus_base_meta', String(val));
-                          } catch {}
-                        }} 
-                        className="bg-transparent font-black text-xs text-slate-800 outline-none w-16 p-0 border-none focus:ring-0 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <input 
-                    type="text" 
-                    placeholder="Pesquisar operador..." 
-                    value={operatorSearch} 
-                    onChange={e => setOperatorSearch(e.target.value)} 
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 w-full sm:w-52"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-slate-150">
-              <table className="w-full text-left text-[11px] border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200">
-                    <th className="px-5 py-3">
-                      <div className="flex items-center gap-1">
-                        Operador de Produção
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full left-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Nome do operador encarregado do apontamento de produção.
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        Produção Acumulada Cast
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Soma total de peso líquido gerado pelo respectivo profissional.
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        Descarte Acumulado
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Peso total de refugo e borra não aproveitado, bem como a discriminação individualizada de cada tipo de descarte.
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        Média Coeficiente de Perda
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Coeficiente médio de desperdício em relação ao volume bruto produzido (Menor é melhor).
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right text-amber-600">
-                      <div className="flex items-center justify-end gap-1">
-                        Desconto Linear
-                        <span className="group relative inline-block cursor-help align-middle text-slate-400">
-                          <Info size={10} className="hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Desconto aplicado de forma proporcional linear, variando de 0% (Melhor Média de Perdas do período) até 100% (Pior Média de Perdas).
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right text-emerald-600">
-                      <div className="flex items-center justify-end gap-1">
-                        Bônus Estimado
-                        <span className="group relative inline-block cursor-help align-middle text-slate-400">
-                          <Info size={10} className="hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Valor final do bônus proporcional recebido após o desconto proporcional linear do mês com base no valor de referência.
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        Volatilidade Evolutiva (▲ MoM SD)
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Desvio padrão das variações mensais (Sinaliza coerência ou se o operador possui ciclos de extrema oscilação).
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        Atividades (Meses)
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Número de meses em que o operador possui pelo menos um apontamento registrado.
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                    <th className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        Classificação Operacional
-                        <span className="group relative inline-block cursor-help align-middle">
-                          <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
-                          <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-56 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                            Diagnóstico automatizado baseado no cruzamento de volume entregue e estabilidade de perda.
-                          </span>
-                        </span>
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                  {filteredOperators.length > 0 ? (
-                    filteredOperators.map((op) => {
-                      // Classify operator consistency profile
-                      let badgeColor = 'bg-slate-100 text-slate-500';
-                      let label = 'Médio Produtor';
-
-                      if (op.totalProd > 25000 && op.averageWasteIdx <= 4.0) {
-                        badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200';
-                        label = 'Alta Performance e Baixa Perda';
-                      } else if (op.volatility > 15 && op.averageWasteIdx > 5.5) {
-                        badgeColor = 'bg-rose-100 text-rose-800 border-rose-200';
-                        label = 'Forte Instabilidade / Alta Perda';
-                      } else if (op.averageWasteIdx <= 3.5) {
-                        badgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
-                        label = 'Operação Limpa e Consistente';
-                      } else if (op.totalProd > 30000) {
-                        badgeColor = 'bg-purple-100 text-purple-800 border-purple-200';
-                        label = 'Alto Volume Gerado';
-                      }
-
-                      const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
-                      const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
-                      const lossAmt = metaMensalBonus * (discountPct / 100);
-
-                      return (
-                        <tr key={op.operator} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-5 py-4 text-slate-900 font-black uppercase flex items-center gap-2">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                {op.operator}
-                                {op.totalProd > 35000 && (
-                                  <Zap className="text-amber-500 fill-amber-500" size={13} title="Destaque de Produtividade" />
-                                )}
-                              </div>
-                              <div className="text-[9px] text-indigo-500 font-black mt-0.5 tracking-wider uppercase">
-                                {getOperatorDetails(op.operator).roleName}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-right font-medium">{formatWeight(op.totalProd)}</td>
-                          <td className="px-4 py-4 text-right">
-                            <div className="font-extrabold text-slate-800">{formatWeight(op.totalWaste)}</div>
-                            <div className="text-[9px] text-slate-400 font-bold uppercase mt-1 space-y-0.5">
-                              <div>Eco A: {formatWeight(op.totalEcoA)}</div>
-                              <div>Eco B: {formatWeight(op.totalEcoB)}</div>
-                              <div>Borra: {formatWeight(op.totalBorra)}</div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-right text-rose-500 font-black">{formatPercent(op.averageWasteIdx)}</td>
-                          <td className="px-4 py-4 text-right">
-                            {(() => {
-                              if (discountPct === 0) {
-                                return <span className="text-emerald-600 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (Melhor)</span>;
-                              }
-                              if (discountPct === 100) {
-                                return (
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-rose-500 font-black bg-rose-50 px-2 py-1 rounded-lg">100,0% (Máx.)</span>
-                                    <span className="text-[9px] text-rose-500 font-bold mt-0.5">- {formatBRL(lossAmt)}</span>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div className="flex flex-col items-end">
-                                  <span className="text-slate-600 font-bold">{discountPct.toFixed(1).replace('.', ',')}%</span>
-                                  <span className="text-[9px] text-rose-500 font-bold mt-0.5">- {formatBRL(lossAmt)}</span>
-                                </div>
-                              );
-                            })()}
-                          </td>
-                          <td className="px-4 py-4 text-right">
-                            {(() => {
-                              if (discountPct === 0) {
-                                return (
-                                  <div className="flex justify-end items-center gap-1">
-                                    <span className="text-emerald-600 font-black text-xs flex flex-col items-end bg-emerald-50 px-2.5 py-1 rounded-xl">
-                                      <span className="flex items-center gap-0.5"><Award size={12} className="text-amber-500 fill-amber-500 inline mr-0.5" /> {formatBRL(bonusAmt)}</span>
-                                      <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">Sem desconto (Meta R$ {metaMensalBonus})</span>
-                                    </span>
-                                  </div>
-                                );
-                              }
-                              if (discountPct === 100) {
-                                return (
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-slate-400 font-normal">R$ 0,00</span>
-                                    <span className="text-[8px] text-rose-400 font-bold block mt-0.5">100% desconto (Pior perda)</span>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div className="flex flex-col items-end">
-                                  <span className="text-slate-700 font-extrabold text-xs">{formatBRL(bonusAmt)}</span>
-                                  <span className="text-[8px] text-slate-400 font-semibold">Meta: {formatBRL(metaMensalBonus)}</span>
-                                </div>
-                              );
-                            })()}
-                          </td>
-                          <td className="px-4 py-4 text-right">
-                            <span className={op.volatility > 12 ? "text-rose-500" : "text-emerald-600"}>
-                              {op.volatility === 0 ? 'Estável' : `± ${op.volatility.toFixed(1)}%`}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4 text-right text-slate-500">{op.monthsActive} {op.monthsActive === 1 ? 'Mês' : 'Meses'}</td>
-                          <td className="px-5 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${badgeColor}`}>
-                              {label}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={9} className="px-5 py-8 text-center text-slate-300 font-bold uppercase tracking-wider">
-                        Nenhum operador encontrado com esse nome.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <BiAnalyticsView 
+            productionData={productionData}
+            goals={goals}
+            employees={employees}
+            standaloneSection="operators"
+          />
         </motion.div>
       )}
 

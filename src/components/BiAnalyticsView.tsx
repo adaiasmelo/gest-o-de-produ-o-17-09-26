@@ -951,38 +951,40 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
       </div>
 
       {/* Internal Navigation tabs for comparison features */}
-      <div className="flex border-b border-slate-200">
-        <button 
-          onClick={() => setBiActiveSection('matrix')}
-          className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'matrix' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          <Sliders size={14} /> 1. Matriz Combinatória Flexível
-        </button>
-        <button 
-          onClick={() => setBiActiveSection('mom_yoy')}
-          className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'mom_yoy' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          <TrendingUp size={14} /> 2. Inteligência de Tempo (MoM / YoY)
-        </button>
-        <button 
-          onClick={() => setBiActiveSection('stoppages')}
-          className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'stoppages' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          <Clock size={14} /> 3. Perfil de Gargalos & Paradas
-        </button>
-        <button 
-          onClick={() => setBiActiveSection('operators')}
-          className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'operators' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          <Users size={14} /> 4. Evolução Histórica das Equipes
-        </button>
-        <button 
-          onClick={() => setBiActiveSection('eco_b_vs_tubetes')}
-          className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'eco_b_vs_tubetes' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          <Scale size={14} /> 5. Eco B vs Tubetes Eco B
-        </button>
-      </div>
+      {!standaloneSection && (
+        <div className="flex border-b border-slate-200">
+          <button 
+            onClick={() => setBiActiveSection('matrix')}
+            className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'matrix' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Sliders size={14} /> 1. Matriz Combinatória Flexível
+          </button>
+          <button 
+            onClick={() => setBiActiveSection('mom_yoy')}
+            className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'mom_yoy' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <TrendingUp size={14} /> 2. Inteligência de Tempo (MoM / YoY)
+          </button>
+          <button 
+            onClick={() => setBiActiveSection('stoppages')}
+            className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'stoppages' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Clock size={14} /> 3. Perfil de Gargalos & Paradas
+          </button>
+          <button 
+            onClick={() => setBiActiveSection('operators')}
+            className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'operators' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Users size={14} /> 4. Evolução Histórica das Equipes
+          </button>
+          <button 
+            onClick={() => setBiActiveSection('eco_b_vs_tubetes')}
+            className={`px-4 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all -mb-px flex items-center gap-1.5 ${biActiveSection === 'eco_b_vs_tubetes' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Scale size={14} /> 5. Eco B vs Tubetes Eco B
+          </button>
+        </div>
+      )}
 
       {/* Renders Section Content */}
       <AnimatePresence mode="wait">
