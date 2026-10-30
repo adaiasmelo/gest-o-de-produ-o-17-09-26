@@ -12070,9 +12070,18 @@ Atenciosamente,
 
   if (!loggedUser) {
     return (
-      <div className="h-screen max-h-screen w-screen overflow-hidden bg-[#060e17] flex items-center justify-center p-2 sm:p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0c2238] via-[#060e17] to-black select-none relative">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.12)_0%,transparent_70%)] pointer-events-none"></div>
-        <div className="w-full max-w-[390px] sm:max-w-[400px] bg-[#0c1a2e]/85 backdrop-blur-2xl rounded-[2.5rem] px-5 py-5 sm:px-7 sm:py-6 shadow-[0_0_50px_rgba(8,145,178,0.25),0_20px_50px_rgba(0,0,0,0.8)] border border-cyan-500/30 relative animate-in fade-in zoom-in-95 duration-500 text-white">
+      <div className="h-screen max-h-screen w-screen overflow-hidden flex items-center justify-center p-2 sm:p-4 select-none relative bg-slate-950">
+        {/* Imagem de Fundo da Tela exatamente como estava */}
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+          <img 
+            src={systemCoverImage || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1600&q=80'} 
+            alt="Fundo do Sistema" 
+            className="w-full h-full object-cover object-center filter brightness-[0.35] blur-[1px] scale-105"
+          />
+          <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-[2px]" />
+        </div>
+
+        <div className="w-full max-w-[390px] sm:max-w-[400px] bg-[#0c1a2e]/85 backdrop-blur-2xl rounded-[2.5rem] px-5 py-5 sm:px-7 sm:py-6 shadow-[0_0_50px_rgba(8,145,178,0.25),0_20px_50px_rgba(0,0,0,0.8)] border border-cyan-500/30 relative z-10 animate-in fade-in zoom-in-95 duration-500 text-white">
            <div className="flex flex-col items-center mb-3">
               <div 
                 id="login-screen-logo"
