@@ -19,6 +19,24 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
   const [pullStyle, setPullStyle] = useState<React.CSSProperties>({});
   const isTransitioningRef = useRef(false);
 
+  useEffect(() => {
+    // Bloqueia qualquer rolagem e suprime 100% da barra de rolagem lateral no navegador
+    document.documentElement.classList.add('intro-video-active');
+    document.body.classList.add('intro-video-active');
+
+    const origHtmlOverflow = document.documentElement.style.overflow;
+    const origBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.documentElement.classList.remove('intro-video-active');
+      document.body.classList.remove('intro-video-active');
+      document.documentElement.style.overflow = origHtmlOverflow;
+      document.body.style.overflow = origBodyOverflow;
+    };
+  }, []);
+
   const startSuctionTransition = useCallback(() => {
     if (isTransitioningRef.current) return;
     isTransitioningRef.current = true;

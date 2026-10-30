@@ -70,6 +70,25 @@
   animation: logo-sparkle-spin 4s linear infinite;
 }
 
+/* Bloqueio absoluto de barra de rolagem lateral durante o vídeo de abertura */
+html.intro-video-active,
+body.intro-video-active,
+body.intro-video-active #root {
+  overflow: hidden !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html.intro-video-active::-webkit-scrollbar,
+body.intro-video-active::-webkit-scrollbar,
+body.intro-video-active *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 html, body {
   overflow-x: hidden !important;
   max-width: 100vw;

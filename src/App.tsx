@@ -944,6 +944,21 @@ export const App: React.FC = () => {
       setIsIntroVideoPlaying(false);
     });
   }, []);
+
+  // Elimina completamente a barra de rolagem da janela enquanto o vídeo de abertura estiver rodando
+  useEffect(() => {
+    if (isIntroVideoPlaying) {
+      document.documentElement.classList.add('intro-video-active');
+      document.body.classList.add('intro-video-active');
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.documentElement.classList.remove('intro-video-active');
+      document.body.classList.remove('intro-video-active');
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    }
+  }, [isIntroVideoPlaying]);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [isDowntimeReasonsModalOpen, setIsDowntimeReasonsModalOpen] = useState(false);
   const [isDowntimeAnalyticsModalOpen, setIsDowntimeAnalyticsModalOpen] = useState(false);
@@ -12041,7 +12056,7 @@ Atenciosamente,
 
   if (!loggedUser) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 bg-[url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80')] bg-cover bg-center">
+      <div className={`min-h-screen ${isIntroVideoPlaying ? 'h-screen max-h-screen overflow-hidden' : ''} bg-slate-900 flex items-center justify-center p-6 bg-[url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80')] bg-cover bg-center`}>
         <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm"></div>
         <div className="w-full max-w-md bg-white rounded-[3rem] px-10 pt-10 pb-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-500">
            <div className="flex flex-col items-center mb-10">
@@ -12474,7 +12489,7 @@ Atenciosamente,
   );
 
   return (
-    <div className={`min-h-screen bg-[#f8fafc] ${isStandalone ? 'pt-safe' : ''} pb-24 w-full max-w-full overflow-x-hidden relative`}>
+    <div className={`min-h-screen bg-[#f8fafc] ${isStandalone ? 'pt-safe' : ''} ${isIntroVideoPlaying ? 'h-screen max-h-screen overflow-hidden' : 'pb-24'} w-full max-w-full overflow-x-hidden relative`}>
       {!isOnline && (
         <div className="bg-red-600 text-white text-[10px] font-black uppercase tracking-widest py-2 px-4 flex items-center justify-center gap-2 sticky top-0 z-[100] animate-in slide-in-from-top duration-300">
           <WifiOff size={14} /> Você está offline. Alguns dados podem estar desatualizados.
