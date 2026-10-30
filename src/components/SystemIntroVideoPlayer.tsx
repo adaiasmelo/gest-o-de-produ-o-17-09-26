@@ -1,15 +1,87 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface SystemIntroVideoPlayerProps {
   videoSrc: string;
   onFinish: () => void;
+  isLoggedIn?: boolean;
+  onArrival?: () => void;
 }
 
 export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
   videoSrc,
   onFinish,
+  isLoggedIn = false,
+  onArrival,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isPulling, setIsPulling] = useState(false);
+  const [pullStyle, setPullStyle] = useState<React.CSSProperties>({});
+  const isTransitioningRef = useRef(false);
+
+  const startSuctionTransition = useCallback(() => {
+    if (isTransitioningRef.current) return;
+    isTransitioningRef.current = true;
+
+    // Localiza o elemento de destino (logo do card de login ou logo da barra superior)
+    const targetElementId = isLoggedIn ? 'header-system-logo' : 'login-screen-logo';
+    const targetEl = document.getElementById(targetElementId);
+
+    let tx = 0;
+    let ty = 0;
+    let targetScale = 0.08;
+    let targetRadius = '2.5rem';
+
+    if (targetEl) {
+      const rect = targetEl.getBoundingClientRect();
+      const targetCenterX = rect.left + rect.width / 2;
+      const targetCenterY = rect.top + rect.height / 2;
+      const screenCenterX = window.innerWidth / 2;
+      const screenCenterY = window.innerHeight / 2;
+
+      tx = targetCenterX - screenCenterX;
+      ty = targetCenterY - screenCenterY;
+      targetScale = Math.max(0.035, rect.width / Math.max(window.innerWidth, 1));
+      targetRadius = window.getComputedStyle(targetEl).borderRadius || (isLoggedIn ? '0.75rem' : '2.5rem');
+    } else {
+      // Coordenadas de contingência
+      if (isLoggedIn) {
+        tx = -(window.innerWidth / 2 - 36);
+        ty = -(window.innerHeight / 2 - 36);
+        targetScale = 0.05;
+        targetRadius = '0.75rem';
+      } else {
+        tx = 0;
+        ty = -70; // Centro superior onde fica o logo do card de login
+        targetScale = 0.09;
+        targetRadius = '2.5rem';
+      }
+    }
+
+    setPullStyle({
+      transform: `translate3d(${tx}px, ${ty}px, 0) scale(${targetScale})`,
+      borderRadius: targetRadius,
+      boxShadow: '0 0 50px 20px rgba(56, 189, 248, 0.95), 0 0 100px 40px rgba(37, 99, 235, 0.8)',
+      filter: 'brightness(1.4) contrast(1.15)',
+    });
+
+    setIsPulling(true);
+
+    // Quando o vídeo está quase tocando o logo no final da sucção, ativa o brilho/shimmer no logo
+    const arrivalTimer = setTimeout(() => {
+      onArrival?.();
+    }, 650);
+
+    // Conclui a transição completa de sucção e libera a tela
+    const finishTimer = setTimeout(() => {
+      onFinish();
+    }, 850);
+
+    return () => {
+      clearTimeout(arrivalTimer);
+      clearTimeout(finishTimer);
+    };
+  }, [isLoggedIn, onArrival, onFinish]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -23,18 +95,16 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
       try {
         await video.play();
       } catch (err) {
-        console.warn('Autoplay com áudio bloqueado pelas restrições do navegador, iniciando com mute e recuperação imediata:', err);
-        // Em navegadores modernos, se o usuário não interagiu com a aba antes, o autoplay com som pode ser bloqueado
+        console.warn('Autoplay com áudio bloqueado pelas restrições do navegador, iniciando com recuperação:', err);
         video.muted = true;
         try {
           await video.play();
         } catch (fatalErr) {
           console.error('Falha crítica ao iniciar vídeo de abertura:', fatalErr);
-          onFinish();
+          startSuctionTransition();
           return;
         }
 
-        // Ao menor toque, clique ou tecla, ativa o áudio instantaneamente
         const unmuteOnInteraction = () => {
           if (videoRef.current) {
             videoRef.current.muted = false;
@@ -53,30 +123,58 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
 
     startPlayback();
 
-    // Timeout de segurança para garantir que a aplicação nunca trave se o arquivo falhar
-    const fallbackTimer = setTimeout(() => {
-      onFinish();
-    }, 20000);
+    // Fallback de segurança para não travar
+    const maxTimer = setTimeout(() => {
+      if (!isTransitioningRef.current) {
+        startSuctionTransition();
+      }
+    }, 18000);
 
     return () => {
-      clearTimeout(fallbackTimer);
+      clearTimeout(maxTimer);
     };
-  }, [onFinish, videoSrc]);
+  }, [startSuctionTransition, videoSrc]);
 
   return (
-    <div className="fixed inset-0 z-[9999999] bg-black w-screen h-screen overflow-hidden m-0 p-0 border-0 flex items-center justify-center select-none cursor-none pointer-events-none">
-      <video
-        ref={videoRef}
-        src={videoSrc}
-        autoPlay
-        playsInline
-        className="w-full h-full object-cover block m-0 p-0 border-0 outline-none"
-        onEnded={onFinish}
-        onError={() => {
-          console.warn('Erro ao carregar ou reproduzir arquivo de vídeo.');
-          onFinish();
-        }}
-      />
+    <div
+      className={`fixed inset-0 z-[9999999] overflow-hidden select-none pointer-events-none transition-opacity duration-500 ease-out ${
+        isPulling ? 'bg-black/0' : 'bg-black'
+      }`}
+    >
+      {/* Container do vídeo que sofre a transformação de sucção em direção ao logo */}
+      <div
+        ref={containerRef}
+        className={`w-full h-full flex items-center justify-center overflow-hidden transition-all duration-[850ms] ${
+          isPulling
+            ? 'ease-[cubic-bezier(0.19,1,0.22,1)] opacity-0'
+            : 'ease-linear opacity-100'
+        }`}
+        style={isPulling ? pullStyle : {}}
+      >
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover block m-0 p-0 border-0 outline-none"
+          onEnded={startSuctionTransition}
+          onError={() => {
+            console.warn('Erro ao carregar ou reproduzir arquivo de vídeo.');
+            startSuctionTransition();
+          }}
+        />
+      </div>
+
+      {/* Feixe de luz e vórtice radiante que acompanha a sucção */}
+      {isPulling && (
+        <div
+          className="absolute inset-0 pointer-events-none flex items-center justify-center animate-out fade-out duration-700"
+          style={{
+            background:
+              'radial-gradient(circle at center, rgba(56,189,248,0.25) 0%, rgba(37,99,235,0.1) 40%, transparent 70%)',
+          }}
+        />
+      )}
     </div>
   );
 };

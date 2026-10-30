@@ -12023,24 +12023,13 @@ Atenciosamente,
     );
   }
 
-  if (isIntroVideoPlaying) {
-    if (systemIntroVideo) {
-      return (
-        <SystemIntroVideoPlayer
-          videoSrc={systemIntroVideo}
-          onFinish={() => {
-            setIsIntroVideoPlaying(false);
-            setIsInitializing(false);
-          }}
-        />
-      );
-    }
+  if (isIntroVideoPlaying && !systemIntroVideo) {
     // Enquanto o arquivo de vídeo é recuperado do armazenamento local (uma fração de segundo),
     // mantém a tela preta pura em tela cheia, SEM NUNCA exibir a tela de carregando ambiente/sistema!
     return <div className="fixed inset-0 z-[9999999] bg-black w-screen h-screen select-none cursor-none" />;
   }
 
-  if (isInitializing && !loggedUser) {
+  if (isInitializing && !loggedUser && !isIntroVideoPlaying) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
         <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 shadow-2xl"></div>
@@ -12056,8 +12045,15 @@ Atenciosamente,
         <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm"></div>
         <div className="w-full max-w-md bg-white rounded-[3rem] px-10 pt-10 pb-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-500">
            <div className="flex flex-col items-center mb-10">
-              <div className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl mb-6 relative overflow-hidden">
-                <div className="absolute inset-0 bg-blue-400 rounded-[2.5rem] animate-pulse blur-xl opacity-30"></div>
+              <div 
+                id="login-screen-logo"
+                className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl mb-6 relative overflow-hidden group select-none animate-logo-glow"
+              >
+                <div className="absolute inset-0 bg-blue-400 rounded-[2.5rem] animate-pulse blur-xl opacity-40"></div>
+                {/* Feixe de luz passando e brilhando no M / Logo exatamente como no final do vídeo */}
+                <div className="absolute inset-0 overflow-hidden rounded-[2.5rem] pointer-events-none z-20">
+                  <div className="w-[140%] h-full absolute top-0 -left-1/3 bg-gradient-to-r from-transparent via-white/85 to-transparent skew-x-[-25deg] animate-logo-shimmer" />
+                </div>
                 {systemLogo ? (
                   <img src={systemLogo} alt="Logo" className="w-full h-full object-cover relative z-10" />
                 ) : (
@@ -12448,12 +12444,24 @@ Atenciosamente,
             </div>
           </div>
         )}
+
+        {/* Camada do Vídeo de Abertura com Efeito de Sucção em Direção ao Logo do Login */}
+        {isIntroVideoPlaying && systemIntroVideo && (
+          <SystemIntroVideoPlayer
+            videoSrc={systemIntroVideo}
+            isLoggedIn={false}
+            onFinish={() => {
+              setIsIntroVideoPlaying(false);
+              setIsInitializing(false);
+            }}
+          />
+        )}
       </div>
     );
   }
 
 
-  if (isInitializing) return (
+  if (isInitializing && !isIntroVideoPlaying) return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
       <div className="w-20 h-20 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl mb-8 animate-pulse">
          <Activity size={40} />
@@ -12485,11 +12493,18 @@ Atenciosamente,
       )}
       <header className="bg-white px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3 flex items-center justify-between sticky top-0 z-40 border-b border-slate-100 no-print shadow-xs w-full max-w-full">
         <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-1 min-w-0 mr-1 sm:mr-2">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-blue-600 rounded-lg sm:rounded-xl flex-shrink-0 flex items-center justify-center text-white shadow-md overflow-hidden border border-blue-500">
+          <div 
+            id="header-system-logo"
+            className="w-8 h-8 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-blue-600 rounded-lg sm:rounded-xl flex-shrink-0 flex items-center justify-center text-white shadow-md overflow-hidden border border-blue-500 relative select-none animate-logo-glow"
+          >
+            {/* Feixe de luz passando e brilhando no M / Logo superior esquerdo */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
+              <div className="w-[140%] h-full absolute top-0 -left-1/3 bg-gradient-to-r from-transparent via-white/85 to-transparent skew-x-[-25deg] animate-logo-shimmer" />
+            </div>
             {systemLogo ? (
-              <img src={systemLogo} alt="Logo" className="w-full h-full object-cover" />
+              <img src={systemLogo} alt="Logo" className="w-full h-full object-cover relative z-10" />
             ) : (
-              <img src="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png" alt="Default Logo" className="w-full h-full object-contain p-1" />
+              <img src="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png" alt="Default Logo" className="w-full h-full object-contain p-1 relative z-10" />
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -24118,6 +24133,18 @@ Atenciosamente,
           </div>
         </div>
       </div>
+
+      {/* Camada do Vídeo de Abertura com Efeito de Sucção em Direção ao Logo Superior Esquerdo */}
+      {isIntroVideoPlaying && systemIntroVideo && (
+        <SystemIntroVideoPlayer
+          videoSrc={systemIntroVideo}
+          isLoggedIn={true}
+          onFinish={() => {
+            setIsIntroVideoPlaying(false);
+            setIsInitializing(false);
+          }}
+        />
+      )}
     </div>
   );
 };
