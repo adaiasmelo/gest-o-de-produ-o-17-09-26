@@ -872,6 +872,20 @@ export const App: React.FC = () => {
     }
   });
 
+  useEffect(() => {
+    if (!loggedUser) {
+      document.documentElement.classList.add('login-mode');
+      document.body.classList.add('login-mode');
+    } else {
+      document.documentElement.classList.remove('login-mode');
+      document.body.classList.remove('login-mode');
+    }
+    return () => {
+      document.documentElement.classList.remove('login-mode');
+      document.body.classList.remove('login-mode');
+    };
+  }, [loggedUser]);
+
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -12056,17 +12070,17 @@ Atenciosamente,
 
   if (!loggedUser) {
     return (
-      <div className={`min-h-screen ${isIntroVideoPlaying ? 'h-screen max-h-screen overflow-hidden' : ''} bg-slate-900 flex items-center justify-center p-6 bg-[url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80')] bg-cover bg-center`}>
-        <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm"></div>
-        <div className="w-full max-w-md bg-white rounded-[3rem] px-10 pt-10 pb-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-500">
-           <div className="flex flex-col items-center mb-10">
+      <div className="h-screen max-h-screen w-screen overflow-hidden bg-[#060e17] flex items-center justify-center p-2 sm:p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0c2238] via-[#060e17] to-black select-none relative">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.12)_0%,transparent_70%)] pointer-events-none"></div>
+        <div className="w-full max-w-[390px] sm:max-w-[400px] bg-[#0c1a2e]/85 backdrop-blur-2xl rounded-[2.5rem] px-5 py-5 sm:px-7 sm:py-6 shadow-[0_0_50px_rgba(8,145,178,0.25),0_20px_50px_rgba(0,0,0,0.8)] border border-cyan-500/30 relative animate-in fade-in zoom-in-95 duration-500 text-white">
+           <div className="flex flex-col items-center mb-3">
               <div 
                 id="login-screen-logo"
-                className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl mb-6 relative overflow-hidden group select-none animate-logo-glow"
+                className="w-16 h-16 sm:w-18 sm:h-18 bg-gradient-to-br from-cyan-600 via-cyan-700 to-teal-900 rounded-[1.4rem] flex items-center justify-center text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 relative overflow-hidden group select-none animate-logo-glow border border-cyan-400/40"
               >
-                <div className="absolute inset-0 bg-blue-400 rounded-[2.5rem] animate-pulse blur-xl opacity-40"></div>
+                <div className="absolute inset-0 bg-cyan-400/20 rounded-[1.4rem] animate-pulse blur-xl"></div>
                 {/* Feixe de luz passando e brilhando no M / Logo exatamente como no final do vídeo */}
-                <div className="absolute inset-0 overflow-hidden rounded-[2.5rem] pointer-events-none z-20">
+                <div className="absolute inset-0 overflow-hidden rounded-[1.4rem] pointer-events-none z-20">
                   <div className="w-[140%] h-full absolute top-0 -left-1/3 bg-gradient-to-r from-transparent via-white/85 to-transparent skew-x-[-25deg] animate-logo-shimmer" />
                 </div>
                 {systemLogo ? (
@@ -12075,116 +12089,115 @@ Atenciosamente,
                   <img src="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png" alt="Default Logo" className="w-full h-full object-contain p-2 relative z-10" />
                 )}
               </div>
-              <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter text-center leading-[0.9]">
+              <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight text-center leading-none drop-shadow-md">
                 {loginSystemName}
               </h2>
               {loginSystemSubtitle && (
-                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest text-center mt-3 max-w-[280px] leading-relaxed">
+                <p className="text-[8.5px] sm:text-[9.5px] font-bold text-cyan-200/80 uppercase tracking-wider text-center mt-1 max-w-[280px]">
                   {loginSystemSubtitle}
                 </p>
               )}
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-4 flex items-center gap-2">
-                <ShieldCheck size={14} className="text-emerald-500"/> Área Restrita
+              <p className="text-[8.5px] font-black text-cyan-400 uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1.5 justify-center">
+                <ShieldCheck size={12} className="text-cyan-400"/> ÁREA RESTRITA
               </p>
            </div>
 
-           <div className="space-y-6">
+           <div className="space-y-2.5">
                 <div className="relative group">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">Número de Matrícula</label>
+                  <label className="text-[8.5px] font-black text-cyan-200/80 uppercase tracking-widest mb-1 block ml-0.5">Número de Matrícula</label>
                   <div className="relative">
                     <input 
                       type="text" 
                       value={loginMatricula} 
                       onChange={e => handleMatriculaChange(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all pr-12"
+                      className="w-full bg-[#061220]/90 border border-cyan-500/50 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30 text-white placeholder:text-slate-500 rounded-2xl px-4 py-2.5 font-bold text-xs sm:text-sm outline-none transition-all pr-10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]"
                       placeholder="Sua matrícula"
                     />
                     {discoveredUser && (
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                      <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
                       </div>
                     )}
                   </div>
                   
                   {discoveredUser && (
-                    <p className="mt-2 text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
-                      <ShieldCheck size={12} /> {discoveredUser.name.split(' ')[0]} Identificado
+                    <p className="mt-1 text-[8.5px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
+                      <ShieldCheck size={11} /> {discoveredUser.name.split(' ')[0]} Identificado
                     </p>
                   )}
                   
                   {!discoveredUser && loginMatricula.length < 3 && (
-                    <div className="mt-4 space-y-3 animate-in fade-in duration-500">
-                      <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                          <Info size={16} />
+                    <div className="mt-2 space-y-1.5 bg-[#05111f]/60 p-2.5 rounded-2xl border border-cyan-950/80 animate-in fade-in duration-500">
+                      <div className="flex gap-2.5 items-center">
+                        <div className="w-5 h-5 rounded-lg bg-cyan-950/90 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                          <Info size={11} />
                         </div>
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-black text-slate-800 uppercase leading-none">Primeiro Acesso?</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-tight tracking-tighter">Insira sua matrícula para cadastrar sua senha de 4 dígitos.</p>
+                        <div className="space-y-0.5">
+                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Primeiro Acesso?</p>
+                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Insira sua matrícula para cadastrar sua senha de 4 dígitos.</p>
                         </div>
                       </div>
                       
-                      <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-                          <Fingerprint size={16} />
+                      <div className="flex gap-2.5 items-center">
+                        <div className="w-5 h-5 rounded-lg bg-cyan-950/90 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                          <Fingerprint size={11} />
                         </div>
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-black text-slate-800 uppercase leading-none">Acesso Rápido</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-tight tracking-tighter">Após o primeiro login, você poderá usar sua digital ou rosto para entrar.</p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                          <Smartphone size={16} />
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-black text-slate-800 uppercase leading-none">Segurança</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-tight tracking-tighter">Seus dados estão protegidos por criptografia de ponta a ponta.</p>
+                        <div className="space-y-0.5">
+                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Acesso Rápido</p>
+                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Após o primeiro login, você poderá usar a digital ou rosto para entrar.</p>
                         </div>
                       </div>
 
+                      <div className="flex gap-2.5 items-center">
+                        <div className="w-5 h-5 rounded-lg bg-cyan-950/90 border border-cyan-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                          <ShieldCheck size={11} />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Segurança</p>
+                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Seus dados estão protegidos por criptografia de ponta a ponta.</p>
+                        </div>
+                      </div>
                     </div>
                   )}
 
                   {((isInstallable && !isStandalone) || (isIOS && !isStandalone)) && (
-                    <div className="mt-4 space-y-3 animate-in fade-in duration-700">
+                    <div className="mt-2.5 space-y-1.5 animate-in fade-in duration-700">
                       {isInstallable && !isStandalone && (
                         <button 
                           onClick={handleInstallClick}
-                          className="w-full py-4 bg-emerald-600 text-white rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-emerald-100 border-2 border-white/20"
+                          className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-[0_0_15px_rgba(16,185,129,0.25)] border border-emerald-400/30 cursor-pointer"
                         >
-                          <Download size={20} className="animate-bounce" />
+                          <Download size={14} className="animate-bounce" />
                           <div className="text-left font-sans text-white">
-                            <p className="text-[12px] font-black uppercase leading-none">Baixar Aplicativo</p>
-                            <p className="text-[9px] font-bold opacity-80 uppercase tracking-tighter">Instalação Avançada PWA</p>
+                            <p className="text-[10px] font-black uppercase leading-none">Baixar Aplicativo</p>
+                            <p className="text-[7.5px] font-bold opacity-80 uppercase tracking-tighter">Instalação Avançada PWA</p>
                           </div>
                         </button>
                       )}
 
                       {isIOS && !isStandalone && (
-                        <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
-                           <div className="flex gap-3 items-start text-left">
-                             <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center shrink-0 shadow-md">
-                               <Share size={16} />
+                        <div className="p-2.5 bg-cyan-950/40 rounded-2xl border border-cyan-500/20">
+                           <div className="flex gap-2 items-start text-left">
+                             <div className="w-5 h-5 bg-cyan-600 text-white rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                               <Share size={11} />
                              </div>
                              <div className="flex-1">
-                               <p className="text-[10px] font-black text-slate-800 uppercase leading-none mb-1">Instalar no iPhone (iOS)</p>
-                               <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter leading-tight">Clique no botão <span className="text-blue-600 font-black">"Compartilhar"</span> e selecione <span className="text-blue-600 font-black">"Adicionar à Tela de Início"</span>.</p>
+                               <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none mb-0.5">Instalar no iPhone (iOS)</p>
+                               <p className="text-[7.5px] font-medium text-slate-400 uppercase tracking-tighter leading-tight">Clique em <span className="text-cyan-300 font-black">"Compartilhar"</span> e <span className="text-cyan-300 font-black">"Adicionar à Tela de Início"</span>.</p>
                              </div>
                            </div>
                         </div>
                       )}
 
                       {!isInstallable && !isIOS && !isStandalone && (
-                         <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-100">
-                           <div className="flex gap-3 items-start text-left">
-                             <div className="w-8 h-8 bg-amber-500 text-white rounded-lg flex items-center justify-center shrink-0 shadow-md">
-                               <Smartphone size={16} />
+                         <div className="p-2.5 bg-amber-950/40 rounded-2xl border border-amber-500/20">
+                           <div className="flex gap-2 items-start text-left">
+                             <div className="w-5 h-5 bg-amber-600 text-white rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                               <Smartphone size={11} />
                              </div>
                              <div className="flex-1">
-                               <p className="text-[10px] font-black text-amber-800 uppercase leading-none mb-1">Instalar no Android/PC</p>
-                               <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter leading-tight italic">No menu do navegador, selecione "Instalar Aplicativo" ou "Adicionar à Tela Inicial".</p>
+                               <p className="text-[8.5px] font-black text-amber-200 uppercase leading-none mb-0.5">Instalar no Android/PC</p>
+                               <p className="text-[7.5px] font-medium text-slate-400 uppercase tracking-tighter leading-tight italic">No menu do navegador, selecione "Instalar Aplicativo".</p>
                              </div>
                            </div>
                          </div>
@@ -12194,57 +12207,57 @@ Atenciosamente,
                 </div>
 
                 {!discoveredUser?.isFirstAccess ? (
-                  <div className={`space-y-6 transition-all duration-500 ${discoveredUser ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none hidden'}`}>
+                  <div className={`space-y-2.5 transition-all duration-500 ${discoveredUser ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none hidden'}`}>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">Senha de Acesso</label>
+                      <label className="text-[8.5px] font-black text-cyan-200/80 uppercase tracking-widest mb-1 block ml-0.5">Senha de Acesso</label>
                       <input 
                         type="password" 
                         value={loginPass} 
                         onChange={e => setLoginPass(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all"
+                        className="w-full bg-[#061220]/90 border border-cyan-500/50 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30 text-white placeholder:text-slate-500 rounded-2xl px-4 py-2.5 font-bold text-xs sm:text-sm outline-none transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]"
                         placeholder="••••••••"
                       />
                     </div>
                     <button 
                       onClick={() => handleLogin(loginMatricula, loginPass)}
-                      className="w-full py-5 bg-blue-600 text-white rounded-[1.8rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50"
+                      className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-[0_0_25px_rgba(6,182,212,0.35)] active:scale-95 transition-all flex items-center justify-center gap-2 mt-1 disabled:opacity-40 border border-cyan-400/30 cursor-pointer"
                       disabled={isInitializing || !loginPass}
                     >
-                      {isInitializing ? 'Carregando...' : 'Entrar no Sistema'} <ChevronRight size={18} />
+                      {isInitializing ? 'Carregando...' : 'Entrar no Sistema'} <ChevronRight size={15} />
                     </button>
                     {discoveredUser?.biometricId && biometricSupported && (
                       <button 
                         onClick={() => handleBiometricLogin(discoveredUser)}
-                        className="w-full py-4 text-[10px] font-black text-blue-500 uppercase tracking-widest hover:text-blue-700 transition-colors flex items-center justify-center gap-2"
+                        className="w-full py-2 text-[8.5px] font-black text-cyan-400 uppercase tracking-widest hover:text-cyan-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <Fingerprint size={16} /> Usar Biometria Agora
+                        <Fingerprint size={13} /> Usar Biometria Agora
                       </button>
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="bg-amber-50 p-5 rounded-[1.5rem] border border-amber-100 mb-2">
-                      <p className="text-xs font-bold text-amber-700 text-center leading-relaxed">Olá, <span className="text-slate-900 font-black">{discoveredUser.name.split(' ')[0]}</span>!<br/>Este é o seu primeiro acesso. Por favor, crie uma senha de segurança.</p>
+                  <div className="space-y-2.5 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="bg-amber-950/40 p-2.5 rounded-2xl border border-amber-500/30">
+                      <p className="text-xs font-bold text-amber-300 text-center leading-relaxed">Olá, <span className="text-white font-black">{discoveredUser.name.split(' ')[0]}</span>!<br/>Este é o seu primeiro acesso. Por favor, crie uma senha de segurança.</p>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">Nova Senha</label>
+                        <label className="text-[8.5px] font-black text-cyan-200/80 uppercase tracking-widest mb-1 block ml-0.5">Nova Senha</label>
                         <input 
                           type="password" 
                           value={loginPass} 
                           onChange={e => setLoginPass(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                          className="w-full bg-[#061220]/90 border border-cyan-500/50 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30 text-white rounded-2xl px-3 py-2 font-bold text-xs outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]"
                           placeholder="Senha"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">Confirmar</label>
+                        <label className="text-[8.5px] font-black text-cyan-200/80 uppercase tracking-widest mb-1 block ml-0.5">Confirmar</label>
                         <input 
                           type="password" 
                           value={confirmLoginPass} 
                           onChange={e => setConfirmLoginPass(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                          className="w-full bg-[#061220]/90 border border-cyan-500/50 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30 text-white rounded-2xl px-3 py-2 font-bold text-xs outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]"
                           placeholder="Confirmar"
                         />
                       </div>
@@ -12252,31 +12265,31 @@ Atenciosamente,
 
                     <button 
                       onClick={() => handleLogin(loginMatricula, loginPass, confirmLoginPass)}
-                      className="w-full py-5 bg-emerald-600 text-white rounded-[1.8rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 active:scale-95 transition-all flex items-center justify-center gap-3 mt-4"
+                      className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-[0_0_25px_rgba(16,185,129,0.35)] active:scale-95 transition-all flex items-center justify-center gap-2 mt-1 border border-emerald-400/30 cursor-pointer"
                     >
-                      Ativar Conta e Biometria <Target size={18} />
+                      Ativar Conta e Biometria <Target size={15} />
                     </button>
                   </div>
                 )}
             </div>
 
-            {/* Botão de Acesso Modo Somente Leitura */}
+            {/* Botão de Acesso Modo Somente Leitura (Estilo Neon Glassmorphism idêntico à imagem) */}
             <div className="pt-2">
               <button
                 type="button"
                 onClick={handleGuestLogin}
-                className="w-full py-4 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-xs active:scale-95"
+                className="w-full py-2.5 sm:py-3 px-4 bg-[#081829]/70 hover:bg-cyan-950/80 border border-cyan-400/80 hover:border-cyan-300 text-cyan-100 hover:text-white rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-95"
               >
-                <Eye size={18} className="text-slate-500" />
+                <Eye size={15} className="text-cyan-400" />
                 <span>Entrar em Modo Somente Leitura</span>
               </button>
             </div>
 
-            <div className={`mt-2 pt-4 border-t border-slate-100 flex flex-col gap-2 items-center ${!discoveredUser && loginMatricula.length < 3 ? 'mt-1' : ''}`}>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">
-                Manupackaguing Fitasa e Amazônia desenvolvido por Adaias Melo
+            <div className="mt-2.5 pt-2 border-t border-cyan-950/80 flex flex-col gap-0.5 items-center">
+              <p className="text-[8px] sm:text-[8.5px] font-bold text-slate-300 uppercase tracking-wider text-center">
+                Manupackaging Fitasa e Amazônia desenvolvido por Adaias Melo
               </p>
-              <p className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter opacity-50">Versão PWA 1.2.0 • Build Clean Slate</p>
+              <p className="text-[7px] sm:text-[7.5px] font-bold text-slate-500 uppercase tracking-widest opacity-80">Versão 2.0.0 • Pública</p>
             </div>
         </div>
  
