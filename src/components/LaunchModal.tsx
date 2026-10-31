@@ -248,6 +248,15 @@ const PRESET_INFRACTIONS = [
   '📝 Outra Infração Personalizada...',
 ];
 
+export const normalizeExtrusionShift = (sh?: string): 'Diurno' | 'Noturno' => {
+  if (!sh) return 'Diurno';
+  const lower = sh.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+  if (lower.includes('noturno') || lower.includes('noite') || lower === 'n1' || lower === 'n2') {
+    return 'Noturno';
+  }
+  return 'Diurno';
+};
+
 const LaunchModal: React.FC<LaunchModalProps> = ({ 
   isOpen, onClose, onSave, collaborators, employees, vacations = [], activeMachines, availableShifts, initialData, dashboardMonth,
   productionEntries = [], ribbonEntries = [], isStandaloneDowntimeInitial = false,
@@ -689,7 +698,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         date: initialData.date,
         operator: initialData.operator,
         machine: initialData.machine,
-        shift: initialData.shift,
+        shift: normalizeExtrusionShift(initialData.shift),
         grossWeight: initialData.grossWeight,
         tara: initialData.tara,
         netWeight: initialData.netWeight,
@@ -745,7 +754,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       setSelectedPresetInfraction(PRESET_INFRACTIONS[0]);
       setCustomInfractionText('');
       const initialOperator = presetOperator || '';
-      const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
+      const initialShift = normalizeExtrusionShift(presetShift);
       const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
       const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
 
@@ -771,7 +780,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           date: initialDate || savedDraft.formData.date || getYesterdayStr(),
           operator: initialOperator || savedDraft.formData.operator || '',
           machine: initialMachine || savedDraft.formData.machine || '',
-          shift: initialShift || savedDraft.formData.shift || '',
+          shift: initialShift || normalizeExtrusionShift(savedDraft.formData.shift),
         });
         if (savedDraft.materials && savedDraft.materials.length > 0) {
           setMaterials(savedDraft.materials);
@@ -1013,6 +1022,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
       const baseWithStops = {
         ...data,
+        shift: normalizeExtrusionShift(data.shift),
         manutencaoMin: finalManutencaoMin,
         processoMin: finalProcessoMin,
         outrosMin: finalOutrosMin,
@@ -1120,7 +1130,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       clearLaunchDraft(formData.machine);
       setHasRestoredDraft(false);
       const initialOperator = presetOperator || '';
-      const initialShift = presetShift || (availableShifts.length > 0 ? availableShifts[0].name : '');
+      const initialShift = normalizeExtrusionShift(presetShift);
       const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
       const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
 
@@ -1314,15 +1324,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const opRecord = (employees || []).find(emp => (emp.name || '').trim().toLowerCase() === selectedOpName.trim().toLowerCase()) ||
         filteredOperators.find(o => o.name.trim().toLowerCase() === selectedOpName.trim().toLowerCase());
 
-      let autoShift = '';
-      if (opRecord?.shift) {
-        const sNorm = opRecord.shift.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
-        if (sNorm.includes('noturno') || sNorm.includes('noite')) {
-          autoShift = 'Noturno';
-        } else if (sNorm.includes('diurno') || sNorm.includes('dia')) {
-          autoShift = 'Diurno';
-        }
-      }
+      const autoShift = opRecord?.shift ? normalizeExtrusionShift(opRecord.shift) : '';
 
       setFormData(prev => {
         const next = {
@@ -1812,11 +1814,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           : 'Selecionar Operador...'}
                       </option>
                       {filteredOperators.map(emp => {
-                        const sNorm = (emp.shift || '').toLowerCase();
-                        const shiftLabel = sNorm.includes('noturno') ? 'Noturno' : sNorm.includes('diurno') ? 'Diurno' : emp.shift || '';
+                        const shiftLabel = normalizeExtrusionShift(emp.shift);
                         return (
                           <option key={emp.id} value={emp.name}>
-                            {emp.name} {shiftLabel ? `(${shiftLabel})` : ''}
+                            {emp.name} ({shiftLabel})
                           </option>
                         );
                       })}

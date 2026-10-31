@@ -571,6 +571,19 @@ const sanitizeShift = (sh: string | undefined, sectorOrMachine?: string): string
   return trimmed;
 };
 
+const sanitizeProductionShift = (sh: string | undefined, sectorOrMachine?: string): 'Diurno' | 'Noturno' | 'Comercial' => {
+  const ctx = (sectorOrMachine || '').toLowerCase();
+  const isRibbon = ctx.includes('fita') || ctx.includes('ribbon') || ctx.includes('corte') || ctx.includes('ghez') || ctx.includes('linte') || ctx.includes('wultec') || ctx.includes('wutec');
+  if (isRibbon) return 'Comercial';
+  
+  if (!sh) return 'Diurno';
+  const lower = sh.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+  if (lower.includes('noturno') || lower.includes('noite') || lower === 'n1' || lower === 'n2') {
+    return 'Noturno';
+  }
+  return 'Diurno';
+};
+
 const formatStoppageMotiveClean = (motivoRaw: string | undefined): string => {
   if (!motivoRaw) return '';
   const trimmed = motivoRaw.trim();
@@ -1285,7 +1298,7 @@ export const App: React.FC = () => {
     return d.toLocaleDateString('sv-SE');
   });
   const [ribbonOperator, setRibbonOperator] = useState('');
-  const [ribbonShift, setRibbonShift] = useState('');
+  const [ribbonShift, setRibbonShift] = useState('Comercial');
   const [ribbonProducedM2, setRibbonProducedM2] = useState('');
   const [ribbonRejectedM2, setRibbonRejectedM2] = useState('');
   const [ribbonWasteWeight, setRibbonWasteWeight] = useState('');
@@ -4515,7 +4528,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       setEditingRibbonId(null);
       setRibbonMachine('');
       setRibbonOperator('');
-      setRibbonShift('');
+      setRibbonShift('Comercial');
       setRibbonProducedM2('');
       setRibbonRejectedM2('');
       setRibbonWasteWeight('');
@@ -4749,7 +4762,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         operatorMap.set(nameClean.toLowerCase(), {
           name: nameClean,
           machine: emp.machine,
-          shift: emp.shift
+          shift: 'Comercial'
         });
       });
     }
@@ -5909,7 +5922,7 @@ Atenciosamente,
       id: entryId,
       date: ribbonDate,
       operator: ribbonOperator,
-      shift: ribbonShift,
+      shift: 'Comercial',
       producedM2: prodVal,
       rejectedM2: rejVal,
       wasteWeight: wasteVal,
@@ -5970,7 +5983,7 @@ Atenciosamente,
       });
       alert(editingRibbonId ? 'Lançamento de Corte de Fita atualizado!' : 'Lançamento de Corte de Fita cadastrado!');
       setRibbonOperator('');
-      setRibbonShift('');
+      setRibbonShift('Comercial');
       setRibbonProducedM2('');
       setRibbonRejectedM2('');
       setRibbonWasteWeight('');
@@ -13802,7 +13815,7 @@ Atenciosamente,
                           if (editingRibbonId) {
                             setEditingRibbonId(null);
                             setRibbonOperator('');
-                            setRibbonShift('');
+                            setRibbonShift('Comercial');
                             setRibbonProducedM2('');
                             setRibbonRejectedM2('');
                             setRibbonWasteWeight('');
@@ -18359,7 +18372,7 @@ Atenciosamente,
                     if (editingRibbonId) {
                       setEditingRibbonId(null);
                       setRibbonOperator('');
-                      setRibbonShift('');
+                      setRibbonShift('Comercial');
                       setRibbonProducedM2('');
                       setRibbonRejectedM2('');
                       setRibbonWasteWeight('');
@@ -18388,7 +18401,7 @@ Atenciosamente,
                     onClick={() => {
                       setEditingRibbonId(null);
                       setRibbonOperator('');
-                      setRibbonShift('');
+                      setRibbonShift('Comercial');
                       setRibbonProducedM2('');
                       setRibbonRejectedM2('');
                       setRibbonWasteWeight('');
@@ -18418,7 +18431,7 @@ Atenciosamente,
                           onClick={() => {
                             setEditingRibbonId(null);
                             setRibbonOperator('');
-                            setRibbonShift('');
+                            setRibbonShift('Comercial');
                             setRibbonProducedM2('');
                             setRibbonRejectedM2('');
                             setRibbonWasteWeight('');
@@ -18498,7 +18511,10 @@ Atenciosamente,
                           </div>
                           <select
                             value={ribbonOperator}
-                            onChange={(e) => setRibbonOperator(e.target.value)}
+                            onChange={(e) => {
+                              setRibbonOperator(e.target.value);
+                              setRibbonShift('Comercial');
+                            }}
                             required
                             className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           >
@@ -18508,7 +18524,7 @@ Atenciosamente,
                                 : 'Selecione o Operador...'}
                             </option>
                             {ribbonModalOperators.map(op => (
-                              <option key={op} value={op}>{op}</option>
+                              <option key={op} value={op}>{op} (Comercial)</option>
                             ))}
                           </select>
                         </div>
@@ -18517,21 +18533,12 @@ Atenciosamente,
                         <div className="space-y-2">
                           <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Turno</label>
                           <select
-                            value={ribbonShift}
+                            value={ribbonShift || 'Comercial'}
                             onChange={(e) => setRibbonShift(e.target.value)}
                             required
                             className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           >
-                            <option value="">Selecione...</option>
-                            {availableShifts.length > 0 ? (
-                              availableShifts.map(s => (
-                                <option key={s.id} value={s.name}>{s.name}</option>
-                              ))
-                            ) : (
-                              ['A', 'B', 'C', 'D'].map(sh => (
-                                <option key={sh} value={sh}>{sh}</option>
-                              ))
-                            )}
+                            <option value="Comercial">Comercial</option>
                           </select>
                         </div>
                       </div>
@@ -19166,7 +19173,7 @@ Atenciosamente,
                         onClick={() => {
                           setEditingRibbonId(null);
                           setRibbonOperator('');
-                          setRibbonShift('');
+                          setRibbonShift('Comercial');
                           setRibbonProducedM2('');
                           setRibbonRejectedM2('');
                           setRibbonWasteWeight('');
@@ -22847,7 +22854,7 @@ Atenciosamente,
         try {
           const isNew = !editingEntry;
           const id = editingEntry ? editingEntry.id : Math.random().toString(36).substr(2, 9);
-          const entry = { ...e, id, userId: currentUser?.uid || 'usuario', updatedAt: new Date().toISOString() };
+          const entry = { ...e, shift: sanitizeProductionShift(e.shift, e.machine), id, userId: currentUser?.uid || 'usuario', updatedAt: new Date().toISOString() };
           const oldEntry = editingEntry ? productionData.find(x => x.id === editingEntry.id) : null;
 
           // 1. Atualização Otimista Imediata no Estado React e Cache Local

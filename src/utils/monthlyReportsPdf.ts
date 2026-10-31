@@ -431,13 +431,12 @@ export const generateRibbonMonthlyReportPDF = async ({
   doc.text(`* Identificação de Produção: Volume Bruto (${formatM2(totalMacGross)}) inclui perdas operacionais e não conformidades (${formatM2(totalMacRej)}). Produção Líquida final: ${formatM2(totalMacProd)}.`, 14, yPos);
   yPos += 5;
 
-  // 3. DESEMPENHO POR TURNO NO CORTE DE FITA
-  const shiftMap: Record<string, { name: string; prod: number; rejected: number; gross: number; waste: number; stops: number }> = {};
+  // 3. DESEMPENHO POR TURNO NO CORTE DE FITA (Consolidado no turno COMERCIAL)
+  const shiftMap: Record<string, { name: string; prod: number; rejected: number; gross: number; waste: number; stops: number }> = {
+    'COMERCIAL': { name: 'COMERCIAL', prod: 0, rejected: 0, gross: 0, waste: 0, stops: 0 }
+  };
   currentMonthEntries.forEach(e => {
-    const sName = (e.shift || 'Não Informado').trim();
-    if (!shiftMap[sName]) {
-      shiftMap[sName] = { name: sName, prod: 0, rejected: 0, gross: 0, waste: 0, stops: 0 };
-    }
+    const sName = 'COMERCIAL';
     const pNet = (e.producedM2 || 0);
     const pRej = (e.rejectedM2 || 0);
     shiftMap[sName].prod += pNet;
@@ -447,7 +446,7 @@ export const generateRibbonMonthlyReportPDF = async ({
     shiftMap[sName].stops += (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
   });
 
-  const shiftList = Object.values(shiftMap).sort((a, b) => b.prod - a.prod);
+  const shiftList = Object.values(shiftMap);
   if (shiftList.length > 0) {
     checkYPage(25);
     doc.setFont('helvetica', 'bold');
@@ -1390,21 +1389,33 @@ export const generateIntegratedMonthlyReportPDF = async ({
   doc.text(`${roman[secIdx++]}. DESEMPENHO POR TURNO OPERACIONAL (EXTRUSÃO & CORTE DE FITA)`, 14, yPos);
   yPos += 4;
 
-  // Turnos Extrusão (Apenas Cast 1 e Cast 2)
-  const extShifts: Record<string, number> = {};
+  // Turnos Extrusão (Apenas Cast 1 e Cast 2) — Consolidado exclusivamente em DIURNO e NOTURNO
+  const extShifts: Record<string, number> = {
+    'DIURNO': 0,
+    'NOTURNO': 0
+  };
   currentMonthProdData.forEach(e => {
     if (!e || e.isNoWorkDay || e.isMaintenanceEntry) return;
     if ((e.machine || '').toLowerCase().includes('erema')) return; // Exclui estritamente Erema
-    const s = (e.shift || 'Não Informado').trim().toUpperCase();
-    extShifts[s] = (extShifts[s] || 0) + (e.netWeight || 0);
+    const sRaw = (e.shift || '').trim().toUpperCase();
+    const isNoturno = sRaw.includes('NOTURNO') || sRaw.includes('NOITE') || sRaw === 'N1' || sRaw === 'N2';
+    const s = isNoturno ? 'NOTURNO' : 'DIURNO';
+    extShifts[s] += (e.netWeight || 0);
   });
-  const extShiftsList = Object.entries(extShifts).map(([name, net]) => ({ name, net })).sort((a, b) => b.net - a.net);
+  const extShiftsList = [
+    { name: 'DIURNO', net: extShifts['DIURNO'] },
+    { name: 'NOTURNO', net: extShifts['NOTURNO'] }
+  ].filter(s => s.net > 0);
+  if (extShiftsList.length === 0) {
+    extShiftsList.push({ name: 'DIURNO', net: 0 }, { name: 'NOTURNO', net: 0 });
+  }
 
-  // Turnos Fita (Com Bruto, Não Conforme e Líquido)
-  const ribShifts: Record<string, { prodNet: number; rejected: number; prodGross: number; waste: number; wasteM2: number }> = {};
+  // Turnos Fita — Consolidado exclusivamente no turno único COMERCIAL (qualquer máquina)
+  const ribShifts: Record<string, { prodNet: number; rejected: number; prodGross: number; waste: number; wasteM2: number }> = {
+    'COMERCIAL': { prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0 }
+  };
   currentMonthRibbonEntries.forEach(e => {
-    const s = (e.shift || 'Não Informado').trim().toUpperCase();
-    if (!ribShifts[s]) ribShifts[s] = { prodNet: 0, rejected: 0, prodGross: 0, waste: 0, wasteM2: 0 };
+    const s = 'COMERCIAL';
     const pNet = (e.producedM2 || 0);
     const pRej = (e.rejectedM2 || 0);
     const wM2 = getEntryWasteM2(e);
@@ -1414,7 +1425,7 @@ export const generateIntegratedMonthlyReportPDF = async ({
     ribShifts[s].waste += (e.wasteWeight || 0);
     ribShifts[s].wasteM2 += wM2;
   });
-  const ribShiftsList = Object.entries(ribShifts).map(([name, data]) => ({ name, ...data })).sort((a, b) => b.prodNet - a.prodNet);
+  const ribShiftsList = Object.entries(ribShifts).map(([name, data]) => ({ name, ...data }));
 
   // Tabela lado a lado ou duas tabelas limpas
   doc.setFont('helvetica', 'bold');
