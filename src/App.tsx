@@ -936,12 +936,34 @@ export const App: React.FC = () => {
       return null;
     }
   });
-  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState(false);
+  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState<boolean>(() => {
+    try {
+      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played');
+      if (alreadyPlayed === 'true') return false;
+      const savedUrl = localStorage.getItem('manupackaging_intro_video_url');
+      return Boolean(savedUrl);
+    } catch {
+      return false;
+    }
+  });
   const [isSystemInfoModalOpen, setIsSystemInfoModalOpen] = useState(false);
 
-  // Carrega vídeo de abertura do IndexedDB no início da aplicação
+  // Carrega vídeo de abertura do IndexedDB no início da aplicação (apenas uma única vez por sessão)
   useEffect(() => {
+    try {
+      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played');
+      if (alreadyPlayed === 'true') {
+        setIsIntroVideoPlaying(false);
+        return;
+      }
+    } catch {}
+
     getIntroVideoUrl().then((res) => {
+      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played') === 'true';
+      if (alreadyPlayed) {
+        setIsIntroVideoPlaying(false);
+        return;
+      }
       if (res && res.url) {
         setSystemIntroVideo(res.url);
         setIntroVideoMeta({ name: res.name, size: res.size });
@@ -3685,22 +3707,35 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   };
 
-  const handleLogout = async () => {
-    if (loggedUser) {
-      const sessionId = loggedUser.id || loggedUser.registration;
-      recordAccessLog(loggedUser, 'logout');
-      try {
-        await deleteDoc(doc(db, 'active_sessions', sessionId));
-      } catch (e) {
-        console.error('Erro ao remover presença ao sair:', e);
-      }
+  const handleLogout = () => {
+    // 1. Limpa imediatamente a persistência de autenticação local de forma síncrona
+    try {
+      localStorage.removeItem('manupackaging_user');
+      sessionStorage.removeItem('manupackaging_user');
+      sessionStorage.setItem('manupackaging_intro_played', 'true');
+    } catch (e) {
+      console.warn('Erro ao limpar localStorage de usuário:', e);
     }
+
+    const previousUser = loggedUser;
+
+    // 2. Reseta estados da interface instantaneamente sem travar a tela
+    setIsMainMenuOpen(false);
+    setIsIntroVideoPlaying(false);
     setLoggedUser(null);
     setLoginMatricula('');
     setLoginPass('');
     setConfirmLoginPass('');
     setDiscoveredUser(null);
-    localStorage.removeItem('manupackaging_user');
+
+    // 3. Atualiza Firebase em segundo plano de forma assíncrona
+    if (previousUser) {
+      const sessionId = previousUser.id || previousUser.registration;
+      recordAccessLog(previousUser, 'logout').catch(() => {});
+      deleteDoc(doc(db, 'active_sessions', sessionId)).catch((err) => {
+        console.warn('Erro ao remover sessão ativa no Firestore:', err);
+      });
+    }
   };
 
   const lastBiometricAttemptRef = useRef<string>('');
@@ -4441,7 +4476,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
   const isSupervisor = (loggedUser?.role || '').toLowerCase().includes('supervisor');
   const canViewWeeklySummary = isAdmin || isSupervisor;
-  const canViewActiveUsers = isAdmin || isSupervisor;
+  const canViewActiveUsers = isAdmin || !!userPerms.canViewOnlineUsers;
   const canViewDashboard = isAdmin || userPerms.extrusion.summary || userPerms.ribbon.summary;
   const canViewReports = isAdmin || userPerms.extrusion.reports || userPerms.ribbon.reports;
   const canViewPersonnel = isAdmin || userPerms.personnel.enabled;
@@ -12491,6 +12526,7 @@ Atenciosamente,
             videoSrc={systemIntroVideo}
             isLoggedIn={false}
             onFinish={() => {
+              try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
               setIsIntroVideoPlaying(false);
               setIsInitializing(false);
             }}
@@ -12585,6 +12621,18 @@ Atenciosamente,
             </button>
           )}
 
+          {/* Botão Sair / Desconectar Direto na Barra Superior */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/90 rounded-xl md:rounded-2xl transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer font-black text-[10px] sm:text-xs uppercase tracking-wider"
+            title="Desconectar e Sair do Sistema"
+            aria-label="Desconectar / Sair do Sistema"
+          >
+            <LogOut size={14} className="text-red-600 shrink-0" />
+            <span className="hidden xs:inline">Sair</span>
+          </button>
+
           {/* Botão de Menu com 4 Barrinhas Horizontais */}
           <button
             type="button"
@@ -12651,6 +12699,13 @@ Atenciosamente,
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
                       {loggedUser.role} • Matrícula {loggedUser.registration}
                     </p>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="text-[9.5px] font-black text-red-600 hover:text-red-700 uppercase tracking-wider flex items-center gap-1 mt-0.5 cursor-pointer hover:underline"
+                    >
+                      <LogOut size={11} /> Desconectar
+                    </button>
                   </div>
                 </div>
                 <button
@@ -24191,6 +24246,7 @@ Atenciosamente,
           videoSrc={systemIntroVideo}
           isLoggedIn={true}
           onFinish={() => {
+            try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
             setIsIntroVideoPlaying(false);
             setIsInitializing(false);
           }}

@@ -18,6 +18,12 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
   const [isPulling, setIsPulling] = useState(false);
   const [pullStyle, setPullStyle] = useState<React.CSSProperties>({});
   const isTransitioningRef = useRef(false);
+  const hasStartedPlaybackRef = useRef(false);
+
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+  const onArrivalRef = useRef(onArrival);
+  onArrivalRef.current = onArrival;
 
   useEffect(() => {
     // Bloqueia qualquer rolagem e suprime 100% da barra de rolagem lateral no navegador
@@ -87,21 +93,24 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
 
     // Quando o vídeo está quase tocando o logo no final da sucção, ativa o brilho/shimmer no logo
     const arrivalTimer = setTimeout(() => {
-      onArrival?.();
+      onArrivalRef.current?.();
     }, 650);
 
     // Conclui a transição completa de sucção e libera a tela
     const finishTimer = setTimeout(() => {
-      onFinish();
+      onFinishRef.current();
     }, 850);
 
     return () => {
       clearTimeout(arrivalTimer);
       clearTimeout(finishTimer);
     };
-  }, [isLoggedIn, onArrival, onFinish]);
+  }, [isLoggedIn]);
 
   useEffect(() => {
+    if (hasStartedPlaybackRef.current) return;
+    hasStartedPlaybackRef.current = true;
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -155,9 +164,8 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
 
   return (
     <div
-      onClick={startSuctionTransition}
-      className={`fixed inset-0 z-[9999999] overflow-hidden select-none cursor-pointer transition-opacity duration-500 ease-out ${
-        isPulling ? 'bg-black/0 pointer-events-none' : 'bg-black pointer-events-auto'
+      className={`fixed inset-0 z-[9999999] overflow-hidden select-none pointer-events-none transition-opacity duration-500 ease-out ${
+        isPulling ? 'bg-black/0' : 'bg-black'
       }`}
     >
       {/* Container do vídeo que sofre a transformação de sucção em direção ao logo */}

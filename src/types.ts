@@ -337,7 +337,8 @@ export interface UserPermissions {
   projection?: ProjectionPermissions;
   settings?: SettingsPermissions;
 
-  // Flags legadas para retrocompatibilidade
+  // Flags legadas e globais
+  canViewOnlineUsers?: boolean;
   canViewDashboard?: boolean;
   canViewReports?: boolean;
   canViewPersonnel?: boolean;

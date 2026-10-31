@@ -1033,6 +1033,50 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         )}
       </div>
 
+      {/* CONTROLE DE VISIBILIDADE: USUÁRIOS ONLINE */}
+      <div className={`rounded-2xl border transition-all p-3 sm:p-3.5 flex items-center justify-between gap-3 ${
+        norm.canViewOnlineUsers 
+          ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-100 shadow-xs' 
+          : 'bg-white border-slate-200'
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+            norm.canViewOnlineUsers ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-400'
+          }`}>
+            <Users size={18} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Ver Pessoas On-line (Tempo Real)</span>
+              {norm.canViewOnlineUsers ? (
+                <span className="bg-emerald-200/80 text-emerald-950 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
+                  Visível
+                </span>
+              ) : (
+                <span className="bg-slate-200 text-slate-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
+                  Oculto
+                </span>
+              )}
+            </div>
+            <p className="text-[8.5px] font-medium text-slate-500 mt-0.5">
+              Habilita a exibição do botão de pessoas online na barra superior e a lista de sessões ativas no sistema.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => updatePerms({ canViewOnlineUsers: !norm.canViewOnlineUsers })}
+          className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 active:scale-95 ${
+            norm.canViewOnlineUsers
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          {norm.canViewOnlineUsers ? 'Ativado' : 'Desativado'}
+        </button>
+      </div>
+
       {/* 7. SEGURANÇA E PROTEÇÃO: SOMENTE LEITURA */}
       <div className={`rounded-2xl border transition-all p-3 sm:p-3.5 flex items-center justify-between gap-3 ${
         norm.isReadOnly 

@@ -82,6 +82,7 @@ export const DEFAULT_SETTINGS_PERMISSIONS: SettingsPermissions = {
 
 export const DEFAULT_FULL_PERMISSIONS: UserPermissions = {
   isReadOnly: false,
+  canViewOnlineUsers: true,
   canViewDashboard: true,
   canViewReports: true,
   canViewPersonnel: true,
@@ -101,6 +102,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
   if (preset === 'clear') {
     return {
       isReadOnly: false,
+      canViewOnlineUsers: false,
       canViewDashboard: false,
       canViewReports: false,
       canViewPersonnel: false,
@@ -177,6 +179,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
   if (preset === 'readOnly') {
     return {
       isReadOnly: true,
+      canViewOnlineUsers: false,
       canViewDashboard: true,
       canViewReports: true,
       canViewPersonnel: true,
@@ -253,6 +256,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
   if (preset === 'operator') {
     return {
       isReadOnly: false,
+      canViewOnlineUsers: false,
       canViewDashboard: true,
       canViewReports: true,
       canViewPersonnel: false,
@@ -329,6 +333,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
   if (preset === 'supervisor') {
     return {
       isReadOnly: false,
+      canViewOnlineUsers: true,
       canViewDashboard: true,
       canViewReports: true,
       canViewPersonnel: true,
@@ -405,6 +410,7 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
   // admin
   return {
     isReadOnly: false,
+    canViewOnlineUsers: true,
     canViewDashboard: true,
     canViewReports: true,
     canViewPersonnel: true,
@@ -478,6 +484,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   if (isAdmin) {
     return {
       isReadOnly: false,
+      canViewOnlineUsers: true,
       canViewDashboard: true,
       canViewReports: true,
       canViewPersonnel: true,
@@ -648,8 +655,14 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
     ? !!perms.canViewDashboard 
     : (hasGranular ? (homeEnabled || extEnabled || ribEnabled) : ((extSummary || extCharts || ribSummary || ribCharts) && legacyDash));
 
+  const isSupervisorRole = (role || '').toLowerCase().includes('supervisor');
+  const canViewOnlineExplicit = typeof perms?.canViewOnlineUsers === 'boolean' 
+    ? perms.canViewOnlineUsers 
+    : (isAdmin || isSupervisorRole);
+
   return {
     isReadOnly,
+    canViewOnlineUsers: canViewOnlineExplicit,
     canViewDashboard: canViewHomeExplicit,
     canViewReports: extReports || ribReports || persReports,
     canViewPersonnel: persBoard,
