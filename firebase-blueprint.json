@@ -67,6 +67,11 @@
         "role": { "type": "string" },
         "password": { "type": "string" },
         "isFirstAccess": { "type": "boolean" },
+        "biometricId": { "type": "string" },
+        "facialData": { "type": "string" },
+        "facePhoto": { "type": "string" },
+        "faceRegisteredAt": { "type": "string" },
+        "faceRegisteredDevice": { "type": "string" },
         "permissions": { "type": "object" }
       }
     },

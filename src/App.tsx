@@ -9,7 +9,8 @@ import {
   UserPlus, Download, AlertCircle, FileSpreadsheet, Scale, FileText, Menu, Fingerprint, Smartphone, Bell, Volume2, Share, ExternalLink, Mail, Copy, Filter,
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
-  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus, Scissors, Video, Play
+  MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus, Scissors, Video, Play,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -164,6 +165,10 @@ import {
 import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
 import { saveIntroVideo, getIntroVideoUrl, deleteIntroVideo, hasStoredIntroVideo } from './lib/videoStorage';
 import { SystemIntroVideoPlayer } from './components/SystemIntroVideoPlayer';
+import { FacialRegistrationModal } from './components/FacialRegistrationModal';
+import { FacialLoginScanner } from './components/FacialLoginScanner';
+import { FacialPromptModal } from './components/FacialPromptModal';
+import { hasAnyRegisteredFaces, getStoredFaceProfiles } from './services/facialRecognitionService';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
   "marcelo": { registration: "1611", name: "MARCELO DA SILVA CASTRO" },
@@ -1826,6 +1831,14 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [biometricScanStatus, setBiometricScanStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
   const [biometricScanError, setBiometricScanError] = useState<string | null>(null);
   const [isIframe, setIsIframe] = useState(false);
+
+  // Estados de Autenticação e Cadastro Facial
+  const [isFacialRegisterOpen, setIsFacialRegisterOpen] = useState(false);
+  const [facialRegisterUser, setFacialRegisterUser] = useState<SystemUser | null>(null);
+  const [showFacialPrompt, setShowFacialPrompt] = useState(false);
+  const [facialPromptUser, setFacialPromptUser] = useState<SystemUser | null>(null);
+  const [isFacialLoginActive, setIsFacialLoginActive] = useState<boolean>(true);
+  const [facialLoginDismissed, setFacialLoginDismissed] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<{ id: string, message: string, type: 'success' | 'info', operator: string }[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -3880,11 +3893,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         localStorage.setItem('manupackaging_user', JSON.stringify(updated));
         applyUserLanding(updated);
 
-        // Prompt for biometrics immediately after first access
-        if (biometricSupported) {
-          setBiometricUser(updated);
-          setShowBiometricPrompt(true);
-        }
+        // Prompt de autorização e cadastro de biometria facial no primeiro acesso
+        setFacialPromptUser(updated);
+        setShowFacialPrompt(true);
       } catch (err) {
         alert('Erro ao salvar senha.');
       }
@@ -3909,14 +3920,63 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       localStorage.setItem('manupackaging_user', JSON.stringify(user));
       applyUserLanding(user);
       
-      // Check if user should be prompted to register biometrics
-      if (biometricSupported && !user.biometricId) {
-        setBiometricUser(user);
-        setShowBiometricPrompt(true);
+      // Oferece cadastro de biometria facial se ainda não possuir
+      const localProfiles = getStoredFaceProfiles();
+      if (!user.facialData && !localProfiles[user.registration]) {
+        setFacialPromptUser(user);
+        setShowFacialPrompt(true);
       }
     } else {
       alert('Senha incorreta.');
     }
+  };
+
+  const handleLoginByFace = (user: SystemUser) => {
+    recordAccessLog(user, 'login');
+    setLoggedUser(user);
+    localStorage.setItem('manupackaging_user', JSON.stringify(user));
+    applyUserLanding(user);
+  };
+
+  const handleSaveFaceData = async (user: SystemUser, facialData: string, facePhoto: string) => {
+    const updated: SystemUser = {
+      ...user,
+      facialData,
+      facePhoto,
+      faceRegisteredAt: new Date().toISOString(),
+      faceRegisteredDevice: navigator.userAgent
+    };
+    if (user.id && !user.id.startsWith('local_')) {
+      try {
+        await setDoc(doc(db, 'system_users', user.id), updated, { merge: true });
+      } catch (err) {
+        console.warn('Erro ao atualizar usuário no Firestore:', err);
+      }
+    }
+    setSystemUsers(prev => {
+      const exists = prev.some(u => u.registration === user.registration);
+      if (exists) {
+        return prev.map(u => u.registration === user.registration ? updated : u);
+      }
+      return [...prev, updated];
+    });
+    if (loggedUser && loggedUser.registration === user.registration) {
+      setLoggedUser(updated);
+      localStorage.setItem('manupackaging_user', JSON.stringify(updated));
+    }
+  };
+
+  const handleAcceptFacialPrompt = () => {
+    setShowFacialPrompt(false);
+    if (facialPromptUser) {
+      setFacialRegisterUser(facialPromptUser);
+      setIsFacialRegisterOpen(true);
+    }
+  };
+
+  const handleDeclineFacialPrompt = () => {
+    setShowFacialPrompt(false);
+    setFacialPromptUser(null);
   };
 
   const handleOpenBiometricLoginModal = (user: SystemUser) => {
@@ -12154,7 +12214,35 @@ Atenciosamente,
               </p>
            </div>
 
-           <div className="space-y-2.5">
+            {/* Scanner de Autenticação Facial por Câmera */}
+            {isFacialLoginActive && !facialLoginDismissed && hasAnyRegisteredFaces(systemUsers) && (
+              <FacialLoginScanner
+                users={systemUsers}
+                onFaceMatched={handleLoginByFace}
+                onDismiss={() => {
+                  setFacialLoginDismissed(true);
+                  setIsFacialLoginActive(false);
+                }}
+                autoStart={true}
+              />
+            )}
+
+            {/* Botão de Ativação Manual do Reconhecimento Facial (quando descartado ou para re-escanear) */}
+            {(!isFacialLoginActive || facialLoginDismissed) && hasAnyRegisteredFaces(systemUsers) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFacialLoginDismissed(false);
+                  setIsFacialLoginActive(true);
+                }}
+                className="w-full mb-2.5 py-2 px-3 bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-400/50 text-cyan-300 hover:text-white rounded-xl font-black text-[9.5px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+              >
+                <Camera size={13} className="text-cyan-400" />
+                <span>Escanear Rosto com Câmera</span>
+              </button>
+            )}
+
+            <div className="space-y-2.5">
                 <div className="relative group">
                   <label className="text-[8.5px] font-black text-cyan-200/80 uppercase tracking-widest mb-1 block ml-0.5">Número de Matrícula</label>
                   <div className="relative">
@@ -12173,9 +12261,22 @@ Atenciosamente,
                   </div>
                   
                   {discoveredUser && (
-                    <p className="mt-1 text-[8.5px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
-                      <ShieldCheck size={11} /> {discoveredUser.name.split(' ')[0]} Identificado
-                    </p>
+                    <div className="flex flex-col gap-1 mt-1">
+                      <p className="text-[8.5px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
+                        <ShieldCheck size={11} /> {discoveredUser.name.split(' ')[0]} Identificado
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFacialRegisterUser(discoveredUser);
+                          setIsFacialRegisterOpen(true);
+                        }}
+                        className="text-left text-[8.5px] font-black text-cyan-400 hover:text-cyan-300 uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Camera size={11} />
+                        <span>{discoveredUser.facialData || getStoredFaceProfiles()[discoveredUser.registration] ? 'Atualizar Rosto Cadastrado' : 'Cadastrar Meu Rosto (Facial)'}</span>
+                      </button>
+                    </div>
                   )}
                   
                   {!discoveredUser && loginMatricula.length < 3 && (
@@ -12192,11 +12293,11 @@ Atenciosamente,
                       
                       <div className="flex gap-2.5 items-center">
                         <div className="w-5 h-5 rounded-lg bg-cyan-950/90 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-                          <Fingerprint size={11} />
+                          <Camera size={11} />
                         </div>
                         <div className="space-y-0.5">
-                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Acesso Rápido</p>
-                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Após o primeiro login, você poderá usar a digital ou rosto para entrar.</p>
+                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Acesso Rápido Facial</p>
+                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Após cadastrar seu rosto, a câmera aciona e entra automaticamente.</p>
                         </div>
                       </div>
 
@@ -12542,6 +12643,8 @@ Atenciosamente,
               try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
               setIsIntroVideoPlaying(false);
               setIsInitializing(false);
+              setIsFacialLoginActive(true);
+              setFacialLoginDismissed(false);
             }}
           />
         )}
@@ -12552,6 +12655,27 @@ Atenciosamente,
           onClose={() => setIsSystemInfoModalOpen(false)}
           systemLogo={systemLogo}
           systemName={loginSystemName}
+        />
+
+        {/* Modal de Cadastro de Biometria Facial por Câmera */}
+        {facialRegisterUser && (
+          <FacialRegistrationModal
+            isOpen={isFacialRegisterOpen}
+            onClose={() => {
+              setIsFacialRegisterOpen(false);
+              setFacialRegisterUser(null);
+            }}
+            user={facialRegisterUser}
+            onSaveFaceData={handleSaveFaceData}
+          />
+        )}
+
+        {/* Modal de Solicitação de Cadastro de Rosto (Primeiro Acesso) */}
+        <FacialPromptModal
+          isOpen={showFacialPrompt}
+          user={facialPromptUser}
+          onAccept={handleAcceptFacialPrompt}
+          onDecline={handleDeclineFacialPrompt}
         />
       </div>
     );
@@ -13524,18 +13648,25 @@ Atenciosamente,
                       <span>{isFullscreen ? 'Sair da Tela Cheia' : 'Expandir Tela Cheia'}</span>
                     </button>
 
-                    {/* Biometria */}
+                    {/* Biometria Facial */}
                     <button
                       type="button"
                       onClick={() => {
-                        setBiometricUser(loggedUser);
-                        handleOpenBiometricRegisterModal(loggedUser);
+                        setFacialRegisterUser(loggedUser);
+                        setIsFacialRegisterOpen(true);
                         setIsMainMenuOpen(false);
                       }}
                       className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
                     >
-                      <Fingerprint size={18} className="text-blue-600 shrink-0" />
-                      <span>Cadastrar / Atualizar Biometria</span>
+                      <Camera size={18} className="text-cyan-600 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold leading-tight">Biometria Facial (Câmera)</p>
+                        <p className="text-[9px] text-slate-400 font-medium">
+                          {loggedUser.facialData || getStoredFaceProfiles()[loggedUser.registration]
+                            ? 'Rosto cadastrado • Toque para atualizar'
+                            : 'Cadastrar seu rosto para entrar sem senha'}
+                        </p>
+                      </div>
                     </button>
                   </div>
                 </div>
@@ -22426,6 +22557,27 @@ Atenciosamente,
         onClose={() => setIsSystemInfoModalOpen(false)}
         systemLogo={systemLogo}
         systemName={systemName}
+      />
+
+      {/* Modal de Cadastro de Biometria Facial por Câmera */}
+      {facialRegisterUser && (
+        <FacialRegistrationModal
+          isOpen={isFacialRegisterOpen}
+          onClose={() => {
+            setIsFacialRegisterOpen(false);
+            setFacialRegisterUser(null);
+          }}
+          user={facialRegisterUser}
+          onSaveFaceData={handleSaveFaceData}
+        />
+      )}
+
+      {/* Modal de Solicitação de Cadastro de Rosto */}
+      <FacialPromptModal
+        isOpen={showFacialPrompt}
+        user={facialPromptUser}
+        onAccept={handleAcceptFacialPrompt}
+        onDecline={handleDeclineFacialPrompt}
       />
 
       {/* Modal de Detalhes do Colaborador (Popup Informativo) */}
