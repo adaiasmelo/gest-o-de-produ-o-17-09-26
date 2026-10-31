@@ -951,10 +951,10 @@ export const App: React.FC = () => {
   });
   const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState<boolean>(() => {
     try {
-      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played');
-      if (alreadyPlayed === 'true') return false;
-      const savedUrl = localStorage.getItem('manupackaging_intro_video_url');
-      return Boolean(savedUrl);
+      if (typeof window === 'undefined') return false;
+      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played') === 'true';
+      if (alreadyPlayed) return false;
+      return hasStoredIntroVideo() || Boolean(localStorage.getItem('manupackaging_intro_video_url'));
     } catch {
       return false;
     }
@@ -12534,9 +12534,9 @@ Atenciosamente,
         )}
 
         {/* Camada do Vídeo de Abertura com Efeito de Sucção em Direção ao Logo do Login */}
-        {isIntroVideoPlaying && systemIntroVideo && (
+        {isIntroVideoPlaying && (
           <SystemIntroVideoPlayer
-            videoSrc={systemIntroVideo}
+            videoSrc={systemIntroVideo || ''}
             isLoggedIn={false}
             onFinish={() => {
               try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
@@ -24248,9 +24248,9 @@ Atenciosamente,
       </div>
 
       {/* Camada do Vídeo de Abertura com Efeito de Sucção em Direção ao Logo Superior Esquerdo */}
-      {isIntroVideoPlaying && systemIntroVideo && (
+      {isIntroVideoPlaying && (
         <SystemIntroVideoPlayer
-          videoSrc={systemIntroVideo}
+          videoSrc={systemIntroVideo || ''}
           isLoggedIn={true}
           onFinish={() => {
             try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}

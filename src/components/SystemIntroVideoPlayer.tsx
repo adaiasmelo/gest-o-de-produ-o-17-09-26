@@ -108,6 +108,16 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
   }, [isLoggedIn]);
 
   useEffect(() => {
+    if (!videoSrc) {
+      const waitTimeout = setTimeout(() => {
+        if (!hasStartedPlaybackRef.current && !isTransitioningRef.current) {
+          console.warn('Tempo limite excedido para carregar arquivo de vídeo.');
+          onFinishRef.current();
+        }
+      }, 3500);
+      return () => clearTimeout(waitTimeout);
+    }
+
     if (hasStartedPlaybackRef.current) return;
     hasStartedPlaybackRef.current = true;
 
@@ -178,34 +188,42 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
         }`}
         style={isPulling ? pullStyle : {}}
       >
-        <video
-          ref={videoRef}
-          src={videoSrc}
-          autoPlay
-          playsInline
-          className="w-full h-full object-cover block m-0 p-0 border-0 outline-none"
-          onEnded={startSuctionTransition}
-          onTimeUpdate={(e) => {
-            const v = e.currentTarget;
-            if (v && v.duration && isFinite(v.duration) && v.currentTime >= v.duration - 0.25) {
-              startSuctionTransition();
-            }
-          }}
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            if (v && v.duration && isFinite(v.duration)) {
-              setTimeout(() => {
-                if (!isTransitioningRef.current) {
-                  startSuctionTransition();
-                }
-              }, (v.duration + 0.6) * 1000);
-            }
-          }}
-          onError={() => {
-            console.warn('Erro ao carregar ou reproduzir arquivo de vídeo.');
-            startSuctionTransition();
-          }}
-        />
+        {videoSrc ? (
+          <video
+            ref={videoRef}
+            src={videoSrc}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover block m-0 p-0 border-0 outline-none"
+            onEnded={startSuctionTransition}
+            onTimeUpdate={(e) => {
+              const v = e.currentTarget;
+              if (v && v.duration && isFinite(v.duration) && v.currentTime >= v.duration - 0.25) {
+                startSuctionTransition();
+              }
+            }}
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              if (v && v.duration && isFinite(v.duration)) {
+                setTimeout(() => {
+                  if (!isTransitioningRef.current) {
+                    startSuctionTransition();
+                  }
+                }, (v.duration + 0.6) * 1000);
+              }
+            }}
+            onError={() => {
+              if (videoSrc) {
+                console.warn('Erro ao carregar ou reproduzir arquivo de vídeo.');
+                startSuctionTransition();
+              }
+            }}
+          />
+        ) : (
+          <div className="w-full h-full bg-black flex items-center justify-center">
+            {/* Tela preta pura enquanto aguarda leitura do IndexedDB (<30ms) */}
+          </div>
+        )}
       </div>
 
       {/* Feixe de luz e vórtice radiante que acompanha a sucção */}

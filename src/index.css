@@ -73,7 +73,15 @@
 /* Bloqueio absoluto de barra de rolagem lateral durante o vídeo de abertura ou tela de login */
 html.intro-video-active,
 body.intro-video-active,
-body.intro-video-active #root,
+body.intro-video-active #root {
+  background-color: #000000 !important;
+  overflow: hidden !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
 html.login-mode,
 body.login-mode,
 body.login-mode #root {
