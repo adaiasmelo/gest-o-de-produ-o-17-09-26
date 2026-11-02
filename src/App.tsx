@@ -1316,6 +1316,7 @@ export const App: React.FC = () => {
   const [ribbonJumboM2, setRibbonJumboM2] = useState('');
   const [ribbonJumboType, setRibbonJumboType] = useState('');
   const [ribbonMachine, setRibbonMachine] = useState('');
+  const [ribbonTargetDailyM2, setRibbonTargetDailyM2] = useState('');
   const [ribbonRollsCount, setRibbonRollsCount] = useState('');
   const [ribbonRollWidth, setRibbonRollWidth] = useState('');
   const [ribbonRollLength, setRibbonRollLength] = useState('');
@@ -4632,6 +4633,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       setRibbonWasteWeight('');
       setRibbonJumboM2('');
       setRibbonJumboType('');
+      setRibbonTargetDailyM2('');
       setShowRibbonForm(true);
     }
   };
@@ -6046,6 +6048,7 @@ Atenciosamente,
       processoMotivo: ribbonProcessoStops.length > 0 ? JSON.stringify(ribbonProcessoStops) : '',
       outrosMin: outrosMinCalculado,
       outrosMotivo: ribbonOutrosStops.length > 0 ? JSON.stringify(ribbonOutrosStops) : '',
+      targetDailyM2: ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) || undefined : undefined,
     };
 
     // Grava motivos preenchidos na biblioteca de motivos de fita
@@ -6284,6 +6287,7 @@ Atenciosamente,
     setRibbonJumboM2(String(entry.jumboM2));
     setRibbonJumboType(entry.jumboType || '');
     setRibbonMachine(entry.machine || '');
+    setRibbonTargetDailyM2(entry.targetDailyM2 ? String(entry.targetDailyM2) : '');
     setRibbonRollsCount(entry.rollsCount ? String(entry.rollsCount) : '');
     setRibbonRollWidth(entry.rollWidth ? String(entry.rollWidth) : '');
     setRibbonRollLength(entry.rollLength ? String(entry.rollLength) : '');
@@ -18707,6 +18711,12 @@ Atenciosamente,
                             onChange={(e) => {
                               const newMachine = e.target.value;
                               setRibbonMachine(newMachine);
+                              if (!ribbonTargetDailyM2) {
+                                const normM = newMachine.toLowerCase();
+                                if (normM.includes('ghezzi')) setRibbonTargetDailyM2('60000');
+                                else if (normM.includes('lintech')) setRibbonTargetDailyM2('50000');
+                                else if (normM.includes('wultec')) setRibbonTargetDailyM2('40000');
+                              }
                               const newCanonical = getCanonicalRibbonMachine(newMachine);
                               const isOpValid = employees.some(emp => {
                                 if (isEmployeeSilenced(emp, collaborators)) return false;
@@ -18775,6 +18785,119 @@ Atenciosamente,
                         </div>
                       </div>
                     </div>
+
+                    {/* Slot Horizontal: Meta Diária (m²) e Produtividade com Abatimento de Perdas */}
+                    {Boolean(ribbonMachine) && (() => {
+                      const targetM2 = parseFloat(ribbonTargetDailyM2) || 0;
+                      const prodM2 = parseFloat(ribbonProducedM2) || 0;
+                      const lossTipo1M2 = parseFloat(ribbonM2Tipo1) || ribbonJumboItems.reduce((acc, it) => acc + (it.m2Tipo1 || 0), 0);
+                      const lossTipo2M2 = parseFloat(ribbonM2Tipo2) || ribbonJumboItems.reduce((acc, it) => acc + (it.m2Tipo2 || 0), 0);
+                      const wasteWeightKg = parseFloat(ribbonWasteWeight) || ribbonJumboItems.reduce((acc, it) => acc + (it.wasteWeight || 0), 0);
+                      const wasteM2 = wasteWeightKg > 0 ? calculateLostM2(wasteWeightKg, ribbonJumboType || 'AR9') : 0;
+                      const totalLossesM2 = lossTipo1M2 + lossTipo2M2 + wasteM2;
+                      const totalM2Processed = prodM2 + totalLossesM2;
+                      const lossPct = totalM2Processed > 0 ? (totalLossesM2 / totalM2Processed) * 100 : 0;
+                      const netAttainment = targetM2 > 0 ? (prodM2 / targetM2) * 100 : 0;
+                      const hasMetGoal = targetM2 > 0 && prodM2 >= targetM2;
+
+                      return (
+                        <div className="bg-slate-50 border border-purple-300 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs animate-in fade-in duration-200">
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-center">
+                            
+                            {/* Bloco 1: Identificador */}
+                            <div className="md:col-span-3 flex items-center gap-3 border-b md:border-b-0 md:border-r border-purple-200 pr-3">
+                              <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-base shrink-0 shadow-xs">
+                                🎯
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-black uppercase text-purple-950 tracking-tight truncate">
+                                  {ribbonMachine} (Corte)
+                                </div>
+                                <div className="text-[10px] font-bold text-slate-500 truncate">
+                                  Meta Diária & Abatimento
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bloco 2: Entrada da Meta Diária (m²) */}
+                            <div className="md:col-span-4 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
+                                  Meta Diária da Máquina (m²)
+                                </label>
+                                <span className="text-[10px] font-bold text-slate-400">
+                                  Alvo: <strong className="text-purple-900">{targetM2 > 0 ? `${targetM2.toLocaleString('pt-BR')} m²` : 'Definir'}</strong>
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <div className="relative flex-1">
+                                  <input
+                                    type="number"
+                                    value={ribbonTargetDailyM2}
+                                    onChange={(e) => setRibbonTargetDailyM2(e.target.value)}
+                                    placeholder="Ex: 60000"
+                                    className="w-full bg-white border border-purple-200 focus:border-purple-600 rounded-xl px-3 py-1.5 text-xs sm:text-sm font-black text-slate-900 outline-none pr-10 h-8 shadow-2xs"
+                                  />
+                                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400 uppercase pointer-events-none">
+                                    m²
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {[40000, 50000, 60000, 70000].map(val => (
+                                    <button
+                                      key={val}
+                                      type="button"
+                                      onClick={() => setRibbonTargetDailyM2(String(val))}
+                                      className={`px-1.5 py-1 rounded-lg text-[9px] font-black uppercase border transition-all cursor-pointer ${
+                                        Number(ribbonTargetDailyM2) === val
+                                          ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
+                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      {(val / 1000)}k
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bloco 3: Avaliação em Tempo Real com Abatimento de Perdas */}
+                            <div className="md:col-span-5 bg-white border border-slate-200 rounded-xl p-2.5 space-y-1 text-[10px]">
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500 font-bold uppercase">Produção Líquida:</span>
+                                <span className="font-black text-indigo-900">
+                                  {prodM2 > 0 ? `${prodM2.toLocaleString('pt-BR')} m²` : '0 m²'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-md font-black uppercase text-[8.5px] ${hasMetGoal ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+                                  {hasMetGoal ? `BATEU META ✅ (${netAttainment.toFixed(0)}%)` : targetM2 > 0 ? `Falta ${(targetM2 - prodM2).toLocaleString('pt-BR')} m² (${netAttainment.toFixed(0)}%)` : 'Sem Meta'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1 border-t border-dashed border-slate-100">
+                                <span className="text-slate-500 font-bold uppercase">Abatimento de Perdas:</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-amber-700 font-bold" title="Perda Não Conforme Tipo 1">
+                                    T1: <strong>{lossTipo1M2.toLocaleString('pt-BR')} m²</strong>
+                                  </span>
+                                  <span className="text-orange-700 font-bold" title="Perda Não Conforme Tipo 2">
+                                    T2: <strong>{lossTipo2M2.toLocaleString('pt-BR')} m²</strong>
+                                  </span>
+                                  <span className="text-red-700 font-bold" title="Lixo gerado">
+                                    Lixo: <strong>{wasteM2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m² ({wasteWeightKg}kg)</strong>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[9px] text-slate-500 font-semibold pt-0.5">
+                                <span>Total Perdas da Fita: <strong className="text-rose-700">{totalLossesM2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m² ({lossPct.toFixed(1)}%)</strong></span>
+                                <span className="text-slate-400">Tipo 1 + Tipo 2 + Lixo abatem da produtividade</span>
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* 2. Jumbos Processados */}
                     <div className="bg-slate-50/70 rounded-2xl sm:rounded-3xl p-5 sm:p-7 border border-slate-200/80 space-y-5 sm:space-y-6 shadow-xs">
@@ -21716,6 +21839,7 @@ Atenciosamente,
             <ProductionBonusManager
               employees={employees}
               productionData={productionData}
+              ribbonEntries={ribbonEntries}
               goals={goals}
               onClose={() => setPersonnelSubView('board')}
               canManage={canManagePersonnel}

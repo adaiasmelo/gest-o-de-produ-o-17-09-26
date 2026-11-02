@@ -7,14 +7,22 @@ import {
   X, Info, Layers, AlertOctagon, HelpCircle, FileSpreadsheet,
   SlidersHorizontal, HardHat, Briefcase, Palmtree, Download,
   ExternalLink, Check, DollarSign, Activity, Zap,
-  Timer, Gauge, Scale, Sparkles, CheckSquare, Wrench, PlayCircle, LogOut
+  Timer, Gauge, Scale, Sparkles, CheckSquare, Wrench, PlayCircle, LogOut, MonitorPlay
 } from 'lucide-react';
-import { Employee } from '../types';
+import { Employee, RibbonCuttingEntry } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BiAnalyticsView } from './BiAnalyticsView';
+import { BonusRulesPresentationModal } from './BonusRulesPresentationModal';
+import { 
+  parseStopsFromField, 
+  evaluateCleaningStoppages, 
+  isCleaningStoppageReason,
+  calculateTapeLostM2,
+  evaluateTapeProductivityAndLosses
+} from '../utils/bonusRuleHelpers';
 
 export type BonusIncidentType = 
   | 'atestado' 
@@ -26,7 +34,8 @@ export type BonusIncidentType =
   | 'saida_nao_comunicada'
   | 'limpeza_excessiva'
   | 'partida_demorada'
-  | 'meta_maquina_nao_atingida';
+  | 'meta_maquina_nao_atingida'
+  | 'informacao_falsa';
 
 export interface BonusIncident {
   id: string;
@@ -73,6 +82,7 @@ export interface MachineGoalConfig {
 interface ProductionBonusManagerProps {
   employees: Employee[];
   productionData?: any[];
+  ribbonEntries?: RibbonCuttingEntry[];
   goals?: Record<string, number>;
   onClose: () => void;
   canManage: boolean;
@@ -136,6 +146,7 @@ const formatPercent = (val: number | null | undefined) => {
 export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   employees = [],
   productionData = [],
+  ribbonEntries = [],
   goals = {},
   onClose,
   canManage = true,
@@ -207,6 +218,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   const [isIncidentModalOpen, setIsIncidentModalOpen] = useState(false);
   const [editingIncident, setEditingIncident] = useState<BonusIncident | null>(null);
   const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<Employee | null>(null);
+  const [isPresentationOpen, setIsPresentationOpen] = useState(false);
 
   // Form State for Incident
   const [formMode, setFormMode] = useState<'individual' | 'machine'>('individual');
@@ -363,13 +375,23 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       map[key].entriesCount += 1;
       map[key].totalNet += (e.netWeight || 0);
-      const loss = (e.borraTotal || 0) + (e.ecoA || 0) + (e.ecoBP || 0) + (e.ecoBM || 0);
-      map[key].totalLoss += loss;
+      // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
+      const evaluatedLoss = (e.borraTotal || 0) + (e.ecoA || 0) + (e.ecoBP || 0);
+      map[key].totalLoss += evaluatedLoss;
 
-      const checkStoppage = (motivo?: string, minutes?: number) => {
+      // Avaliação de Paradas:
+      // A ÚNICA parada que contabiliza para perda de meta é limpeza de máquina/matriz.
+      // O limite de 30 min NÃO é a soma; é 30 min por parada individual.
+      // Paradas de manutenção não contabilizam perda de meta.
+      const procStops = parseStopsFromField(e.processoMotivo, Number(e.processoMin) || 0);
+      const outStops = parseStopsFromField(e.outrosMotivo, Number(e.outrosMin) || 0);
+      const allShiftStops = [...procStops, ...outStops];
+
+      allShiftStops.forEach(stop => {
+        const minutes = stop.durationMinutes;
         if (!minutes || minutes <= 0) return;
-        const text = (motivo || '').toLowerCase();
-        const isCleaning = text.includes('limpeza') || text.includes('limp') || text.includes('matriz') || text.includes('cabeçote') || text.includes('tela');
+        const isCleaning = isCleaningStoppageReason(stop.motivo);
+        const text = (stop.motivo || '').toLowerCase();
         const isStartup = text.includes('partida') || text.includes('start') || text.includes('aquec') || text.includes('inicializ');
 
         if (isCleaning) {
@@ -377,6 +399,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           if (minutes > map[key].maxCleaningRecorded) {
             map[key].maxCleaningRecorded = minutes;
           }
+          // Regra: Não pode exceder 30 minutos POR PARADA individual!
           if (minutes > 30) {
             map[key].cleaningOver30Count += 1;
           }
@@ -388,11 +411,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         } else {
           map[key].otherStopsMin += minutes;
         }
-      };
-
-      checkStoppage(e.processoMotivo, e.processoMin);
-      checkStoppage(e.manutencaoMotivo, e.manutencaoMin);
-      checkStoppage(e.outrosMotivo, e.outrosMin);
+      });
     });
 
     // Compute averages
@@ -442,7 +461,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       acc[e.operator][m].netProd += (e.netWeight || 0);
       const entryEcoA = e.ecoA || 0;
-      const entryEcoB = (e.ecoBP || 0) + (e.ecoBM || 0);
+      // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
+      const entryEcoB = e.ecoBP || 0; // apenas ECOBP de produção
       const entryBorra = e.borraTotal || 0;
       acc[e.operator][m].waste += (entryEcoA + entryEcoB + entryBorra);
       acc[e.operator][m].ecoA += entryEcoA;
@@ -640,7 +660,10 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         let pct = inc.penaltyRatePercent ?? 100;
         let label = inc.type.replace(/_/g, ' ').toUpperCase();
 
-        if (inc.type === 'atestado' || inc.type === 'falta_injustificada' || inc.type === 'falta_justificada') {
+        if (inc.type === 'informacao_falsa') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 100;
+          label = 'INFORMAÇÃO FALSA / FRAUDE DE APONTAMENTO';
+        } else if (inc.type === 'atestado' || inc.type === 'falta_injustificada' || inc.type === 'falta_justificada') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 100;
         } else if (inc.type === 'atraso_injustificado') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 20;
@@ -982,8 +1005,12 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     doc.text(`Máquina / Turno: ${emp.machine || '—'} / ${emp.shift || '—'}`, 120, 46);
     doc.text(`Base de Bonificação: ${formatBRL(item.baseAmount)}`, 120, 51);
 
-    // 1. Daily Production Table (with kg/h, 12h goal and goal achievement per day)
-    const empProdEntries = (productionData || []).filter(entry => {
+    // 1. Daily Production Table (with kg/h or m², 12h goal and goal achievement per day)
+    const rawProdList = (productionData || []).map((p: any) => ({ ...p, isTapeSector: false }));
+    const rawRibbonList = (ribbonEntries || []).map((r: any) => ({ ...r, isTapeSector: true }));
+    const combinedEntries = [...rawProdList, ...rawRibbonList];
+
+    const empProdEntries = combinedEntries.filter(entry => {
       if (!entry || !entry.date) return false;
       if (!entry.date.startsWith(selectedCycle)) return false;
       const opName = (entry.operator || '').trim().toLowerCase();
@@ -994,14 +1021,41 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     const dailyProductionRows = empProdEntries.map(e => {
       const machStr = (e.machine || '').toLowerCase();
       const isCast = machStr.includes('cast') || machStr.includes('k1') || machStr.includes('k2');
-      const isFita = machStr.includes('ghez') || machStr.includes('lintec') || machStr.includes('wutec') || machStr.includes('fita');
+      const isFita = e.isTapeSector || machStr.includes('ghez') || machStr.includes('lintec') || machStr.includes('wutec') || machStr.includes('fita');
 
       let speedStr = '—';
       let toleranceStr = '—';
       let meta12hStr = '—';
       let statusGoal = 'Concluído';
-      const losses = (Number(e.ecoA) || 0) + (Number(e.ecoBP) || 0) + (Number(e.ecoBM) || 0) + (Number(e.borraTotal) || 0);
-      const stopsMin = (Number(e.manutencaoMin) || 0) + (Number(e.processoMin) || 0) + (Number(e.outrosMin) || 0);
+      let actualProdDisplay = formatWeight(e.netWeight);
+      let lossDisplay = '0 Kg';
+
+      // Regra estrita: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
+      const evaluatedLosses = (Number(e.ecoA) || 0) + (Number(e.ecoBP) || 0) + (Number(e.borraTotal) || 0);
+      const ecoBM = Number(e.ecoBM) || 0;
+
+      // Avaliação de Paradas:
+      // A ÚNICA parada que contabiliza para perda de meta é limpeza da máquina/matriz.
+      // O tempo de 30 min NÃO é a soma de todas as paradas; é 30 min por parada de máquina individual.
+      // Paradas de manutenção são expressamente isentas.
+      const procStops = parseStopsFromField(e.processoMotivo, Number(e.processoMin) || 0);
+      const outStops = parseStopsFromField(e.outrosMotivo, Number(e.outrosMin) || 0);
+      const manStops = parseStopsFromField(e.manutencaoMotivo, Number(e.manutencaoMin) || 0);
+      const allStops = [...procStops, ...outStops, ...manStops];
+      const cleaningEval = evaluateCleaningStoppages(allStops);
+      const maintMins = manStops.reduce((sum, s) => sum + s.durationMinutes, 0);
+
+      let stopsSummaryStr = '0 min';
+      if (cleaningEval.cleaningStops.length > 0) {
+        if (cleaningEval.hasCleaningOver30) {
+          const excessTxt = cleaningEval.cleaningStopsOver30.map(s => `${s.durationMinutes}m`).join(', ');
+          stopsSummaryStr = `Limp: ${excessTxt} (! >30m)`;
+        } else {
+          stopsSummaryStr = `Limp: ${cleaningEval.maxCleaningRecorded}m (≤30m OK)`;
+        }
+      } else if (maintMins > 0) {
+        stopsSummaryStr = `Manut: ${maintMins}m (Isenta)`;
+      }
 
       if (isCast) {
         const kgH = Number(e.kgPerHour) || (machStr.includes('cast 2') || machStr.includes('k2') ? 850 : 1000);
@@ -1010,31 +1064,37 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         const maxAllowedLoss = theoretical12h * (tolPct / 100);
         const targetNetKg = Math.max(0, theoretical12h - maxAllowedLoss);
         const net = Number(e.netWeight) || 0;
-        const totalProcessed = net + losses;
-        const realLossPct = totalProcessed > 0 ? (losses / totalProcessed) * 100 : (theoretical12h > 0 ? (losses / theoretical12h) * 100 : 0);
 
         speedStr = `${kgH} kg/h`;
         toleranceStr = `${tolPct}% (≤ ${formatWeight(maxAllowedLoss)})`;
         meta12hStr = formatWeight(targetNetKg);
+        actualProdDisplay = formatWeight(e.netWeight);
+        lossDisplay = formatWeight(evaluatedLosses) + (ecoBM > 0 ? ` (+${formatWeight(ecoBM)} EcoBM Isento)` : '');
 
         const isNetMet = net >= targetNetKg;
-        const isLossOk = losses <= maxAllowedLoss;
+        const isLossOk = evaluatedLosses <= maxAllowedLoss;
+        const isCleaningOk = !cleaningEval.hasCleaningOver30;
         const netPct = targetNetKg > 0 ? (net / targetNetKg) * 100 : 0;
 
-        if (isNetMet && isLossOk) {
-          statusGoal = `BATEU ✅ (${netPct.toFixed(0)}%)`;
+        if (isNetMet && isLossOk && isCleaningOk) {
+          statusGoal = `BATEU META ✅ (${netPct.toFixed(0)}%)`;
+        } else if (cleaningEval.hasCleaningOver30) {
+          statusGoal = `EXC. LIMPEZA ⚠️ (>30m)`;
         } else if (isNetMet && !isLossOk) {
-          statusGoal = `EXC. PERDA ⚠️ (+${formatWeight(losses - maxAllowedLoss)})`;
+          statusGoal = `EXC. PERDA ⚠️ (+${formatWeight(evaluatedLosses - maxAllowedLoss)})`;
         } else if (!isNetMet && isLossOk) {
           statusGoal = `ABAIXO LÍQ. (${netPct.toFixed(0)}%)`;
         } else {
           statusGoal = `NÃO BATEU ❌ (${netPct.toFixed(0)}%)`;
         }
       } else if (isFita) {
-        speedStr = 'm² (Corte)';
-        toleranceStr = '2.5%';
-        meta12hStr = 'Meta m²';
-        statusGoal = (e.netWeight || e.producedM2) ? 'REGISTRADO' : 'PARADA';
+        const tapeEval = evaluateTapeProductivityAndLosses(e);
+        speedStr = `${tapeEval.targetDailyM2.toLocaleString('pt-BR')} m²/dia`;
+        toleranceStr = `Perdas: ${tapeEval.totalLossM2.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m² (T1+T2+Lixo)`;
+        meta12hStr = `${tapeEval.targetDailyM2.toLocaleString('pt-BR')} m²`;
+        actualProdDisplay = `${tapeEval.producedM2.toLocaleString('pt-BR')} m²`;
+        lossDisplay = `${tapeEval.totalLossM2.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²`;
+        statusGoal = tapeEval.statusBadge;
       } else {
         const kgH = Number(e.kgPerHour) || 350;
         const theoretical12h = kgH * 12;
@@ -1043,6 +1103,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         speedStr = `${kgH} kg/h`;
         toleranceStr = '4.0%';
         meta12hStr = formatWeight(targetNetKg);
+        actualProdDisplay = formatWeight(e.netWeight);
+        lossDisplay = formatWeight(evaluatedLosses) + (ecoBM > 0 ? ` (+${formatWeight(ecoBM)} EcoBM Isento)` : '');
         statusGoal = net >= targetNetKg ? 'BATEU ✅' : 'NÃO BATEU ❌';
       }
 
@@ -1052,9 +1114,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         speedStr,
         toleranceStr,
         meta12hStr,
-        formatWeight(e.netWeight),
-        formatWeight(losses),
-        `${stopsMin} min${stopsMin > 30 ? ' (!)' : ''}`,
+        actualProdDisplay,
+        lossDisplay,
+        stopsSummaryStr,
         statusGoal
       ];
     });
@@ -1070,7 +1132,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
     autoTable(doc, {
       startY: 62,
-      head: [['Data', 'Máquina / Turno', 'Velocidade', 'Tolerância Perda', 'Meta Líq. (12h)', 'Prod. Líq.', 'Perdas Reais', 'Paradas', 'Status Meta & Perda']],
+      head: [['Data', 'Máquina / Turno', 'Velocidade', 'Tolerância Perda', 'Meta Líq. (12h)', 'Prod. Líq.', 'Perdas Reais (Refugo)', 'Paradas Limpeza', 'Status Meta & Parada']],
       body: dailyProductionRows,
       theme: 'grid',
       headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
@@ -1083,6 +1145,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     // 2. Incidents & Deductions Table
     const incidentRows = item.personalIncidents.map(inc => {
       let typeLabel = inc.type.replace(/_/g, ' ').toUpperCase();
+      if (inc.type === 'informacao_falsa') typeLabel = 'INFORMAÇÃO FALSA / FRAUDE (-100%)';
       if (inc.type === 'saida_mais_cedo') typeLabel = 'SAÍDA MAIS CEDO (COMUNICADA)';
       if (inc.type === 'saida_nao_comunicada') typeLabel = 'SAÍDA SEM AVISAR GESTOR';
       if (inc.type === 'limpeza_excessiva') typeLabel = 'LIMPEZA EXCEDEU 30 MIN';
@@ -1296,6 +1359,16 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             </button>
           )}
 
+          {/* Apresentação Interativa (Modo PowerPoint) */}
+          <button
+            onClick={() => setIsPresentationOpen(true)}
+            className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl font-black text-xs uppercase flex items-center gap-2 shadow-sm hover:shadow-md active:scale-95 transition-all cursor-pointer"
+            title="Apresentação em Tela Cheia das Regras de Bônus de Produção (Estilo PowerPoint)"
+          >
+            <MonitorPlay className="w-4 h-4 text-indigo-200" />
+            <span>Apresentação</span>
+          </button>
+
           {/* Export PDF Summary */}
           <button
             onClick={generateMonthSummaryPDF}
@@ -1401,6 +1474,35 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
               <div className="text-3xl font-black text-emerald-600">{formatBRL(stats.totalFinalPayout)}</div>
               <div className="text-xs text-slate-500 font-semibold">{stats.overallAttainment.toFixed(1)}% do orçamento atingido</div>
             </div>
+          </div>
+
+          {/* Banner Interativo: Apresentação das Regras (PowerPoint) */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 text-white shadow-md flex flex-col md:flex-row items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-amber-500 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20 text-slate-950 font-black">
+                <MonitorPlay className="w-6 h-6 text-white" />
+              </div>
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-[11px] font-bold uppercase tracking-wider">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Modo Apresentação Slide a Slide
+                </div>
+                <h3 className="text-lg font-black text-white tracking-tight">
+                  Apresentação Completa das Regras de Bônus de Produção
+                </h3>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Apresente em tela cheia como um PowerPoint para os operadores e supervisores: todas as regras explicadas detalhadamente, cálculo por kg/h e m², tolerâncias de perda, isenção de ECOBM, paradas de limpeza e conduta.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsPresentationOpen(true)}
+              className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all shrink-0 cursor-pointer"
+            >
+              <MonitorPlay className="w-4 h-4 text-slate-950" />
+              <span>Abrir Apresentação</span>
+            </button>
           </div>
 
           {/* Breakdown Rows */}
@@ -1926,7 +2028,10 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                       onChange={(e) => {
                         const t = e.target.value as BonusIncidentType;
                         setIncidentType(t);
-                        if (t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada') {
+                        if (t === 'informacao_falsa') {
+                          setCustomPenaltyPercent(100);
+                          setIsJustified(false);
+                        } else if (t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada') {
                           setCustomPenaltyPercent(100);
                         } else if (t === 'atraso_injustificado') {
                           setCustomPenaltyPercent(20);
@@ -1946,6 +2051,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
                     >
+                      <optgroup label="Fraude & Conformidade de Apontamento">
+                        <option value="informacao_falsa">🚨 Informação Falsa / Fraude de Apontamento (-100%)</option>
+                      </optgroup>
                       <optgroup label="Disciplina & Assiduidade">
                         <option value="saida_mais_cedo">Saída Fora do Horário / Saída Mais Cedo - Comunicada (-10%)</option>
                         <option value="saida_nao_comunicada">Saída Sem Avisar / Não Comunicada ao Gestor (-35%)</option>
@@ -1962,6 +2070,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                       </optgroup>
                     </select>
                   </div>
+
+                  {incidentType === 'informacao_falsa' && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-900 space-y-1">
+                      <div className="font-black uppercase flex items-center gap-1.5 text-red-700">
+                        <ShieldAlert className="w-4 h-4 text-red-600" />
+                        Penalidade Gravíssima: Desconto de 100%
+                      </div>
+                      <p className="text-[11px] text-red-700 leading-snug">
+                        Lançamento de informação falsa (ex: desvio de refugo de produção para manutenção, justificar quebra inverídica desmentida por câmeras, adulteração de dados) acarreta perda total (100%) da bonificação do período.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Contextual warning / helper for exits */}
                   {(incidentType === 'saida_mais_cedo' || incidentType === 'saida_nao_comunicada') && (
@@ -2100,6 +2220,12 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal de Apresentação em Tela Cheia (Estilo PowerPoint) */}
+      <BonusRulesPresentationModal
+        isOpen={isPresentationOpen}
+        onClose={() => setIsPresentationOpen(false)}
+      />
     </div>
   );
 };

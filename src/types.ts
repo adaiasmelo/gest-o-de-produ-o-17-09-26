@@ -467,6 +467,7 @@ export interface RibbonCuttingEntry {
   processoMotivo?: string;
   outrosMin?: number;
   outrosMotivo?: string;
+  targetDailyM2?: number; // Meta diária em m² definida para a máquina/produção
 }
 
 export type DowntimeNature = 'Manutenção' | 'Processo' | 'Outros' | string;

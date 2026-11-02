@@ -239,6 +239,7 @@ const formatDurationHuman = (mins: number) => {
 };
 
 const PRESET_INFRACTIONS = [
+  '🚨 Informação Falsa / Fraude no Apontamento (Ex: desvio de refugo para manutenção, parada inverídica)',
   '🛑 Não realizou parada obrigatória de limpeza (ex: 6h/6h)',
   '⚠️ Descumprimento de Procedimento Operacional Padrão (POP)',
   '🦺 Inobservância de Normas de Segurança / Uso de EPI',
@@ -1824,7 +1825,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
             const targetNetKg = Math.max(0, theoretical12h - maxAllowedLossKg);
 
             const netKg = Number(formData.netWeight) || 0;
-            const realLossesKg = (Number(formData.ecoA) || 0) + (Number(formData.ecoBP) || 0) + (Number(formData.ecoBM) || 0) + (Number(formData.borraTotal) || 0);
+            // Regra: ECOBM (Manutenção) é isento e NÃO conta como perda para a meta do operador!
+            const realLossesKg = (Number(formData.ecoA) || 0) + (Number(formData.ecoBP) || 0) + (Number(formData.borraTotal) || 0);
+            const ecoBMKg = Number(formData.ecoBM) || 0;
             const totalProcessed = netKg + realLossesKg;
             const realLossPct = totalProcessed > 0 ? (realLossesKg / totalProcessed) * 100 : (theoretical12h > 0 ? (realLossesKg / theoretical12h) * 100 : 0);
 
@@ -1832,7 +1835,30 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
             const isLossWithinTolerance = realLossesKg <= maxAllowedLossKg;
             const isNetGoalMet = theoretical12h > 0 && netKg >= targetNetKg;
             const netAttainmentPct = targetNetKg > 0 ? (netKg / targetNetKg) * 100 : 0;
-            const cleaningMins = (manutencaoMinCalculado || 0) + (processoMinCalculado || 0);
+
+            // Regra de Paradas:
+            // A ÚNICA parada que contabiliza para perda de meta é limpeza da matriz / máquina.
+            // Paradas de manutenção não contabilizam perda de meta.
+            // O limite de 30 minutos é POR PARADA INDIVIDUAL (não é a soma de todas as paradas!).
+            const allEnteredStops = [...processoStops, ...outrosStops, ...manutencaoStops];
+            const cleaningStopsList = allEnteredStops.filter(s => {
+              const txt = (s.motivo || s.explicacao || s.justification || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+              return txt.includes('limpeza') || txt.includes('limp') || txt.includes('matriz') || txt.includes('cabecote') || txt.includes('rosca') || txt.includes('rolo') || txt.includes('tela');
+            }).map(s => {
+              const manual = Number(s.durationMinutes);
+              let dur = 0;
+              if (s.isAvulso || (!s.de && !s.ate)) {
+                dur = isNaN(manual) ? 0 : manual;
+              } else {
+                const diff = getDiffMinutes(s.de, s.ate);
+                dur = diff > 0 ? diff : (isNaN(manual) ? 0 : manual);
+              }
+              return { ...s, dur };
+            });
+
+            const cleaningStopsOver30 = cleaningStopsList.filter(s => s.dur > 30);
+            const hasCleaningOver30 = cleaningStopsOver30.length > 0;
+            const maxCleaningRecorded = cleaningStopsList.length > 0 ? Math.max(...cleaningStopsList.map(s => s.dur)) : 0;
 
             return (
               <div className="bg-slate-50 border border-amber-300/80 rounded-xl p-2 shrink-0 shadow-xs">
@@ -1953,7 +1979,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     </div>
 
                     <div className="flex items-center justify-between pt-0.5 border-t border-dashed border-slate-100">
-                      <span className="text-slate-500 font-bold uppercase">Refugo Real ({realLossPct.toFixed(1)}%):</span>
+                      <span className="text-slate-500 font-bold uppercase">Refugo Produção ({realLossPct.toFixed(1)}%):</span>
                       <span className={`font-black ${isLossWithinTolerance ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {formatWeight(realLossesKg)}
                       </span>
@@ -1962,9 +1988,31 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       </span>
                     </div>
 
-                    {cleaningMins > 30 && (
-                      <div className="text-[7.5px] font-bold text-rose-700 leading-none pt-0.5">
-                        ⏱️ Paradas ({cleaningMins} min) excederam os 30 min de tolerância.
+                    {ecoBMKg > 0 && (
+                      <div className="flex items-center justify-between text-[7.5px] text-slate-500 font-semibold pt-0.5">
+                        <span>🛡️ EcoBM (Manutenção): <strong>{formatWeight(ecoBMKg)}</strong></span>
+                        <span className="text-emerald-700 font-black uppercase text-[7px] bg-emerald-50 px-1 rounded border border-emerald-200">Isento da Meta</span>
+                      </div>
+                    )}
+
+                    {/* Avaliação Estrita das Paradas de Limpeza (30 min por ocorrência) */}
+                    {hasCleaningOver30 ? (
+                      <div className="text-[7.5px] font-black text-rose-700 leading-tight pt-0.5 flex items-center justify-between">
+                        <span>⏱️ Limpeza Matriz/Máq. &gt; 30 min por parada:</span>
+                        <span className="bg-rose-100 text-rose-800 px-1 py-0.2 rounded font-black">
+                          {cleaningStopsOver30.map(s => `${s.dur} min (+${s.dur - 30}m)`).join(', ')} ⚠️
+                        </span>
+                      </div>
+                    ) : cleaningStopsList.length > 0 ? (
+                      <div className="text-[7.5px] font-bold text-emerald-700 leading-tight pt-0.5 flex items-center justify-between">
+                        <span>⏱️ Limpeza Matriz/Máq. ({cleaningStopsList.length}x):</span>
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.2 rounded font-black">
+                          Máx {maxCleaningRecorded} min (≤ 30 min por parada ✅)
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-[7.5px] font-semibold text-slate-400 leading-tight pt-0.5">
+                        ⏱️ Paradas de Limpeza de Matriz/Máquina: Nenhuma registrada
                       </div>
                     )}
                   </div>
@@ -2724,8 +2772,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           onChange={(e) => {
                             const val = e.target.value;
                             setSelectedPresetInfraction(val);
+                            const isFraud = val.includes('Informação Falsa');
                             if (val !== '📝 Outra Infração Personalizada...') {
-                              setFormData(prev => ({ ...prev, infractionType: val }));
+                              setFormData(prev => ({ 
+                                ...prev, 
+                                infractionType: val,
+                                ...(isFraud ? { penaltyType: 'disqualify' } : {})
+                              }));
                             } else {
                               setFormData(prev => ({ ...prev, infractionType: customInfractionText }));
                             }
