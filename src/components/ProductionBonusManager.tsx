@@ -6,7 +6,8 @@ import {
   ShieldAlert, FileCheck, Users, Printer, ChevronDown, 
   X, Info, Layers, AlertOctagon, HelpCircle, FileSpreadsheet,
   SlidersHorizontal, HardHat, Briefcase, Palmtree, Download,
-  ExternalLink, Check, DollarSign, Activity, Zap
+  ExternalLink, Check, DollarSign, Activity, Zap,
+  Timer, Gauge, Scale, Sparkles, CheckSquare, Wrench, PlayCircle, LogOut
 } from 'lucide-react';
 import { Employee } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -21,6 +22,10 @@ export type BonusIncidentType =
   | 'falta_justificada' 
   | 'atraso_injustificado' 
   | 'atraso_justificado' 
+  | 'saida_mais_cedo'
+  | 'saida_nao_comunicada'
+  | 'limpeza_excessiva'
+  | 'partida_demorada'
   | 'meta_maquina_nao_atingida';
 
 export interface BonusIncident {
@@ -38,21 +43,29 @@ export interface BonusIncident {
   documentNumber?: string; // Número do atestado, CID ou protocolo
   documentDetails?: string; // Nome da instituição, médico ou observação de documento
   isJustified: boolean;
+  notifiedManager?: boolean; // Se comunicou o gestor direto ou saiu sem avisar
   targetMachine?: string; // Se a ocorrência foi por máquina (ex: 'Cast 1', 'Cast 2')
-  targetShift?: string; // Se for para turno específico (ex: 'Diurno 1', 'Noturno 1' ou 'Todos')
-  penaltyRatePercent?: number; // Desconto imposto (ex: 100% para atestado/falta; ou % específico para meta de máquina)
+  targetShift?: string; // Se for para turno específico (ex: 'Diurno', 'Noturno' ou 'Todos')
+  penaltyRatePercent?: number; // Desconto imposto (ex: 10% para saída comunicada, 35% sem avisar, 100% atestado)
   registeredBy?: string;
   createdAt: string;
   updatedAt?: string;
 }
 
 export interface MachineGoalConfig {
-  id: string; // ex: "Cast 1_Diurno 1_2026-10" ou "Cast 1_2026-10"
-  machine: string; // "Cast 1", "Cast 2", "Erema 1", "Cortadeiras"
-  shift: string; // "Todos", "Diurno 1", "Noturno 1", "Diurno 2", "Noturno 2"
+  id: string; // ex: "Cast 1_Diurno_2026-10" ou "Cast 1_2026-10"
+  machine: string; // "Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"
+  shift: string; // "Todos", "Diurno", "Noturno", "Comercial"
   cyclePeriod: string;
-  goalMet: boolean; // Se a meta de produção foi cumprida
-  abatementPercent: number; // Percentual a abater da equipe (ex: 30%, 50%, 100%)
+  targetKgPerHour?: number; // Quilo-hora nominal configurado (ex: 1000 kg/h)
+  shiftHours?: number; // Duração do turno de referência (padrão 12h)
+  targetShiftNetKg?: number; // Meta calculada em 12 horas (ex: 1000 * 12 = 12.000 kg)
+  materialType?: string; // Material em produção (ex: "LC3 (1000 kg/h)", "LC2 (900 kg/h)", "ATX (850 kg/h)")
+  maxCleaningMin?: number; // Tolerância máxima de parada de limpeza (padrão 30 min)
+  maxStartupMin?: number; // Tolerância máxima de partida de máquina (padrão 45 min)
+  maxLossPercent?: number; // Tolerância máxima de perdas (padrão 3.5%)
+  goalMet: boolean; // Se a meta de produção do turno foi cumprida
+  abatementPercent: number; // Percentual a abater da equipe (padrão 30%)
   notes?: string;
   updatedAt?: string;
 }
@@ -73,8 +86,35 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-const DEFAULT_MACHINES = ["Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"];
-const DEFAULT_SHIFTS = ["Todos", "Diurno 1", "Noturno 1", "Diurno 2", "Noturno 2", "Comercial"];
+export const DEFAULT_MACHINES = ["Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"];
+export const DEFAULT_SHIFTS = ["Todos", "Diurno", "Noturno", "Comercial", "Diurno 1", "Noturno 1", "Diurno 2", "Noturno 2"];
+
+export const DEFAULT_MACHINE_TARGETS: Record<string, { 
+  kgPerHour: number; 
+  material: string; 
+  shiftHours: number;
+  maxCleaningMin: number; 
+  maxStartupMin: number; 
+  maxLossPercent: number;
+  recommendedAbatement: number;
+}> = {
+  'Cast 1': { kgPerHour: 1000, material: 'Stretch LC3 (1.000 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 3.5, recommendedAbatement: 30 },
+  'Cast 2': { kgPerHour: 850, material: 'Stretch LC2 (850 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 3.5, recommendedAbatement: 30 },
+  'Erema 1': { kgPerHour: 350, material: 'Recuperado Erema (350 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 60, maxLossPercent: 4.0, recommendedAbatement: 25 },
+  'Ghezzi': { kgPerHour: 500, material: 'Fita Stretch Comercial (500 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 2.5, recommendedAbatement: 30 },
+  'Lintech': { kgPerHour: 450, material: 'Fita Lintech Comercial (450 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 2.5, recommendedAbatement: 30 },
+  'Wutec': { kgPerHour: 400, material: 'Fita Wutec Comercial (400 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 2.5, recommendedAbatement: 30 }
+};
+
+export const MATERIAL_PRESETS = [
+  { name: 'Stretch LC3 (Alta Velocidade)', defaultKgH: 1000, machine: 'Cast 1' },
+  { name: 'Stretch LC2 (Padrão)', defaultKgH: 900, machine: 'Cast 1 / Cast 2' },
+  { name: 'Stretch ATX (Especial)', defaultKgH: 850, machine: 'Cast 2' },
+  { name: 'Stretch ATX Plus', defaultKgH: 800, machine: 'Cast 2' },
+  { name: 'Recuperado Erema', defaultKgH: 350, machine: 'Erema 1' },
+  { name: 'Corte de Fita Bobina Grossa', defaultKgH: 500, machine: 'Cortadeiras' },
+  { name: 'Corte de Fita Manual', defaultKgH: 420, machine: 'Cortadeiras' }
+];
 
 // Helper formats identical to BiAnalyticsView
 const formatWeight = (val: number | null | undefined) => {
@@ -103,8 +143,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   onBlockedAction,
   loggedUser
 }) => {
-  // Navigation tabs: 'overview' | 'teams_evolution' | 'payroll' | 'incidents' | 'machine_goals' | 'settings'
-  const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents' | 'machine_goals' | 'settings'>('overview');
+  // Navigation tabs: 'overview' | 'teams_evolution' | 'payroll' | 'incidents'
+  const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents'>('overview');
 
   // Cycle period state (defaults to October 2026 or current active cycle)
   const [selectedCycle, setSelectedCycle] = useState<string>(() => {
@@ -177,9 +217,21 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   const [documentNumber, setDocumentNumber] = useState('');
   const [documentDetails, setDocumentDetails] = useState('');
   const [isJustified, setIsJustified] = useState(true);
+  const [notifiedManager, setNotifiedManager] = useState<boolean>(true);
   const [targetMachine, setTargetMachine] = useState('Cast 1');
   const [targetShift, setTargetShift] = useState('Todos');
   const [customPenaltyPercent, setCustomPenaltyPercent] = useState<number>(100);
+
+  // Interactive 12-Hour Shift Simulator State (kg/h, paradas e perdas)
+  const [simMachine, setSimMachine] = useState<string>('Cast 1');
+  const [simMaterial, setSimMaterial] = useState<string>('Stretch LC3 (1.000 kg/h)');
+  const [simKgPerHour, setSimKgPerHour] = useState<number>(1000);
+  const [simShiftHours, setSimShiftHours] = useState<number>(12);
+  const [simActualNetKg, setSimActualNetKg] = useState<number>(11600);
+  const [simLossKg, setSimLossKg] = useState<number>(340);
+  const [simCleaningMin, setSimCleaningMin] = useState<number>(25);
+  const [simStartupMin, setSimStartupMin] = useState<number>(35);
+  const [simEarlyDeparture, setSimEarlyDeparture] = useState<'none' | 'communicated' | 'unnotified'>('none');
 
   // Firestore synchronization
   useEffect(() => {
@@ -251,6 +303,109 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       return true;
     });
   }, [productionData]);
+
+  // Shift production and stoppage audit per machine and shift for the selected cycle
+  const shiftAudits = useMemo(() => {
+    const map: Record<string, {
+      machine: string;
+      shift: string;
+      entriesCount: number;
+      totalNet: number;
+      avgNetPerShift: number;
+      effectiveKgPerHour: number;
+      totalLoss: number;
+      lossPercent: number;
+      cleaningMin: number;
+      cleaningOver30Count: number;
+      maxCleaningRecorded: number;
+      startupMin: number;
+      startupOver45Count: number;
+      otherStopsMin: number;
+    }> = {};
+
+    processedDataFiltered.forEach(e => {
+      const m = e.date ? e.date.substring(0, 7) : '';
+      if (m !== selectedCycle) return;
+      if (!e.machine) return;
+
+      const mach = e.machine;
+      const sRaw = (e.shift || '').trim().toUpperCase();
+      let shiftKey = 'Diurno';
+      if (sRaw.includes('NOTURNO') || sRaw.includes('NOITE') || sRaw === 'N1' || sRaw === 'N2') {
+        shiftKey = 'Noturno';
+      } else if (sRaw.includes('COMERCIAL')) {
+        shiftKey = 'Comercial';
+      } else if (sRaw.includes('DIURNO') || sRaw.includes('DIA') || sRaw === 'D1' || sRaw === 'D2') {
+        shiftKey = 'Diurno';
+      } else {
+        shiftKey = e.shift || 'Diurno';
+      }
+
+      const key = `${mach}_${shiftKey}`;
+      if (!map[key]) {
+        map[key] = {
+          machine: mach,
+          shift: shiftKey,
+          entriesCount: 0,
+          totalNet: 0,
+          avgNetPerShift: 0,
+          effectiveKgPerHour: 0,
+          totalLoss: 0,
+          lossPercent: 0,
+          cleaningMin: 0,
+          cleaningOver30Count: 0,
+          maxCleaningRecorded: 0,
+          startupMin: 0,
+          startupOver45Count: 0,
+          otherStopsMin: 0
+        };
+      }
+
+      map[key].entriesCount += 1;
+      map[key].totalNet += (e.netWeight || 0);
+      const loss = (e.borraTotal || 0) + (e.ecoA || 0) + (e.ecoBP || 0) + (e.ecoBM || 0);
+      map[key].totalLoss += loss;
+
+      const checkStoppage = (motivo?: string, minutes?: number) => {
+        if (!minutes || minutes <= 0) return;
+        const text = (motivo || '').toLowerCase();
+        const isCleaning = text.includes('limpeza') || text.includes('limp') || text.includes('matriz') || text.includes('cabeçote') || text.includes('tela');
+        const isStartup = text.includes('partida') || text.includes('start') || text.includes('aquec') || text.includes('inicializ');
+
+        if (isCleaning) {
+          map[key].cleaningMin += minutes;
+          if (minutes > map[key].maxCleaningRecorded) {
+            map[key].maxCleaningRecorded = minutes;
+          }
+          if (minutes > 30) {
+            map[key].cleaningOver30Count += 1;
+          }
+        } else if (isStartup) {
+          map[key].startupMin += minutes;
+          if (minutes > 45) {
+            map[key].startupOver45Count += 1;
+          }
+        } else {
+          map[key].otherStopsMin += minutes;
+        }
+      };
+
+      checkStoppage(e.processoMotivo, e.processoMin);
+      checkStoppage(e.manutencaoMotivo, e.manutencaoMin);
+      checkStoppage(e.outrosMotivo, e.outrosMin);
+    });
+
+    // Compute averages
+    Object.keys(map).forEach(k => {
+      const item = map[k];
+      item.avgNetPerShift = item.entriesCount > 0 ? item.totalNet / item.entriesCount : 0;
+      item.effectiveKgPerHour = item.entriesCount > 0 ? item.totalNet / (item.entriesCount * 12) : 0;
+      const totalVolume = item.totalNet + item.totalLoss;
+      item.lossPercent = totalVolume > 0 ? (item.totalLoss / totalVolume) * 100 : 0;
+    });
+
+    return map;
+  }, [processedDataFiltered, selectedCycle]);
 
   // Operator Consistency database
   const operatorMetrics = useMemo(() => {
@@ -466,8 +621,14 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       // Check machine goals config for the cycle
       const unfulfilledGoals = cycleMachineGoals.filter(g => {
         if (g.goalMet) return false;
-        const matchesMachine = g.machine === emp.machine;
-        const matchesShift = g.shift === 'Todos' || g.shift === emp.shift;
+        const matchesMachine = !g.machine || g.machine === emp.machine;
+        const sRaw = (emp.shift || '').toUpperCase();
+        let empNormShift = emp.shift || '';
+        if (sRaw.includes('NOTURNO') || sRaw.includes('NOITE') || sRaw === 'N1' || sRaw === 'N2') empNormShift = 'Noturno';
+        else if (sRaw.includes('DIURNO') || sRaw.includes('DIA') || sRaw === 'D1' || sRaw === 'D2') empNormShift = 'Diurno';
+        else if (sRaw.includes('COMERCIAL')) empNormShift = 'Comercial';
+
+        const matchesShift = g.shift === 'Todos' || g.shift === emp.shift || g.shift === empNormShift;
         return matchesMachine && matchesShift;
       });
 
@@ -477,15 +638,30 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       personalIncidents.forEach(inc => {
         let pct = inc.penaltyRatePercent ?? 100;
+        let label = inc.type.replace(/_/g, ' ').toUpperCase();
+
         if (inc.type === 'atestado' || inc.type === 'falta_injustificada' || inc.type === 'falta_justificada') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 100;
         } else if (inc.type === 'atraso_injustificado') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 20;
         } else if (inc.type === 'atraso_justificado') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 5;
+        } else if (inc.type === 'saida_mais_cedo') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 10;
+          label = 'SAÍDA MAIS CEDO (COMUNICADA)';
+        } else if (inc.type === 'saida_nao_comunicada') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 35;
+          label = 'SAÍDA SEM AVISAR GESTOR';
+        } else if (inc.type === 'limpeza_excessiva') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 15;
+          label = 'LIMPEZA EXCEDEU 30 MIN';
+        } else if (inc.type === 'partida_demorada') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 15;
+          label = 'PARTIDA DEMORADA';
         }
+
         totalDeductionPercent += pct;
-        reasonsList.push(`${inc.type.replace('_', ' ').toUpperCase()} (${pct}%)`);
+        reasonsList.push(`${label} (${pct}%)`);
       });
 
       machineIncidents.forEach(inc => {
@@ -497,7 +673,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       unfulfilledGoals.forEach(g => {
         const pct = g.abatementPercent ?? 30;
         totalDeductionPercent += pct;
-        reasonsList.push(`Meta Não Batida (${g.machine} - ${g.shift}) (${pct}%)`);
+        const targetKgH = g.targetKgPerHour ? ` [${g.targetKgPerHour} kg/h]` : '';
+        reasonsList.push(`Meta Não Batida (${g.machine} - ${g.shift}${targetKgH}) (${pct}%)`);
       });
 
       // Performance linear discount deduction from historical teams evolution
@@ -627,6 +804,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     setDocumentNumber('');
     setDocumentDetails('');
     setIsJustified(true);
+    setNotifiedManager(true);
     setCustomPenaltyPercent(100);
     setIsIncidentModalOpen(true);
   };
@@ -656,10 +834,11 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         type: incidentType,
         date: incidentDate,
         cyclePeriod: selectedCycle,
-        description: incidentDescription || `Ocorrência de ${incidentType.replace('_', ' ')}`,
+        description: incidentDescription || `Ocorrência de ${incidentType.replace(/_/g, ' ')}`,
         documentNumber: documentNumber || undefined,
         documentDetails: documentDetails || undefined,
         isJustified,
+        notifiedManager,
         penaltyRatePercent: customPenaltyPercent,
         registeredBy: loggedUser?.name || 'Gestão de Produção',
         createdAt: editingIncident ? editingIncident.createdAt : new Date().toISOString(),
@@ -717,8 +896,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     }
   };
 
-  // Toggle machine goal
-  const handleToggleMachineGoal = (machine: string, shift: string) => {
+  // Update machine goal configuration (kg/h, shift hours, tolerances, status)
+  const handleUpdateMachineGoal = (machine: string, shift: string, updates: Partial<MachineGoalConfig>) => {
     if (isReadOnly && onBlockedAction) {
       onBlockedAction();
       return;
@@ -727,16 +906,35 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     const existing = machineGoals.find(g => g.id === goalId);
     let updated: MachineGoalConfig[];
 
+    const defaultKgH = DEFAULT_MACHINE_TARGETS[machine]?.kgPerHour || 1000;
+    const defaultMat = DEFAULT_MACHINE_TARGETS[machine]?.material || 'Stretch Padrão';
+    const defaultAbatement = DEFAULT_MACHINE_TARGETS[machine]?.recommendedAbatement || 30;
+
     if (existing) {
-      updated = machineGoals.map(g => g.id === goalId ? { ...g, goalMet: !g.goalMet, updatedAt: new Date().toISOString() } : g);
+      updated = machineGoals.map(g => g.id === goalId ? { 
+        ...g, 
+        ...updates, 
+        targetShiftNetKg: (updates.targetKgPerHour || g.targetKgPerHour || defaultKgH) * (updates.shiftHours || g.shiftHours || 12),
+        updatedAt: new Date().toISOString() 
+      } : g);
     } else {
+      const targetKgPerHour = updates.targetKgPerHour !== undefined ? updates.targetKgPerHour : defaultKgH;
+      const shiftHours = updates.shiftHours !== undefined ? updates.shiftHours : 12;
       const newGoal: MachineGoalConfig = {
         id: goalId,
         machine,
         shift,
         cyclePeriod: selectedCycle,
-        goalMet: false, // defaulted to not met if toggling from unset
-        abatementPercent: 30,
+        targetKgPerHour,
+        shiftHours,
+        targetShiftNetKg: targetKgPerHour * shiftHours,
+        materialType: updates.materialType || defaultMat,
+        maxCleaningMin: 30,
+        maxStartupMin: 45,
+        maxLossPercent: 3.5,
+        goalMet: updates.goalMet !== undefined ? updates.goalMet : true,
+        abatementPercent: updates.abatementPercent !== undefined ? updates.abatementPercent : defaultAbatement,
+        ...updates,
         updatedAt: new Date().toISOString()
       };
       updated = [...machineGoals, newGoal];
@@ -744,7 +942,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     persistMachineGoals(updated);
   };
 
-  // PDF Generation for Individual Employee Statement
+  // Toggle machine goal met status
+  const handleToggleMachineGoal = (machine: string, shift: string) => {
+    const goalId = `${machine}_${shift}_${selectedCycle}`;
+    const existing = machineGoals.find(g => g.id === goalId);
+    const currentlyMet = existing ? existing.goalMet : true;
+    handleUpdateMachineGoal(machine, shift, { goalMet: !currentlyMet });
+  };
+
+  // PDF Generation for Individual Employee Statement with Daily kg/h Breakdown
   const generateEmployeeStatementPDF = (item: typeof payrollData[0]) => {
     const doc = new jsPDF();
     const emp = item.employee;
@@ -755,34 +961,139 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('EXTRATO DE BONIFICAÇÃO E METAS DE PRODUÇÃO', 14, 17);
+    doc.text('EXTRATO INDIVIDUAL DE BONIFICAÇÃO E METAS', 14, 17);
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Período: ${selectedCycle}`, 160, 17);
+    doc.text(`Período de Referência: ${selectedCycle}`, 150, 17);
 
     // Employee Data Box
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('DADOS DO COLABORADOR', 14, 36);
+    doc.text('DADOS DO COLABORADOR', 14, 34);
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Nome: ${emp.name}`, 14, 41);
+    doc.text(`Matrícula: ${emp.registration}`, 14, 46);
+    doc.text(`Cargo / Função: ${emp.role}`, 14, 51);
+    doc.text(`Setor: ${emp.sector}`, 120, 41);
+    doc.text(`Máquina / Turno: ${emp.machine || '—'} / ${emp.shift || '—'}`, 120, 46);
+    doc.text(`Base de Bonificação: ${formatBRL(item.baseAmount)}`, 120, 51);
+
+    // 1. Daily Production Table (with kg/h, 12h goal and goal achievement per day)
+    const empProdEntries = (productionData || []).filter(entry => {
+      if (!entry || !entry.date) return false;
+      if (!entry.date.startsWith(selectedCycle)) return false;
+      const opName = (entry.operator || '').trim().toLowerCase();
+      const empName = (emp.name || '').trim().toLowerCase();
+      return opName === empName;
+    }).sort((a, b) => a.date.localeCompare(b.date));
+
+    const dailyProductionRows = empProdEntries.map(e => {
+      const machStr = (e.machine || '').toLowerCase();
+      const isCast = machStr.includes('cast') || machStr.includes('k1') || machStr.includes('k2');
+      const isFita = machStr.includes('ghez') || machStr.includes('lintec') || machStr.includes('wutec') || machStr.includes('fita');
+
+      let speedStr = '—';
+      let toleranceStr = '—';
+      let meta12hStr = '—';
+      let statusGoal = 'Concluído';
+      const losses = (Number(e.ecoA) || 0) + (Number(e.ecoBP) || 0) + (Number(e.ecoBM) || 0) + (Number(e.borraTotal) || 0);
+      const stopsMin = (Number(e.manutencaoMin) || 0) + (Number(e.processoMin) || 0) + (Number(e.outrosMin) || 0);
+
+      if (isCast) {
+        const kgH = Number(e.kgPerHour) || (machStr.includes('cast 2') || machStr.includes('k2') ? 850 : 1000);
+        const theoretical12h = kgH * 12;
+        const tolPct = Number(e.lossTolerancePercent) > 0 ? Number(e.lossTolerancePercent) : 3.5;
+        const maxAllowedLoss = theoretical12h * (tolPct / 100);
+        const targetNetKg = Math.max(0, theoretical12h - maxAllowedLoss);
+        const net = Number(e.netWeight) || 0;
+        const totalProcessed = net + losses;
+        const realLossPct = totalProcessed > 0 ? (losses / totalProcessed) * 100 : (theoretical12h > 0 ? (losses / theoretical12h) * 100 : 0);
+
+        speedStr = `${kgH} kg/h`;
+        toleranceStr = `${tolPct}% (≤ ${formatWeight(maxAllowedLoss)})`;
+        meta12hStr = formatWeight(targetNetKg);
+
+        const isNetMet = net >= targetNetKg;
+        const isLossOk = losses <= maxAllowedLoss;
+        const netPct = targetNetKg > 0 ? (net / targetNetKg) * 100 : 0;
+
+        if (isNetMet && isLossOk) {
+          statusGoal = `BATEU ✅ (${netPct.toFixed(0)}%)`;
+        } else if (isNetMet && !isLossOk) {
+          statusGoal = `EXC. PERDA ⚠️ (+${formatWeight(losses - maxAllowedLoss)})`;
+        } else if (!isNetMet && isLossOk) {
+          statusGoal = `ABAIXO LÍQ. (${netPct.toFixed(0)}%)`;
+        } else {
+          statusGoal = `NÃO BATEU ❌ (${netPct.toFixed(0)}%)`;
+        }
+      } else if (isFita) {
+        speedStr = 'm² (Corte)';
+        toleranceStr = '2.5%';
+        meta12hStr = 'Meta m²';
+        statusGoal = (e.netWeight || e.producedM2) ? 'REGISTRADO' : 'PARADA';
+      } else {
+        const kgH = Number(e.kgPerHour) || 350;
+        const theoretical12h = kgH * 12;
+        const targetNetKg = theoretical12h * 0.96;
+        const net = Number(e.netWeight) || 0;
+        speedStr = `${kgH} kg/h`;
+        toleranceStr = '4.0%';
+        meta12hStr = formatWeight(targetNetKg);
+        statusGoal = net >= targetNetKg ? 'BATEU ✅' : 'NÃO BATEU ❌';
+      }
+
+      return [
+        e.date,
+        `${e.machine || '—'} (${e.shift || '—'})`,
+        speedStr,
+        toleranceStr,
+        meta12hStr,
+        formatWeight(e.netWeight),
+        formatWeight(losses),
+        `${stopsMin} min${stopsMin > 30 ? ' (!)' : ''}`,
+        statusGoal
+      ];
+    });
+
+    if (dailyProductionRows.length === 0) {
+      dailyProductionRows.push(['—', 'Sem apontamentos', '—', '—', '—', '0 Kg', '0 Kg', '0 min', 'Sem registros no ciclo']);
+    }
 
     doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Nome: ${emp.name}`, 14, 43);
-    doc.text(`Matrícula: ${emp.registration}`, 14, 49);
-    doc.text(`Cargo / Função: ${emp.role}`, 14, 55);
-    doc.text(`Setor: ${emp.sector}`, 120, 43);
-    doc.text(`Máquina / Turno: ${emp.machine || '—'} / ${emp.shift || '—'}`, 120, 49);
-    doc.text(`Base de Bonificação: ${formatBRL(item.baseAmount)}`, 120, 55);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('1. APONTAMENTOS DIÁRIOS DE PRODUÇÃO, TOLERÂNCIA DE PERDAS E METAS (12H)', 14, 59);
 
-    // Incidents Table
-    const incidentRows = item.personalIncidents.map(inc => [
-      inc.date,
-      inc.type.replace('_', ' ').toUpperCase(),
-      inc.description + (inc.documentNumber ? ` (Doc: ${inc.documentNumber})` : ''),
-      `${inc.penaltyRatePercent ?? 100}%`
-    ]);
+    autoTable(doc, {
+      startY: 62,
+      head: [['Data', 'Máquina / Turno', 'Velocidade', 'Tolerância Perda', 'Meta Líq. (12h)', 'Prod. Líq.', 'Perdas Reais', 'Paradas', 'Status Meta & Perda']],
+      body: dailyProductionRows,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+      styles: { fontSize: 6.5, cellPadding: 1.2 }
+    });
+
+    // @ts-ignore
+    const prodFinalY = (doc as any).lastAutoTable?.finalY || 110;
+
+    // 2. Incidents & Deductions Table
+    const incidentRows = item.personalIncidents.map(inc => {
+      let typeLabel = inc.type.replace(/_/g, ' ').toUpperCase();
+      if (inc.type === 'saida_mais_cedo') typeLabel = 'SAÍDA MAIS CEDO (COMUNICADA)';
+      if (inc.type === 'saida_nao_comunicada') typeLabel = 'SAÍDA SEM AVISAR GESTOR';
+      if (inc.type === 'limpeza_excessiva') typeLabel = 'LIMPEZA EXCEDEU 30 MIN';
+      if (inc.type === 'partida_demorada') typeLabel = 'PARTIDA DEMORADA';
+      return [
+        inc.date,
+        typeLabel,
+        inc.description + (inc.documentNumber ? ` (Doc: ${inc.documentNumber})` : ''),
+        `-${inc.penaltyRatePercent ?? 100}%`
+      ];
+    });
 
     if (item.perf && item.perf.discountPct > 0) {
       incidentRows.push([
@@ -797,55 +1108,68 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       incidentRows.push(['—', 'REGULAR', 'Nenhuma ocorrência ou desconto registrado no período', '0%']);
     }
 
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('2. OCORRÊNCIAS, DISPONIBILIDADE E ABATIMENTOS DISCIPLINARES', 14, prodFinalY + 7);
+
     autoTable(doc, {
-      startY: 65,
+      startY: prodFinalY + 10,
       head: [['Data', 'Tipo de Ocorrência', 'Descrição / Documento', 'Desconto']],
       body: incidentRows,
       theme: 'striped',
-      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
-      styles: { fontSize: 8 }
+      headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+      styles: { fontSize: 7, cellPadding: 1.5 }
     });
 
     // @ts-ignore
-    const finalY = (doc as any).lastAutoTable?.finalY || 120;
+    const incFinalY = (doc as any).lastAutoTable?.finalY || 160;
 
-    // Calculation summary
+    // Check if we need a new page for the summary and signatures
+    if (incFinalY > 220) {
+      doc.addPage();
+    }
+    const summaryStartY = incFinalY > 220 ? 20 : incFinalY + 7;
+
+    // 3. Calculation summary box
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(14, finalY + 10, 182, 38, 3, 3, 'F');
+    doc.roundedRect(14, summaryStartY, 182, 34, 3, 3, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(14, finalY + 10, 182, 38, 3, 3, 'D');
+    doc.roundedRect(14, summaryStartY, 182, 34, 3, 3, 'D');
 
-    doc.setFontSize(10);
+    doc.setFontSize(9.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(30, 41, 59);
-    doc.text('RESUMO DO CÁLCULO DE FECHAMENTO', 20, finalY + 18);
+    doc.text('RESUMO DO CÁLCULO DE FECHAMENTO', 20, summaryStartY + 7);
 
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
-    doc.text(`Valor Base Estipulado: ${formatBRL(item.baseAmount)}`, 20, finalY + 26);
+    doc.text(`Valor Base Estipulado: ${formatBRL(item.baseAmount)}`, 20, summaryStartY + 14);
     
     if (item.perf && item.perf.discountPct > 0) {
-      doc.text(`Desconto Linear de Desempenho (BI): - ${formatBRL(item.perfLossAmount)} (${item.perf.discountPct.toFixed(1)}% desc. | Perda: ${item.perf.averageWasteIdx.toFixed(2)}%)`, 20, finalY + 31);
-      doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, finalY + 36);
+      doc.text(`Desconto Linear de Desempenho (BI): - ${formatBRL(item.perfLossAmount)} (${item.perf.discountPct.toFixed(1)}% desc. | Perda: ${item.perf.averageWasteIdx.toFixed(2)}%)`, 20, summaryStartY + 19);
+      doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, summaryStartY + 24);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
-      doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, finalY + 42);
+      doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, summaryStartY + 29);
     } else {
-      doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, finalY + 32);
+      doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, summaryStartY + 20);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
-      doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, finalY + 38);
+      doc.text(`Valor Final a Receber: ${formatBRL(item.finalAmount)}`, 20, summaryStartY + 27);
     }
 
     // Signatures
-    doc.line(20, finalY + 65, 80, finalY + 65);
+    const sigY = summaryStartY + 45;
+    doc.line(20, sigY, 80, sigY);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    doc.text('Assinatura do Colaborador', 25, finalY + 70);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Assinatura do Colaborador', 25, sigY + 5);
 
-    doc.line(130, finalY + 65, 190, finalY + 65);
-    doc.text('Gestão de Produção / RH', 135, finalY + 70);
+    doc.line(130, sigY, 190, sigY);
+    doc.text('Gestão de Produção / RH', 135, sigY + 5);
 
     doc.save(`Extrato_Bonus_${emp.name.replace(/\s+/g, '_')}_${selectedCycle}.pdf`);
   };
@@ -1044,18 +1368,6 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         >
           <ShieldAlert className="w-4 h-4" />
           <span>Apontamentos ({combinedIncidents.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('machine_goals')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'machine_goals'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          <span>Metas por Máquina</span>
         </button>
       </div>
 
@@ -1291,10 +1603,35 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                           </td>
                           <td className="py-3 px-4 text-center">
                             {item.totalDeductionPercent > 0 ? (
-                              <div className="flex flex-col items-center">
+                              <div className="flex flex-col items-center gap-0.5">
                                 <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">
                                   -{item.totalDeductionPercent.toFixed(0)}% ({formatBRL(item.deductionAmount)})
                                 </span>
+                                {item.personalIncidents.map(inc => (
+                                  <span 
+                                    key={inc.id} 
+                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded mt-0.5 whitespace-nowrap ${
+                                      inc.type === 'saida_nao_comunicada' 
+                                        ? 'bg-rose-100 text-rose-800 border border-rose-200' 
+                                        : inc.type === 'saida_mais_cedo' 
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : inc.type === 'limpeza_excessiva'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : 'bg-slate-100 text-slate-700'
+                                    }`}
+                                  >
+                                    {inc.type === 'saida_mais_cedo' && 'Saída Comunicada (-10%)'}
+                                    {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar (-35%)'}
+                                    {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-15%)'}
+                                    {inc.type === 'partida_demorada' && 'Partida Demorada (-15%)'}
+                                    {inc.type === 'atestado' && 'Atestado (-100%)'}
+                                    {inc.type === 'atraso_injustificado' && 'Atraso (-20%)'}
+                                    {inc.type === 'atraso_justificado' && 'Atraso (-5%)'}
+                                    {inc.type === 'falta_injustificada' && 'Falta Injustificada (-100%)'}
+                                    {inc.type === 'falta_justificada' && 'Falta Justificada (-100%)'}
+                                    {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina (-30%)'}
+                                  </span>
+                                ))}
                                 {item.perf && item.perf.discountPct > 0 && (
                                   <span className="text-[9px] text-rose-500 font-bold mt-0.5 whitespace-nowrap" title={`Perda Média: ${item.perf.averageWasteIdx.toFixed(2)}% | Descarte: ${formatWeight(item.perf.totalWaste)}`}>
                                     Perda Linear: -{formatBRL(item.perfLossAmount)} ({item.perf.discountPct.toFixed(1)}%)
@@ -1415,8 +1752,27 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                 Perda Linear BI
                               </span>
                             ) : (
-                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
-                                {inc.type.replace('_', ' ')}
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                                inc.type === 'saida_nao_comunicada'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                  : inc.type === 'saida_mais_cedo'
+                                    ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                    : inc.type === 'limpeza_excessiva'
+                                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                      : inc.type === 'atestado'
+                                        ? 'bg-purple-100 text-purple-800 border-purple-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                              }`}>
+                                {inc.type === 'saida_mais_cedo' && 'Saída Comunicada'}
+                                {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar'}
+                                {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min'}
+                                {inc.type === 'partida_demorada' && 'Partida Demorada'}
+                                {inc.type === 'atestado' && 'Atestado'}
+                                {inc.type === 'atraso_injustificado' && 'Atraso Injust.'}
+                                {inc.type === 'atraso_justificado' && 'Atraso Just.'}
+                                {inc.type === 'falta_injustificada' && 'Falta Injust.'}
+                                {inc.type === 'falta_justificada' && 'Falta Just.'}
+                                {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina'}
                               </span>
                             )}
                           </td>
@@ -1461,62 +1817,6 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* TAB 4: METAS POR MÁQUINA                                 */}
-      {/* ======================================================== */}
-      {activeTab === 'machine_goals' && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-black text-slate-800 tracking-tight">
-                Metas Operacionais por Máquina & Turno ({selectedCycle})
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                O cumprimento das metas da máquina impacta diretamente a bonificação da equipe alocada na linha.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {DEFAULT_MACHINES.map(mach => (
-              <div key={mach} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-black text-slate-800 text-sm flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-blue-600" />
-                    {mach}
-                  </h4>
-                  <span className="text-[10px] font-bold uppercase text-slate-400">Ciclo {selectedCycle}</span>
-                </div>
-
-                <div className="space-y-2.5">
-                  {['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'].map(shift => {
-                    const goalId = `${mach}_${shift}_${selectedCycle}`;
-                    const config = machineGoals.find(g => g.id === goalId);
-                    const isMet = config ? config.goalMet : true; // Default is met unless toggled
-
-                    return (
-                      <div key={shift} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                        <span className="text-xs font-bold text-slate-700">{shift}</span>
-                        <button
-                          onClick={() => handleToggleMachineGoal(mach, shift)}
-                          className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
-                            isMet
-                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                              : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                          }`}
-                        >
-                          {isMet ? 'Meta Cumprida' : 'Não Atingida (-30%)'}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -1618,29 +1918,105 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
               {/* Type */}
               {formMode === 'individual' && (
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Tipo de Ocorrência</label>
-                  <select
-                    value={incidentType}
-                    onChange={(e) => {
-                      const t = e.target.value as BonusIncidentType;
-                      setIncidentType(t);
-                      if (t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada') {
-                        setCustomPenaltyPercent(100);
-                      } else if (t === 'atraso_injustificado') {
-                        setCustomPenaltyPercent(20);
-                      } else if (t === 'atraso_justificado') {
-                        setCustomPenaltyPercent(5);
-                      }
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
-                  >
-                    <option value="atestado">Atestado Médico (-100%)</option>
-                    <option value="falta_injustificada">Falta Injustificada (-100%)</option>
-                    <option value="falta_justificada">Falta Justificada (-100%)</option>
-                    <option value="atraso_injustificado">Atraso Injustificado (-20%)</option>
-                    <option value="atraso_justificado">Atraso Justificado (-5%)</option>
-                  </select>
+                <div className="space-y-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Tipo de Ocorrência</label>
+                    <select
+                      value={incidentType}
+                      onChange={(e) => {
+                        const t = e.target.value as BonusIncidentType;
+                        setIncidentType(t);
+                        if (t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada') {
+                          setCustomPenaltyPercent(100);
+                        } else if (t === 'atraso_injustificado') {
+                          setCustomPenaltyPercent(20);
+                        } else if (t === 'atraso_justificado') {
+                          setCustomPenaltyPercent(5);
+                        } else if (t === 'saida_mais_cedo') {
+                          setCustomPenaltyPercent(10);
+                          setNotifiedManager(true);
+                        } else if (t === 'saida_nao_comunicada') {
+                          setCustomPenaltyPercent(35);
+                          setNotifiedManager(false);
+                        } else if (t === 'limpeza_excessiva') {
+                          setCustomPenaltyPercent(15);
+                        } else if (t === 'partida_demorada') {
+                          setCustomPenaltyPercent(15);
+                        }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
+                    >
+                      <optgroup label="Disciplina & Assiduidade">
+                        <option value="saida_mais_cedo">Saída Fora do Horário / Saída Mais Cedo - Comunicada (-10%)</option>
+                        <option value="saida_nao_comunicada">Saída Sem Avisar / Não Comunicada ao Gestor (-35%)</option>
+                        <option value="atraso_injustificado">Atraso Injustificado (-20%)</option>
+                        <option value="atraso_justificado">Atraso Justificado (-5%)</option>
+                        <option value="falta_injustificada">Falta Injustificada (-100%)</option>
+                        <option value="falta_justificada">Falta Justificada (-100%)</option>
+                        <option value="atestado">Atestado Médico (-100%)</option>
+                      </optgroup>
+                      <optgroup label="Operacional & Máquina">
+                        <option value="limpeza_excessiva">Parada de Limpeza Excedeu 30 Minutos (-15%)</option>
+                        <option value="partida_demorada">Partida de Máquina com Demora Excessiva (-15%)</option>
+                        <option value="meta_maquina_nao_atingida">Meta Máquina/kg-h Não Atingida (-30%)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  {/* Contextual warning / helper for exits */}
+                  {(incidentType === 'saida_mais_cedo' || incidentType === 'saida_nao_comunicada') && (
+                    <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                          <LogOut className="w-3.5 h-3.5 text-amber-600" />
+                          Houve comunicação prévia ao gestor direto?
+                        </span>
+                        <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNotifiedManager(true);
+                              setIncidentType('saida_mais_cedo');
+                              setCustomPenaltyPercent(10);
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                              notifiedManager ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            Sim (Comunicou)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNotifiedManager(false);
+                              setIncidentType('saida_nao_comunicada');
+                              setCustomPenaltyPercent(35);
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                              !notifiedManager ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            Não (Sem Avisar)
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-amber-700 leading-relaxed">
+                        {notifiedManager
+                          ? 'Saída antecipada ou fora do horário comunicada com antecedência acarreta desconto leve (padrão 10%).'
+                          : 'Atenção: Saída sem aviso prévio à liderança ou sem comunicar ninguém constitui infração grave com desconto disciplinar majorado (padrão 35%).'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Contextual helper for cleaning > 30 min */}
+                  {incidentType === 'limpeza_excessiva' && (
+                    <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-800 flex items-start gap-2">
+                      <Timer className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Regra de 30 minutos:</strong> A tolerância padrão de parada de máquina para limpeza de matriz/troca é de até 30 min. Tempo excedente desconta na avaliação do turno.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

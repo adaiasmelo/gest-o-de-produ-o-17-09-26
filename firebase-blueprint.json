@@ -16,6 +16,8 @@
         "ecoAWeight": { "type": "number" },
         "ecoBProdWeight": { "type": "number" },
         "ecoBMaintWeight": { "type": "number" },
+        "kgPerHour": { "type": "number" },
+        "lossTolerancePercent": { "type": "number" },
         "stopMaint": { "type": "number" },
         "stopProcess": { "type": "number" },
         "stopOther": { "type": "number" },
@@ -431,6 +433,57 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "name", "shifts", "machines"]
+    },
+    "BonusIncident": {
+      "title": "Bonus Incident",
+      "description": "Represents disciplinary, medical or operational incidents affecting employee production bonus.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "registration": { "type": "string" },
+        "sector": { "type": "string" },
+        "machine": { "type": "string" },
+        "shift": { "type": "string" },
+        "type": { "type": "string" },
+        "date": { "type": "string" },
+        "cyclePeriod": { "type": "string" },
+        "description": { "type": "string" },
+        "documentNumber": { "type": "string" },
+        "documentDetails": { "type": "string" },
+        "isJustified": { "type": "boolean" },
+        "notifiedManager": { "type": "boolean" },
+        "targetMachine": { "type": "string" },
+        "targetShift": { "type": "string" },
+        "penaltyRatePercent": { "type": "number" },
+        "registeredBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "employeeName", "type", "date", "cyclePeriod"]
+    },
+    "MachineGoalConfig": {
+      "title": "Machine Goal Config",
+      "description": "Represents operational goals per machine and shift evaluated on kg/h, 12h targets and stoppage tolerances.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "machine": { "type": "string" },
+        "shift": { "type": "string" },
+        "cyclePeriod": { "type": "string" },
+        "targetKgPerHour": { "type": "number" },
+        "shiftHours": { "type": "number" },
+        "targetShiftNetKg": { "type": "number" },
+        "materialType": { "type": "string" },
+        "maxCleaningMin": { "type": "number" },
+        "maxStartupMin": { "type": "number" },
+        "goalMet": { "type": "boolean" },
+        "abatementPercent": { "type": "number" },
+        "notes": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "machine", "shift", "cyclePeriod", "goalMet"]
     }
   },
   "firestore": {
@@ -456,6 +509,8 @@
     "access_logs": { "schema": "AccessLog", "description": "User login and logout logs" },
     "user_activity_logs": { "schema": "UserActivityLog", "description": "Audited history of user screen visits and actions" },
     "reasons_library": { "schema": "SystemReason", "description": "User-saved custom justifications library for Extrusion, Ribbon, Stoppages and Overtime" },
-    "custom_sectors": { "schema": "CustomSector", "description": "Custom user-created sectors on the personnel board" }
+    "custom_sectors": { "schema": "CustomSector", "description": "Custom user-created sectors on the personnel board" },
+    "bonus_incidents": { "schema": "BonusIncident", "description": "Disciplinary, medical and operational incidents impacting bonus" },
+    "machine_goal_configs": { "schema": "MachineGoalConfig", "description": "Machine and shift bonus evaluation criteria by kg/h and stops" }
   }
 }

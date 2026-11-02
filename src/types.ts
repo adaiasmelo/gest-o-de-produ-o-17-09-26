@@ -43,6 +43,8 @@ export interface ProductionEntry {
   borraTotalMotivo?: string;
   borraCategory?: string;
   materialType?: 'LC3' | 'LC2' | 'ATX' | 'ATX Plus' | string;
+  kgPerHour?: number;
+  lossTolerancePercent?: number;
   materials?: Array<{
     id: string;
     materialType: string;

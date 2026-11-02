@@ -337,6 +337,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     recycledUsed: 0,
     recycledBags: 0,
     materialType: 'LC3',
+    kgPerHour: 0,
+    lossTolerancePercent: 3.5,
     hasPenalty: false,
     infractionType: '',
     penaltyType: 'deduction_kg' as 'deduction_kg' | 'deduction_percent' | 'disqualify',
@@ -731,6 +733,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         recycledUsed: initialData.recycledUsed ?? 0,
         recycledBags: initialData.recycledBags ?? (initialData.recycledUsed ? Number((initialData.recycledUsed / 1100).toFixed(2)) : 0),
         materialType: initialData.materialType || 'LC3',
+        kgPerHour: initialData.kgPerHour ?? (initialData.machine?.toLowerCase().includes('cast 2') ? 850 : initialData.machine?.toLowerCase().includes('cast 1') ? 1000 : 0),
+        lossTolerancePercent: initialData.lossTolerancePercent ?? 3.5,
         hasPenalty: initialData.hasPenalty || false,
         infractionType: initialData.infractionType || '',
         penaltyType: initialData.penaltyType || 'deduction_kg',
@@ -758,83 +762,41 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const initialMachine = presetMachine || (activeMachines.length > 0 ? activeMachines[0] : '');
       const initialDate = presetDate || getDefaultDateForMonth(dashboardMonth);
 
-      // Tenta recuperar rascunho de apontamento salvo anteriormente no dispositivo
-      const savedDraft = loadLaunchDraft(initialMachine || presetMachine);
-      const hasMeaningfulDraft = savedDraft && (
-        (savedDraft.formData?.grossWeight > 0) ||
-        (savedDraft.formData?.tara > 0) ||
-        (savedDraft.formData?.netWeight > 0) ||
-        (savedDraft.materials && savedDraft.materials.some((m: any) => (m.volumes || 0) > 0 || (m.tubetes || 0) > 0)) ||
-        (savedDraft.formData?.ecoA > 0) ||
-        (savedDraft.formData?.ecoBP > 0) ||
-        (savedDraft.formData?.ecoBM > 0) ||
-        (savedDraft.formData?.borraTotal > 0) ||
-        (savedDraft.manutencaoStops?.length > 0) ||
-        (savedDraft.processoStops?.length > 0) ||
-        (savedDraft.outrosStops?.length > 0)
-      );
+      // Toda vez que abrir Novo Lançamento, inicia sempre 100% limpo conforme solicitado
+      clearLaunchDraft(initialMachine || presetMachine);
+      setHasRestoredDraft(false);
 
-      if (hasMeaningfulDraft) {
-        setFormData({
-          ...savedDraft.formData,
-          date: initialDate || savedDraft.formData.date || getYesterdayStr(),
-          operator: initialOperator || savedDraft.formData.operator || '',
-          machine: initialMachine || savedDraft.formData.machine || '',
-          shift: initialShift || normalizeExtrusionShift(savedDraft.formData.shift),
-        });
-        if (savedDraft.materials && savedDraft.materials.length > 0) {
-          setMaterials(savedDraft.materials);
-        } else {
-          setMaterials([{
-            id: `mat-init-${Date.now()}`,
-            materialType: 'LC3',
-            volumes: 0,
-            tubetes: 0,
-            tubetesEcoB: 0,
-          }]);
-        }
-        setManutencaoStops(savedDraft.manutencaoStops || []);
-        setProcessoStops(savedDraft.processoStops || []);
-        setOutrosStops(savedDraft.outrosStops || []);
-        setHasRestoredDraft(true);
-
-        const opToSet = initialOperator || savedDraft.formData.operator;
-        if (opToSet) {
-          setOpSearchTerm(opToSet);
-        }
-      } else {
-        setHasRestoredDraft(false);
-        if (isStandaloneDowntimeInitial) {
-          setManutencaoStops([{
-            id: `stop-${Date.now()}`,
-            de: '',
-            ate: '',
-            motivo: '',
-            explicacao: '',
-            isAvulso: true,
-            durationMinutes: 0
-          }]);
-        } else {
-          setManutencaoStops([]);
-        }
-        setProcessoStops([]);
-        setOutrosStops([]);
-        setMaterials([{
-          id: `mat-init-${Date.now()}`,
-          materialType: 'LC3',
-          volumes: 0,
-          tubetes: 0,
-          tubetesEcoB: 0,
+      if (isStandaloneDowntimeInitial) {
+        setManutencaoStops([{
+          id: `stop-${Date.now()}`,
+          de: '',
+          ate: '',
+          motivo: '',
+          explicacao: '',
+          isAvulso: true,
+          durationMinutes: 0
         }]);
+      } else {
+        setManutencaoStops([]);
+      }
+      setProcessoStops([]);
+      setOutrosStops([]);
+      setMaterials([{
+        id: `mat-init-${Date.now()}`,
+        materialType: 'LC3',
+        volumes: 0,
+        tubetes: 0,
+        tubetesEcoB: 0,
+      }]);
 
-        setFormData({
-          date: initialDate,
-          operator: initialOperator,
-          machine: initialMachine,
-          shift: initialShift,
-          grossWeight: 0,
-          tara: 0,
-          netWeight: 0,
+      setFormData({
+        date: initialDate,
+        operator: initialOperator,
+        machine: initialMachine,
+        shift: initialShift,
+        grossWeight: 0,
+        tara: 0,
+        netWeight: 0,
           volumes: 0,
           tubetes: 0,
           tubetesEcoB: 0,
@@ -864,6 +826,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           recycledUsed: 0,
           recycledBags: 0,
           materialType: 'LC3',
+          kgPerHour: (initialMachine?.toLowerCase().includes('cast 2') ? 850 : initialMachine?.toLowerCase().includes('cast 1') ? 1000 : 0),
+          lossTolerancePercent: 3.5,
           hasPenalty: false,
           infractionType: '',
           penaltyType: 'deduction_kg',
@@ -875,7 +839,6 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           setOpSearchTerm(initialOperator);
         }
       }
-    }
   }, [isOpen, initialData, activeMachines, availableShifts, dashboardMonth, isStandaloneDowntimeInitial, presetOperator, presetShift, presetMachine, presetDate]);
 
   // Autosave contínuo em background para garantir que nenhum número digitado (peso bruto, tara, volumes, tubetes) seja perdido
@@ -1022,6 +985,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
       const baseWithStops = {
         ...data,
+        kgPerHour: Number(data.kgPerHour) || 0,
+        lossTolerancePercent: Number(data.lossTolerancePercent) || 3.5,
         shift: normalizeExtrusionShift(data.shift),
         manutencaoMin: finalManutencaoMin,
         processoMin: finalProcessoMin,
@@ -1181,6 +1146,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         recycledUsed: 0,
         recycledBags: 0,
         materialType: 'LC3',
+        kgPerHour: (initialMachine?.toLowerCase().includes('cast 2') ? 850 : initialMachine?.toLowerCase().includes('cast 1') ? 1000 : 0),
+        lossTolerancePercent: 3.5,
         hasPenalty: false,
         infractionType: '',
         penaltyType: 'deduction_kg',
@@ -1294,9 +1261,19 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           }) || false;
         }
 
+        const isCast1 = newMachine.toLowerCase().includes('cast 1') || newMachine.toLowerCase() === 'k1';
+        const isCast2 = newMachine.toLowerCase().includes('cast 2') || newMachine.toLowerCase() === 'k2';
+        let updatedKgPerHour = prev.kgPerHour;
+        if (isCast1 && (!prev.kgPerHour || prev.kgPerHour === 850)) {
+          updatedKgPerHour = 1000;
+        } else if (isCast2 && (!prev.kgPerHour || prev.kgPerHour === 1000)) {
+          updatedKgPerHour = 850;
+        }
+
         const next = {
           ...prev,
           machine: newMachine,
+          kgPerHour: updatedKgPerHour,
           operator: opStillValid ? prev.operator : '',
           ...(isNewErema ? {
             ecoA: 0,
@@ -1689,21 +1666,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
           {/* Scrollable Form Body */}
           <div className="flex-1 overflow-y-auto p-2 md:p-3 custom-scrollbar relative space-y-2.5">
-          {hasRestoredDraft && !initialData && (
-            <div className="bg-amber-950/70 border border-amber-500/40 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-amber-200 shrink-0 shadow-sm animate-in fade-in duration-200">
-              <span className="flex items-center gap-1.5 font-bold text-[11px] text-amber-300">
-                <span>💾</span> Dados preservados automaticamente no aparelho (proteção contra perda).
-              </span>
-              <button
-                type="button"
-                onClick={handleClearDraft}
-                className="text-[10px] uppercase font-black px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 hover:text-white rounded-lg border border-amber-500/40 cursor-pointer transition-colors"
-                title="Limpar todos os campos deste rascunho"
-              >
-                Limpar Campos
-              </button>
-            </div>
-          )}
+
 
           {pendingEntries.length > 1 && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-1.5 flex items-center justify-between shrink-0">
@@ -1844,6 +1807,172 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Slot Horizontal de Ponta a Ponta: Velocidade (kg/h) & Tolerância de Perdas (%) */}
+          {Boolean(
+            !formData.isNoWorkDay &&
+            !formData.isStandaloneDowntime &&
+            (formData.machine?.toLowerCase().includes('cast') || 
+             formData.machine?.toLowerCase().includes('k1') || 
+             formData.machine?.toLowerCase().includes('k2') ||
+             !isErema)
+          ) && (() => {
+            const kgH = Number(formData.kgPerHour) || 0;
+            const theoretical12h = kgH * 12;
+            const tolerancePct = Number(formData.lossTolerancePercent) > 0 ? Number(formData.lossTolerancePercent) : 3.5;
+            const maxAllowedLossKg = theoretical12h * (tolerancePct / 100);
+            const targetNetKg = Math.max(0, theoretical12h - maxAllowedLossKg);
+
+            const netKg = Number(formData.netWeight) || 0;
+            const realLossesKg = (Number(formData.ecoA) || 0) + (Number(formData.ecoBP) || 0) + (Number(formData.ecoBM) || 0) + (Number(formData.borraTotal) || 0);
+            const totalProcessed = netKg + realLossesKg;
+            const realLossPct = totalProcessed > 0 ? (realLossesKg / totalProcessed) * 100 : (theoretical12h > 0 ? (realLossesKg / theoretical12h) * 100 : 0);
+
+            const lossExcessKg = Math.max(0, realLossesKg - maxAllowedLossKg);
+            const isLossWithinTolerance = realLossesKg <= maxAllowedLossKg;
+            const isNetGoalMet = theoretical12h > 0 && netKg >= targetNetKg;
+            const netAttainmentPct = targetNetKg > 0 ? (netKg / targetNetKg) * 100 : 0;
+            const cleaningMins = (manutencaoMinCalculado || 0) + (processoMinCalculado || 0);
+
+            return (
+              <div className="bg-slate-50 border border-amber-300/80 rounded-xl p-2 shrink-0 shadow-xs">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                  
+                  {/* Bloco 1: Identificador (2 colunas) */}
+                  <div className="md:col-span-2 flex items-center gap-2 border-b md:border-b-0 md:border-r border-slate-200 pr-2">
+                    <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                      ⚡
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-black uppercase text-amber-950 tracking-tight truncate">
+                        {formData.machine || 'Extrusão'} (12h)
+                      </div>
+                      <div className="text-[8px] font-bold text-slate-500 truncate">
+                        Meta & Tolerância
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloco 2: Velocidade Nominal kg/h (3 colunas) */}
+                  <div className="md:col-span-3 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] font-black text-slate-600 uppercase tracking-wider">
+                        1. Velocidade (kg/h)
+                      </label>
+                      <span className="text-[8px] font-bold text-slate-400">
+                        Teórico: <strong className="text-slate-800">{theoretical12h > 0 ? formatWeight(theoretical12h) : '—'}</strong>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          name="kgPerHour"
+                          value={formData.kgPerHour || ''}
+                          onChange={handleChange}
+                          placeholder={formData.machine?.toLowerCase().includes('cast 2') ? '850' : '1000'}
+                          className="w-full bg-white border border-slate-200 focus:border-amber-500 rounded-lg px-2 py-1 text-xs font-black text-slate-900 outline-none pr-9 h-7"
+                        />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400 uppercase pointer-events-none">
+                          kg/h
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        {[1000, 950, 900, 850, 800].map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setFormData(p => ({ ...p, kgPerHour: val }))}
+                            className={`px-1 py-0.5 rounded text-[7.5px] font-black uppercase border transition-all cursor-pointer ${
+                              formData.kgPerHour === val 
+                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs' 
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloco 3: Tolerância de Perdas % (3 colunas) */}
+                  <div className="md:col-span-3 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] font-black text-slate-600 uppercase tracking-wider">
+                        2. Tolerância Perdas (%)
+                      </label>
+                      <span className="text-[8px] font-bold text-slate-400">
+                        Teto: <strong className="text-slate-800">{theoretical12h > 0 ? formatWeight(maxAllowedLossKg) : '—'}</strong>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          step="0.1"
+                          name="lossTolerancePercent"
+                          value={formData.lossTolerancePercent || ''}
+                          onChange={handleChange}
+                          placeholder="3.5"
+                          className="w-full bg-white border border-slate-200 focus:border-amber-500 rounded-lg px-2 py-1 text-xs font-black text-slate-900 outline-none pr-6 h-7"
+                        />
+                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400 uppercase pointer-events-none">
+                          %
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        {[2.5, 3.0, 3.5, 4.0, 5.0].map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setFormData(p => ({ ...p, lossTolerancePercent: val }))}
+                            className={`px-1 py-0.5 rounded text-[7.5px] font-black uppercase border transition-all cursor-pointer ${
+                              formData.lossTolerancePercent === val 
+                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs' 
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {val.toFixed(1)}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloco 4: Indicadores em Tempo Real de Meta e Refugo (4 colunas) */}
+                  <div className="md:col-span-4 bg-white border border-slate-200 rounded-lg px-2.5 py-1 space-y-0.5 text-[8.5px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-bold uppercase">Meta Líq. Mínima ({100 - tolerancePct}%):</span>
+                      <span className="font-black text-blue-700">
+                        {targetNetKg > 0 ? formatWeight(targetNetKg) : '—'}
+                      </span>
+                      <span className={`px-1.5 py-0.2 rounded font-black uppercase text-[7.5px] ${isNetGoalMet ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {isNetGoalMet ? `Batida (${netAttainmentPct.toFixed(0)}%)` : `Falta ${formatWeight(Math.max(0, targetNetKg - netKg))}`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-0.5 border-t border-dashed border-slate-100">
+                      <span className="text-slate-500 font-bold uppercase">Refugo Real ({realLossPct.toFixed(1)}%):</span>
+                      <span className={`font-black ${isLossWithinTolerance ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {formatWeight(realLossesKg)}
+                      </span>
+                      <span className={`px-1.5 py-0.2 rounded font-black text-[7.5px] ${isLossWithinTolerance ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-800'}`}>
+                        {isLossWithinTolerance ? 'Dentro da Tolerância ✅' : `Excesso (+${formatWeight(lossExcessKg)}) ⚠️`}
+                      </span>
+                    </div>
+
+                    {cleaningMins > 30 && (
+                      <div className="text-[7.5px] font-bold text-rose-700 leading-none pt-0.5">
+                        ⏱️ Paradas ({cleaningMins} min) excederam os 30 min de tolerância.
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            );
+          })()}
 
           {formData.isNoWorkDay && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2 animate-in fade-in duration-300">
