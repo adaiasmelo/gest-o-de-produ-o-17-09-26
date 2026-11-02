@@ -25,6 +25,7 @@
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "0.408.0",
     "motion": "^12.38.0",
+    "pptxgenjs": "^4.0.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-quill-new": "^3.8.3",

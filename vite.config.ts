@@ -145,12 +145,37 @@ export default defineConfig({
     include: ['react', 'react-dom', 'motion/react', 'recharts', 'lucide-react'],
   },
   build: {
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
         tv: path.resolve(__dirname, 'tv.html'),
         projecao: path.resolve(__dirname, 'projecao.html'),
       },
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('jspdf-autotable')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('pptxgenjs')) {
+              return 'vendor-pptx';
+            }
+            if (id.includes('firebase')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('chart.js') || id.includes('react-chartjs-2') || id.includes('recharts')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('motion') || id.includes('framer-motion')) {
+              return 'vendor-motion';
+            }
+          }
+        }
+      }
     },
   },
 });

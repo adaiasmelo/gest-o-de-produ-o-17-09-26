@@ -169,6 +169,15 @@ export const SystemIntroVideoPlayer: React.FC<SystemIntroVideoPlayerProps> = ({
 
     return () => {
       clearTimeout(maxTimer);
+      if (videoRef.current) {
+        try {
+          videoRef.current.pause();
+          videoRef.current.src = '';
+          videoRef.current.load();
+        } catch (e) {
+          // Ignore release errors
+        }
+      }
     };
   }, [startSuctionTransition, videoSrc]);
 

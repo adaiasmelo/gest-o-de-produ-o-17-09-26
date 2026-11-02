@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap } from 'lucide-react';
+import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap, Target } from 'lucide-react';
 import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation } from '../types';
 import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives } from '../constants/downtimeReasons';
@@ -335,6 +335,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     eremaWeight2: 0,
     eremaWeight3: 0,
     eremaWeight4: 0,
+    eremaDailyGoal: 4200,
     recycledUsed: 0,
     recycledBags: 0,
     materialType: 'LC3',
@@ -731,6 +732,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         eremaWeight2: initialData.eremaWeight2 ?? 0,
         eremaWeight3: initialData.eremaWeight3 ?? 0,
         eremaWeight4: initialData.eremaWeight4 ?? 0,
+        eremaDailyGoal: initialData.eremaDailyGoal ?? 4200,
         recycledUsed: initialData.recycledUsed ?? 0,
         recycledBags: initialData.recycledBags ?? (initialData.recycledUsed ? Number((initialData.recycledUsed / 1100).toFixed(2)) : 0),
         materialType: initialData.materialType || 'LC3',
@@ -824,6 +826,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           eremaWeight2: 0,
           eremaWeight3: 0,
           eremaWeight4: 0,
+          eremaDailyGoal: 4200,
           recycledUsed: 0,
           recycledBags: 0,
           materialType: 'LC3',
@@ -2177,12 +2180,41 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                 {!isHiddenProduction && (
                   <>
                     {isErema ? (
-                      <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-2 flex-1 flex flex-col justify-between">
-                        <div className="flex items-center gap-1.5 text-emerald-700 font-black text-[10px] uppercase tracking-widest"><Package size={13} /> Produção Reciclada (Erema)</div>
+                      <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl space-y-2.5 flex-1 flex flex-col justify-between shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-emerald-800 font-black text-[10px] uppercase tracking-widest">
+                            <Package size={13} /> Produção Reciclada (Erema)
+                          </div>
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300">
+                            Recuperadora
+                          </span>
+                        </div>
+
+                        {/* Campo para Definir / Inserir a Meta Diária de Erema */}
+                        <div className="bg-emerald-100/70 p-2 rounded-lg border border-emerald-200 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <Target className="w-3.5 h-3.5 text-emerald-800" />
+                            <div>
+                              <span className="text-[9px] font-black uppercase text-emerald-950 tracking-wider block leading-tight">Meta Diária (kg)</span>
+                              <span className="text-[7.5px] text-emerald-700 font-bold block">Padrão 12h: 4.200 kg</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <input 
+                              type="number" 
+                              name="eremaDailyGoal" 
+                              value={formData.eremaDailyGoal ?? 4200} 
+                              onChange={handleChange} 
+                              className="w-24 bg-white border border-emerald-300 rounded px-2 py-1 text-xs font-black text-emerald-950 text-right outline-none focus:ring-2 focus:ring-emerald-400" 
+                              placeholder="4200"
+                            />
+                            <span className="text-[9px] font-black text-emerald-700">KG</span>
+                          </div>
+                        </div>
                         
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[8px] font-black text-emerald-600 uppercase">Lançamento 1 (kg)</label>
+                            <label className="text-[8px] font-black text-emerald-700 uppercase">Lançamento 1 (kg)</label>
                             <input 
                               type="number" 
                               name="eremaWeight1" 
@@ -2193,7 +2225,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="text-[8px] font-black text-emerald-600 uppercase">Lançamento 2 (kg)</label>
+                            <label className="text-[8px] font-black text-emerald-700 uppercase">Lançamento 2 (kg)</label>
                             <input 
                               type="number" 
                               name="eremaWeight2" 
@@ -2204,7 +2236,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="text-[8px] font-black text-emerald-600 uppercase">Lançamento 3 (kg)</label>
+                            <label className="text-[8px] font-black text-emerald-700 uppercase">Lançamento 3 (kg)</label>
                             <input 
                               type="number" 
                               name="eremaWeight3" 
@@ -2215,7 +2247,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="text-[8px] font-black text-emerald-600 uppercase">Lançamento 4 (kg)</label>
+                            <label className="text-[8px] font-black text-emerald-700 uppercase">Lançamento 4 (kg)</label>
                             <input 
                               type="number" 
                               name="eremaWeight4" 
@@ -2227,10 +2259,36 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="bg-white p-2 rounded-lg border border-emerald-200 flex justify-between items-center shadow-2xs">
-                          <span className="text-[9px] font-black text-emerald-600 uppercase">Peso Líquido Total</span>
-                          <span className="text-base font-black text-emerald-700">{formatWeight(formData.netWeight)}</span>
-                        </div>
+                        {/* Comparativo de Atingimento da Meta Diária */}
+                        {(() => {
+                          const eGoal = Number(formData.eremaDailyGoal) || 4200;
+                          const netVal = Number(formData.netWeight) || 0;
+                          const isMet = netVal >= eGoal && netVal > 0;
+                          const pct = eGoal > 0 ? ((netVal / eGoal) * 100).toFixed(0) : '0';
+                          return (
+                            <div className="bg-white p-2.5 rounded-lg border border-emerald-200 flex flex-col sm:flex-row justify-between items-center gap-2 shadow-2xs">
+                              <div className="flex items-center gap-3">
+                                <div>
+                                  <span className="text-[8px] font-black text-emerald-600 uppercase block">Produção Total</span>
+                                  <span className="text-sm font-black text-emerald-800">{formatWeight(formData.netWeight)}</span>
+                                </div>
+                                <div className="h-6 w-px bg-emerald-100" />
+                                <div>
+                                  <span className="text-[8px] font-black text-slate-400 uppercase block">Meta Diária</span>
+                                  <span className="text-xs font-bold text-slate-700">{formatWeight(eGoal)}</span>
+                                </div>
+                              </div>
+
+                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                isMet
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : 'bg-rose-50 text-rose-800 border border-rose-200'
+                              }`}>
+                                {isMet ? `Meta Batida ✅ (${pct}%)` : `Abaixo da Meta ❌ (${pct}%)`}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ) : (
                       <>

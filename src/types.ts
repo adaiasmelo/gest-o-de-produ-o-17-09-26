@@ -32,6 +32,7 @@ export interface ProductionEntry {
   eremaWeight2?: number;
   eremaWeight3?: number;
   eremaWeight4?: number;
+  eremaDailyGoal?: number;
   recycledUsed?: number;
   recycledBags?: number;
   ecoAMotivo?: string;
