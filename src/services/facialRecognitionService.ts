@@ -246,6 +246,40 @@ export function removeFaceProfileLocally(registration: string): void {
   }
 }
 
+const FACIAL_AUTO_KEY = 'manupackaging_facial_auto_enabled';
+const FACIAL_LOGIN_ENABLED_KEY = 'manupackaging_facial_login_enabled';
+
+/**
+ * Retorna se o escaneamento facial na tela de login está habilitado neste dispositivo.
+ * Padrão: true (caso haja rosto cadastrado). Se o usuário cancelar no menu, retorna false.
+ */
+export function isFacialLoginEnabled(): boolean {
+  try {
+    const val = localStorage.getItem(FACIAL_LOGIN_ENABLED_KEY);
+    if (val === null) return true; // Habilitado por padrão
+    return val === 'true';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Define se a leitura facial na tela de login está habilitada ou cancelada (controlado pelo menu).
+ */
+export function setFacialLoginEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(FACIAL_LOGIN_ENABLED_KEY, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.error('Erro ao salvar status de leitura facial:', e);
+  }
+}
+
+/**
+ * Aliases para compatibilidade
+ */
+export const isFacialAutoLoginEnabled = isFacialLoginEnabled;
+export const setFacialAutoLoginEnabled = setFacialLoginEnabled;
+
 /**
  * Verifica se há pelo menos um perfil facial registrado (seja local ou nos usuários)
  */

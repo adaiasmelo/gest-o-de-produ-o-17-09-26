@@ -10,7 +10,7 @@ import {
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
   MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus, Scissors, Video, Play,
-  Camera
+  Camera, Pause
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -168,7 +168,13 @@ import { SystemIntroVideoPlayer } from './components/SystemIntroVideoPlayer';
 import { FacialRegistrationModal } from './components/FacialRegistrationModal';
 import { FacialLoginScanner } from './components/FacialLoginScanner';
 import { FacialPromptModal } from './components/FacialPromptModal';
-import { hasAnyRegisteredFaces, getStoredFaceProfiles } from './services/facialRecognitionService';
+import { 
+  hasAnyRegisteredFaces, 
+  getStoredFaceProfiles, 
+  isFacialLoginEnabled, 
+  setFacialLoginEnabled, 
+  removeFaceProfileLocally 
+} from './services/facialRecognitionService';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
   "marcelo": { registration: "1611", name: "MARCELO DA SILVA CASTRO" },
@@ -1837,8 +1843,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [facialRegisterUser, setFacialRegisterUser] = useState<SystemUser | null>(null);
   const [showFacialPrompt, setShowFacialPrompt] = useState(false);
   const [facialPromptUser, setFacialPromptUser] = useState<SystemUser | null>(null);
-  const [isFacialLoginActive, setIsFacialLoginActive] = useState<boolean>(true);
-  const [facialLoginDismissed, setFacialLoginDismissed] = useState<boolean>(false);
+  const [isFacialAutoEnabled, setIsFacialAutoEnabled] = useState<boolean>(() => isFacialLoginEnabled());
+  const [isFacialLoginActive, setIsFacialLoginActive] = useState<boolean>(() => isFacialLoginEnabled());
+  const [logoutCooldownSeconds, setLogoutCooldownSeconds] = useState<number>(0);
   const [notifications, setNotifications] = useState<{ id: string, message: string, type: 'success' | 'info', operator: string }[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -3753,6 +3760,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     setLoginPass('');
     setConfirmLoginPass('');
     setDiscoveredUser(null);
+    setLogoutCooldownSeconds(5);
+    setIsFacialLoginActive(isFacialLoginEnabled());
 
     // 3. Atualiza Firebase em segundo plano de forma assíncrona
     if (previousUser) {
@@ -3977,6 +3986,35 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const handleDeclineFacialPrompt = () => {
     setShowFacialPrompt(false);
     setFacialPromptUser(null);
+  };
+
+  const handleToggleFacialAutoLogin = (enabled: boolean) => {
+    setIsFacialAutoEnabled(enabled);
+    setFacialLoginEnabled(enabled);
+    setIsFacialLoginActive(enabled);
+  };
+
+  const handleDeleteFacialData = async (user: SystemUser) => {
+    try {
+      removeFaceProfileLocally(user.registration);
+      const updated: SystemUser = {
+        ...user,
+        facialData: undefined,
+        facePhoto: undefined,
+        faceRegisteredAt: undefined,
+        faceRegisteredDevice: undefined
+      };
+      if (user.id && !user.id.startsWith('local_')) {
+        await setDoc(doc(db, 'system_users', user.id), updated, { merge: true });
+      }
+      setSystemUsers(prev => prev.map(u => u.registration === user.registration ? updated : u));
+      if (loggedUser && loggedUser.registration === user.registration) {
+        setLoggedUser(updated);
+        localStorage.setItem('manupackaging_user', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.error('Erro ao excluir biometria facial:', e);
+    }
   };
 
   const handleOpenBiometricLoginModal = (user: SystemUser) => {
@@ -7033,7 +7071,10 @@ Atenciosamente,
   const dashboardChartsData = useMemo(() => {
     const ops: any = {};
     const machines: any = {};
-    const shifts: any = {};
+    const shifts: Record<string, { name: string, net: number, borra: number }> = {
+      'Diurno': { name: 'Diurno', net: 0, borra: 0 },
+      'Noturno': { name: 'Noturno', net: 0, borra: 0 }
+    };
     
     let totalManut = 0;
     let totalProc = 0;
@@ -7074,12 +7115,15 @@ Atenciosamente,
 
       if (!ops[e.operator]) ops[e.operator] = { name: e.operator, net: 0, borra: 0, ecoA: 0, ecoBP: 0, ecoBM: 0, ecoTotal: 0, manut: 0, proc: 0, outros: 0, stops: 0 };
       if (!machines[e.machine]) machines[e.machine] = { name: e.machine, net: 0, borra: 0, stops: 0, manut: 0, proc: 0, outros: 0 };
-      if (!shifts[e.shift]) shifts[e.shift] = { name: e.shift, net: 0, borra: 0 };
+      
+      const sRaw = (e.shift || '').trim().toUpperCase();
+      const isNoturno = sRaw.includes('NOTURNO') || sRaw.includes('NOITE') || sRaw === 'N1' || sRaw === 'N2';
+      const shiftKey = isNoturno ? 'Noturno' : 'Diurno';
 
       if (!e.machine.toLowerCase().includes('erema')) {
         ops[e.operator].net += (e.netWeight || 0);
         machines[e.machine].net += (e.netWeight || 0);
-        shifts[e.shift].net += (e.netWeight || 0);
+        shifts[shiftKey].net += (e.netWeight || 0);
       }
       ops[e.operator].borra += (e.borraTotal || 0);
       ops[e.operator].ecoA += (e.ecoA || 0);
@@ -7097,7 +7141,7 @@ Atenciosamente,
       machines[e.machine].outros += (e.outrosMin || 0);
       machines[e.machine].stops += (e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0);
 
-      shifts[e.shift].borra += (e.borraTotal || 0);
+      shifts[shiftKey].borra += (e.borraTotal || 0);
     });
 
     const dailyTrends = Object.values(dailyMap).sort((a, b) => a.rawDate.localeCompare(b.rawDate));
@@ -7110,7 +7154,10 @@ Atenciosamente,
     return {
       ops: Object.values(ops).sort((a: any, b: any) => b.net - a.net),
       machines: Object.values(machines).sort((a: any, b: any) => b.net - a.net),
-      shifts: Object.values(shifts).sort((a: any, b: any) => b.net - a.net),
+      shifts: [
+        shifts['Diurno'],
+        shifts['Noturno']
+      ],
       dailyTrends,
       globalStops,
       totals: {
@@ -8933,6 +8980,7 @@ Atenciosamente,
     }
 
     // 2. PERFORMANCE POR TURNO (DESEMPENHO POR TURNO)
+    // Na Extrusão, a operação ocorre unicamente nos turnos DIURNO e NOTURNO
     if (dashboardChartsData.shifts && dashboardChartsData.shifts.length > 0) {
       checkYPage(15);
       doc.setFont('helvetica', 'bold');
@@ -8941,20 +8989,34 @@ Atenciosamente,
       doc.text(`${roman[secIdx++]}. DESEMPENHO POR TURNO`, 14, yPos);
       yPos += 4;
 
-      const shiftTableHead = [['TURNO DO PERÍODO', 'PRODUCÃO LÍQUIDA TOTAL (KG)']];
-      const shiftTableBody = dashboardChartsData.shifts.map((s: any) => [
-        s.name.toUpperCase(),
-        formatWeight(s.net)
-      ]);
+      const shiftTableHead = [['TURNO DO PERÍODO', 'PRODUÇÃO LÍQUIDA TOTAL (KG)']];
+      const diurnoItem = dashboardChartsData.shifts.find((s: any) => (s.name || '').toUpperCase().includes('DIURNO'));
+      const noturnoItem = dashboardChartsData.shifts.find((s: any) => (s.name || '').toUpperCase().includes('NOTURNO'));
+      const diurnoNet = diurnoItem ? diurnoItem.net : 0;
+      const noturnoNet = noturnoItem ? noturnoItem.net : 0;
+      const totalTurnosNet = diurnoNet + noturnoNet;
+
+      const shiftTableBody = [
+        ['DIURNO', formatWeight(diurnoNet)],
+        ['NOTURNO', formatWeight(noturnoNet)]
+      ];
 
       autoTable(doc, {
         startY: yPos,
         head: shiftTableHead,
         body: shiftTableBody,
+        foot: [['TOTAL GERAL DOS TURNOS', formatWeight(totalTurnosNet)]],
         theme: 'grid',
         headStyles: {
           fillColor: [71, 85, 105],
           textColor: [255, 255, 255],
+          fontSize: 8,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        footStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [30, 41, 59],
           fontSize: 8,
           fontStyle: 'bold',
           halign: 'center'
@@ -8965,7 +9027,8 @@ Atenciosamente,
           halign: 'center'
         },
         columnStyles: {
-          0: { fontStyle: 'bold', halign: 'left', cellWidth: 100 }
+          0: { fontStyle: 'bold', halign: 'left', cellWidth: 100 },
+          1: { fontStyle: 'bold', halign: 'center' }
         }
       });
 
@@ -12214,32 +12277,13 @@ Atenciosamente,
               </p>
            </div>
 
-            {/* Scanner de Autenticação Facial por Câmera */}
-            {isFacialLoginActive && !facialLoginDismissed && hasAnyRegisteredFaces(systemUsers) && (
+            {/* Leitor Facial Contínuo (Sem opções de pausar/cancelar na tela; controlado exclusivamente pelo menu) */}
+            {isFacialLoginEnabled() && hasAnyRegisteredFaces(systemUsers) && (
               <FacialLoginScanner
                 users={systemUsers}
                 onFaceMatched={handleLoginByFace}
-                onDismiss={() => {
-                  setFacialLoginDismissed(true);
-                  setIsFacialLoginActive(false);
-                }}
-                autoStart={true}
+                cooldownSeconds={logoutCooldownSeconds}
               />
-            )}
-
-            {/* Botão de Ativação Manual do Reconhecimento Facial (quando descartado ou para re-escanear) */}
-            {(!isFacialLoginActive || facialLoginDismissed) && hasAnyRegisteredFaces(systemUsers) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFacialLoginDismissed(false);
-                  setIsFacialLoginActive(true);
-                }}
-                className="w-full mb-2.5 py-2 px-3 bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-400/50 text-cyan-300 hover:text-white rounded-xl font-black text-[9.5px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
-              >
-                <Camera size={13} className="text-cyan-400" />
-                <span>Escanear Rosto com Câmera</span>
-              </button>
             )}
 
             <div className="space-y-2.5">
@@ -12643,8 +12687,7 @@ Atenciosamente,
               try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
               setIsIntroVideoPlaying(false);
               setIsInitializing(false);
-              setIsFacialLoginActive(true);
-              setFacialLoginDismissed(false);
+              setIsFacialLoginActive(isFacialLoginEnabled());
             }}
           />
         )}
@@ -13648,26 +13691,84 @@ Atenciosamente,
                       <span>{isFullscreen ? 'Sair da Tela Cheia' : 'Expandir Tela Cheia'}</span>
                     </button>
 
-                    {/* Biometria Facial */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFacialRegisterUser(loggedUser);
-                        setIsFacialRegisterOpen(true);
-                        setIsMainMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors text-left cursor-pointer"
-                    >
-                      <Camera size={18} className="text-cyan-600 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold leading-tight">Biometria Facial (Câmera)</p>
-                        <p className="text-[9px] text-slate-400 font-medium">
-                          {loggedUser.facialData || getStoredFaceProfiles()[loggedUser.registration]
-                            ? 'Rosto cadastrado • Toque para atualizar'
-                            : 'Cadastrar seu rosto para entrar sem senha'}
-                        </p>
+                    {/* Gestão de Biometria Facial */}
+                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-700 flex items-center justify-center shrink-0">
+                            <Camera size={15} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-tight text-slate-800 leading-none">
+                              Leitura Facial na Tela
+                            </p>
+                            <p className="text-[8.5px] font-bold text-slate-400 uppercase mt-0.5">
+                              {isFacialLoginEnabled() ? 'Ativa na tela de login' : 'Cancelada no menu'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          isFacialLoginEnabled() 
+                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300/60' 
+                            : 'bg-rose-100 text-rose-700 border border-rose-300/60'
+                        }`}>
+                          {isFacialLoginEnabled() ? 'Liberada' : 'Cancelada'}
+                        </span>
                       </div>
-                    </button>
+
+                      {/* Botão de Cancelar ou Liberar a Leitura Facial na Tela de Login */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFacialAutoLogin(!isFacialLoginEnabled())}
+                        className={`w-full py-2 px-3 rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs ${
+                          isFacialLoginEnabled()
+                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20'
+                        }`}
+                      >
+                        {isFacialLoginEnabled() ? (
+                          <>
+                            <X size={13} />
+                            <span>Cancelar Leitura Facial na Tela</span>
+                          </>
+                        ) : (
+                          <>
+                            <Camera size={13} />
+                            <span>Liberar Leitura Facial na Tela</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* Botão de Cadastrar ou Recadastrar */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFacialRegisterUser(loggedUser);
+                          setIsFacialRegisterOpen(true);
+                          setIsMainMenuOpen(false);
+                        }}
+                        className="w-full py-2 px-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                      >
+                        <Camera size={13} />
+                        <span>{loggedUser.facialData || getStoredFaceProfiles()[loggedUser.registration] ? 'Atualizar / Recadastrar Meu Rosto' : 'Cadastrar Meu Rosto'}</span>
+                      </button>
+
+                      {/* Remover / Excluir Cadastro Facial */}
+                      {(loggedUser.facialData || getStoredFaceProfiles()[loggedUser.registration]) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Deseja realmente remover o cadastro facial do seu usuário neste dispositivo e sistema?')) {
+                              handleDeleteFacialData(loggedUser);
+                            }
+                          }}
+                          className="w-full pt-1 text-[8px] font-bold text-slate-400 hover:text-rose-600 uppercase tracking-tight text-center cursor-pointer hover:underline"
+                        >
+                          Remover biometria facial deste usuário
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
