@@ -894,15 +894,53 @@ export const App: React.FC = () => {
     }
   };
 
+  const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos de inatividade sem uso
+
+  const [inactivityNotice, setInactivityNotice] = useState<boolean>(() => {
+    try {
+      const notice = localStorage.getItem('manupackaging_inactivity_logout');
+      if (notice === 'true') {
+        localStorage.removeItem('manupackaging_inactivity_logout');
+        return true;
+      }
+    } catch {}
+    return false;
+  });
+
   const [loggedUser, setLoggedUser] = useState<SystemUser | null>(() => {
     try {
       const saved = localStorage.getItem('manupackaging_user');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) {
+        const lastActive = localStorage.getItem('manupackaging_last_active');
+        if (lastActive) {
+          const elapsed = Date.now() - Number(lastActive);
+          if (elapsed >= 15 * 60 * 1000) {
+            localStorage.removeItem('manupackaging_user');
+            sessionStorage.removeItem('manupackaging_user');
+            localStorage.setItem('manupackaging_inactivity_logout', 'true');
+            return null;
+          }
+        }
+        return JSON.parse(saved);
+      }
+      return null;
     } catch (e) {
       console.error('Failed to parse logged user from localStorage', e);
       return null;
     }
   });
+
+  const loggedUserRef = useRef<SystemUser | null>(loggedUser);
+  useEffect(() => {
+    loggedUserRef.current = loggedUser;
+    if (loggedUser) {
+      setInactivityNotice(false);
+      lastUserActivityRef.current = Date.now();
+      try {
+        localStorage.setItem('manupackaging_last_active', String(Date.now()));
+      } catch {}
+    }
+  }, [loggedUser]);
 
   useEffect(() => {
     if (!loggedUser) {
@@ -3764,6 +3802,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     // 1. Limpa imediatamente a persistência de autenticação local de forma síncrona
     try {
       localStorage.removeItem('manupackaging_user');
+      localStorage.removeItem('manupackaging_last_active');
       sessionStorage.removeItem('manupackaging_user');
       sessionStorage.setItem('manupackaging_intro_played', 'true');
     } catch (e) {
@@ -3793,9 +3832,102 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   };
 
+  // Monitoramento de Inatividade: Se o sistema ficar 15 minutos sem uso no navegador ou PWA instalado,
+  // efetua o logout automático. Ao mexer no sistema novamente, solicita novo login.
+  useEffect(() => {
+    if (!loggedUser) return;
+
+    lastUserActivityRef.current = Date.now();
+    try {
+      localStorage.setItem('manupackaging_last_active', String(Date.now()));
+    } catch {}
+
+    let lastStorageSync = Date.now();
+
+    const checkInactivityAndLogout = (): boolean => {
+      if (!loggedUserRef.current) return false;
+
+      let lastActive = lastUserActivityRef.current;
+      try {
+        const stored = localStorage.getItem('manupackaging_last_active');
+        if (stored) {
+          const storedNum = Number(stored);
+          if (storedNum > lastActive) {
+            lastActive = storedNum;
+            lastUserActivityRef.current = storedNum;
+          }
+        }
+      } catch {}
+
+      const elapsed = Date.now() - lastActive;
+      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+        setInactivityNotice(true);
+        handleLogout();
+        return true;
+      }
+      return false;
+    };
+
+    const handleUserInteraction = () => {
+      // Se já transcorreram 15 minutos sem uso, desloga imediatamente ao mexer
+      const isExpired = checkInactivityAndLogout();
+      if (isExpired) return;
+
+      const now = Date.now();
+      lastUserActivityRef.current = now;
+
+      // Sincroniza periodicamente com o localStorage para que múltiplas janelas/abas compartilhem a atividade
+      if (now - lastStorageSync > 10000) {
+        lastStorageSync = now;
+        try {
+          localStorage.setItem('manupackaging_last_active', String(now));
+        } catch {}
+      }
+    };
+
+    const events: (keyof WindowEventMap)[] = [
+      'mousemove',
+      'mousedown',
+      'keydown',
+      'touchstart',
+      'touchmove',
+      'scroll',
+      'wheel',
+      'click'
+    ];
+
+    events.forEach((ev) => {
+      window.addEventListener(ev, handleUserInteraction, { passive: true, capture: true });
+    });
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' || document.hasFocus()) {
+        checkInactivityAndLogout();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    // Verificação periódica a cada 10 segundos caso a tela fique parada sem toque/movimento
+    const inactivityInterval = setInterval(() => {
+      checkInactivityAndLogout();
+    }, 10000);
+
+    return () => {
+      events.forEach((ev) => {
+        window.removeEventListener(ev, handleUserInteraction, true);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearInterval(inactivityInterval);
+    };
+  }, [loggedUser]);
+
   const lastBiometricAttemptRef = useRef<string>('');
 
   const handleMatriculaChange = (val: string) => {
+    if (inactivityNotice) setInactivityNotice(false);
     setLoginMatricula(val);
     
     if (val.length >= 3) {
@@ -12299,6 +12431,17 @@ Atenciosamente,
                 <ShieldCheck size={12} className="text-cyan-400"/> ÁREA RESTRITA
               </p>
            </div>
+
+            {/* Aviso de Inatividade após 15 minutos */}
+            {inactivityNotice && (
+              <div className="mb-3 p-2.5 rounded-2xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1">
+                <Clock size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 leading-snug">
+                  <span className="font-black text-amber-300 uppercase tracking-wide">Sessão Expirada:</span>{' '}
+                  15 minutos de inatividade sem uso. Faça login novamente para continuar.
+                </div>
+              </div>
+            )}
 
             {/* Leitor Facial Contínuo (Sem opções de pausar/cancelar na tela; controlado exclusivamente pelo menu) */}
             {isFacialLoginEnabled() && hasAnyRegisteredFaces(systemUsers) && (
