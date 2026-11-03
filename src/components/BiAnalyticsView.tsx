@@ -19,6 +19,8 @@ interface BiAnalyticsViewProps {
   onOpenDowntimeAnalytics?: () => void;
   onOpenDowntimeReasons?: () => void;
   standaloneSection?: 'matrix' | 'mom_yoy' | 'stoppages' | 'operators' | 'eco_b_vs_tubetes';
+  dashboardMonth?: string;
+  targetMonth?: string;
 }
 
 // Helper formats
@@ -65,8 +67,11 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   employees,
   onOpenDowntimeAnalytics,
   onOpenDowntimeReasons,
-  standaloneSection
+  standaloneSection,
+  dashboardMonth,
+  targetMonth
 }) => {
+  const activeRefMonth = targetMonth || dashboardMonth;
   // 100% Consistent Filter replicating App.tsx logic for data validity
   const processedDataFiltered = useMemo(() => {
     if (!Array.isArray(productionData)) return [];
@@ -637,6 +642,16 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
       }
       const volatility = count > 0 ? Math.sqrt(sumDiffSq / count) : 0;
 
+      // Current month specific metrics if activeRefMonth is provided
+      const monthItem = activeRefMonth ? monthRecords[activeRefMonth] : undefined;
+      const monthProd = monthItem ? monthItem.netProd : 0;
+      const monthWaste = monthItem ? monthItem.waste : 0;
+      const monthEcoA = monthItem ? monthItem.ecoA : 0;
+      const monthEcoB = monthItem ? monthItem.ecoB : 0;
+      const monthBorra = monthItem ? monthItem.borra : 0;
+      const monthWasteIdx = (monthProd + monthWaste) === 0 ? 0 : (monthWaste / (monthProd + monthWaste)) * 100;
+      const hasMonthProd = !!monthItem && (monthProd > 0 || monthWaste > 0);
+
       list.push({
         operator: op,
         history,
@@ -647,14 +662,29 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
         totalBorra,
         averageWasteIdx: totalProd + totalWaste === 0 ? 0 : (totalWaste / (totalProd + totalWaste)) * 100,
         volatility,
-        monthsActive: sortedMonths.length
+        monthsActive: sortedMonths.length,
+        monthProd,
+        monthWaste,
+        monthEcoA,
+        monthEcoB,
+        monthBorra,
+        monthWasteIdx,
+        hasMonthProd
       });
     });
 
     function varSq(v: number) { return v * v; }
 
+    if (activeRefMonth) {
+      return list.sort((a, b) => {
+        if (a.hasMonthProd && !b.hasMonthProd) return -1;
+        if (!a.hasMonthProd && b.hasMonthProd) return 1;
+        return (b.monthProd || 0) - (a.monthProd || 0);
+      });
+    }
+
     return list.sort((a,b) => b.totalProd - a.totalProd);
-  }, [processedDataFiltered, periodA, periodB]);
+  }, [processedDataFiltered, periodA, periodB, activeRefMonth]);
 
   const filteredOperators = useMemo(() => {
     if (!operatorSearch.trim()) return operatorMetrics;
@@ -663,8 +693,12 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   }, [operatorMetrics, operatorSearch]);
 
   const { minWaste, maxWaste, wasteRange } = useMemo(() => {
-    // We calculate min/max among operatorMetrics so it's consistent across filtering/searching
-    const wasteIndexes = operatorMetrics.map(o => o.averageWasteIdx);
+    // Se um mês de referência ativo estiver definido, calculamos a melhor e pior perda entre os operadores com produção no mês
+    const activeOperators = activeRefMonth 
+      ? operatorMetrics.filter(o => o.hasMonthProd)
+      : operatorMetrics;
+    const targetList = activeOperators.length > 0 ? activeOperators : operatorMetrics;
+    const wasteIndexes = targetList.map(o => activeRefMonth ? o.monthWasteIdx : o.averageWasteIdx);
     const minW = wasteIndexes.length > 0 ? Math.min(...wasteIndexes) : 0;
     const maxW = wasteIndexes.length > 0 ? Math.max(...wasteIndexes) : 0;
     return {
@@ -672,7 +706,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
       maxWaste: maxW,
       wasteRange: maxW - minW
     };
-  }, [operatorMetrics]);
+  }, [operatorMetrics, activeRefMonth]);
 
   return (
     <div className="space-y-6">
@@ -686,14 +720,16 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
             </div>
             <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Evolução Histórica das Equipes</h2>
             <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
-              Cálculo analítico idêntico e sincronizado ao BI Extrusão. Descontos lineares e bônus estimado por operador calculados com base no volume entregue e coeficiente de perdas.
+              {activeRefMonth 
+                ? `Cálculo analítico do mês de referência: ${translateMonthYear(activeRefMonth)}. Descontos lineares e bônus individual calculados com base no volume entregue e coeficiente de perdas do mês.`
+                : 'Cálculo analítico idêntico e sincronizado ao BI Extrusão. Descontos lineares e bônus estimado por operador calculados com base no volume entregue e coeficiente de perdas.'}
             </p>
           </div>
           <div className="flex items-center gap-3 bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60 shrink-0">
             <Scale className="text-emerald-400 shrink-0" size={20} />
             <div className="leading-tight">
-              <span className="text-[9px] uppercase font-black text-slate-400 block tracking-widest">Base de BI</span>
-              <span className="text-xs font-black text-white">{monthsList.length} meses apurados</span>
+              <span className="text-[9px] uppercase font-black text-slate-400 block tracking-widest">{activeRefMonth ? 'Mês de Referência' : 'Base de BI'}</span>
+              <span className="text-xs font-black text-white">{activeRefMonth ? translateMonthYear(activeRefMonth) : `${monthsList.length} meses apurados`}</span>
             </div>
           </div>
         </div>
@@ -1659,33 +1695,33 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                       </th>
                       <th className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          Produção Acumulada Cast
+                          {activeRefMonth ? `Produção Cast (${translateMonthYear(activeRefMonth)})` : 'Produção Acumulada Cast'}
                           <span className="group relative inline-block cursor-help align-middle">
                             <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
                             <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                              Soma total de peso líquido gerado pelo respectivo profissional.
+                              Soma total de peso líquido gerado pelo respectivo profissional no período avaliado.
                             </span>
                           </span>
                         </div>
                       </th>
                       <th className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          Descarte Acumulado
+                          {activeRefMonth ? `Descarte (${translateMonthYear(activeRefMonth)})` : 'Descarte Acumulado'}
                           <span className="group relative inline-block cursor-help align-middle">
                             <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
                             <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                              Peso total de refugo e borra não aproveitado, bem como a discriminação individualizada de cada tipo de descarte.
+                              Peso total de refugo e borra do período avaliado.
                             </span>
                           </span>
                         </div>
                       </th>
                       <th className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          Média Coeficiente de Perda
+                          {activeRefMonth ? `Coeficiente Perda (${translateMonthYear(activeRefMonth)})` : 'Média Coeficiente de Perda'}
                           <span className="group relative inline-block cursor-help align-middle">
                             <Info size={10} className="text-slate-400 hover:text-slate-600 inline" />
                             <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                              Coeficiente médio de desperdício em relação ao volume bruto produzido (Menor é melhor).
+                              Coeficiente de desperdício em relação ao volume bruto produzido (Menor é melhor).
                             </span>
                           </span>
                         </div>
@@ -1783,19 +1819,29 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-4 text-right font-medium">{formatWeight(op.totalProd)}</td>
+                            <td className="px-4 py-4 text-right font-medium">
+                              {formatWeight(activeRefMonth ? op.monthProd : op.totalProd)}
+                            </td>
                             <td className="px-4 py-4 text-right">
-                              <div className="font-extrabold text-slate-800">{formatWeight(op.totalWaste)}</div>
+                              <div className="font-extrabold text-slate-800">
+                                {formatWeight(activeRefMonth ? op.monthWaste : op.totalWaste)}
+                              </div>
                               <div className="text-[9px] text-slate-400 font-bold uppercase mt-1 space-y-0.5">
-                                <div>Eco A: {formatWeight(op.totalEcoA)}</div>
-                                <div>Eco B: {formatWeight(op.totalEcoB)}</div>
-                                <div>Borra: {formatWeight(op.totalBorra)}</div>
+                                <div>Eco A: {formatWeight(activeRefMonth ? op.monthEcoA : op.totalEcoA)}</div>
+                                <div>Eco B: {formatWeight(activeRefMonth ? op.monthEcoB : op.totalEcoB)}</div>
+                                <div>Borra: {formatWeight(activeRefMonth ? op.monthBorra : op.totalBorra)}</div>
                               </div>
                             </td>
-                            <td className="px-4 py-4 text-right text-rose-500 font-black">{formatPercent(op.averageWasteIdx)}</td>
+                            <td className="px-4 py-4 text-right text-rose-500 font-black">
+                              {activeRefMonth && !op.hasMonthProd ? '-' : formatPercent(activeRefMonth ? op.monthWasteIdx : op.averageWasteIdx)}
+                            </td>
                             <td className="px-4 py-4 text-right">
                               {(() => {
-                                const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
+                                if (activeRefMonth && !op.hasMonthProd) {
+                                  return <span className="text-slate-400 italic font-semibold text-[10px]">Sem apontamento</span>;
+                                }
+                                const targetIdx = activeRefMonth ? op.monthWasteIdx : op.averageWasteIdx;
+                                const discountPct = wasteRange === 0 ? 0 : ((targetIdx - minWaste) / wasteRange) * 100;
                                 if (discountPct === 0) {
                                   return <span className="text-emerald-600 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (Melhor)</span>;
                                 }
@@ -1807,8 +1853,16 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                             </td>
                             <td className="px-4 py-4 text-right">
                               {(() => {
-                                const details = getOperatorDetails(op.operator);
-                                const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
+                                if (activeRefMonth && !op.hasMonthProd) {
+                                  return (
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-slate-400 font-normal">R$ 0,00</span>
+                                      <span className="text-[8px] text-slate-400 font-semibold block mt-0.5">Sem produção no mês</span>
+                                    </div>
+                                  );
+                                }
+                                const targetIdx = activeRefMonth ? op.monthWasteIdx : op.averageWasteIdx;
+                                const discountPct = wasteRange === 0 ? 0 : ((targetIdx - minWaste) / wasteRange) * 100;
                                 const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
                                 if (discountPct === 0) {
                                   return (

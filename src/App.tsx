@@ -40,7 +40,7 @@ import { IMPORTED_COLLABORATORS } from './constants/importedCollaborators';
 import { INITIAL_DATA, GOAL_VALUE, DEFAULT_OPERATORS, INITIAL_EMPLOYEES, INITIAL_LOGS } from './constants';
 import { extractDowntimeMotives } from './constants/downtimeReasons';
 import { isBiometricAvailable, registerBiometrics, authenticateBiometrics, isBiometricFeatureAllowed } from './services/biometricService';
-import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet, isOperatorNameSilenced, normalizeText } from './utils/silenceUtils';
+import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet, isOperatorNameSilenced, normalizeText, getSilencedLookup } from './utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from './utils/vacationUtils';
 import { isRecentCollaborator, getRecentCollaborators, getUnallocatedRecentCollaborators, formatRecentRegistrationBadge } from './utils/recentCollaborators';
 import { 
@@ -172,16 +172,6 @@ import {
 import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
 import { saveIntroVideo, getIntroVideoUrl, deleteIntroVideo, hasStoredIntroVideo } from './lib/videoStorage';
 import { SystemIntroVideoPlayer } from './components/SystemIntroVideoPlayer';
-import { FacialRegistrationModal } from './components/FacialRegistrationModal';
-import { FacialLoginScanner } from './components/FacialLoginScanner';
-import { FacialPromptModal } from './components/FacialPromptModal';
-import { 
-  hasAnyRegisteredFaces, 
-  getStoredFaceProfiles, 
-  isFacialLoginEnabled, 
-  setFacialLoginEnabled, 
-  removeFaceProfileLocally 
-} from './services/facialRecognitionService';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
   "marcelo": { registration: "1611", name: "MARCELO DA SILVA CASTRO" },
@@ -896,17 +886,6 @@ export const App: React.FC = () => {
 
   const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos de inatividade sem uso
 
-  const [inactivityNotice, setInactivityNotice] = useState<boolean>(() => {
-    try {
-      const notice = localStorage.getItem('manupackaging_inactivity_logout');
-      if (notice === 'true') {
-        localStorage.removeItem('manupackaging_inactivity_logout');
-        return true;
-      }
-    } catch {}
-    return false;
-  });
-
   const [loggedUser, setLoggedUser] = useState<SystemUser | null>(() => {
     try {
       const saved = localStorage.getItem('manupackaging_user');
@@ -917,7 +896,6 @@ export const App: React.FC = () => {
           if (elapsed >= 15 * 60 * 1000) {
             localStorage.removeItem('manupackaging_user');
             sessionStorage.removeItem('manupackaging_user');
-            localStorage.setItem('manupackaging_inactivity_logout', 'true');
             return null;
           }
         }
@@ -934,7 +912,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     loggedUserRef.current = loggedUser;
     if (loggedUser) {
-      setInactivityNotice(false);
       lastUserActivityRef.current = Date.now();
       try {
         localStorage.setItem('manupackaging_last_active', String(Date.now()));
@@ -1891,15 +1868,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const [biometricScanStatus, setBiometricScanStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
   const [biometricScanError, setBiometricScanError] = useState<string | null>(null);
   const [isIframe, setIsIframe] = useState(false);
-
-  // Estados de Autenticação e Cadastro Facial
-  const [isFacialRegisterOpen, setIsFacialRegisterOpen] = useState(false);
-  const [facialRegisterUser, setFacialRegisterUser] = useState<SystemUser | null>(null);
-  const [showFacialPrompt, setShowFacialPrompt] = useState(false);
-  const [facialPromptUser, setFacialPromptUser] = useState<SystemUser | null>(null);
-  const [isFacialAutoEnabled, setIsFacialAutoEnabled] = useState<boolean>(() => isFacialLoginEnabled());
-  const [isFacialLoginActive, setIsFacialLoginActive] = useState<boolean>(() => isFacialLoginEnabled());
-  const [logoutCooldownSeconds, setLogoutCooldownSeconds] = useState<number>(0);
   const [notifications, setNotifications] = useState<{ id: string, message: string, type: 'success' | 'info', operator: string }[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -2949,35 +2917,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       migrationRef.current = true;
       const currentCollaborators = [...collaborators].filter(c => c && c.id); // snapshot of current state with valid IDs
       
-      // Ensure all INITIAL_EMPLOYEES exist in both employees and collaborators collections (Self-healing)
-      for (const initialEmp of INITIAL_EMPLOYEES) {
-        if (!initialEmp.name || initialEmp.name === 'VAGA DISPONÍVEL' || initialEmp.name === 'Em Contratação') continue;
-        const existsInEmployees = employees.some(e => 
-          e.id === initialEmp.id || 
-          (e.registration && initialEmp.registration && e.registration === initialEmp.registration) || 
-          (e.name && initialEmp.name && normalizeText(e.name) === normalizeText(initialEmp.name))
-        );
-        const existsInCollaborators = currentCollaborators.some(c => 
-          (c.registration && initialEmp.registration && c.registration === initialEmp.registration) || 
-          (c.name && initialEmp.name && normalizeText(c.name) === normalizeText(initialEmp.name))
-        );
-
-        if (!existsInEmployees) {
+      // Initial sync only if database is completely blank, otherwise respect user deletions and transfers
+      // Se a base de colaboradores estiver completamente vazia (primeira execução), semeia os colaboradores iniciais
+      if (currentCollaborators.length === 0) {
+        for (const initialEmp of INITIAL_EMPLOYEES) {
+          if (!initialEmp.name || initialEmp.name === 'VAGA DISPONÍVEL' || initialEmp.name === 'Em Contratação') continue;
           try {
-            console.log(`Self-healing: Seeding missing initial employee: ${initialEmp.name}`);
-            await setDoc(doc(db, 'employees', initialEmp.id), {
-              ...initialEmp,
-              userId: currentUser?.uid || 'system',
-              updatedAt: new Date().toISOString()
-            });
-          } catch (err) {
-            console.error(`Erro ao auto-semear colaborador ${initialEmp.name}:`, err);
-          }
-        }
-
-        if (!existsInCollaborators) {
-          try {
-            console.log(`Self-healing: Seeding missing initial collaborator: ${initialEmp.name}`);
             const colId = `col_${initialEmp.registration || initialEmp.id}`;
             const colRef = doc(db, 'collaborators', colId);
             await setDoc(colRef, {
@@ -2995,7 +2940,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
               updatedAt: new Date().toISOString()
             });
           } catch (err) {
-            console.error(`Erro ao auto-semear cadastro central do colaborador ${initialEmp.name}:`, err);
+            console.error(`Erro ao semear cadastro inicial ${initialEmp.name}:`, err);
           }
         }
       }
@@ -3819,8 +3764,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     setLoginPass('');
     setConfirmLoginPass('');
     setDiscoveredUser(null);
-    setLogoutCooldownSeconds(5);
-    setIsFacialLoginActive(isFacialLoginEnabled());
 
     // 3. Atualiza Firebase em segundo plano de forma assíncrona
     if (previousUser) {
@@ -3861,7 +3804,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
       const elapsed = Date.now() - lastActive;
       if (elapsed >= INACTIVITY_TIMEOUT_MS) {
-        setInactivityNotice(true);
         handleLogout();
         return true;
       }
@@ -3927,7 +3869,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const lastBiometricAttemptRef = useRef<string>('');
 
   const handleMatriculaChange = (val: string) => {
-    if (inactivityNotice) setInactivityNotice(false);
     setLoginMatricula(val);
     
     if (val.length >= 3) {
@@ -4054,9 +3995,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         localStorage.setItem('manupackaging_user', JSON.stringify(updated));
         applyUserLanding(updated);
 
-        // Prompt de autorização e cadastro de biometria facial no primeiro acesso
-        setFacialPromptUser(updated);
-        setShowFacialPrompt(true);
       } catch (err) {
         alert('Erro ao salvar senha.');
       }
@@ -4080,92 +4018,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       setLoggedUser(user);
       localStorage.setItem('manupackaging_user', JSON.stringify(user));
       applyUserLanding(user);
-      
-      // Oferece cadastro de biometria facial se ainda não possuir
-      const localProfiles = getStoredFaceProfiles();
-      if (!user.facialData && !localProfiles[user.registration]) {
-        setFacialPromptUser(user);
-        setShowFacialPrompt(true);
-      }
     } else {
       alert('Senha incorreta.');
-    }
-  };
-
-  const handleLoginByFace = (user: SystemUser) => {
-    recordAccessLog(user, 'login');
-    setLoggedUser(user);
-    localStorage.setItem('manupackaging_user', JSON.stringify(user));
-    applyUserLanding(user);
-  };
-
-  const handleSaveFaceData = async (user: SystemUser, facialData: string, facePhoto: string) => {
-    const updated: SystemUser = {
-      ...user,
-      facialData,
-      facePhoto,
-      faceRegisteredAt: new Date().toISOString(),
-      faceRegisteredDevice: navigator.userAgent
-    };
-    if (user.id && !user.id.startsWith('local_')) {
-      try {
-        await setDoc(doc(db, 'system_users', user.id), updated, { merge: true });
-      } catch (err) {
-        console.warn('Erro ao atualizar usuário no Firestore:', err);
-      }
-    }
-    setSystemUsers(prev => {
-      const exists = prev.some(u => u.registration === user.registration);
-      if (exists) {
-        return prev.map(u => u.registration === user.registration ? updated : u);
-      }
-      return [...prev, updated];
-    });
-    if (loggedUser && loggedUser.registration === user.registration) {
-      setLoggedUser(updated);
-      localStorage.setItem('manupackaging_user', JSON.stringify(updated));
-    }
-  };
-
-  const handleAcceptFacialPrompt = () => {
-    setShowFacialPrompt(false);
-    if (facialPromptUser) {
-      setFacialRegisterUser(facialPromptUser);
-      setIsFacialRegisterOpen(true);
-    }
-  };
-
-  const handleDeclineFacialPrompt = () => {
-    setShowFacialPrompt(false);
-    setFacialPromptUser(null);
-  };
-
-  const handleToggleFacialAutoLogin = (enabled: boolean) => {
-    setIsFacialAutoEnabled(enabled);
-    setFacialLoginEnabled(enabled);
-    setIsFacialLoginActive(enabled);
-  };
-
-  const handleDeleteFacialData = async (user: SystemUser) => {
-    try {
-      removeFaceProfileLocally(user.registration);
-      const updated: SystemUser = {
-        ...user,
-        facialData: undefined,
-        facePhoto: undefined,
-        faceRegisteredAt: undefined,
-        faceRegisteredDevice: undefined
-      };
-      if (user.id && !user.id.startsWith('local_')) {
-        await setDoc(doc(db, 'system_users', user.id), updated, { merge: true });
-      }
-      setSystemUsers(prev => prev.map(u => u.registration === user.registration ? updated : u));
-      if (loggedUser && loggedUser.registration === user.registration) {
-        setLoggedUser(updated);
-        localStorage.setItem('manupackaging_user', JSON.stringify(updated));
-      }
-    } catch (e) {
-      console.error('Erro ao excluir biometria facial:', e);
     }
   };
 
@@ -4223,7 +4077,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     if (name === 'NotSupportedError') {
       return 'Este dispositivo ou navegador não possui suporte de hardware ou driver ativo para chaves biométricas.';
     }
-    return `Falha física: ${message || name}. Certifique-se de que o leitor de digital/facial está ativado no aparelho.`;
+    return `Falha física: ${message || name}. Certifique-se de que o leitor de biometria digital está ativado no aparelho.`;
   };
 
   const triggerBiometricProcess = async (type: 'register' | 'login', user: SystemUser) => {
@@ -11073,10 +10927,66 @@ Atenciosamente,
     return ['extrusao', 'reciclagem', 'fita', 'lideranca'].includes(n) || (customSectors || []).some(cs => normalize(cs.name) === n);
   };
 
-  const totalAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && isRelevantSector(e.sector)).length;
-  const totalOperadoresAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && e.role?.toLowerCase().includes('operador')).length;
-  const totalAuxiliaresAtivos = employees.filter(e => isEmployed(e.status) && normalize(e.sector) !== 'lideranca' && e.role?.toLowerCase().includes('auxiliar')).length;
-  const totalFerias = employees.filter(e => normalize(e.status) === 'ferias').length;
+  // 1. Estatísticas de Pessoal pré-calculadas com memoização em um único passo
+  const { totalAtivos, totalOperadoresAtivos, totalAuxiliaresAtivos, totalFerias } = useMemo(() => {
+    let ativos = 0;
+    let opAtivos = 0;
+    let auxAtivos = 0;
+    let ferias = 0;
+
+    for (let i = 0; i < employees.length; i++) {
+      const e = employees[i];
+      const isEmp = isEmployed(e.status);
+      const isLider = normalize(e.sector) === 'lideranca';
+      const isRel = isRelevantSector(e.sector);
+      const isOp = (e.role || '').toLowerCase().includes('operador');
+      const isAux = (e.role || '').toLowerCase().includes('auxiliar');
+      const isFer = normalize(e.status) === 'ferias';
+
+      if (isEmp && !isLider && isRel) ativos++;
+      if (isEmp && !isLider && isOp) opAtivos++;
+      if (isEmp && !isLider && isAux) auxAtivos++;
+      if (isFer) ferias++;
+    }
+
+    return {
+      totalAtivos: ativos,
+      totalOperadoresAtivos: opAtivos,
+      totalAuxiliaresAtivos: auxAtivos,
+      totalFerias: ferias
+    };
+  }, [employees, customSectors]);
+
+  // 2. Índice O(1) de Colaboradores e Brigadistas (elimina .find() nos slots)
+  const collaboratorBrigadeMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (Array.isArray(collaborators)) {
+      for (let i = 0; i < collaborators.length; i++) {
+        const c = collaborators[i];
+        if (c.isBrigadista) {
+          if (c.id) map.set(c.id, true);
+          if (c.registration) map.set(c.registration, true);
+        }
+      }
+    }
+    return map;
+  }, [collaborators]);
+
+  // 3. Índice O(1) de Colaboradores em Férias
+  const vacationingEmployeesMap = useMemo(() => {
+    const map = new Map<string, Employee>();
+    for (let i = 0; i < employees.length; i++) {
+      const e = employees[i];
+      if (e.status === 'Férias' || normalize(e.status) === 'ferias') {
+        map.set(e.id, e);
+      }
+    }
+    return map;
+  }, [employees]);
+
+  // 4. Verificador O(1) de silenciamento de colaboradores
+  const silencedLookup = useMemo(() => getSilencedLookup(collaborators), [collaborators]);
+
 
   const handleOpenVacationReturnModal = (employee: Employee, substitute?: Employee | null) => {
     let sub = substitute;
@@ -11831,15 +11741,15 @@ Atenciosamente,
     const isDismissedVacant = isVacant && !!dismissedEmployee;
     const isVacationVacant = isVacant && !!vacationingEmployee;
 
-    // Determine if employee is part of the Fire Brigade
-    const isBrigadista = emp && collaborators.find(c => 
-      (emp.collaboratorId && c.id === emp.collaboratorId) || 
-      (emp.registration && c.registration === emp.registration)
-    )?.isBrigadista;
+    // Determine if employee is part of the Fire Brigade (Lookup O(1))
+    const isBrigadista = emp && (
+      (emp.collaboratorId && collaboratorBrigadeMap.has(emp.collaboratorId)) ||
+      (emp.registration && collaboratorBrigadeMap.has(emp.registration))
+    );
 
-    // Colaborador ativo que está cobrindo alguém em férias (somente se houver vínculo explícito)
+    // Colaborador ativo que está cobrindo alguém em férias (Lookup O(1))
     const vacationingCovered = emp?.substituteForId 
-      ? employees.find(v => v.id === emp.substituteForId && v.status === 'Férias') 
+      ? vacationingEmployeesMap.get(emp.substituteForId) || null
       : null;
     
     return (
@@ -12012,18 +11922,35 @@ Atenciosamente,
     );
   };
 
+  // Liderança pré-filtrada com useMemo para eliminação de travamentos no Quadro de Pessoal
+  const liderancaEmployees = useMemo(() => {
+    const roles = ['Gerente', 'Supervisor de Produção', 'Líder'];
+    return employees
+      .filter(e => !silencedLookup.isSilenced(e) && normalize(e.sector) === 'lideranca' && isEmployed(e.status) && e.status !== 'Férias')
+      .sort((a, b) => roles.indexOf(a.role) - roles.indexOf(b.role));
+  }, [employees, silencedLookup]);
+
   const renderMachineGroup = (sector: string, machine: string, shift: string, minCapacity: number) => {
     const isVisible = (s: string) => {
       const n = normalize(s);
       return ['ativo', 'atestado', 'em contratacao'].includes(n);
     };
-    const machineEmps = employees.filter(e => 
-      !isEmployeeSilenced(e, collaborators) &&
+    const rawMachineEmps = employees.filter(e => 
+      !silencedLookup.isSilenced(e) &&
       normalize(e.sector) === normalize(sector) && 
       matchPersonnelMachine(e.machine, machine) && 
       normalize(e.shift) === normalize(shift) && 
       isVisible(e.status)
-    ).sort((a, b) => {
+    );
+
+    // Deduplicação estrita para impedir que o mesmo colaborador apareça repetido no posto
+    const seenCollaboratorKeys = new Set<string>();
+    const machineEmps = rawMachineEmps.filter(e => {
+      const key = e.registration ? `reg_${e.registration}` : `name_${normalizeText(e.name)}`;
+      if (seenCollaboratorKeys.has(key)) return false;
+      seenCollaboratorKeys.add(key);
+      return true;
+    }).sort((a, b) => {
       if (a.orderIndex !== undefined && b.orderIndex !== undefined) {
         return a.orderIndex - b.orderIndex;
       }
@@ -12035,7 +11962,7 @@ Atenciosamente,
 
     // Colaboradores deste posto que estão em FÉRIAS
     const vacationingInGroup = employees.filter(e => 
-      !isEmployeeSilenced(e, collaborators) &&
+      !silencedLookup.isSilenced(e) &&
       normalize(e.sector) === normalize(sector) && 
       matchPersonnelMachine(e.machine, machine) && 
       normalize(e.shift) === normalize(shift) && 
@@ -12045,27 +11972,6 @@ Atenciosamente,
     // Identifica quais colaboradores de férias NÃO possuem um substituto ativo cobrindo seu posto
     const uncoveredVacationing = vacationingInGroup.filter(v => 
       !machineEmps.some(e => e.substituteForId === v.id)
-    );
-
-    // Colaboradores deste posto que foram DESLIGADOS
-    const dismissedInGroup = employees.filter(e => 
-      !isEmployeeSilenced(e, collaborators) &&
-      normalize(e.sector) === normalize(sector) && 
-      matchPersonnelMachine(e.machine, machine) && 
-      normalize(e.shift) === normalize(shift) && 
-      normalize(e.status) === 'desligado' &&
-      e.replacedEmployeeId !== 'vaga_excluida'
-    ).sort((a, b) => {
-      const dateA = a.terminatedAt || a.updatedAt || '';
-      const dateB = b.terminatedAt || b.updatedAt || '';
-      return dateB.localeCompare(dateA);
-    });
-
-    // Identifica quais colaboradores desligados NÃO possuem substituto cobrindo sua vaga
-    const uncoveredDismissed = dismissedInGroup.filter(d => 
-      !machineEmps.some(e => e.replacedEmployeeId === d.id) &&
-      d.replacedEmployeeId !== 'vaga_excluida' &&
-      !d.coveredByEmployeeId
     );
     
     const excludedCount = employees.filter(e =>
@@ -12089,21 +11995,13 @@ Atenciosamente,
       const label = isOp ? 'OPE' : 'AUX';
       slots.push(renderSlot(sector, machine, shift, vacEmp.role || 'Operador 1', label, undefined, `-vacation-${vacEmp.id}`, vacEmp));
     });
-
-    // 3. Para cada colaborador desligado que NÃO tem substituto no turno, renderiza o slot de vaga em aberto por desligamento
-    uncoveredDismissed.forEach((disEmp) => {
-      const isOp = (disEmp.role || '').toLowerCase().includes('operador');
-      const label = isOp ? 'OPE' : 'AUX';
-      slots.push(renderSlot(sector, machine, shift, disEmp.role || (isOp ? 'Operador 1' : 'Auxiliar de Produção'), label, undefined, `-dismissed-${disEmp.id}`, undefined, disEmp));
-    });
     
-    // 4. Renderiza vagas restantes genéricas para completar a capacidade nominal da máquina
-    const totalFilled = machineEmps.length + uncoveredVacationing.length + uncoveredDismissed.length;
+    // 3. Renderiza vagas restantes genéricas para completar a capacidade nominal da máquina
+    const totalFilled = machineEmps.length + uncoveredVacationing.length;
     for (let i = totalFilled; i < adjustedCapacity; i++) {
         const isOpSlot = i === 0 && 
           !machineEmps.some(e => e.role.toLowerCase().includes('operador')) && 
-          !uncoveredVacationing.some(e => (e.role || '').toLowerCase().includes('operador')) &&
-          !uncoveredDismissed.some(e => (e.role || '').toLowerCase().includes('operador'));
+          !uncoveredVacationing.some(e => (e.role || '').toLowerCase().includes('operador'));
         const defaultRole = isOpSlot ? 'Operador 1' : 'Auxiliar de Produção';
         const label = isOpSlot ? 'OPE' : 'AUX';
         slots.push(renderSlot(sector, machine, shift, defaultRole, label, undefined, `-${i}`));
@@ -12432,26 +12330,6 @@ Atenciosamente,
               </p>
            </div>
 
-            {/* Aviso de Inatividade após 15 minutos */}
-            {inactivityNotice && (
-              <div className="mb-3 p-2.5 rounded-2xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1">
-                <Clock size={16} className="text-amber-400 shrink-0 mt-0.5" />
-                <div className="flex-1 leading-snug">
-                  <span className="font-black text-amber-300 uppercase tracking-wide">Sessão Expirada:</span>{' '}
-                  15 minutos de inatividade sem uso. Faça login novamente para continuar.
-                </div>
-              </div>
-            )}
-
-            {/* Leitor Facial Contínuo (Sem opções de pausar/cancelar na tela; controlado exclusivamente pelo menu) */}
-            {isFacialLoginEnabled() && hasAnyRegisteredFaces(systemUsers) && (
-              <FacialLoginScanner
-                users={systemUsers}
-                onFaceMatched={handleLoginByFace}
-                cooldownSeconds={logoutCooldownSeconds}
-              />
-            )}
-
             <div className="space-y-2.5">
                 <div className="relative group">
                   <label className="text-[8.5px] font-black text-cyan-200/80 uppercase tracking-widest mb-1 block ml-0.5">Número de Matrícula</label>
@@ -12475,17 +12353,6 @@ Atenciosamente,
                       <p className="text-[8.5px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
                         <ShieldCheck size={11} /> {discoveredUser.name.split(' ')[0]} Identificado
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFacialRegisterUser(discoveredUser);
-                          setIsFacialRegisterOpen(true);
-                        }}
-                        className="text-left text-[8.5px] font-black text-cyan-400 hover:text-cyan-300 uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        <Camera size={11} />
-                        <span>{discoveredUser.facialData || getStoredFaceProfiles()[discoveredUser.registration] ? 'Atualizar Rosto Cadastrado' : 'Cadastrar Meu Rosto (Facial)'}</span>
-                      </button>
                     </div>
                   )}
                   
@@ -12503,11 +12370,11 @@ Atenciosamente,
                       
                       <div className="flex gap-2.5 items-center">
                         <div className="w-5 h-5 rounded-lg bg-cyan-950/90 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-                          <Camera size={11} />
+                          <Fingerprint size={11} />
                         </div>
                         <div className="space-y-0.5">
-                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Acesso Rápido Facial</p>
-                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Após cadastrar seu rosto, a câmera aciona e entra automaticamente.</p>
+                          <p className="text-[8.5px] font-black text-cyan-200 uppercase leading-none">Biometria Digital</p>
+                          <p className="text-[7.5px] sm:text-[8px] font-medium text-slate-400 uppercase leading-tight tracking-tight">Acesso rápido e seguro com o sensor biométrico do dispositivo.</p>
                         </div>
                       </div>
 
@@ -12792,7 +12659,7 @@ Atenciosamente,
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider animate-pulse">Toque abaixo para acionar o sensor</p>
                 )}
                 {biometricScanStatus === 'scanning' && (
-                  <p className="text-xs font-bold text-blue-400 uppercase tracking-widest animate-pulse">Efetue a leitura digital ou facial...</p>
+                  <p className="text-xs font-bold text-blue-400 uppercase tracking-widest animate-pulse">Efetue a leitura biométrica digital...</p>
                 )}
                 {biometricScanStatus === 'success' && (
                   <div className="flex items-center gap-2 text-emerald-400 text-xs font-black uppercase tracking-wider justify-center">
@@ -12853,7 +12720,6 @@ Atenciosamente,
               try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
               setIsIntroVideoPlaying(false);
               setIsInitializing(false);
-              setIsFacialLoginActive(isFacialLoginEnabled());
             }}
           />
         )}
@@ -12864,27 +12730,6 @@ Atenciosamente,
           onClose={() => setIsSystemInfoModalOpen(false)}
           systemLogo={systemLogo}
           systemName={loginSystemName}
-        />
-
-        {/* Modal de Cadastro de Biometria Facial por Câmera */}
-        {facialRegisterUser && (
-          <FacialRegistrationModal
-            isOpen={isFacialRegisterOpen}
-            onClose={() => {
-              setIsFacialRegisterOpen(false);
-              setFacialRegisterUser(null);
-            }}
-            user={facialRegisterUser}
-            onSaveFaceData={handleSaveFaceData}
-          />
-        )}
-
-        {/* Modal de Solicitação de Cadastro de Rosto (Primeiro Acesso) */}
-        <FacialPromptModal
-          isOpen={showFacialPrompt}
-          user={facialPromptUser}
-          onAccept={handleAcceptFacialPrompt}
-          onDecline={handleDeclineFacialPrompt}
         />
       </div>
     );
@@ -13856,85 +13701,6 @@ Atenciosamente,
                       )}
                       <span>{isFullscreen ? 'Sair da Tela Cheia' : 'Expandir Tela Cheia'}</span>
                     </button>
-
-                    {/* Gestão de Biometria Facial */}
-                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-700 flex items-center justify-center shrink-0">
-                            <Camera size={15} />
-                          </div>
-                          <div>
-                            <p className="text-xs font-black uppercase tracking-tight text-slate-800 leading-none">
-                              Leitura Facial na Tela
-                            </p>
-                            <p className="text-[8.5px] font-bold text-slate-400 uppercase mt-0.5">
-                              {isFacialLoginEnabled() ? 'Ativa na tela de login' : 'Cancelada no menu'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          isFacialLoginEnabled() 
-                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300/60' 
-                            : 'bg-rose-100 text-rose-700 border border-rose-300/60'
-                        }`}>
-                          {isFacialLoginEnabled() ? 'Liberada' : 'Cancelada'}
-                        </span>
-                      </div>
-
-                      {/* Botão de Cancelar ou Liberar a Leitura Facial na Tela de Login */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFacialAutoLogin(!isFacialLoginEnabled())}
-                        className={`w-full py-2 px-3 rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs ${
-                          isFacialLoginEnabled()
-                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20'
-                        }`}
-                      >
-                        {isFacialLoginEnabled() ? (
-                          <>
-                            <X size={13} />
-                            <span>Cancelar Leitura Facial na Tela</span>
-                          </>
-                        ) : (
-                          <>
-                            <Camera size={13} />
-                            <span>Liberar Leitura Facial na Tela</span>
-                          </>
-                        )}
-                      </button>
-
-                      {/* Botão de Cadastrar ou Recadastrar */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFacialRegisterUser(loggedUser);
-                          setIsFacialRegisterOpen(true);
-                          setIsMainMenuOpen(false);
-                        }}
-                        className="w-full py-2 px-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-                      >
-                        <Camera size={13} />
-                        <span>{loggedUser.facialData || getStoredFaceProfiles()[loggedUser.registration] ? 'Atualizar / Recadastrar Meu Rosto' : 'Cadastrar Meu Rosto'}</span>
-                      </button>
-
-                      {/* Remover / Excluir Cadastro Facial */}
-                      {(loggedUser.facialData || getStoredFaceProfiles()[loggedUser.registration]) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm('Deseja realmente remover o cadastro facial do seu usuário neste dispositivo e sistema?')) {
-                              handleDeleteFacialData(loggedUser);
-                            }
-                          }}
-                          className="w-full pt-1 text-[8px] font-bold text-slate-400 hover:text-rose-600 uppercase tracking-tight text-center cursor-pointer hover:underline"
-                        >
-                          Remover biometria facial deste usuário
-                        </button>
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -22028,6 +21794,12 @@ Atenciosamente,
                 isReadOnly={isReadOnlyAccount}
                 onBlockedAction={handleBlockedReadOnlyAction}
                 loggedUser={loggedUser}
+                dashboardMonth={dashboardMonth}
+                onMonthChange={(newMonth) => {
+                  if (newMonth && newMonth !== dashboardMonth) {
+                    setDashboardMonth(newMonth);
+                  }
+                }}
               />
             </React.Suspense>
           ) : (
@@ -22451,10 +22223,7 @@ Atenciosamente,
                     }
                   }}
                 >
-                    {employees.filter(e => !isEmployeeSilenced(e, collaborators) && normalize(e.sector) === 'lideranca' && isEmployed(e.status) && e.status !== 'Férias').sort((a, b) => {
-                        const roles = ['Gerente', 'Supervisor de Produção', 'Líder'];
-                        return roles.indexOf(a.role) - roles.indexOf(b.role);
-                    }).map(emp => (
+                    {liderancaEmployees.map(emp => (
                         <div key={emp.id} className="bg-slate-900/40 p-6 rounded-[2.5rem] border border-slate-700/50 shadow-sm animate-in zoom-in-95 duration-200">
                              <div className="flex justify-between items-center mb-4 px-1">
                                 <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{emp.role}</h3>
@@ -22463,7 +22232,7 @@ Atenciosamente,
                              {renderSlot('Liderança', 'Geral', emp.shift || 'Comercial', emp.role, emp.role.substring(0,3).toUpperCase(), emp)}
                         </div>
                     ))}
-                    {employees.filter(e => !isEmployeeSilenced(e, collaborators) && normalize(e.sector) === 'lideranca' && isEmployed(e.status) && e.status !== 'Férias').length === 0 && (
+                    {liderancaEmployees.length === 0 && (
                         <div className="col-span-full py-12 flex flex-col items-center justify-center text-slate-500/50 border-2 border-dashed border-slate-700/50 rounded-[2.5rem]">
                             <Users size={32} className="mb-2 opacity-20" />
                             <p className="text-[10px] font-bold uppercase tracking-widest">Nenhuma liderança cadastrada</p>
@@ -22671,7 +22440,7 @@ Atenciosamente,
                 const secMachines = sec.machines && sec.machines.length > 0 ? sec.machines : ['Geral'];
                 const secShifts = sec.shifts && sec.shifts.length > 0 ? sec.shifts : ['Comercial'];
                 const allocatedCount = employees.filter(e => 
-                  !isEmployeeSilenced(e, collaborators) && 
+                  !silencedLookup.isSilenced(e) && 
                   normalize(e.sector) === normalize(sec.name) && 
                   isEmployed(e.status) && 
                   e.status !== 'Férias'
@@ -22965,27 +22734,6 @@ Atenciosamente,
         onClose={() => setIsSystemInfoModalOpen(false)}
         systemLogo={systemLogo}
         systemName={systemName}
-      />
-
-      {/* Modal de Cadastro de Biometria Facial por Câmera */}
-      {facialRegisterUser && (
-        <FacialRegistrationModal
-          isOpen={isFacialRegisterOpen}
-          onClose={() => {
-            setIsFacialRegisterOpen(false);
-            setFacialRegisterUser(null);
-          }}
-          user={facialRegisterUser}
-          onSaveFaceData={handleSaveFaceData}
-        />
-      )}
-
-      {/* Modal de Solicitação de Cadastro de Rosto */}
-      <FacialPromptModal
-        isOpen={showFacialPrompt}
-        user={facialPromptUser}
-        onAccept={handleAcceptFacialPrompt}
-        onDecline={handleDeclineFacialPrompt}
       />
 
       {/* Modal de Detalhes do Colaborador (Popup Informativo) */}
@@ -23442,6 +23190,54 @@ Atenciosamente,
             await setDoc(doc(db, 'productionEntries', id), entry);
           } catch (fireErr) {
             console.warn('Lançamento salvo localmente e no servidor:', fireErr);
+          }
+
+          // 4. Integração com Gestão de Bônus de Produção & Extrato do Colaborador
+          const bonusOcc = (entry as any).bonusOccurrence;
+          const incidentId = `inc_prod_${id}`;
+          if (bonusOcc && bonusOcc.enabled && bonusOcc.type) {
+            const opName = (entry.operator || '').trim();
+            const matchedEmp = employees.find(emp => 
+              emp.name.toLowerCase().trim() === opName.toLowerCase() ||
+              (emp.registration && emp.registration === (entry as any).operatorRegistration)
+            );
+
+            const bonusIncident = {
+              id: incidentId,
+              productionEntryId: id,
+              employeeId: matchedEmp?.id || `emp_${opName.toLowerCase().replace(/\s+/g, '_')}`,
+              employeeName: opName,
+              registration: matchedEmp?.registration || (entry as any).operatorRegistration || '',
+              sector: matchedEmp?.sector || (entry.machine?.toLowerCase().includes('erema') ? 'Reciclagem' : entry.machine?.toLowerCase().includes('fita') ? 'Corte de Fita' : 'Extrusão'),
+              machine: entry.machine,
+              shift: entry.shift,
+              type: bonusOcc.type,
+              date: entry.date,
+              cyclePeriod: (entry.date || '').slice(0, 7), // YYYY-MM
+              description: bonusOcc.reason || `Ocorrência lançada no apontamento de produção (${entry.machine})`,
+              penaltyRatePercent: Number(bonusOcc.penaltyRatePercent) || 0,
+              isJustified: false,
+              registeredBy: loggedUser?.name || 'Apontamento de Produção',
+              source: 'novo_lancamento',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+
+            try {
+              await setDoc(doc(db, 'bonus_incidents', incidentId), bonusIncident);
+              const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
+              const updatedIncidents = [bonusIncident, ...storedIncidents.filter((i: any) => i.id !== incidentId)];
+              localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
+            } catch (incErr) {
+              console.warn('Erro ao sincronizar ocorrência de bônus no Firestore:', incErr);
+            }
+          } else if (editingEntry) {
+            try {
+              await deleteDoc(doc(db, 'bonus_incidents', incidentId));
+              const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
+              const updatedIncidents = storedIncidents.filter((i: any) => i.id !== incidentId);
+              localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
+            } catch {}
           }
 
           logAuditEvent({

@@ -170,7 +170,7 @@ export const SystemInfoModal: React.FC<SystemInfoModalProps> = ({
               </li>
               <li className="flex items-center gap-1.5">
                 <CheckCircle2 size={12} className="text-cyan-400 shrink-0" />
-                <span>Autenticação biométrica facial e digital</span>
+                <span>Autenticação biométrica digital</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <CheckCircle2 size={12} className="text-cyan-400 shrink-0" />

@@ -89,6 +89,8 @@ interface ProductionBonusManagerProps {
   isReadOnly?: boolean;
   onBlockedAction?: () => void;
   loggedUser?: { username?: string; name?: string; role?: string } | null;
+  dashboardMonth?: string;
+  onMonthChange?: (month: string) => void;
 }
 
 const MONTH_NAMES = [
@@ -152,19 +154,32 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   canManage = true,
   isReadOnly = false,
   onBlockedAction,
-  loggedUser
+  loggedUser,
+  dashboardMonth,
+  onMonthChange
 }) => {
   // Navigation tabs: 'overview' | 'teams_evolution' | 'payroll' | 'incidents'
   const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents'>('overview');
 
-  // Cycle period state (defaults to October 2026 or current active cycle)
+  // Cycle period state (synced with dashboardMonth from settings)
   const [selectedCycle, setSelectedCycle] = useState<string>(() => {
-    return localStorage.getItem('manupackaging_bonus_cycle') || '2026-10';
+    return dashboardMonth || localStorage.getItem('manupackaging_bonus_cycle') || '2026-10';
   });
+
+  useEffect(() => {
+    if (dashboardMonth && dashboardMonth !== selectedCycle) {
+      setSelectedCycle(dashboardMonth);
+    }
+  }, [dashboardMonth]);
 
   useEffect(() => {
     localStorage.setItem('manupackaging_bonus_cycle', selectedCycle);
   }, [selectedCycle]);
+
+  const handleCycleChange = (newCycle: string) => {
+    setSelectedCycle(newCycle);
+    onMonthChange?.(newCycle);
+  };
 
   // Base bonus configurations by role
   const [baseBonusValues, setBaseBonusValues] = useState<Record<string, number>>(() => {
@@ -597,9 +612,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     };
   };
 
-  // Cycle incidents and machine goals
+  // Cycle incidents and machine goals (filtered strictly by selected reference month)
   const cycleIncidents = useMemo(() => {
-    return incidents.filter(i => i.cyclePeriod === selectedCycle);
+    return incidents.filter(i => (i.cyclePeriod === selectedCycle) || (i.date && i.date.startsWith(selectedCycle)));
   }, [incidents, selectedCycle]);
 
   const cycleMachineGoals = useMemo(() => {
@@ -627,7 +642,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       // Direct personal incidents
       const personalIncidents = cycleIncidents.filter(
-        i => i.employeeId === emp.id || (i.registration && i.registration === emp.registration)
+        i => i.employeeId === emp.id || 
+             (i.registration && i.registration === emp.registration) ||
+             (i.employeeName && emp.name && i.employeeName.toLowerCase().trim() === emp.name.toLowerCase().trim())
       );
 
       // Machine goal incidents / penalties affecting this employee's sector/machine/shift
@@ -1336,14 +1353,14 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
         {/* Cycle & Action Buttons */}
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Cycle Selector */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 shadow-xs">
+          {/* Cycle Selector (Mês de Referência) */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 shadow-xs" title="Mês de Referência sincronizado com as Configurações de Filtro">
             <Calendar className="w-4 h-4 text-slate-400" />
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ciclo:</span>
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mês:</span>
             <input
               type="month"
               value={selectedCycle}
-              onChange={(e) => setSelectedCycle(e.target.value)}
+              onChange={(e) => handleCycleChange(e.target.value)}
               className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
             />
           </div>
@@ -1603,6 +1620,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             goals={goals}
             employees={employees}
             standaloneSection="operators"
+            dashboardMonth={selectedCycle}
+            targetMonth={selectedCycle}
           />
         </motion.div>
       )}
@@ -1722,16 +1741,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                             : 'bg-slate-100 text-slate-700'
                                     }`}
                                   >
+                                    {inc.type === 'informacao_falsa' && '🚨 Informação Falsa (-100%)'}
                                     {inc.type === 'saida_mais_cedo' && 'Saída Comunicada (-10%)'}
                                     {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar (-35%)'}
-                                    {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-15%)'}
-                                    {inc.type === 'partida_demorada' && 'Partida Demorada (-15%)'}
+                                    {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-30%)'}
+                                    {inc.type === 'partida_demorada' && 'Partida Demorada (-20%)'}
                                     {inc.type === 'atestado' && 'Atestado (-100%)'}
-                                    {inc.type === 'atraso_injustificado' && 'Atraso (-20%)'}
-                                    {inc.type === 'atraso_justificado' && 'Atraso (-5%)'}
+                                    {inc.type === 'atraso_injustificado' && 'Atraso (-15%)'}
+                                    {inc.type === 'atraso_justificado' && 'Atraso (-10%)'}
                                     {inc.type === 'falta_injustificada' && 'Falta Injustificada (-100%)'}
                                     {inc.type === 'falta_justificada' && 'Falta Justificada (-100%)'}
                                     {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina (-30%)'}
+                                    {!['informacao_falsa', 'saida_mais_cedo', 'saida_nao_comunicada', 'limpeza_excessiva', 'partida_demorada', 'atestado', 'atraso_injustificado', 'atraso_justificado', 'falta_injustificada', 'falta_justificada', 'meta_maquina_nao_atingida'].includes(inc.type) && `${inc.type.replace(/_/g, ' ')} (-${inc.penaltyRatePercent || 0}%)`}
                                   </span>
                                 ))}
                                 {item.perf && item.perf.discountPct > 0 && (

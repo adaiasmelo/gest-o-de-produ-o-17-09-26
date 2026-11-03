@@ -58,6 +58,13 @@ export interface ProductionEntry {
   penaltyType?: 'deduction_kg' | 'deduction_percent' | 'disqualify';
   deductionValue?: number;
   penaltyReason?: string;
+  bonusOccurrence?: {
+    enabled: boolean;
+    type: string;
+    penaltyRatePercent: number;
+    reason: string;
+    description?: string;
+  };
 }
 
 export interface SummaryStats {
@@ -358,10 +365,6 @@ export interface SystemUser {
   password?: string;
   isFirstAccess: boolean;
   biometricId?: string;
-  facialData?: string; // Vetor e descritores faciais serializados
-  facePhoto?: string; // Miniatura/foto do rosto cadastrado (Base64)
-  faceRegisteredAt?: string; // Data de cadastro da facial
-  faceRegisteredDevice?: string; // Dispositivo onde foi cadastrado
   permissions?: UserPermissions;
 }
 

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap, Target } from 'lucide-react';
+import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap, Target, CheckCircle2 } from 'lucide-react';
 import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation } from '../types';
 import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives } from '../constants/downtimeReasons';
@@ -346,6 +346,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     penaltyType: 'deduction_kg' as 'deduction_kg' | 'deduction_percent' | 'disqualify',
     deductionValue: 500,
     penaltyReason: '',
+    hasBonusOccurrence: false,
+    bonusOccurrenceType: 'informacao_falsa',
+    bonusOccurrenceDiscount: 100,
+    bonusOccurrenceReason: '',
   });
 
   const [selectedPresetInfraction, setSelectedPresetInfraction] = useState<string>(PRESET_INFRACTIONS[0]);
@@ -743,6 +747,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         penaltyType: initialData.penaltyType || 'deduction_kg',
         deductionValue: initialData.deductionValue ?? 500,
         penaltyReason: initialData.penaltyReason || '',
+        hasBonusOccurrence: Boolean(initialData.bonusOccurrence?.enabled || initialData.hasPenalty),
+        bonusOccurrenceType: initialData.bonusOccurrence?.type || 'informacao_falsa',
+        bonusOccurrenceDiscount: initialData.bonusOccurrence?.penaltyRatePercent ?? (initialData.deductionValue ?? 100),
+        bonusOccurrenceReason: initialData.bonusOccurrence?.reason || initialData.penaltyReason || '',
       });
 
       if (initialData.infractionType) {
@@ -837,6 +845,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           penaltyType: 'deduction_kg',
           deductionValue: 500,
           penaltyReason: '',
+          hasBonusOccurrence: false,
+          bonusOccurrenceType: 'informacao_falsa',
+          bonusOccurrenceDiscount: 100,
+          bonusOccurrenceReason: '',
         });
 
         if (initialOperator) {
@@ -999,6 +1011,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         processoMotivo: finalProcessoMotivo,
         outrosMotivo: finalOutrosMotivo,
         materials: isCurrent ? materials : (data as any).materials || [],
+        bonusOccurrence: data.hasBonusOccurrence ? {
+          enabled: true,
+          type: data.bonusOccurrenceType || 'informacao_falsa',
+          penaltyRatePercent: Number(data.bonusOccurrenceDiscount) || 0,
+          reason: data.bonusOccurrenceReason || '',
+          description: data.bonusOccurrenceReason || ''
+        } : undefined,
       };
 
       const isStandaloneOrMaintenance = data.isStandaloneDowntime || data.isMaintenanceEntry;
@@ -2795,136 +2814,175 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                   </div>
                 </div>
 
-                {/* Seção de Punição / Ocorrência no Ranking */}
-                <div className="p-2.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1.5 shadow-2xs">
-                  <div className="flex items-center justify-between border-b border-rose-200/80 pb-1 flex-wrap gap-1">
-                    <div className="flex items-center gap-1 text-rose-800 font-black text-[9px] uppercase tracking-widest">
-                      <ShieldAlert size={13} className="text-rose-600" /> Punição Ranking
+                {/* SLOT: LANÇAR OCORRÊNCIA DA META DE PRODUÇÃO (BÔNUS) */}
+                <div className="p-3 bg-gradient-to-br from-amber-50/90 via-rose-50/40 to-amber-50/70 border-2 border-amber-300/80 rounded-2xl space-y-2.5 shadow-2xs">
+                  {/* Header com Toggle */}
+                  <div className="flex items-center justify-between border-b border-amber-200/80 pb-2 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-xs">
+                        <ShieldAlert size={15} className="text-slate-950" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-black text-amber-950 uppercase tracking-tight">
+                            Lançar Ocorrência da Meta de Produção
+                          </h4>
+                          <span className="text-[8px] font-black uppercase px-1.5 py-0.2 rounded bg-amber-200/80 text-amber-900 border border-amber-300">
+                            Bônus
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-amber-800/90 font-medium">
+                          Vai direto para a Gestão de Bônus e para o Extrato do Colaborador
+                        </p>
+                      </div>
                     </div>
-                    <label className="flex items-center gap-1.5 cursor-pointer bg-white/80 px-2 py-0.5 rounded-lg border border-rose-200 hover:bg-white transition-all">
+
+                    <label className="flex items-center gap-2 cursor-pointer bg-white px-2.5 py-1 rounded-xl border border-amber-300 hover:border-amber-400 hover:bg-amber-50/50 shadow-2xs transition-all">
                       <input
                         type="checkbox"
-                        checked={formData.hasPenalty || false}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          hasPenalty: e.target.checked,
-                          infractionType: e.target.checked ? (prev.infractionType || selectedPresetInfraction || PRESET_INFRACTIONS[0]) : '',
-                          penaltyType: e.target.checked ? (prev.penaltyType || 'deduction_kg') : 'deduction_kg',
-                          deductionValue: e.target.checked ? (prev.deductionValue || 500) : 0,
-                        }))}
-                        className="w-3.5 h-3.5 text-rose-600 rounded border-rose-300 focus:ring-rose-500 cursor-pointer"
+                        checked={formData.hasBonusOccurrence || false}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFormData(prev => ({
+                            ...prev,
+                            hasBonusOccurrence: checked,
+                            bonusOccurrenceType: checked ? (prev.bonusOccurrenceType || 'informacao_falsa') : '',
+                            bonusOccurrenceDiscount: checked ? (prev.bonusOccurrenceDiscount || 100) : 0,
+                            hasPenalty: checked,
+                            infractionType: checked ? (prev.bonusOccurrenceType === 'informacao_falsa' ? '🚨 Informação Falsa (Desqualificação Imediata)' : `Ocorrência: ${prev.bonusOccurrenceType || 'informacao_falsa'}`) : '',
+                            penaltyType: checked ? (prev.bonusOccurrenceType === 'informacao_falsa' ? 'disqualify' : 'deduction_percent') : 'deduction_kg',
+                            deductionValue: checked ? (prev.bonusOccurrenceDiscount || 100) : 0,
+                          }));
+                        }}
+                        className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500 cursor-pointer accent-amber-600"
                       />
-                      <span className="text-[9px] font-black uppercase text-rose-900">Aplicar Punição</span>
+                      <span className="text-[10px] font-black uppercase text-amber-950">
+                        Lançar Ocorrência
+                      </span>
                     </label>
                   </div>
 
-                  {formData.hasPenalty && (
-                    <div className="space-y-1.5 pt-0.5">
-                      {/* Regra / Infração */}
-                      <div>
-                        <label className="block text-[8px] font-black uppercase text-rose-900 mb-0.5">
-                          Infração *
-                        </label>
-                        <select
-                          value={selectedPresetInfraction}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSelectedPresetInfraction(val);
-                            const isFraud = val.includes('Informação Falsa');
-                            if (val !== '📝 Outra Infração Personalizada...') {
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                infractionType: val,
-                                ...(isFraud ? { penaltyType: 'disqualify' } : {})
-                              }));
-                            } else {
-                              setFormData(prev => ({ ...prev, infractionType: customInfractionText }));
-                            }
-                          }}
-                          className="w-full bg-white border border-rose-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900 h-7"
-                        >
-                          {PRESET_INFRACTIONS.map((preset) => (
-                            <option key={preset} value={preset}>{preset}</option>
-                          ))}
-                        </select>
-
-                        {selectedPresetInfraction === '📝 Outra Infração Personalizada...' && (
-                          <input
-                            type="text"
-                            placeholder="Especifique a infração..."
-                            value={customInfractionText}
-                            onChange={(e) => {
-                              setCustomInfractionText(e.target.value);
-                              setFormData(prev => ({ ...prev, infractionType: e.target.value }));
-                            }}
-                            className="w-full mt-1 bg-white border border-rose-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900 h-7"
-                          />
-                        )}
-                      </div>
-
-                      {/* Tipo de Punição */}
-                      <div className="grid grid-cols-3 gap-1">
-                        <label className={`p-1 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-1 ${
-                          formData.penaltyType === 'deduction_kg'
-                            ? 'border-rose-500 bg-white font-black text-rose-950 shadow-2xs'
-                            : 'border-slate-200 bg-white/70 text-slate-600 font-bold hover:bg-white'
-                        }`}>
-                          <input
-                            type="radio"
-                            name="modalPenaltyType"
-                            checked={formData.penaltyType === 'deduction_kg'}
-                            onChange={() => setFormData(prev => ({ ...prev, penaltyType: 'deduction_kg' }))}
-                            className="text-rose-600 sr-only"
-                          />
-                          <span className="text-[8px] font-black uppercase">Desc. Kg</span>
-                        </label>
-
-                        <label className={`p-1 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-1 ${
-                          formData.penaltyType === 'deduction_percent'
-                            ? 'border-amber-500 bg-white font-black text-amber-950 shadow-2xs'
-                            : 'border-slate-200 bg-white/70 text-slate-600 font-bold hover:bg-white'
-                        }`}>
-                          <input
-                            type="radio"
-                            name="modalPenaltyType"
-                            checked={formData.penaltyType === 'deduction_percent'}
-                            onChange={() => setFormData(prev => ({ ...prev, penaltyType: 'deduction_percent' }))}
-                            className="text-amber-600 sr-only"
-                          />
-                          <span className="text-[8px] font-black uppercase">Desc. %</span>
-                        </label>
-
-                        <label className={`p-1 rounded-lg border cursor-pointer transition-all flex items-center justify-center gap-1 ${
-                          formData.penaltyType === 'disqualify'
-                            ? 'border-red-600 bg-red-100 font-black text-red-950 shadow-2xs'
-                            : 'border-slate-200 bg-white/70 text-slate-600 font-bold hover:bg-white'
-                        }`}>
-                          <input
-                            type="radio"
-                            name="modalPenaltyType"
-                            checked={formData.penaltyType === 'disqualify'}
-                            onChange={() => setFormData(prev => ({ ...prev, penaltyType: 'disqualify' }))}
-                            className="text-red-600 sr-only"
-                          />
-                          <span className="text-[8px] font-black uppercase">Desqualif.</span>
-                        </label>
-                      </div>
-
-                      {/* Valor do Desconto */}
-                      {formData.penaltyType !== 'disqualify' && (
-                        <div className="flex items-center gap-2">
-                          <label className="text-[8px] font-black uppercase text-rose-900 shrink-0">
-                            Valor ({formData.penaltyType === 'deduction_kg' ? 'Kg' : '%'}):
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={formData.deductionValue || 0}
-                            onChange={(e) => setFormData(prev => ({ ...prev, deductionValue: Number(e.target.value) || 0 }))}
-                            className="w-full bg-white border border-rose-300 rounded-lg px-2 py-0.5 text-xs font-black text-slate-900 h-7"
-                          />
+                  {formData.hasBonusOccurrence && (
+                    <div className="space-y-2.5 pt-0.5 animate-in fade-in duration-200">
+                      {/* Resumo do Operador / Data */}
+                      <div className="flex items-center justify-between bg-white/90 p-2 rounded-xl border border-amber-200/70 text-[10px]">
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <span className="font-black text-slate-500 uppercase">Colaborador:</span>
+                          <span className="font-black text-slate-900">{formData.operator || 'Operador não selecionado'}</span>
+                          {formData.shift && (
+                            <span className="text-[9px] font-bold text-slate-500">({formData.shift})</span>
+                          )}
                         </div>
-                      )}
+                        <div className="flex items-center gap-2 text-slate-600 font-mono text-[9px] font-bold">
+                          <span>{formData.date}</span>
+                          <span>•</span>
+                          <span className="text-amber-800 font-black">{formData.machine || 'Máquina'}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        {/* 1. Tipo de Ocorrência */}
+                        <div className="sm:col-span-8 space-y-1">
+                          <label className="text-[9px] font-black uppercase tracking-wider text-amber-950 flex items-center justify-between">
+                            <span>Tipo de Ocorrência *</span>
+                            <span className="text-[8px] text-amber-700 lowercase font-medium">selecione o motivo</span>
+                          </label>
+                          <select
+                            value={formData.bonusOccurrenceType || 'informacao_falsa'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              let defaultDiscount = 30;
+                              if (val === 'informacao_falsa') defaultDiscount = 100;
+                              else if (val === 'falta_injustificada' || val === 'atestado') defaultDiscount = 100;
+                              else if (val === 'saida_nao_comunicada') defaultDiscount = 35;
+                              else if (val === 'limpeza_excessiva' || val === 'meta_maquina_nao_atingida') defaultDiscount = 30;
+                              else if (val === 'partida_demorada') defaultDiscount = 20;
+                              else if (val === 'atraso_injustificado') defaultDiscount = 15;
+                              else if (val === 'atraso_justificado' || val === 'saida_mais_cedo') defaultDiscount = 10;
+                              
+                              setFormData(prev => ({
+                                ...prev,
+                                bonusOccurrenceType: val,
+                                bonusOccurrenceDiscount: defaultDiscount,
+                                infractionType: val === 'informacao_falsa' ? '🚨 Informação Falsa (Desqualificação Imediata)' : `Ocorrência: ${val}`,
+                                penaltyType: val === 'informacao_falsa' ? 'disqualify' : 'deduction_percent',
+                                deductionValue: defaultDiscount
+                              }));
+                            }}
+                            className="w-full bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30 h-8 cursor-pointer shadow-2xs"
+                          >
+                            <option value="informacao_falsa">🚨 Informação Falsa / Fraude (100% Desconto)</option>
+                            <option value="limpeza_excessiva">⏱️ Limpeza de Matriz &gt; 30 min (30% Desconto)</option>
+                            <option value="meta_maquina_nao_atingida">📉 Meta de Produção Não Atingida (30% Desconto)</option>
+                            <option value="partida_demorada">⏳ Partida de Máquina Demorada (20% Desconto)</option>
+                            <option value="atraso_injustificado">⏰ Atraso Injustificado (15% Desconto)</option>
+                            <option value="atraso_justificado">⚠️ Atraso Justificado (10% Desconto)</option>
+                            <option value="saida_mais_cedo">🚪 Saída Antecipada Comunicada (10% Desconto)</option>
+                            <option value="saida_nao_comunicada">🚪 Saída Antecipada Não Comunicada (35% Desconto)</option>
+                            <option value="falta_injustificada">❌ Falta Injustificada (100% Desconto)</option>
+                            <option value="atestado">🏥 Atestado Médico (100% Desconto)</option>
+                            <option value="outra">📝 Outra Ocorrência Personalizada...</option>
+                          </select>
+                        </div>
+
+                        {/* 2. Desconto Aplicado (%) */}
+                        <div className="sm:col-span-4 space-y-1">
+                          <label className="text-[9px] font-black uppercase tracking-wider text-amber-950 block">
+                            Desconto Aplicado
+                          </label>
+                          <div className="flex items-center gap-1 bg-white border border-amber-300 rounded-xl px-2 py-1 h-8 shadow-2xs">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={formData.bonusOccurrenceDiscount ?? 100}
+                              onChange={(e) => {
+                                const val = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                                setFormData(prev => ({
+                                  ...prev,
+                                  bonusOccurrenceDiscount: val,
+                                  deductionValue: val
+                                }));
+                              }}
+                              className="w-full bg-transparent text-xs font-black text-rose-700 text-right outline-none"
+                              placeholder="100"
+                            />
+                            <span className="text-xs font-black text-rose-700">%</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Observação e Motivo */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-amber-950 flex items-center justify-between">
+                          <span>Observação e Motivo *</span>
+                          <span className="text-[8px] text-amber-700 font-bold lowercase">
+                            *vai direto para o extrato do colaborador
+                          </span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={formData.bonusOccurrenceReason || ''}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            bonusOccurrenceReason: e.target.value,
+                            penaltyReason: e.target.value
+                          }))}
+                          placeholder="Descreva o motivo da ocorrência (ex: Apontou parada mecânica indevida, desvio de eco de produção, atraso, etc.)..."
+                          className="w-full bg-white border border-amber-300 rounded-xl p-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 shadow-2xs resize-none"
+                        />
+                      </div>
+
+                      {/* Rodapé informativo do slot */}
+                      <div className="p-2 rounded-xl bg-amber-100/70 border border-amber-200/80 text-[9.5px] text-amber-900 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 size={13} className="text-emerald-700 shrink-0" />
+                          <span>Não afeta o relatório de produção diária • Abate no bônus do mês</span>
+                        </span>
+                        <span className="font-mono font-bold text-rose-800">
+                          Abatimento: {formData.bonusOccurrenceDiscount || 0}%
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>

@@ -125,3 +125,41 @@ export const isOperatorNameSilenced = (
   if (norm.includes('silenciad')) return true;
   return silencedNamesSet.has(norm);
 };
+
+/**
+ * Cria um índice O(1) pré-computado para verificação instantânea de colaboradores silenciados.
+ * Elimina 400.000 iterações em arrays aninhados por render no Quadro de Pessoal.
+ */
+export const getSilencedLookup = (collaborators?: Collaborator[]) => {
+  const silencedIds = new Set<string>();
+  const silencedRegs = new Set<string>();
+  const silencedNames = new Set<string>();
+
+  if (collaborators && Array.isArray(collaborators)) {
+    for (let i = 0; i < collaborators.length; i++) {
+      const c = collaborators[i];
+      if (isCollaboratorSilenced(c)) {
+        if (c.id) silencedIds.add(c.id);
+        if (c.registration) silencedRegs.add(c.registration);
+        if (c.name) silencedNames.add(normalizeText(c.name));
+      }
+    }
+  }
+
+  return {
+    isSilenced: (emp?: Employee | null): boolean => {
+      if (!emp) return false;
+      if (emp.isSilenced === true) return true;
+      const statusNorm = normalizeText(emp.status);
+      if (statusNorm.includes('silenciad')) return true;
+      const nameNorm = normalizeText(emp.name);
+      if (nameNorm.includes('silenciad')) return true;
+      if (isGenericPlaceholder(emp.name) || statusNorm === 'em contratacao') return false;
+      if (emp.collaboratorId && silencedIds.has(emp.collaboratorId)) return true;
+      if (emp.registration && silencedRegs.has(emp.registration)) return true;
+      if (emp.name && silencedNames.has(nameNorm)) return true;
+      return false;
+    }
+  };
+};
+
