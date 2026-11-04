@@ -16,7 +16,6 @@ import {
 import { ScreensaverSettings } from "../utils/screensaverUtils";
 import { SettingsPermissions } from "../types";
 import { GOAL_VALUE } from "../constants";
-import { saveIntroVideo, deleteIntroVideo } from "../lib/videoStorage";
 
 const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Promise<string> => {
   return new Promise((resolve) => {
@@ -93,11 +92,6 @@ export const SettingsModal: React.FC<{
   setSystemLogo: (logo: string | null) => void;
   systemCoverImage: string | null;
   setSystemCoverImage: (image: string | null) => void;
-  systemIntroVideo?: string | null;
-  setSystemIntroVideo?: (video: string | null) => void;
-  introVideoMeta?: { name: string; size: number } | null;
-  setIntroVideoMeta?: (meta: { name: string; size: number } | null) => void;
-  onTestIntroVideo?: () => void;
   isAdminUser: boolean;
   isInstallable: boolean;
   isStandalone: boolean;
@@ -116,7 +110,6 @@ export const SettingsModal: React.FC<{
   setIsUserManagementOpen, setIsDowntimeReasonsModalOpen, setIsDowntimeAnalyticsModalOpen, setIsOperatorModalOpen, setIsRoleModalOpen, setIsShiftModalOpen, setIsPermissionModalOpen,
   downloadBackup, handleRestoreData, handleSyncLocalToCloud, openConfirm, isInitializing, fileInputRef,
   systemName, setSystemName, loginSystemName, setLoginSystemName, loginSystemSubtitle, setLoginSystemSubtitle, systemLogo, setSystemLogo, systemCoverImage, setSystemCoverImage, 
-  systemIntroVideo, setSystemIntroVideo, introVideoMeta, setIntroVideoMeta, onTestIntroVideo,
   isAdminUser, isInstallable, isStandalone, isIOS, handleInstallClick, setShowInstallExperience, onTriggerUpdateNotification,
   screensaverSettings, setScreensaverSettings, onTriggerScreensaverTest,
   settingsPerms
@@ -739,136 +732,6 @@ export const SettingsModal: React.FC<{
                       <div className="flex gap-2">
                          <button onClick={() => setSystemCoverImage(null)} className="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black uppercase text-red-500 rounded-xl hover:bg-red-50 transition-all">Remover Capa</button>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Vídeo de Abertura do Sistema (Animação de Carregamento) */}
-                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex flex-col md:flex-row items-start md:items-center gap-6">
-                  <div className="w-24 h-24 sm:w-28 sm:h-28 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-200 overflow-hidden shadow-sm relative group shrink-0">
-                    {systemIntroVideo ? (
-                      <video
-                        src={systemIntroVideo}
-                        className="w-full h-full object-cover"
-                        muted
-                        playsInline
-                        onMouseEnter={(e) => {
-                          const v = e.currentTarget;
-                          v.play().catch(() => {});
-                        }}
-                        onMouseLeave={(e) => {
-                          const v = e.currentTarget;
-                          v.pause();
-                          v.currentTime = 0;
-                        }}
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
-                        <Video size={28} className="opacity-40 mb-1" />
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Sem Vídeo</span>
-                      </div>
-                    )}
-                    <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer">
-                      <Upload size={16} className="text-white mb-1" />
-                      <span className="text-[9px] font-black text-white uppercase tracking-widest text-center px-1">
-                        {systemIntroVideo ? 'Trocar Vídeo' : 'Subir Vídeo'}
-                      </span>
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        accept="video/mp4,video/webm,video/ogg,video/quicktime" 
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            try {
-                              const url = await saveIntroVideo(file);
-                              setSystemIntroVideo?.(url);
-                              setIntroVideoMeta?.({ name: file.name, size: file.size });
-                              alert('Vídeo de abertura carregado com sucesso! Ele será reproduzido na inicialização do sistema.');
-                            } catch (err) {
-                              console.error('Erro ao salvar vídeo:', err);
-                              alert('Erro ao carregar o vídeo. Tente outro arquivo de vídeo MP4 ou WebM.');
-                            }
-                          }
-                        }} 
-                      />
-                    </label>
-                  </div>
-                  <div className="flex-1 space-y-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
-                          Vídeo de Abertura do Sistema (Animação de Carregamento)
-                        </p>
-                        {systemIntroVideo && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
-                            Ativo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed italic mt-0.5">
-                        Este vídeo substituirá a tela de carregamento do ambiente. Ao abrir o aplicativo, ele reproduzirá a animação de abertura da empresa (ex: 10 segundos) e, ao terminar, entrará diretamente na tela de login ou na sessão atual.
-                      </p>
-                      {introVideoMeta && (
-                        <p className="text-[9px] font-mono text-slate-500 mt-1">
-                          Arquivo carregado: <span className="font-bold text-slate-700">{introVideoMeta.name}</span> • {(introVideoMeta.size / (1024 * 1024)).toFixed(1)} MB
-                        </p>
-                      )}
-                    </div>
-                    
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <label className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-1.5">
-                        <Upload size={13} />
-                        <span>Carregar Vídeo (MP4/WebM)</span>
-                        <input 
-                          type="file" 
-                          className="hidden" 
-                          accept="video/mp4,video/webm,video/ogg,video/quicktime" 
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              try {
-                                const url = await saveIntroVideo(file);
-                                setSystemIntroVideo?.(url);
-                                setIntroVideoMeta?.({ name: file.name, size: file.size });
-                                alert('Vídeo de abertura carregado com sucesso!');
-                              } catch (err) {
-                                console.error('Erro ao salvar vídeo:', err);
-                                alert('Erro ao carregar o vídeo. Tente outro arquivo de vídeo MP4 ou WebM.');
-                              }
-                            }
-                          }} 
-                        />
-                      </label>
-
-                      {systemIntroVideo && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onTestIntroVideo?.();
-                              onClose();
-                            }}
-                            className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-                            title="Reproduzir abertura agora para testar"
-                          >
-                            <Play size={13} className="text-amber-400 fill-amber-400" />
-                            <span>Testar Abertura</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await deleteIntroVideo();
-                              setSystemIntroVideo?.(null);
-                              setIntroVideoMeta?.(null);
-                            }}
-                            className="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black uppercase text-red-500 rounded-xl hover:bg-red-50 transition-all cursor-pointer"
-                          >
-                            Remover Vídeo
-                          </button>
-                        </>
-                      )}
                     </div>
                   </div>
                 </div>

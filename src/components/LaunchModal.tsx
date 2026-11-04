@@ -1015,6 +1015,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           enabled: true,
           type: data.bonusOccurrenceType || 'informacao_falsa',
           penaltyRatePercent: Number(data.bonusOccurrenceDiscount) || 0,
+          rankingDiscountPercent: data.bonusOccurrenceType === 'parada_limpeza_nao_realizada' ? 50 : undefined,
           reason: data.bonusOccurrenceReason || '',
           description: data.bonusOccurrenceReason || ''
         } : undefined,
@@ -2891,37 +2892,71 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                             value={formData.bonusOccurrenceType || 'informacao_falsa'}
                             onChange={(e) => {
                               const val = e.target.value;
-                              let defaultDiscount = 30;
-                              if (val === 'informacao_falsa') defaultDiscount = 100;
-                              else if (val === 'falta_injustificada' || val === 'atestado') defaultDiscount = 100;
-                              else if (val === 'saida_nao_comunicada') defaultDiscount = 35;
-                              else if (val === 'limpeza_excessiva' || val === 'meta_maquina_nao_atingida') defaultDiscount = 30;
-                              else if (val === 'partida_demorada') defaultDiscount = 20;
-                              else if (val === 'atraso_injustificado') defaultDiscount = 15;
-                              else if (val === 'atraso_justificado' || val === 'saida_mais_cedo') defaultDiscount = 10;
+                              let defaultDiscount = 20;
+                              if (val === 'informacao_falsa' || val === 'falta_injustificada' || val === 'atestado' || val === 'advertencia_escrita' || val === 'uso_celular_reincidente' || val === 'fumar_reincidente' || val === 'nao_uso_epi_reincidente') {
+                                defaultDiscount = 100;
+                              } else if (val === 'parada_limpeza_nao_realizada') {
+                                defaultDiscount = 50;
+                              } else if (val === 'saida_nao_comunicada') {
+                                defaultDiscount = 35;
+                              } else if (val === 'meta_maquina_nao_atingida' || val === 'limpeza_excessiva') {
+                                defaultDiscount = 30;
+                              } else if (val === 'devolucao_externa' || val === 'reclamacao_interna' || val === 'materia_prima_molhada' || val === 'uso_celular' || val === 'fumar_trabalho' || val === 'nao_uso_epi' || val === 'partida_demorada' || val === 'atraso_injustificado') {
+                                defaultDiscount = 20;
+                              } else if (val === 'mau_preenchimento' || val === 'saida_mais_cedo' || val === 'atraso_justificado') {
+                                defaultDiscount = 10;
+                              } else if (val === 'atraso_10min' || val === 'hora_extra_nao_autorizada') {
+                                defaultDiscount = 1;
+                              }
                               
                               setFormData(prev => ({
                                 ...prev,
                                 bonusOccurrenceType: val,
                                 bonusOccurrenceDiscount: defaultDiscount,
-                                infractionType: val === 'informacao_falsa' ? '🚨 Informação Falsa (Desqualificação Imediata)' : `Ocorrência: ${val}`,
+                                infractionType: val === 'informacao_falsa' 
+                                  ? '🚨 Informação Falsa (Desqualificação Imediata)' 
+                                  : val === 'parada_limpeza_nao_realizada'
+                                    ? '🛑 Parada de Limpeza Não Realizada (50% Desc. no Ranking)'
+                                    : val === 'materia_prima_molhada'
+                                      ? '💧 Abastecimento c/ Matéria-Prima Molhada (-20%)'
+                                      : `Ocorrência: ${val}`,
                                 penaltyType: val === 'informacao_falsa' ? 'disqualify' : 'deduction_percent',
                                 deductionValue: defaultDiscount
                               }));
                             }}
                             className="w-full bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30 h-8 cursor-pointer shadow-2xs"
                           >
-                            <option value="informacao_falsa">🚨 Informação Falsa / Fraude (100% Desconto)</option>
-                            <option value="limpeza_excessiva">⏱️ Limpeza de Matriz &gt; 30 min (30% Desconto)</option>
-                            <option value="meta_maquina_nao_atingida">📉 Meta de Produção Não Atingida (30% Desconto)</option>
-                            <option value="partida_demorada">⏳ Partida de Máquina Demorada (20% Desconto)</option>
-                            <option value="atraso_injustificado">⏰ Atraso Injustificado (15% Desconto)</option>
-                            <option value="atraso_justificado">⚠️ Atraso Justificado (10% Desconto)</option>
-                            <option value="saida_mais_cedo">🚪 Saída Antecipada Comunicada (10% Desconto)</option>
-                            <option value="saida_nao_comunicada">🚪 Saída Antecipada Não Comunicada (35% Desconto)</option>
-                            <option value="falta_injustificada">❌ Falta Injustificada (100% Desconto)</option>
-                            <option value="atestado">🏥 Atestado Médico (100% Desconto)</option>
-                            <option value="outra">📝 Outra Ocorrência Personalizada...</option>
+                            <optgroup label="1. Qualidade">
+                              <option value="devolucao_externa">📦 Erro Operacional / Devolução Externa (-20%)</option>
+                              <option value="reclamacao_interna">⚠️ Reclamação Interna (-20%)</option>
+                              <option value="materia_prima_molhada">💧 Abastecimento com Matéria-Prima Molhada (-20%)</option>
+                              <option value="mau_preenchimento">📝 Mau Preenchimento de Apontamento (-10%)</option>
+                            </optgroup>
+                            <optgroup label="2. Assiduidade & Comportamento">
+                              <option value="atestado">🏥 Atestado Médico (-100%)</option>
+                              <option value="falta_injustificada">❌ Falta sem Justificativa (-100%)</option>
+                              <option value="advertencia_escrita">⚠️ Advertência por Escrito (-100%)</option>
+                              <option value="atraso_10min">⏰ Atraso (-1% a cada 10 min)</option>
+                              <option value="hora_extra_nao_autorizada">⏱️ Hora Extra Não Autorizada (-1% a cada 10 min)</option>
+                              <option value="uso_celular">📱 Uso de Celular no Trabalho (-20%)</option>
+                              <option value="uso_celular_reincidente">📱 Uso de Celular Reincidente (-100%)</option>
+                              <option value="fumar_trabalho">🚬 Fumar no Trabalho (-20%)</option>
+                              <option value="fumar_reincidente">🚬 Fumar no Trabalho Reincidente (-100%)</option>
+                              <option value="nao_uso_epi">🦺 Não Uso de EPIs (-20%)</option>
+                              <option value="nao_uso_epi_reincidente">🦺 Não Uso de EPIs Reincidente (-100%)</option>
+                              <option value="saida_mais_cedo">🚪 Saída Antecipada Comunicada (-10%)</option>
+                              <option value="saida_nao_comunicada">🚪 Saída Antecipada Não Comunicada (-35%)</option>
+                              <option value="atraso_injustificado">⏰ Atraso Injustificado (-20%)</option>
+                              <option value="atraso_justificado">⚠️ Atraso Justificado (-10%)</option>
+                            </optgroup>
+                            <optgroup label="3. Operacional & Paradas de Máquina">
+                              <option value="parada_limpeza_nao_realizada">🛑 Parada de Limpeza Não Realizada (50% Desc. no Ranking)</option>
+                              <option value="informacao_falsa">🚨 Informação Falsa / Fraude (100% Desconto)</option>
+                              <option value="limpeza_excessiva">⏱️ Limpeza de Matriz &gt; 30 min (30% Desconto)</option>
+                              <option value="meta_maquina_nao_atingida">📉 Meta de Produção Não Atingida (30% Desconto)</option>
+                              <option value="partida_demorada">⏳ Partida de Máquina Demorada (20% Desconto)</option>
+                              <option value="outra">📝 Outra Ocorrência Personalizada...</option>
+                            </optgroup>
                           </select>
                         </div>
 
@@ -2972,6 +3007,16 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           className="w-full bg-white border border-amber-300 rounded-xl p-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 shadow-2xs resize-none"
                         />
                       </div>
+
+                      {formData.bonusOccurrenceType === 'parada_limpeza_nao_realizada' && (
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-[10px] text-rose-900 flex items-start gap-2">
+                          <AlertTriangle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-black uppercase block">Parada de Limpeza Não Realizada:</span>
+                            <span>Será aplicado desconto de 50% na produção deste dia <strong>exclusivamente para o Ranking de Produtividade do Operador</strong>. Os relatórios de produção, faturamento e estoque permanecem 100% inalterados.</span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Rodapé informativo do slot */}
                       <div className="p-2 rounded-xl bg-amber-100/70 border border-amber-200/80 text-[9.5px] text-amber-900 flex items-center justify-between">

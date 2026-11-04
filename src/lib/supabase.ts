@@ -289,3 +289,155 @@ export async function checkSupabaseConnection(): Promise<{ connected: boolean; c
   }
 }
 
+// ==========================================
+// OPERAÇÕES GLOBAIS DE ENTIDADES NO SUPABASE
+// ==========================================
+
+export async function upsertToSupabase(table: string, row: any): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !row) return false;
+  try {
+    const { error } = await client.from(table).upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn(`[Supabase] Erro ao gravar em ${table}:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn(`[Supabase] Exceção ao gravar em ${table}:`, err?.message);
+    return false;
+  }
+}
+
+export async function deleteFromSupabase(table: string, id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !id) return false;
+  try {
+    const { error } = await client.from(table).delete().eq('id', id);
+    if (error) {
+      console.warn(`[Supabase] Erro ao excluir de ${table}:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn(`[Supabase] Exceção ao excluir de ${table}:`, err?.message);
+    return false;
+  }
+}
+
+export async function fetchAllFromSupabase(table: string, orderBy: string = 'id', ascending: boolean = true): Promise<any[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data, error } = await client.from(table).select('*').order(orderBy, { ascending });
+    if (error) {
+      console.warn(`[Supabase] Erro ao buscar de ${table}:`, error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err: any) {
+    console.warn(`[Supabase] Exceção ao buscar de ${table}:`, err?.message);
+    return [];
+  }
+}
+
+// Helpers específicos para sincronização direta
+export async function saveCollaboratorToSupabase(c: any): Promise<boolean> {
+  return upsertToSupabase('collaborators', {
+    id: String(c.id),
+    name: String(c.name || ''),
+    registration: String(c.registration || ''),
+    role: String(c.role || 'Auxiliar de Produção'),
+    sector: String(c.sector || 'Extrusão'),
+    shift: String(c.shift || ''),
+    machine: String(c.machine || ''),
+    status: String(c.status || 'Ativo'),
+    is_silenced: !!c.isSilenced,
+    silence_reason: String(c.silenceReason || ''),
+    raw_data: c,
+    updated_at: c.updatedAt || new Date().toISOString()
+  });
+}
+
+export async function deleteCollaboratorFromSupabase(id: string): Promise<boolean> {
+  return deleteFromSupabase('collaborators', id);
+}
+
+export async function saveEmployeeToSupabase(emp: any): Promise<boolean> {
+  return upsertToSupabase('employees', {
+    id: String(emp.id),
+    name: String(emp.name || ''),
+    role: String(emp.role || ''),
+    sector: String(emp.sector || 'Extrusão'),
+    machine: String(emp.machine || ''),
+    shift: String(emp.shift || ''),
+    status: String(emp.status || 'Ativo'),
+    collaborator_id: String(emp.collaboratorId || ''),
+    raw_data: emp,
+    updated_at: emp.updatedAt || new Date().toISOString()
+  });
+}
+
+export async function deleteEmployeeFromSupabase(id: string): Promise<boolean> {
+  return deleteFromSupabase('employees', id);
+}
+
+export async function saveSettingsToSupabase(key: string, data: any): Promise<boolean> {
+  return upsertToSupabase('settings', {
+    id: key,
+    key,
+    data,
+    updated_at: new Date().toISOString()
+  });
+}
+
+export async function saveVacationToSupabase(vac: any): Promise<boolean> {
+  return upsertToSupabase('vacations', {
+    id: String(vac.id),
+    employee_id: String(vac.employeeId || vac.registration || ''),
+    employee_name: String(vac.employeeName || vac.name || ''),
+    start_date: String(vac.startDate || ''),
+    end_date: String(vac.endDate || ''),
+    status: String(vac.status || 'Programado'),
+    raw_data: vac,
+    updated_at: vac.updatedAt || new Date().toISOString()
+  });
+}
+
+export async function deleteVacationFromSupabase(id: string): Promise<boolean> {
+  return deleteFromSupabase('vacations', id);
+}
+
+export async function savePersonnelLogToSupabase(log: any): Promise<boolean> {
+  return upsertToSupabase('personnel_logs', {
+    id: String(log.id),
+    date: String(log.date || new Date().toISOString()),
+    shift: String(log.shift || ''),
+    sector: String(log.sector || ''),
+    notes: String(log.details || log.notes || ''),
+    entries: Array.isArray(log.entries) ? log.entries : [],
+    raw_data: log,
+    updated_at: String(log.date || new Date().toISOString())
+  });
+}
+
+export async function saveRibbonEntryToSupabase(r: any): Promise<boolean> {
+  return upsertToSupabase('ribbon_cutting_entries', {
+    id: String(r.id),
+    date: String(r.date || ''),
+    shift: String(r.shift || ''),
+    machine: String(r.machine || ''),
+    operator: String(r.operator || ''),
+    net_weight: Number(r.netWeight) || 0,
+    scrap: Number(r.scrap) || 0,
+    stops: Array.isArray(r.stops) ? r.stops : [],
+    raw_data: r,
+    updated_at: r.updatedAt || new Date().toISOString()
+  });
+}
+
+export async function deleteRibbonEntryFromSupabase(id: string): Promise<boolean> {
+  return deleteFromSupabase('ribbon_cutting_entries', id);
+}
+
+

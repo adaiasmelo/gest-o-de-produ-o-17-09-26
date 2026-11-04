@@ -16,6 +16,8 @@ interface DatabaseModalProps {
   onDelete: (id: string, name: string) => void;
   onTerminate: (id: string, name: string) => void;
   onEditCollaborator: (collaborator: Collaborator) => void;
+  onDeleteCollaborator?: (id: string, name: string) => Promise<void> | void;
+  onCleanDuplicateCollaborators?: () => Promise<void> | void;
   onToggleSilenceCollaborator?: (collaborator: Collaborator, shouldSilence: boolean, reason?: string) => Promise<void> | void;
   onAllocateCollaborator?: (collaborator: Collaborator) => void;
   availableRoles: string[];
@@ -34,6 +36,8 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   onDelete,
   onTerminate,
   onEditCollaborator,
+  onDeleteCollaborator,
+  onCleanDuplicateCollaborators,
   onToggleSilenceCollaborator,
   onAllocateCollaborator,
   availableRoles = [],
@@ -64,13 +68,30 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     collaboratorId: ''
   }));
 
-  // Active (non-silenced) vs Silenced Collaborators
-  const activeCollaborators = useMemo(() => {
-    return (collaborators || []).filter(c => c && !isCollaboratorSilenced(c));
-  }, [collaborators]);
+  // Active (non-silenced) vs Silenced Collaborators (exige matrícula e deduplica por matrícula)
+  const { activeCollaborators, silencedCollaborators } = useMemo(() => {
+    const active: Collaborator[] = [];
+    const silenced: Collaborator[] = [];
+    const seenRegs = new Set<string>();
 
-  const silencedCollaborators = useMemo(() => {
-    return (collaborators || []).filter(c => c && isCollaboratorSilenced(c));
+    for (const c of (collaborators || [])) {
+      if (!c) continue;
+      const reg = String(c.registration || '').trim();
+      // Não pode colaborador sem matrícula permanecer no cadastro global
+      if (!reg) continue;
+      const regKey = reg.toLowerCase();
+      // Controle único por matrícula: se houver repetida, mantém apenas um
+      if (seenRegs.has(regKey)) continue;
+      seenRegs.add(regKey);
+
+      if (isCollaboratorSilenced(c)) {
+        silenced.push(c);
+      } else {
+        active.push(c);
+      }
+    }
+
+    return { activeCollaborators: active, silencedCollaborators: silenced };
   }, [collaborators]);
 
   // Dropdown for adding allocation - strictly active non-silenced and alphabetical
@@ -630,51 +651,78 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                 </div>
               </div>
               
-              <button
-                type="button"
-                onClick={async () => {
-                  if (isReadOnly) {
-                    if (onBlockedAction) {
-                      onBlockedAction('Importação Bloqueada', 'A importação e sincronização de colaboradores não é permitida no Modo de Leitura.');
-                    } else {
-                      alert('Operação não permitida no Modo de Leitura.');
-                    }
-                    return;
-                  }
-                  if (window.confirm("Deseja sincronizar todos os 75 colaboradores da planilha de pessoal do PDF? Registros com a mesma matrícula serão atualizados/preservados.")) {
-                    setIsImporting(true);
-                    try {
-                      let count = 0;
-                      for (const item of IMPORTED_COLLABORATORS) {
-                        const stableId = `col_${item.registration}`;
-                        await setDoc(doc(db, 'collaborators', stableId), {
-                          id: stableId,
-                          registration: item.registration,
-                          name: item.name,
-                          role: item.role,
-                          updatedAt: new Date().toISOString()
-                        }, { merge: true });
-                        count++;
+              <div className="flex items-center gap-2">
+                {onCleanDuplicateCollaborators && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (isReadOnly) {
+                        if (onBlockedAction) {
+                          onBlockedAction('Ação Bloqueada', 'Operação não permitida no Modo de Leitura.');
+                        } else {
+                          alert('Operação não permitida no Modo de Leitura.');
+                        }
+                        return;
                       }
-                      alert(`Sucesso! ${count} colaboradores foram sincronizados no Cadastro Global.`);
-                    } catch (err) {
-                      console.error(err);
-                      alert("Erro ao carregar colaboradores.");
-                    } finally {
-                      setIsImporting(false);
-                    }
-                  }
-                }}
-                disabled={isImporting}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-black text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-md shadow-blue-200 active:scale-95 flex items-center gap-1.5 shrink-0"
-              >
-                {isImporting ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <UserPlus size={14} />
+                      if (window.confirm("Deseja fazer a limpeza no Cadastro Global? Todos os nomes sem matrícula e todas as matrículas duplicadas serão excluídos imediatamente, mantendo apenas 1 registro único por matrícula.")) {
+                        await onCleanDuplicateCollaborators();
+                      }
+                    }}
+                    className="bg-slate-700 hover:bg-slate-800 text-white font-black text-[10px] uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
+                    title="Exclui registros sem matrícula e duplicatas por matrícula"
+                  >
+                    <Trash2 size={13} className="text-red-400" />
+                    <span>Limpar Duplicatas & Sem Matrícula</span>
+                  </button>
                 )}
-                {isImporting ? 'Importando...' : 'Sincronizar PDF (75)'}
-              </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (isReadOnly) {
+                      if (onBlockedAction) {
+                        onBlockedAction('Importação Bloqueada', 'A importação e sincronização de colaboradores não é permitida no Modo de Leitura.');
+                      } else {
+                        alert('Operação não permitida no Modo de Leitura.');
+                      }
+                      return;
+                    }
+                    if (window.confirm("Deseja sincronizar todos os 75 colaboradores da planilha de pessoal do PDF? Registros com a mesma matrícula serão atualizados/preservados.")) {
+                      setIsImporting(true);
+                      try {
+                        let count = 0;
+                        for (const item of IMPORTED_COLLABORATORS) {
+                          if (!item.registration || !item.registration.trim()) continue;
+                          const stableId = `col_${item.registration}`;
+                          await setDoc(doc(db, 'collaborators', stableId), {
+                            id: stableId,
+                            registration: item.registration,
+                            name: item.name,
+                            role: item.role,
+                            updatedAt: new Date().toISOString()
+                          }, { merge: true });
+                          count++;
+                        }
+                        alert(`Sucesso! ${count} colaboradores foram sincronizados no Cadastro Global.`);
+                      } catch (err) {
+                        console.error(err);
+                        alert("Erro ao carregar colaboradores.");
+                      } finally {
+                        setIsImporting(false);
+                      }
+                    }
+                  }}
+                  disabled={isImporting}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-black text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-md shadow-blue-200 active:scale-95 flex items-center gap-1.5 shrink-0"
+                >
+                  {isImporting ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <UserPlus size={14} />
+                  )}
+                  {isImporting ? 'Importando...' : 'Sincronizar PDF (75)'}
+                </button>
+              </div>
             </div>
 
             {/* Tabela do Cadastro Global em Ordem Alfabética */}
@@ -764,6 +812,24 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                               <Edit2 size={12} />
                               <span>Editar</span>
                             </button>
+                            {onDeleteCollaborator && (
+                              <button 
+                                onClick={() => {
+                                  if (isReadOnly) {
+                                    if (onBlockedAction) onBlockedAction('Ação Bloqueada', 'Operação não permitida no Modo de Leitura.');
+                                    return;
+                                  }
+                                  if (window.confirm(`Deseja realmente excluir o colaborador "${col.name}" (Matrícula #${col.registration}) do Cadastro Global?`)) {
+                                    onDeleteCollaborator(col.id, col.name);
+                                  }
+                                }}
+                                className="p-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all shadow-xs border border-red-100 hover:border-red-600 flex items-center gap-1 text-[9px] font-black uppercase"
+                                title="Excluir permanentemente do cadastro global"
+                              >
+                                <Trash2 size={12} />
+                                <span>Excluir</span>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

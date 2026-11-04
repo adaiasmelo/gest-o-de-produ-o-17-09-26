@@ -28,14 +28,29 @@ export type BonusIncidentType =
   | 'atestado' 
   | 'falta_injustificada' 
   | 'falta_justificada' 
+  | 'advertencia_escrita'
+  | 'atraso_10min'
+  | 'hora_extra_nao_autorizada'
   | 'atraso_injustificado' 
   | 'atraso_justificado' 
   | 'saida_mais_cedo'
   | 'saida_nao_comunicada'
+  | 'uso_celular'
+  | 'uso_celular_reincidente'
+  | 'fumar_trabalho'
+  | 'fumar_reincidente'
+  | 'nao_uso_epi'
+  | 'nao_uso_epi_reincidente'
+  | 'devolucao_externa'
+  | 'reclamacao_interna'
+  | 'mau_preenchimento'
+  | 'materia_prima_molhada'
+  | 'parada_limpeza_nao_realizada'
   | 'limpeza_excessiva'
   | 'partida_demorada'
   | 'meta_maquina_nao_atingida'
-  | 'informacao_falsa';
+  | 'informacao_falsa'
+  | 'outra';
 
 export interface BonusIncident {
   id: string;
@@ -390,8 +405,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       map[key].entriesCount += 1;
       map[key].totalNet += (e.netWeight || 0);
+      // Regra ECOA: O ECOA terá perda de bônus somente se ultrapassar 8% no dia.
+      // Se não ultrapassar 8% da produção do dia, não haverá perda nenhuma e não gerará perda percentual.
+      const dayProd = Number(e.grossWeight) || Number(e.netWeight) || 0;
+      const rawEcoA = Number(e.ecoA) || 0;
+      const ecoAPct = dayProd > 0 ? (rawEcoA / dayProd) * 100 : 0;
+      const evaluatedEcoA = ecoAPct > 8 ? rawEcoA : 0;
+
       // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
-      const evaluatedLoss = (e.borraTotal || 0) + (e.ecoA || 0) + (e.ecoBP || 0);
+      const evaluatedLoss = (Number(e.borraTotal) || 0) + evaluatedEcoA + (Number(e.ecoBP) || 0);
       map[key].totalLoss += evaluatedLoss;
 
       // Avaliação de Paradas:
@@ -1047,8 +1069,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       let actualProdDisplay = formatWeight(e.netWeight);
       let lossDisplay = '0 Kg';
 
+      // Regra ECOA: O ECOA terá perda de bônus somente se ultrapassar 8% no dia.
+      // Se não ultrapassar 8% da produção do dia, não haverá perda nenhuma e não gerará perda percentual.
+      const dayProd = Number(e.grossWeight) || Number(e.netWeight) || 0;
+      const rawEcoA = Number(e.ecoA) || 0;
+      const ecoAPct = dayProd > 0 ? (rawEcoA / dayProd) * 100 : 0;
+      const evaluatedEcoA = ecoAPct > 8 ? rawEcoA : 0;
+
       // Regra estrita: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
-      const evaluatedLosses = (Number(e.ecoA) || 0) + (Number(e.ecoBP) || 0) + (Number(e.borraTotal) || 0);
+      const evaluatedLosses = evaluatedEcoA + (Number(e.ecoBP) || 0) + (Number(e.borraTotal) || 0);
       const ecoBM = Number(e.ecoBM) || 0;
 
       // Avaliação de Paradas:
@@ -1086,7 +1115,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         toleranceStr = `${tolPct}% (≤ ${formatWeight(maxAllowedLoss)})`;
         meta12hStr = formatWeight(targetNetKg);
         actualProdDisplay = formatWeight(e.netWeight);
-        lossDisplay = formatWeight(evaluatedLosses) + (ecoBM > 0 ? ` (+${formatWeight(ecoBM)} EcoBM Isento)` : '');
+        lossDisplay = formatWeight(evaluatedLosses) + 
+          (rawEcoA > 0 && ecoAPct <= 8 ? ` (EcoA ${ecoAPct.toFixed(1)}% ≤ 8% Isento)` : '') +
+          (ecoBM > 0 ? ` (+${formatWeight(ecoBM)} EcoBM Isento)` : '');
 
         const isNetMet = net >= targetNetKg;
         const isLossOk = evaluatedLosses <= maxAllowedLoss;
@@ -2049,45 +2080,59 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                       onChange={(e) => {
                         const t = e.target.value as BonusIncidentType;
                         setIncidentType(t);
-                        if (t === 'informacao_falsa') {
+                        if (t === 'informacao_falsa' || t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada' || t === 'advertencia_escrita' || t === 'uso_celular_reincidente' || t === 'fumar_reincidente' || t === 'nao_uso_epi_reincidente') {
                           setCustomPenaltyPercent(100);
                           setIsJustified(false);
-                        } else if (t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada') {
-                          setCustomPenaltyPercent(100);
-                        } else if (t === 'atraso_injustificado') {
-                          setCustomPenaltyPercent(20);
-                        } else if (t === 'atraso_justificado') {
-                          setCustomPenaltyPercent(5);
-                        } else if (t === 'saida_mais_cedo') {
-                          setCustomPenaltyPercent(10);
-                          setNotifiedManager(true);
+                        } else if (t === 'parada_limpeza_nao_realizada') {
+                          setCustomPenaltyPercent(50);
                         } else if (t === 'saida_nao_comunicada') {
                           setCustomPenaltyPercent(35);
                           setNotifiedManager(false);
+                        } else if (t === 'meta_maquina_nao_atingida') {
+                          setCustomPenaltyPercent(30);
+                        } else if (t === 'devolucao_externa' || t === 'reclamacao_interna' || t === 'materia_prima_molhada' || t === 'uso_celular' || t === 'fumar_trabalho' || t === 'nao_uso_epi' || t === 'atraso_injustificado' || t === 'partida_demorada') {
+                          setCustomPenaltyPercent(20);
                         } else if (t === 'limpeza_excessiva') {
                           setCustomPenaltyPercent(15);
-                        } else if (t === 'partida_demorada') {
-                          setCustomPenaltyPercent(15);
+                        } else if (t === 'mau_preenchimento' || t === 'saida_mais_cedo') {
+                          setCustomPenaltyPercent(10);
+                          if (t === 'saida_mais_cedo') setNotifiedManager(true);
+                        } else if (t === 'atraso_justificado') {
+                          setCustomPenaltyPercent(5);
+                        } else if (t === 'atraso_10min' || t === 'hora_extra_nao_autorizada') {
+                          setCustomPenaltyPercent(1);
                         }
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-semibold outline-none"
                     >
-                      <optgroup label="Fraude & Conformidade de Apontamento">
+                      <optgroup label="1. Qualidade">
+                        <option value="devolucao_externa">📦 Erro Operacional / Devolução Externa (-20%)</option>
+                        <option value="reclamacao_interna">⚠️ Reclamação Interna (-20%)</option>
+                        <option value="materia_prima_molhada">💧 Abastecimento com Matéria-Prima Molhada (-20%)</option>
+                        <option value="mau_preenchimento">📝 Mau Preenchimento de Apontamento (-10%)</option>
+                      </optgroup>
+                      <optgroup label="2. Assiduidade & Comportamento">
+                        <option value="atestado">🏥 Atestado Médico (-100%)</option>
+                        <option value="falta_injustificada">❌ Falta sem Justificativa (-100%)</option>
+                        <option value="advertencia_escrita">⚠️ Advertência por Escrito (-100%)</option>
+                        <option value="atraso_10min">⏰ Atraso (-1% a cada 10 min)</option>
+                        <option value="hora_extra_nao_autorizada">⏱️ Hora Extra Não Autorizada (-1% a cada 10 min)</option>
+                        <option value="uso_celular">📱 Uso de Celular no Trabalho (-20%)</option>
+                        <option value="uso_celular_reincidente">📱 Uso de Celular Reincidente (-100%)</option>
+                        <option value="fumar_trabalho">🚬 Fumar no Trabalho (-20%)</option>
+                        <option value="fumar_reincidente">🚬 Fumar no Trabalho Reincidente (-100%)</option>
+                        <option value="nao_uso_epi">🦺 Não Uso de EPIs (-20%)</option>
+                        <option value="nao_uso_epi_reincidente">🦺 Não Uso de EPIs Reincidente (-100%)</option>
+                        <option value="saida_mais_cedo">🚪 Saída Comunicada ao Gestor (-10%)</option>
+                        <option value="saida_nao_comunicada">🚪 Saída Não Comunicada (-35%)</option>
+                      </optgroup>
+                      <optgroup label="3. Operacional & Paradas de Máquina">
+                        <option value="parada_limpeza_nao_realizada">🛑 Parada de Limpeza Não Realizada (50% Desc. no Ranking)</option>
                         <option value="informacao_falsa">🚨 Informação Falsa / Fraude de Apontamento (-100%)</option>
-                      </optgroup>
-                      <optgroup label="Disciplina & Assiduidade">
-                        <option value="saida_mais_cedo">Saída Fora do Horário / Saída Mais Cedo - Comunicada (-10%)</option>
-                        <option value="saida_nao_comunicada">Saída Sem Avisar / Não Comunicada ao Gestor (-35%)</option>
-                        <option value="atraso_injustificado">Atraso Injustificado (-20%)</option>
-                        <option value="atraso_justificado">Atraso Justificado (-5%)</option>
-                        <option value="falta_injustificada">Falta Injustificada (-100%)</option>
-                        <option value="falta_justificada">Falta Justificada (-100%)</option>
-                        <option value="atestado">Atestado Médico (-100%)</option>
-                      </optgroup>
-                      <optgroup label="Operacional & Máquina">
-                        <option value="limpeza_excessiva">Parada de Limpeza Excedeu 30 Minutos (-15%)</option>
-                        <option value="partida_demorada">Partida de Máquina com Demora Excessiva (-15%)</option>
-                        <option value="meta_maquina_nao_atingida">Meta Máquina/kg-h Não Atingida (-30%)</option>
+                        <option value="limpeza_excessiva">⏱️ Parada de Limpeza Excedeu 30 Minutos (-15%)</option>
+                        <option value="partida_demorada">⏳ Partida de Máquina com Demora Excessiva (-20%)</option>
+                        <option value="meta_maquina_nao_atingida">📉 Meta de Máquina/kg-h Não Atingida (-30%)</option>
+                        <option value="outra">📝 Outra Ocorrência Personalizada...</option>
                       </optgroup>
                     </select>
                   </div>

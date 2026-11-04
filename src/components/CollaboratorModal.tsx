@@ -10,6 +10,7 @@ interface CollaboratorModalProps {
   initialData?: Collaborator | null;
   operators?: string[];
   availableRoles?: string[];
+  existingCollaborators?: Collaborator[];
 }
 
 const INITIAL_BRIGADA_REGS = ['1575', '1834', '1695', '1807', '1544', '1792', '1702', '1694', '1758', '1829', '1840', '1850', '1854', '1844', '1808'];
@@ -34,7 +35,8 @@ const CollaboratorModal: React.FC<CollaboratorModalProps> = ({
   onClose, 
   onSave, 
   initialData,
-  availableRoles = [] 
+  availableRoles = [],
+  existingCollaborators = []
 }) => {
   const isEditing = Boolean(initialData && (initialData.id || initialData.registration));
 
@@ -106,14 +108,33 @@ const CollaboratorModal: React.FC<CollaboratorModalProps> = ({
     e.preventDefault();
     const cleanName = (formData.name || '').trim();
     const cleanReg = (formData.registration || '').trim();
-    if (!cleanName || !cleanReg) {
-      alert('Nome e matrícula são obrigatórios');
+    if (!cleanReg) {
+      alert('A matrícula é obrigatória. Não é permitido cadastrar colaboradores sem matrícula.');
       return;
+    }
+    if (!cleanName) {
+      alert('O nome do colaborador é obrigatório.');
+      return;
+    }
+
+    // Validação estrita de matrícula única no Cadastro Global
+    if (existingCollaborators && existingCollaborators.length > 0) {
+      const currentId = initialData?.id || formData.id;
+      const duplicate = existingCollaborators.find(c => 
+        c && 
+        c.registration && 
+        c.registration.trim().toLowerCase() === cleanReg.toLowerCase() && 
+        c.id !== currentId
+      );
+      if (duplicate) {
+        alert(`A matrícula "${cleanReg}" já pertence ao colaborador "${duplicate.name}". O controle do sistema é estritamente pela matrícula única e não são permitidas duplicidades.`);
+        return;
+      }
     }
 
     const finalData: Partial<Collaborator> = {
       ...formData,
-      id: initialData?.id || formData.id,
+      id: initialData?.id || formData.id || `col_${cleanReg}`,
       name: cleanName,
       registration: cleanReg,
       role: formData.role || 'Auxiliar de Produção',
@@ -209,13 +230,16 @@ const CollaboratorModal: React.FC<CollaboratorModalProps> = ({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Matrícula</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1">
+                  Matrícula <span className="text-red-500 font-black text-xs">* (Obrigatória)</span>
+                </label>
                 <input 
                   type="text" 
+                  required
                   value={formData.registration || ''}
                   onChange={e => setFormData({ ...formData, registration: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 font-bold text-sm outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-400 transition-all"
-                  placeholder="Ex: 0001"
+                  placeholder="Ex: 1611"
                 />
               </div>
               <div>

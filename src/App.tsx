@@ -167,11 +167,17 @@ import {
   deleteProductionEntriesFromSupabase,
   fetchAllProductionFromSupabase, 
   checkSupabaseConnection,
-  isSupabaseConfigured 
+  isSupabaseConfigured,
+  saveCollaboratorToSupabase,
+  deleteCollaboratorFromSupabase,
+  saveEmployeeToSupabase,
+  deleteEmployeeFromSupabase,
+  saveSettingsToSupabase,
+  saveVacationToSupabase,
+  deleteVacationFromSupabase,
+  savePersonnelLogToSupabase
 } from './lib/supabase';
 import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
-import { saveIntroVideo, getIntroVideoUrl, deleteIntroVideo, hasStoredIntroVideo } from './lib/videoStorage';
-import { SystemIntroVideoPlayer } from './components/SystemIntroVideoPlayer';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
   "marcelo": { registration: "1611", name: "MARCELO DA SILVA CASTRO" },
@@ -973,76 +979,7 @@ export const App: React.FC = () => {
   const [loginSystemSubtitle, setLoginSystemSubtitle] = useState(() => localStorage.getItem('manupackaging_login_subtitle') || '');
   const [systemLogo, setSystemLogo] = useState<string | null>(() => localStorage.getItem('manupackaging_system_logo'));
   const [systemCoverImage, setSystemCoverImage] = useState<string | null>(() => localStorage.getItem('manupackaging_system_cover'));
-  const [systemIntroVideo, setSystemIntroVideo] = useState<string | null>(() => localStorage.getItem('manupackaging_intro_video_url'));
-  const [introVideoMeta, setIntroVideoMeta] = useState<{ name: string; size: number } | null>(() => {
-    try {
-      const saved = localStorage.getItem('manupackaging_intro_video_meta');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isIntroVideoPlaying, setIsIntroVideoPlaying] = useState<boolean>(() => {
-    try {
-      if (typeof window === 'undefined') return false;
-      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played') === 'true';
-      if (alreadyPlayed) return false;
-      return hasStoredIntroVideo() || Boolean(localStorage.getItem('manupackaging_intro_video_url'));
-    } catch {
-      return false;
-    }
-  });
   const [isSystemInfoModalOpen, setIsSystemInfoModalOpen] = useState(false);
-
-  // Carrega vídeo de abertura do IndexedDB no início da aplicação (apenas uma única vez por sessão)
-  useEffect(() => {
-    try {
-      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played');
-      if (alreadyPlayed === 'true') {
-        setIsIntroVideoPlaying(false);
-        return;
-      }
-    } catch {}
-
-    getIntroVideoUrl().then((res) => {
-      const alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played') === 'true';
-      if (alreadyPlayed) {
-        setIsIntroVideoPlaying(false);
-        return;
-      }
-      if (res && res.url) {
-        setSystemIntroVideo(res.url);
-        setIntroVideoMeta({ name: res.name, size: res.size });
-        setIsIntroVideoPlaying(true);
-      } else {
-        const savedUrl = localStorage.getItem('manupackaging_intro_video_url');
-        if (savedUrl) {
-          setSystemIntroVideo(savedUrl);
-          setIsIntroVideoPlaying(true);
-        } else {
-          setIsIntroVideoPlaying(false);
-        }
-      }
-    }).catch((err) => {
-      console.warn('Erro ao inicializar vídeo de introdução:', err);
-      setIsIntroVideoPlaying(false);
-    });
-  }, []);
-
-  // Elimina completamente a barra de rolagem da janela enquanto o vídeo de abertura estiver rodando
-  useEffect(() => {
-    if (isIntroVideoPlaying) {
-      document.documentElement.classList.add('intro-video-active');
-      document.body.classList.add('intro-video-active');
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.documentElement.classList.remove('intro-video-active');
-      document.body.classList.remove('intro-video-active');
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-    }
-  }, [isIntroVideoPlaying]);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [isDowntimeReasonsModalOpen, setIsDowntimeReasonsModalOpen] = useState(false);
   const [isDowntimeAnalyticsModalOpen, setIsDowntimeAnalyticsModalOpen] = useState(false);
@@ -2570,12 +2507,25 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     });
 
     const unsubCollaborators = onSnapshot(collection(db, 'collaborators'), (snap) => {
-      const data = snap.docs.map(docRef => {
+      const seenRegs = new Set<string>();
+      const validCollaborators: Collaborator[] = [];
+
+      for (const docRef of snap.docs) {
         const raw = docRef.data() as Collaborator;
-        const cleaned = { ...raw, id: docRef.id };
-        return upgradeCollaborator(cleaned);
-      });
-      setCollaborators(data);
+        const reg = String(raw.registration || '').trim();
+        // Não pode sem matrícula
+        if (!reg) continue;
+        
+        // Matrícula duplicada: manter apenas o primeiro
+        const regKey = reg.toLowerCase();
+        if (seenRegs.has(regKey)) continue;
+        seenRegs.add(regKey);
+
+        const cleaned = { ...raw, id: docRef.id, registration: reg };
+        validCollaborators.push(upgradeCollaborator(cleaned));
+      }
+
+      setCollaborators(validCollaborators);
     }, (err) => {
       console.warn('Erro ao carregar colaboradores do banco.', err);
       try { handleFirestoreError(err, OperationType.LIST, 'collaborators'); } catch (_) {}
@@ -2957,65 +2907,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           }
         }
       }
-
-      // Limpeza de duplicatas por matrícula para evitar registros redundantes
-      const regGroups = new Map<string, Collaborator[]>();
-      currentCollaborators.forEach(c => {
-        if (c.registration) {
-          if (!regGroups.has(c.registration)) regGroups.set(c.registration, []);
-          regGroups.get(c.registration)!.push(c);
-        }
-      });
-      for (const [reg, cols] of regGroups.entries()) {
-        if (cols.length > 1) {
-          // Ordenar para garantir que o registro oficial com ID estável 'col_matricula' fique no índice 0 e seja mantido
-          cols.sort((a, b) => {
-            if (a.id === `col_${reg}`) return -1;
-            if (b.id === `col_${reg}`) return 1;
-            return 0;
-          });
-          console.log(`Removendo registros duplicados para a matrícula ${reg}`);
-          for (let i = 1; i < cols.length; i++) {
-            if (cols[i].id) {
-              await deleteDoc(doc(db, 'collaborators', cols[i].id));
-              const idx = currentCollaborators.findIndex(item => item.id === cols[i].id);
-              if (idx >= 0) currentCollaborators.splice(idx, 1);
-            }
-          }
-        }
-      }
-      
-      // Cleanup Duplicates if they already exist
-      const nameGroups = new Map<string, Collaborator[]>();
-      currentCollaborators.forEach(c => {
-        if (!nameGroups.has(c.name)) nameGroups.set(c.name, []);
-        nameGroups.get(c.name)!.push(c);
-      });
-
-      for (const [name, cols] of nameGroups.entries()) {
-        if (cols.length > 1) {
-          // Ordenar para priorizar manter o de ID estável 'col_matricula'
-          cols.sort((a, b) => {
-            const aStable = a.registration ? a.id === `col_${a.registration}` : false;
-            const bStable = b.registration ? b.id === `col_${b.registration}` : false;
-            if (aStable && !bStable) return -1;
-            if (!aStable && bStable) return 1;
-            return 0;
-          });
-          // Keep the first one, delete others
-          console.log(`Cleaning up duplicates for ${name}`);
-          for (let i = 1; i < cols.length; i++) {
-            if (cols[i].id) {
-              await deleteDoc(doc(db, 'collaborators', cols[i].id));
-            }
-          }
-        }
-      }
-
-      // Track names being added to avoid duplicates within the same migration loop
-      const namesAdded = new Set<string>(currentCollaborators.map(c => c.name));
-      let nextRegNumber = Math.max(0, ...currentCollaborators.map(c => parseInt(c.registration) || 0)) + 1;
-
+      // Sincronizar funcionários com colaboradores (apenas se possuir matrícula válida)
       for (const emp of employees) {
         if (!emp.name || emp.name === 'VAGA DISPONÍVEL' || emp.name === 'Em Contratação') continue;
         
@@ -3036,35 +2928,40 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             console.error('Erro ao migrar função Supervisor', emp.name, err);
           }
         }
+
+        const cleanEmpReg = (emp.registration || '').trim();
+        // Não cadastrar colaborador global se o funcionário estiver sem matrícula
+        if (!cleanEmpReg) continue;
         
-        let targetColId = emp.collaboratorId;
         let existingCol = currentCollaborators.find(c => 
-          (emp.collaboratorId && c.id === emp.collaboratorId) || 
-          (emp.registration && c.registration === emp.registration) || 
-          (c.name === emp.name)
+          (c.registration && c.registration.trim().toLowerCase() === cleanEmpReg.toLowerCase())
         );
 
-        if (!existingCol && !namesAdded.has(emp.name)) {
+        if (!existingCol) {
           try {
-            const colRef = doc(collection(db, 'collaborators'));
-            const colId = colRef.id;
-            const registration = emp.registration || String(nextRegNumber++).padStart(4, '0');
+            const colId = `col_${cleanEmpReg}`;
+            const colRef = doc(db, 'collaborators', colId);
             
             await setDoc(colRef, {
               id: colId,
               name: emp.name,
-              registration: registration,
-              role: emp.role || 'Colaborador',
+              registration: cleanEmpReg,
+              role: emp.role || 'Auxiliar de Produção',
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            currentCollaborators.push({
+              id: colId,
+              name: emp.name,
+              registration: cleanEmpReg,
+              role: emp.role || 'Auxiliar de Produção',
               updatedAt: new Date().toISOString()
             });
-            namesAdded.add(emp.name);
-            targetColId = colId;
             
-            // Also link the employee to this new collaborator ID
             if (emp.id) {
               await setDoc(doc(db, 'employees', emp.id), { 
                 collaboratorId: colId,
-                registration: registration 
+                registration: cleanEmpReg 
               }, { merge: true });
             }
           } catch (err) {
@@ -3082,10 +2979,14 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             await setDoc(doc(db, 'employees', emp.id), updates, { merge: true });
           }
           
-          // Also check if the collaborator itself needs a registration
+          // Se o colaborador não possuir matrícula, usar a do funcionário ou remover
           if (!existingCol.registration && existingCol.id) {
-             const registration = emp.registration || String(nextRegNumber++).padStart(4, '0');
-             await setDoc(doc(db, 'collaborators', existingCol.id), { registration }, { merge: true });
+            if (emp.registration && emp.registration.trim()) {
+              await setDoc(doc(db, 'collaborators', existingCol.id), { registration: emp.registration.trim() }, { merge: true });
+              existingCol.registration = emp.registration.trim();
+            } else {
+              await deleteDoc(doc(db, 'collaborators', existingCol.id)).catch(() => {});
+            }
           }
         }
       }
@@ -3298,8 +3199,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     try {
       const cleanName = (data.name || '').trim();
       const cleanReg = (data.registration || '').trim();
-      if (!cleanName || !cleanReg) {
-        alert('Nome e matrícula são obrigatórios.');
+      if (!cleanReg) {
+        alert('A matrícula é obrigatória. Não é permitido cadastrar colaboradores sem matrícula.');
+        return;
+      }
+      if (!cleanName) {
+        alert('O nome do colaborador é obrigatório.');
         return;
       }
 
@@ -3308,6 +3213,19 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       const prevId = prevCol?.id || data.id;
       const prevRegistration = prevCol?.registration;
       const prevName = prevCol?.name;
+
+      // Validação estrita de matrícula única no Cadastro Global
+      const duplicateCol = collaborators.find(c => 
+        c && 
+        c.registration && 
+        c.registration.trim().toLowerCase() === cleanReg.toLowerCase() && 
+        c.id !== prevId && 
+        c.id !== `col_${cleanReg}`
+      );
+      if (duplicateCol) {
+        alert(`A matrícula "${cleanReg}" já pertence ao colaborador "${duplicateCol.name}". O controle do cadastro global é pela matrícula e não são permitidas duplicidades.`);
+        return;
+      }
 
       // ID estável baseado na matrícula para manter consistência
       const targetId = prevId || `col_${cleanReg}`;
@@ -3333,11 +3251,13 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       // Limpar campos undefined antes de persistir no Firestore
       const sanitizedColData = cleanUndefined(finalCollaboratorData);
       await setDoc(colRef, sanitizedColData, { merge: true });
+      saveCollaboratorToSupabase(finalCollaboratorData).catch(() => {});
 
       // Se o ID anterior era diferente de targetId, remove o documento obsoleto
       if (prevId && prevId !== targetId) {
         try {
           await deleteDoc(doc(db, 'collaborators', prevId));
+          deleteCollaboratorFromSupabase(prevId).catch(() => {});
         } catch (delErr) {
           console.warn('Erro ao remover documento anterior do colaborador:', delErr);
         }
@@ -3441,6 +3361,99 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       console.error('Erro ao salvar colaborador no banco de dados:', err);
       alert('Erro ao salvar colaborador no banco de dados. Verifique a conexão.');
       handleFirestoreError(err, OperationType.WRITE, 'collaborators');
+    }
+  };
+
+  const handleDeleteCollaborator = async (colId: string, colName: string) => {
+    if (isReadOnlyAccount || (!isAdmin && !userPerms.personnel.manage)) {
+      addNotification('Apenas administradores podem excluir colaboradores do Cadastro Global.');
+      return;
+    }
+    try {
+      const targetCol = (collaborators || []).find(c => c.id === colId);
+      await deleteDoc(doc(db, 'collaborators', colId));
+      deleteCollaboratorFromSupabase(colId).catch(() => {});
+      setCollaborators(prev => prev.filter(c => c.id !== colId));
+
+      // Desvincular vagas/slots que apontavam para este colaborador
+      const updatedEmployees = employees.map(emp => {
+        if (emp.collaboratorId === colId || (targetCol?.registration && emp.registration === targetCol.registration)) {
+          return {
+            ...emp,
+            collaboratorId: '',
+            status: 'Vaga Disponível' as any,
+            name: 'VAGA DISPONÍVEL',
+            registration: ''
+          };
+        }
+        return emp;
+      });
+      setEmployees(updatedEmployees);
+      localStorage.setItem('manupackaging_employees', JSON.stringify(updatedEmployees));
+
+      addNotification(`Colaborador "${colName}" excluído com sucesso do Cadastro Global.`);
+    } catch (err) {
+      console.error('Erro ao excluir colaborador:', err);
+      alert('Erro ao excluir colaborador. Verifique sua conexão.');
+    }
+  };
+
+  const handleCleanDuplicateCollaborators = async () => {
+    if (isReadOnlyAccount || (!isAdmin && !userPerms.personnel.manage)) {
+      addNotification('Apenas administradores podem executar a limpeza de duplicatas.');
+      return;
+    }
+    try {
+      const snap = await getDocs(collection(db, 'collaborators'));
+      let deletedCount = 0;
+      let withoutRegCount = 0;
+      
+      const regMap = new Map<string, Array<{ id: string; data: Collaborator }>>();
+      const withoutRegDocs: string[] = [];
+
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data() as Collaborator;
+        const reg = String(data.registration || '').trim();
+        if (!reg) {
+          withoutRegDocs.push(docSnap.id);
+        } else {
+          const regKey = reg.toLowerCase();
+          if (!regMap.has(regKey)) regMap.set(regKey, []);
+          regMap.get(regKey)!.push({ id: docSnap.id, data: { ...data, id: docSnap.id } });
+        }
+      });
+
+      // 1. Excluir documentos sem matrícula
+      for (const docId of withoutRegDocs) {
+        await deleteDoc(doc(db, 'collaborators', docId)).catch(() => {});
+        withoutRegCount++;
+      }
+
+      // 2. Para cada matrícula com duplicatas, manter apenas 1
+      for (const [reg, docs] of regMap.entries()) {
+        if (docs.length > 1) {
+          docs.sort((a, b) => {
+            if (a.id === `col_${a.data.registration}`) return -1;
+            if (b.id === `col_${b.data.registration}`) return 1;
+            const timeA = new Date(a.data.updatedAt || a.data.createdAt || 0).getTime();
+            const timeB = new Date(b.data.updatedAt || b.data.createdAt || 0).getTime();
+            return timeB - timeA;
+          });
+
+          for (let i = 1; i < docs.length; i++) {
+            await deleteDoc(doc(db, 'collaborators', docs[i].id)).catch(() => {});
+            deletedCount++;
+          }
+        }
+      }
+
+      const cleanList = Array.from(regMap.values()).map(list => list[0].data);
+      setCollaborators(cleanList);
+
+      addNotification(`Limpeza concluída! ${deletedCount} registros duplicados e ${withoutRegCount} sem matrícula foram excluídos.`);
+    } catch (err) {
+      console.error('Erro na limpeza de duplicatas:', err);
+      alert('Erro ao executar limpeza de duplicatas.');
     }
   };
 
@@ -3749,7 +3762,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       localStorage.removeItem('manupackaging_user');
       localStorage.removeItem('manupackaging_last_active');
       sessionStorage.removeItem('manupackaging_user');
-      sessionStorage.setItem('manupackaging_intro_played', 'true');
     } catch (e) {
       console.warn('Erro ao limpar localStorage de usuário:', e);
     }
@@ -3758,7 +3770,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     // 2. Reseta estados da interface instantaneamente sem travar a tela
     setIsMainMenuOpen(false);
-    setIsIntroVideoPlaying(false);
     setLoggedUser(null);
     setLoginMatricula('');
     setLoginPass('');
@@ -8504,7 +8515,7 @@ Atenciosamente,
     addGroupedSector('SETOR: RECICLAGEM', 'reciclagem', ['Erema 1'], ['Diurno 1', 'Noturno 1', 'Diurno 2', 'Noturno 2'], 1);
 
     // 4. Fita
-    addGroupedSector('SETOR: FITA ADESIVA', 'fita', ['Ghezzi', 'Lintech', 'Wultec'], ['Diurno 1', 'Diurno 2', 'Comercial'], 2);
+    addGroupedSector('SETOR: FITA ADESIVA', 'fita', ['Ghezzi', 'Lintech', 'Wultec'], ['Comercial'], 2);
 
     // 5. Setores Personalizados Criados pelo Usuário
     (customSectors || []).forEach(cs => {
@@ -12711,19 +12722,6 @@ Atenciosamente,
           </div>
         )}
 
-        {/* Camada do Vídeo de Abertura com Efeito de Sucção em Direção ao Logo do Login */}
-        {isIntroVideoPlaying && (
-          <SystemIntroVideoPlayer
-            videoSrc={systemIntroVideo || ''}
-            isLoggedIn={false}
-            onFinish={() => {
-              try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
-              setIsIntroVideoPlaying(false);
-              setIsInitializing(false);
-            }}
-          />
-        )}
-
         {/* Modal Informativo Sobre o Sistema / Versão 2.0.0 */}
         <SystemInfoModal
           isOpen={isSystemInfoModalOpen}
@@ -12737,7 +12735,7 @@ Atenciosamente,
 
 
   return (
-    <div className={`min-h-screen bg-[#f8fafc] ${isStandalone ? 'pt-safe' : ''} ${isIntroVideoPlaying ? 'h-screen max-h-screen overflow-hidden' : 'pb-24'} w-full max-w-full overflow-x-hidden relative`}>
+    <div className={`min-h-screen bg-[#f8fafc] ${isStandalone ? 'pt-safe' : ''} pb-24 w-full max-w-full overflow-x-hidden relative`}>
       {!isOnline && (
         <div className="bg-red-600 text-white text-[10px] font-black uppercase tracking-widest py-2 px-4 flex items-center justify-center gap-2 sticky top-0 z-[100] animate-in slide-in-from-top duration-300">
           <WifiOff size={14} /> Você está offline. Alguns dados podem estar desatualizados.
@@ -12758,16 +12756,12 @@ Atenciosamente,
         <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-1 min-w-0 mr-1 sm:mr-2">
           <div 
             id="header-system-logo"
-            className="w-8 h-8 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-blue-600 rounded-lg sm:rounded-xl flex-shrink-0 flex items-center justify-center text-white shadow-md overflow-hidden border border-blue-500 relative select-none animate-logo-glow"
+            className="w-8 h-8 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-blue-600 rounded-lg sm:rounded-xl flex-shrink-0 flex items-center justify-center text-white shadow-md overflow-hidden border border-blue-500 relative select-none"
           >
-            {/* Feixe de luz passando e brilhando no M / Logo superior esquerdo */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
-              <div className="w-[140%] h-full absolute top-0 -left-1/3 bg-gradient-to-r from-transparent via-white/85 to-transparent skew-x-[-25deg] animate-logo-shimmer" />
-            </div>
             {systemLogo ? (
-              <img src={systemLogo} alt="Logo" className="w-full h-full object-cover relative z-10" />
+              <img src={systemLogo} alt="Logo" className="w-full h-full object-cover" />
             ) : (
-              <img src="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png" alt="Default Logo" className="w-full h-full object-contain p-1 relative z-10" />
+              <img src="https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png" alt="Default Logo" className="w-full h-full object-contain p-1" />
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -15040,7 +15034,16 @@ Atenciosamente,
                   }
                   dynamicMap[groupKey].totalEcoB += (e.ecoBP || 0) + (e.ecoBM || 0);
                 } else {
-                  dynamicMap[groupKey].value += selectedMetricDef.getValue ? selectedMetricDef.getValue(e) : 0;
+                  let val = selectedMetricDef.getValue ? selectedMetricDef.getValue(e) : 0;
+                  if (selectedMetricDef.id === 'prod' && biDynamicGroup === 'operator') {
+                    const hasUnperformedCleaning = 
+                      (e as any).bonusOccurrence?.type === 'parada_limpeza_nao_realizada' ||
+                      (e as any).bonusOccurrenceType === 'parada_limpeza_nao_realizada';
+                    if (hasUnperformedCleaning) {
+                      val = val * 0.5;
+                    }
+                  }
+                  dynamicMap[groupKey].value += val;
                 }
               });
 
@@ -22350,14 +22353,15 @@ Atenciosamente,
                         >
                           <Plus size={20} />
                         </button>
-                        <button onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Diurno 1', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }} className="bg-orange-500 text-white p-2.5 rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-900/20">
+                        <button onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }} className="bg-orange-500 text-white p-2.5 rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-900/20">
                           <Plus size={20} />
                         </button>
                       </div>
                     )}
                 </div>
-                <div className="p-6 space-y-6 bg-orange-50/30">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="p-6 bg-orange-50/30">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Ghezzi - Turno Comercial */}
                         <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
                             <div className="flex items-center justify-between mb-6">
                               <div className="flex items-center gap-3">
@@ -22365,23 +22369,21 @@ Atenciosamente,
                                 <h3 className="text-[12px] font-black uppercase text-orange-900 tracking-widest">Ghezzi</h3>
                               </div>
                               {canManagePersonnel && (
-                                <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Diurno 1', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                                <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
                               )}
                             </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {['Diurno 1', 'Diurno 2'].map(sh => (
-                                    <div key={sh} className="space-y-3">
-                                        <div className="flex justify-between items-center mb-1">
-                                          <p className="text-[10px] font-bold text-slate-400 uppercase">{sh}</p>
-                                          {canManagePersonnel && (
-                                            <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: sh, role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
-                                          )}
-                                        </div>
-                                        {renderMachineGroup('Fita', 'Ghezzi', sh, 2)}
-                                    </div>
-                                ))}
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center mb-1">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase">Comercial</p>
+                                  {canManagePersonnel && (
+                                    <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Ghezzi', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
+                                  )}
+                                </div>
+                                {renderMachineGroup('Fita', 'Ghezzi', 'Comercial', 2)}
                             </div>
                         </div>
+
+                        {/* Lintech - Turno Comercial */}
                         <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
                             <div className="flex items-center justify-between mb-6">
                               <div className="flex items-center gap-3">
@@ -22392,43 +22394,37 @@ Atenciosamente,
                                 <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Lintech', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
                               )}
                             </div>
-                            <div className="grid grid-cols-1 gap-4">
-                                {['Comercial'].map(sh => (
-                                    <div key={sh} className="space-y-3">
-                                        <div className="flex justify-between items-center mb-1">
-                                          <p className="text-[10px] font-bold text-slate-400 uppercase">{sh}</p>
-                                          {canManagePersonnel && (
-                                            <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Lintech', shift: sh, role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
-                                          )}
-                                        </div>
-                                        {renderMachineGroup('Fita', 'Lintech', sh, 2)}
-                                    </div>
-                                ))}
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center mb-1">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase">Comercial</p>
+                                  {canManagePersonnel && (
+                                    <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Lintech', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
+                                  )}
+                                </div>
+                                {renderMachineGroup('Fita', 'Lintech', 'Comercial', 2)}
                             </div>
                         </div>
-                    </div>
-                    <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
-                        <div className="flex items-center justify-between mb-6">
-                          <div className="flex items-center gap-3">
-                            <div className="w-2.5 h-2.5 rounded-full bg-orange-500"/>
-                            <h3 className="text-[12px] font-black uppercase text-orange-900 tracking-widest">Wultec</h3>
-                          </div>
-                          {canManagePersonnel && (
-                            <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Wultec', shift: 'Diurno 1', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            {['Diurno 1', 'Diurno 2'].map(sh => (
-                                <div key={sh} className="space-y-3">
-                                    <div className="flex justify-between items-center mb-1">
-                                      <p className="text-[10px] font-bold text-slate-400 uppercase">{sh}</p>
-                                      {canManagePersonnel && (
-                                        <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Wultec', shift: sh, role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
-                                      )}
-                                    </div>
-                                    {renderMachineGroup('Fita', 'Wultec', sh, 2)}
+
+                        {/* Wultec - Turno Comercial */}
+                        <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
+                            <div className="flex items-center justify-between mb-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500"/>
+                                <h3 className="text-[12px] font-black uppercase text-orange-900 tracking-widest">Wultec</h3>
+                              </div>
+                              {canManagePersonnel && (
+                                <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Wultec', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={14}/></button>
+                              )}
+                            </div>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center mb-1">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase">Comercial</p>
+                                  {canManagePersonnel && (
+                                    <button className="text-blue-400 hover:bg-blue-500/10 p-1 rounded-md transition-colors" onClick={() => { setSelectedSlot({ sector: 'Fita', machine: 'Wultec', shift: 'Comercial', role: 'Novo Slot' }); setIsEmployeeModalOpen(true); }}><Plus size={12}/></button>
+                                  )}
                                 </div>
-                            ))}
+                                {renderMachineGroup('Fita', 'Wultec', 'Comercial', 2)}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -22969,11 +22965,6 @@ Atenciosamente,
         setSystemLogo={setSystemLogo}
         systemCoverImage={systemCoverImage}
         setSystemCoverImage={setSystemCoverImage}
-        systemIntroVideo={systemIntroVideo}
-        setSystemIntroVideo={setSystemIntroVideo}
-        introVideoMeta={introVideoMeta}
-        setIntroVideoMeta={setIntroVideoMeta}
-        onTestIntroVideo={() => setIsIntroVideoPlaying(true)}
         isAdminUser={loggedUser.registration === '1010' || loggedUser.role === 'Administrador'}
         isInstallable={isInstallable}
         isStandalone={isStandalone}
@@ -23304,15 +23295,17 @@ Atenciosamente,
             const empId = data.id || Math.random().toString(36).substr(2, 9);
             
             if (action === 'Contratação') {
-              // Quando salva um colaborador, garante que ele existe na base central se for adicionado por nome manualmente (embora agora use seleção)
-              // Mas aqui o EmployeeModal já retorna o collaboratorId se selecionado.
-              await setDoc(doc(db, 'employees', empId), cleanUndefined({ ...data, id: empId, updatedAt: now, userId: currentUser.uid }));
+              const fullEmp = { ...data, id: empId, updatedAt: now, userId: currentUser.uid };
+              await setDoc(doc(db, 'employees', empId), cleanUndefined(fullEmp));
+              saveEmployeeToSupabase(fullEmp).catch(() => {});
             } else if (action === 'Exclusão') {
               await deleteDoc(doc(db, 'employees', empId));
+              deleteEmployeeFromSupabase(empId).catch(() => {});
             } else if (action === 'Desligamento') {
               const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || 'Não informado';
-              await setDoc(doc(db, 'employees', empId), cleanUndefined({ 
+              const fullEmp = { 
                 ...data, 
+                id: empId,
                 status: 'Desligado', 
                 name: data.name,
                 terminationReason,
@@ -23320,9 +23313,13 @@ Atenciosamente,
                 terminatedAt: data.terminatedAt || now,
                 updatedAt: now, 
                 userId: currentUser.uid 
-              }), { merge: true });
+              };
+              await setDoc(doc(db, 'employees', empId), cleanUndefined(fullEmp), { merge: true });
+              saveEmployeeToSupabase(fullEmp).catch(() => {});
             } else {
-              await setDoc(doc(db, 'employees', empId), cleanUndefined({ ...data, updatedAt: now, userId: currentUser.uid }), { merge: true });
+              const fullEmp = { ...data, id: empId, updatedAt: now, userId: currentUser.uid };
+              await setDoc(doc(db, 'employees', empId), cleanUndefined(fullEmp), { merge: true });
+              saveEmployeeToSupabase(fullEmp).catch(() => {});
             }
 
             if (data.replacedEmployeeId && data.replacedEmployeeId !== 'vaga_excluida') {
@@ -23597,7 +23594,7 @@ Atenciosamente,
             availableRoles={availableRoles || []}
             availableShifts={(availableShifts || []).map(s => (typeof s === 'string' ? s : s?.name || ''))}
             machines={activeMachines || []}
-             onAdd={async (newEmp) => {
+              onAdd={async (newEmp) => {
               try {
                 const id = Math.random().toString(36).substring(2, 15);
                 const now = new Date().toISOString();
@@ -23608,9 +23605,10 @@ Atenciosamente,
                   updatedAt: now
                 };
                 await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
+                saveEmployeeToSupabase(empData).catch(() => {});
                 
                 const logId = Math.random().toString(36).substring(2, 15);
-                await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
+                const logObj = {
                   id: logId,
                   userId: currentUser.uid,
                   date: now,
@@ -23618,7 +23616,9 @@ Atenciosamente,
                   action: 'Contratação' as any,
                   details: `Inclusão direta via Banco de Dados (${newEmp.sector} - ${newEmp.machine})`,
                   user: loggedUser?.name || 'Sistema'
-                }));
+                };
+                await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined(logObj));
+                savePersonnelLogToSupabase(logObj).catch(() => {});
                 
                 const simulatedEmps = [...employees, empData as Employee];
                 await syncOperatorsSetting(simulatedEmps);
@@ -23633,10 +23633,11 @@ Atenciosamente,
                 async () => {
                   try {
                     await deleteDoc(doc(db, 'employees', id));
+                    deleteEmployeeFromSupabase(id).catch(() => {});
                     
                     const now = new Date().toISOString();
                     const logId = Math.random().toString(36).substring(2, 15);
-                    await setDoc(doc(db, 'personnelLogs', logId), {
+                    const logObj = {
                       id: logId,
                       userId: currentUser.uid,
                       date: now,
@@ -23644,7 +23645,9 @@ Atenciosamente,
                       action: 'Exclusão' as any,
                       details: `Exclusão permanente via Banco de Dados`,
                       user: loggedUser?.name || 'Sistema'
-                    });
+                    };
+                    await setDoc(doc(db, 'personnelLogs', logId), logObj);
+                    savePersonnelLogToSupabase(logObj).catch(() => {});
                     
                     const simulatedEmps = employees.filter(e => e.id !== id);
                     await syncOperatorsSetting(simulatedEmps);
@@ -23698,6 +23701,8 @@ Atenciosamente,
                 'warning'
               );
             }}
+            onDeleteCollaborator={handleDeleteCollaborator}
+            onCleanDuplicateCollaborators={handleCleanDuplicateCollaborators}
           />
         </ErrorBoundary>
       )}
@@ -23735,6 +23740,7 @@ Atenciosamente,
             onSave={handleSaveCollaborator}
             initialData={selectedCollaborator}
             availableRoles={availableRoles}
+            existingCollaborators={collaborators}
           />
         </div>
       )}
@@ -24605,18 +24611,6 @@ Atenciosamente,
         </div>
       </div>
 
-      {/* Camada do Vídeo de Abertura com Efeito de Sucção em Direção ao Logo Superior Esquerdo */}
-      {isIntroVideoPlaying && (
-        <SystemIntroVideoPlayer
-          videoSrc={systemIntroVideo || ''}
-          isLoggedIn={true}
-          onFinish={() => {
-            try { sessionStorage.setItem('manupackaging_intro_played', 'true'); } catch {}
-            setIsIntroVideoPlaying(false);
-            setIsInitializing(false);
-          }}
-        />
-      )}
     </div>
   );
 };

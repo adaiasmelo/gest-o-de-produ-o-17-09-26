@@ -4,7 +4,8 @@ import {
   Award, AlertTriangle, CheckCircle2, XCircle, Clock, FileText,
   ShieldAlert, ChevronLeft, ChevronRight, Maximize2, Minimize2,
   X, Scale, Gauge, Flame, Wrench, Sparkles, AlertOctagon,
-  Check, Play, Pause, RotateCcw, MonitorPlay, Download
+  Check, Play, Pause, RotateCcw, MonitorPlay, Download,
+  Smartphone, HardHat, Ban, FileSpreadsheet, UserX, Droplets
 } from 'lucide-react';
 import { exportBonusRulesPptx } from '../utils/exportPresentationPptx';
 
@@ -226,12 +227,14 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 xl:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
                 1
               </div>
-              <div className="text-sm font-bold text-slate-900">Eco A (Produção)</div>
+              <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                Eco A (Isento até 8%)
+              </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Refugo nobre limpo gerado no processo operacional. Conta como perda de produção no turno.
+                O Eco A <strong>só gera perda se ultrapassar 8% da produção do dia</strong>. Se for até 8%, é 100% isento e não causa desconto percentual de bônus!
               </p>
             </div>
 
@@ -241,7 +244,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
               </div>
               <div className="text-sm font-bold text-slate-900">Eco BP (Produção)</div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Eco B gerado por intervenção operacional ou ajuste. Conta diretamente na tolerância de perdas.
+                Eco B gerado por intervenção operacional ou ajuste. Conta diretamente na tolerância de perdas do turno.
               </p>
             </div>
 
@@ -256,12 +259,25 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
             </div>
           </div>
 
-          <div className="p-4 xl:p-5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-3.5">
-            <Scale className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+          {/* Regra Oficial ECOA */}
+          <div className="p-4 xl:p-5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-start gap-3.5">
+            <Sparkles className="w-6 h-6 text-emerald-700 shrink-0 mt-0.5" />
             <div>
-              <div className="text-xs xl:text-sm font-black text-emerald-950">Regra de Abatimento por Refugo</div>
-              <div className="text-xs text-emerald-900 mt-0.5 leading-relaxed font-medium">
-                Se as perdas de produção somadas (Eco A + Eco BP + Borra) ficarem <strong>dentro do limite de tolerância</strong>, a pontuação integral de perdas é mantida. Se <strong>ultrapassarem o limite</strong>, a produção líquida é comprometida e ocorre desconto na bonificação proporcional ao excesso de refugo.
+              <div className="text-xs xl:text-sm font-black text-emerald-950 uppercase tracking-wide">
+                Regra Especial do ECOA: Isenção Total até 8% da Produção do Dia
+              </div>
+              <div className="text-xs text-emerald-900 mt-1 leading-relaxed font-medium">
+                O refugo de <strong>ECOA somente terá perda de porcentagem de bônus se ultrapassar 8% da produção total do dia</strong>. Se o ECOA do dia for igual ou inferior a 8%, <strong>não haverá perda nenhuma e não gerará nenhum desconto percentual no bônus</strong>!
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 xl:p-5 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-3.5">
+            <Scale className="w-6 h-6 text-slate-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="text-xs xl:text-sm font-black text-slate-900">Regra de Abatimento Geral por Refugo</div>
+              <div className="text-xs text-slate-700 mt-0.5 leading-relaxed font-medium">
+                Se as perdas avaliadas (EcoA acima de 8% + Eco BP + Borra) ficarem <strong>dentro do limite de tolerância</strong>, a pontuação integral é mantida. Se <strong>ultrapassarem o limite</strong>, a produção líquida é comprometida e ocorre desconto na bonificação proporcional ao excesso de refugo.
               </div>
             </div>
           </div>
@@ -331,30 +347,30 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 5: PARADAS DE MÁQUINA (LIMPEZA ≤ 30 MINUTOS)
+    // SLIDE 5: PARADAS DE MÁQUINA E LIMPEZA OBRIGATÓRIA
     {
       id: 5,
       category: 'Paradas na Extrusão',
       badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
-      title: 'Paradas de Máquina: A Regra dos 30 Minutos',
-      subtitle: 'A Única Parada que Desconta da Meta é a Limpeza da Máquina e da Matriz',
+      title: 'Paradas de Máquina & Limpeza Obrigatória',
+      subtitle: 'A Regra dos 30 Minutos e Desconto de 50% no Ranking por Limpeza Não Realizada',
       content: (
-        <div className="space-y-4 w-full">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 xl:gap-6">
-            <div className="p-5 xl:p-6 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-3">
+        <div className="space-y-3.5 w-full">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="p-4 xl:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
               <div className="flex items-center gap-2 text-amber-700 font-black text-xs xl:text-sm uppercase">
                 <Clock className="w-4 h-4 text-amber-600" />
                 Apenas Limpeza de Matriz e Máquina
               </div>
               <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                Na Extrusão, paradas de manutenção corretiva, preventiva ou falta de energia <strong>não tiram a meta da equipe</strong>.
+                Na Extrusão, paradas de manutenção mecânica, elétrica ou falta de energia <strong>não tiram a meta da equipe</strong>.
               </p>
               <p className="text-xs text-slate-700 leading-relaxed font-medium">
                 A <strong>única parada avaliada para perda de bônus</strong> é a parada para <span className="text-slate-900 font-bold underline decoration-amber-400">limpeza da matriz, cabeçote, roscas ou rolos</span>.
               </p>
             </div>
 
-            <div className="p-5 xl:p-6 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-3">
+            <div className="p-4 xl:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
               <div className="flex items-center gap-2 text-rose-700 font-black text-xs xl:text-sm uppercase">
                 <AlertOctagon className="w-4 h-4 text-rose-600" />
                 30 Minutos por Parada Individual
@@ -362,31 +378,34 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
               <p className="text-xs text-slate-700 leading-relaxed font-medium">
                 <strong>ATENÇÃO:</strong> O limite de 30 minutos <span className="text-rose-700 font-bold">NÃO é a soma acumulada de todas as paradas do dia</span>!
               </p>
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 font-medium">
-                É <strong>30 minutos no máximo por cada evento individual</strong> de limpeza. Se a máquina parou 3 vezes para limpar a matriz e cada uma durou 25 minutos, está 100% aprovado!
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 font-medium">
+                É <strong>30 minutos no máximo por cada evento individual</strong> de limpeza. Se a máquina parou 3 vezes e cada uma durou 25 min, está 100% aprovado!
               </div>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
-            <div className="text-[11px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <Scale className="w-4 h-4 text-amber-600" />
-              Exemplo Prático de Avaliação no Turno:
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950">
-                <div className="font-bold flex items-center gap-1.5 mb-0.5 text-emerald-800">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  Caso Aprovado (Bateu):
-                </div>
-                Parada 1: 20 min | Parada 2: 25 min. Nenhuma ultrapassou 30m. <strong>Meta Mantida ✅</strong>
+          {/* NOVA REGRA MANDATÓRIA: PARADA DE LIMPEZA OBRIGATÓRIA NÃO REALIZADA */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-50 to-amber-50 border-2 border-rose-300 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-rose-900 font-black text-xs xl:text-sm uppercase tracking-wide">
+                <ShieldAlert className="w-4 h-4 text-rose-600" />
+                Parada de Limpeza Obrigatória Não Realizada ➔ -50% no Ranking de Produtividade
               </div>
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">
-                <div className="font-bold flex items-center gap-1.5 mb-0.5 text-rose-800">
-                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                  Caso Reprovado (Excedeu):
-                </div>
-                Parada 1: 38 min (+8m de excesso). Ultrapassou 30m em evento único. <strong>Penalizado ⚠️</strong>
+              <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider">
+                Regra de Justiça
+              </span>
+            </div>
+            <p className="text-xs text-slate-800 leading-relaxed font-medium">
+              Quando for estipulada uma quantidade de paradas para limpeza no turno (ex.: <strong>2 paradas obrigatórias de limpeza</strong>) e o operador realizar menos (ex.: apenas 1 parada), para não prejudicar quem realizou todas as limpezas programadas e teve menor tempo de máquina rodando:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-white/90 border border-rose-200">
+                <strong className="text-rose-800 block mb-0.5">📉 Desconto de 50% no Ranking do Operador:</strong>
+                <span className="text-slate-700">O sistema abate automaticamente <strong>50% da produção líquida do dia apenas para fins de ranking</strong> de produtividade.</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200">
+                <strong className="text-emerald-800 block mb-0.5">📊 Relatórios e Produção Geral Preservados:</strong>
+                <span className="text-slate-700">Nos relatórios contábeis, faturamento e produção fabril, <strong>o volume real físico é 100% mantido</strong>. O desconto incide exclusivamente no ranking individual.</span>
               </div>
             </div>
           </div>
@@ -406,7 +425,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
           <div className="p-3.5 xl:p-4 rounded-2xl bg-purple-50 border border-purple-200 flex items-start gap-3">
             <Award className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
             <p className="text-xs xl:text-sm text-purple-950 leading-relaxed font-medium">
-              Diferente da Extrusão que mede quilo-hora (kg/h), <strong>as máquinas de Corte de Fita (Ghezzi, Lintech e Wultec) têm sua meta avaliada exclusivamente em Metros Quadrados ($m^2$/dia)</strong>.
+              Diferente da Extrusão que mede quilo-hora (kg/h), <strong>as máquinas de Corte de Fita (Ghezzi, Lintech e Wultec) têm sua meta avaliada exclusivamente em Metros Quadrados (m²/dia)</strong>.
             </p>
           </div>
 
@@ -454,72 +473,258 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 7: ASSIDUIDADE, PONTUALIDADE E SAÍDAS
+    // SLIDE 7: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE & APONTAMENTOS
     {
       id: 7,
-      category: 'Conduta & Horários',
-      badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
-      title: 'Pontualidade, Saídas e Assiduidade',
-      subtitle: 'Impacto dos Atrasos, Faltas e Saídas Antecipadas na Bonificação',
+      category: '2. Qualidade',
+      badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+      title: 'Critérios de Qualidade & Apontamentos',
+      subtitle: 'Regras de Fechamento Mensal: Impacto de Devoluções, Reclamações e Registros',
       content: (
         <div className="space-y-4 w-full">
           <p className="text-slate-700 text-xs xl:text-sm leading-relaxed">
-            A presença e o cumprimento integral da escala de 12 horas são vitais para o fluxo contínuo da fábrica. Saídas antecipadas e faltas geram desfalque na linha e afetam o resultado de toda a equipe.
+            A bonificação recompensa a produção feita com excelência técnica. Falhas de produto e omissões nos apontamentos geram descontos diretos na meta mensal conforme a tabela oficial de fechamento:
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 xl:gap-6">
-            <div className="p-5 xl:p-6 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex items-center gap-2 text-amber-800 font-bold text-xs xl:text-sm">
-                <Clock className="w-4 h-4 text-amber-600" />
-                Saída Antecipada Comunicada
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="p-3.5 xl:p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold text-xs">
+                <AlertTriangle className="w-4 h-4 text-indigo-700" />
               </div>
-              <div className="text-xs text-slate-700 space-y-2">
-                <p>
-                  Quando o colaborador precisa sair mais cedo por motivo imprevisto e <strong>comunica o gestor direto previamente</strong> com justificativa razoável:
-                </p>
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 font-bold">
-                  ➔ Desconto Leve de 10% a 15% na bonificação do mês.
-                </div>
+              <div className="text-xs xl:text-sm font-bold text-slate-900 leading-tight">
+                Erro Operacional (Devolução)
               </div>
+              <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] xl:text-xs text-indigo-950 font-black">
+                ➔ Perde até 20% da meta
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Lote devolvido decorrente de falha operacional (espessura fora de tolerância, cônico ou contaminação).
+              </p>
             </div>
 
-            <div className="p-5 xl:p-6 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex items-center gap-2 text-rose-800 font-bold text-xs xl:text-sm">
-                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                Saída SEM AVISAR NINGUÉM
+            <div className="p-3.5 xl:p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold text-xs">
+                <AlertOctagon className="w-4 h-4 text-indigo-700" />
               </div>
-              <div className="text-xs text-slate-700 space-y-2">
-                <p>
-                  Abandonar o posto antes do encerramento do turno <strong>sem autorização ou sem comunicar a liderança direta</strong>:
-                </p>
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 font-bold">
-                  ➔ Desconto Severo de 35% a 50% na bonificação do mês.
-                </div>
+              <div className="text-xs xl:text-sm font-bold text-slate-900 leading-tight">
+                Reclamação Interna
               </div>
+              <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] xl:text-xs text-indigo-950 font-black">
+                ➔ Perde até 20% da meta
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Não conformidade detectada pela expedição ou retrabalho gerado para o setor posterior.
+              </p>
+            </div>
+
+            <div className="p-3.5 xl:p-4 rounded-2xl bg-white border border-amber-200 shadow-2xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center font-bold text-xs">
+                <Droplets className="w-4 h-4 text-cyan-700" />
+              </div>
+              <div className="text-xs xl:text-sm font-bold text-slate-900 leading-tight">
+                Matéria-Prima Molhada
+              </div>
+              <div className="p-2 rounded-xl bg-cyan-50 border border-cyan-200 text-[11px] xl:text-xs text-cyan-950 font-black">
+                ➔ Perde 20% da meta
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Abastecimento com matéria-prima molhada decorrente de falta de atenção do auxiliar.
+              </p>
+            </div>
+
+            <div className="p-3.5 xl:p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold text-xs">
+                <FileSpreadsheet className="w-4 h-4 text-indigo-700" />
+              </div>
+              <div className="text-xs xl:text-sm font-bold text-slate-900 leading-tight">
+                Mau Preenchimento
+              </div>
+              <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] xl:text-xs text-amber-950 font-black">
+                ➔ Perde 10% da meta
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Omissão de paradas, rasuras ou dados incorretos no lançamento de produção.
+              </p>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700">
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Todos os dados devem ser conferidos diariamente pelo líder de turno antes do fechamento mensal.</span>
+          </div>
+        </div>
+      )
+    },
+
+    // SLIDE 8: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
+    {
+      id: 8,
+      category: '3. Assiduidade & Horários',
+      badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
+      title: 'Assiduidade, Faltas, Advertências e Horários',
+      subtitle: 'Regras de Fechamento Mensal: Presença e Cumprimento Rígido da Jornada',
+      content: (
+        <div className="space-y-3.5 w-full">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 space-y-1.5 shadow-2xs">
+              <div className="flex items-center gap-2 text-rose-900 font-bold text-xs xl:text-sm">
+                <UserX className="w-4 h-4 text-rose-600" />
+                1 Atestado Médico
+              </div>
+              <div className="text-lg xl:text-xl font-black text-rose-700">PERDE A META</div>
+              <p className="text-[11px] text-rose-950/80 leading-relaxed font-medium">
+                100% de desconto na bonificação do mês de referência.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 space-y-1.5 shadow-2xs">
+              <div className="flex items-center gap-2 text-rose-900 font-bold text-xs xl:text-sm">
+                <UserX className="w-4 h-4 text-rose-600" />
+                1 Falta sem Justificativa
+              </div>
+              <div className="text-lg xl:text-xl font-black text-rose-700">PERDE A META</div>
+              <p className="text-[11px] text-rose-950/80 leading-relaxed font-medium">
+                100% de desconto na bonificação do mês de referência.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 space-y-1.5 shadow-2xs">
+              <div className="flex items-center gap-2 text-rose-900 font-bold text-xs xl:text-sm">
+                <AlertOctagon className="w-4 h-4 text-rose-600" />
+                1 Advertência por Escrito
+              </div>
+              <div className="text-lg xl:text-xl font-black text-rose-700">PERDE A META</div>
+              <p className="text-[11px] text-rose-950/80 leading-relaxed font-medium">
+                100% de desconto na bonificação do mês de referência.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center gap-2 text-amber-800 font-bold text-xs xl:text-sm">
+                <Clock className="w-4 h-4 text-amber-600" />
+                Atrasos Injustificados
+              </div>
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-xs text-amber-950">
+                A cada 10 minutos de atraso ➔ perde 1% da meta
+              </div>
+              <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                Exemplo: 30 minutos de atraso acumulados = 3% de perda percentual no bônus do mês.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center gap-2 text-amber-800 font-bold text-xs xl:text-sm">
+                <Clock className="w-4 h-4 text-amber-600" />
+                Horas Extras Não Autorizadas
+              </div>
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-xs text-amber-950">
+                A cada 10 minutos de HE não autorizada ➔ perde 1% da meta
+              </div>
+              <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                A permanência em posto além da escala sem prévia validação formal da liderança acarreta desconto proporcional.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-700">
             <div>
-              <span className="font-bold text-slate-900 block mb-0.5">Atraso Injustificado:</span>
-              Desconto gradual conforme o tempo de atraso (10% a 25%).
+              <span className="font-bold text-slate-900 block mb-0.5">Saída Antecipada Comunicada:</span>
+              Desconto de 10% a 15% na bonificação do mês.
             </div>
             <div>
-              <span className="font-bold text-slate-900 block mb-0.5">Falta Injustificada:</span>
-              Desconto de 50% no bônus (1ª falta) ou 100% em reincidência.
-            </div>
-            <div>
-              <span className="font-bold text-slate-900 block mb-0.5">Atestado Médico:</span>
-              100% de desconto no mês (política padrão de bônus por assiduidade).
+              <span className="font-bold text-rose-900 block mb-0.5">Saída sem Avisar Ninguém:</span>
+              Abandono de posto: desconto severo de 35% a 50% na bonificação.
             </div>
           </div>
         </div>
       )
     },
 
-    // SLIDE 8: TOLERÂNCIA ZERO - INFORMAÇÃO FALSA (-100%)
+    // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
     {
-      id: 8,
+      id: 9,
+      category: '4. Comportamento & Segurança',
+      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
+      title: 'Comportamento no Trabalho & Normas de Segurança',
+      subtitle: 'Uso de Celular, Tabagismo em Área Proibida e Cumprimento Obrigatório de EPIs',
+      content: (
+        <div className="space-y-4 w-full">
+          <p className="text-slate-700 text-xs xl:text-sm leading-relaxed">
+            A integridade física e a disciplina na linha de produção são inegociáveis. Infrações às normas de conduta acarretam perda de 20% na primeira ocorrência e perda total (100%) em caso de reincidência:
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 xl:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center gap-2 text-rose-700 font-black text-xs xl:text-sm uppercase">
+                <Smartphone className="w-5 h-5 text-rose-600" />
+                Uso de Celular no Trabalho
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950">
+                  1ª Ocorrência: ➔ Perde 20% da meta
+                </div>
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 font-black text-rose-900">
+                  Reincidente: ➔ Perde 100% da meta
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Proibido uso de smartphone ou fones durante a operação das máquinas (risco de prensamento e quebra de atenção).
+              </p>
+            </div>
+
+            <div className="p-4 xl:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center gap-2 text-rose-700 font-black text-xs xl:text-sm uppercase">
+                <Ban className="w-5 h-5 text-rose-600" />
+                Fumar no Período de Trabalho
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950">
+                  1ª Ocorrência: ➔ Perde 20% da meta
+                </div>
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 font-black text-rose-900">
+                  Reincidente: ➔ Perde 100% da meta
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Tabagismo fora das áreas e horários expressamente permitidos. Infração sanitária e de segurança industrial contra incêndio.
+              </p>
+            </div>
+
+            <div className="p-4 xl:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center gap-2 text-rose-700 font-black text-xs xl:text-sm uppercase">
+                <HardHat className="w-5 h-5 text-rose-600" />
+                Não Uso de EPIs Obrigatórios
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950">
+                  1ª Ocorrência: ➔ Perde 20% da meta
+                </div>
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 font-black text-rose-900">
+                  Reincidente: ➔ Perde 100% da meta
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Obrigatório uso de protetor auricular, calçado de segurança, luvas adequadas e óculos de proteção na fábrica.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-center justify-between font-medium">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-amber-700" />
+              A segurança e a vida de cada colaborador estão sempre em 1º lugar.
+            </span>
+            <span className="font-bold text-amber-800 uppercase tracking-wide text-[10px]">Tolerância Zero a Desvios Graves</span>
+          </div>
+        </div>
+      )
+    },
+
+    // SLIDE 10: TOLERÂNCIA ZERO - INFORMAÇÃO FALSA (-100%)
+    {
+      id: 10,
       category: 'Ética & Fraude',
       badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
       title: 'Tolerância Zero: Informação Falsa / Fraude',
@@ -577,9 +782,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 9: TELA DE LANÇAMENTO E EXTRATO EM PDF (GENÉRICO)
+    // SLIDE 11: TELA DE LANÇAMENTO E EXTRATO EM PDF (GENÉRICO)
     {
-      id: 9,
+      id: 11,
       category: 'Ferramentas do Sistema',
       badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-300',
       title: 'Transparência: Tela de Lançamento & Extrato em PDF',
@@ -603,7 +808,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-3.5 h-3.5 text-cyan-600 shrink-0 mt-0.5" />
-                  <span><strong>Máquina Erema:</strong> Informa-se a meta diária em kg e a produção de pellets reciclados por pesagem.</span>
+                  <span><strong>Ocorrências Integradas:</strong> Lançam-se paradas de limpeza não realizadas, advertências e condutas direto no formulário com reflexo automático na gestão de bônus.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-3.5 h-3.5 text-cyan-600 shrink-0 mt-0.5" />
@@ -624,7 +829,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Separação Clara de Refugo:</strong> Eco A, Eco BP, Borra vs. EcoBM de manutenção identificado como ISENTO.</span>
+                  <span><strong>Separação Clara de Refugo:</strong> Eco A (isento até 8%), Eco BP, Borra vs. EcoBM de manutenção identificado como ISENTO.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
@@ -649,9 +854,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 10: CONCLUSÃO & DIRETRIZES FINAIS
+    // SLIDE 12: CONCLUSÃO & DIRETRIZES FINAIS
     {
-      id: 10,
+      id: 12,
       category: 'Compromisso com o Sucesso',
       badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
       title: 'Conclusão: As 5 Chaves do Operador Nota 10',
@@ -675,7 +880,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
               </div>
               <div className="text-xs xl:text-sm font-bold text-slate-900">Refugo Baixo</div>
               <div className="text-[11px] text-slate-600 leading-relaxed font-medium">
-                Operar com atenção total para manter Eco A, Eco BP e Borra abaixo do teto de tolerância.
+                Operar com atenção para manter Eco A (≤8%), Eco BP e Borra abaixo do teto de tolerância.
               </div>
             </div>
 
@@ -685,7 +890,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
               </div>
               <div className="text-xs xl:text-sm font-bold text-slate-900">Limpeza Ágil</div>
               <div className="text-[11px] text-slate-600 leading-relaxed font-medium">
-                Agilizar as paradas de matriz para nunca passar de 30 minutos em um único evento.
+                Cumprir paradas obrigatórias de limpeza sem nunca passar de 30 minutos em um único evento.
               </div>
             </div>
 
@@ -695,7 +900,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
               </div>
               <div className="text-xs xl:text-sm font-bold text-slate-900">Pontualidade</div>
               <div className="text-[11px] text-slate-600 leading-relaxed font-medium">
-                Cumprir a jornada e comunicar imediatamente a liderança em caso de imprevisto grave.
+                Cumprir a jornada, zelar pelos EPIs e comunicar liderança imediatamente em imprevistos.
               </div>
             </div>
 

@@ -85,18 +85,7 @@
   animation: logo-sparkle-spin 4s linear infinite;
 }
 
-/* Bloqueio absoluto de barra de rolagem lateral durante o vídeo de abertura ou tela de login */
-html.intro-video-active,
-body.intro-video-active,
-body.intro-video-active #root {
-  background-color: #000000 !important;
-  overflow: hidden !important;
-  height: 100vh !important;
-  max-height: 100vh !important;
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
+/* Bloqueio de barra de rolagem lateral na tela de login */
 html.login-mode,
 body.login-mode,
 body.login-mode #root {
@@ -107,9 +96,6 @@ body.login-mode #root {
   -ms-overflow-style: none !important;
 }
 
-html.intro-video-active::-webkit-scrollbar,
-body.intro-video-active::-webkit-scrollbar,
-body.intro-video-active *::-webkit-scrollbar,
 html.login-mode::-webkit-scrollbar,
 body.login-mode::-webkit-scrollbar,
 body.login-mode *::-webkit-scrollbar {

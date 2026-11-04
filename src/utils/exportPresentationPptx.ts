@@ -165,8 +165,8 @@ export const exportBonusRulesPptx = async () => {
     addSlideHeader(slide, 'Regra de Refugo', 'Tolerância de Perdas de Produção', 'Como o Limite de Refugo é Calculado para Proteger a Meta Líquida');
 
     const losses = [
-      { t: '1. Eco A (Produção)', d: 'Refugo nobre e limpo gerado no processo operacional. Conta diretamente como perda do operador.' },
-      { t: '2. Eco BP (Produção)', d: 'Eco B gerado por intervenção ou ajuste operacional. Conta na tolerância de perdas de produção.' },
+      { t: '1. Eco A (Isento até 8%)', d: 'O refugo de Eco A só gera perda se ultrapassar 8% da produção do dia. Se for até 8%, é 100% isento e não causa desconto de bônus!' },
+      { t: '2. Eco BP (Produção)', d: 'Eco B gerado por intervenção ou ajuste operacional. Conta diretamente na tolerância de perdas de produção.' },
       { t: '3. Borra Total', d: 'Material de purga e início de operação. Contabilizado no cômputo geral de perda técnica do turno.' }
     ];
     losses.forEach((l, i) => {
@@ -182,8 +182,8 @@ export const exportBonusRulesPptx = async () => {
       x: 0.8, y: 5.1, w: 11.6, h: 1.6, rectRadius: 0.2,
       fill: { color: 'ECFDF5' }, line: { color: 'A7F3D0', width: 1 }
     });
-    slide.addText('REGRA DE CUMPRIMENTO DE PERDAS:', { x: 1.1, y: 5.25, w: 11.0, h: 0.35, fontSize: 11, bold: true, color: '065F46' });
-    slide.addText('Se as perdas de produção somadas (Eco A + Eco BP + Borra) ficarem DENTRO da tolerância (ex: 3,5%), o operador mantém o bônus integral. Se ultrapassarem o limite, a produção líquida é comprometida e há desconto na bonificação.', {
+    slide.addText('REGRA ESPECIAL DO ECOA (ISENÇÃO ATÉ 8% DO DIA):', { x: 1.1, y: 5.25, w: 11.0, h: 0.35, fontSize: 11, bold: true, color: '065F46' });
+    slide.addText('O refugo de ECOA somente terá perda de porcentagem de bônus se ultrapassar 8% da produção do dia. Se as perdas avaliadas (EcoA acima de 8% + Eco BP + Borra) ficarem dentro do limite de tolerância (3,5% a 4,0%), o operador mantém o bônus integral.', {
       x: 1.1, y: 5.65, w: 11.0, h: 0.85, fontSize: 10, color: '047857'
     });
   }
@@ -226,36 +226,40 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 5: PARADAS DE LIMPEZA <= 30 MIN
+  // SLIDE 5: PARADAS DE LIMPEZA E REGRA DE RANKING
   // ==========================================
   {
     const slide = pptx.addSlide();
-    addSlideHeader(slide, 'Paradas na Extrusão', 'Paradas de Máquina: A Regra dos 30 Minutos', 'A Única Parada que Desconta da Meta é a Limpeza da Máquina e da Matriz');
+    addSlideHeader(slide, 'Paradas na Extrusão', 'Paradas de Máquina & Limpeza Obrigatória', 'Regra dos 30 Minutos e Desconto de 50% no Ranking por Limpeza Não Realizada');
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.8, y: 1.9, w: 5.65, h: 3.2, rectRadius: 0.2,
+      x: 0.8, y: 1.9, w: 5.65, h: 2.8, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
     });
     slide.addText('APENAS LIMPEZA DE MATRIZ E MÁQUINA', { x: 1.1, y: 2.1, w: 5.0, h: 0.35, fontSize: 11, bold: true, color: AMBER });
     slide.addText('Na Extrusão, paradas de manutenção mecânica, elétrica ou falta de energia NÃO tiram a meta do operador.\n\nA ÚNICA parada avaliada para perda de bônus é a parada para limpeza de matriz, cabeçote, roscas ou rolos.', {
-      x: 1.1, y: 2.5, w: 5.0, h: 2.3, fontSize: 10.5, color: TEXT_MUTED
+      x: 1.1, y: 2.5, w: 5.0, h: 2.0, fontSize: 10, color: TEXT_MUTED
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.75, y: 1.9, w: 5.65, h: 3.2, rectRadius: 0.2,
+      x: 6.75, y: 1.9, w: 5.65, h: 2.8, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
     });
     slide.addText('LIMITE: 30 MINUTOS POR PARADA', { x: 7.05, y: 2.1, w: 5.0, h: 0.35, fontSize: 11, bold: true, color: ROSE });
     slide.addText('O limite de 30 minutos NÃO é a soma acumulada de todas as paradas do turno!\n\nÉ 30 minutos no máximo por cada evento individual. Se houver 3 paradas de limpeza e cada uma durar até 30 minutos, o operador está 100% aprovado.', {
-      x: 7.05, y: 2.5, w: 5.0, h: 2.3, fontSize: 10.5, color: TEXT_MUTED
+      x: 7.05, y: 2.5, w: 5.0, h: 2.0, fontSize: 10, color: TEXT_MUTED
     });
 
+    // Ranking penalty block
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.8, y: 5.35, w: 11.6, h: 1.4, rectRadius: 0.15,
-      fill: { color: 'F8FAFC' }, line: { color: BORDER_COLOR, width: 1 }
+      x: 0.8, y: 4.95, w: 11.6, h: 1.8, rectRadius: 0.15,
+      fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1 }
     });
-    slide.addText('Exemplo: Parada 1: 20 min | Parada 2: 25 min ➔ APROVADO ✅ (nenhuma passou de 30m).\nParada 1: 38 min ➔ REPROVADO ⚠️ (excedeu 30 minutos em um único evento).', {
-      x: 1.1, y: 5.5, w: 11.0, h: 1.0, fontSize: 10, bold: true, color: TEXT_DARK
+    slide.addText('REGRA DE JUSTIÇA: PARADA DE LIMPEZA OBRIGATÓRIA NÃO REALIZADA (-50% NO RANKING)', {
+      x: 1.1, y: 5.1, w: 11.0, h: 0.35, fontSize: 11, bold: true, color: ROSE
+    });
+    slide.addText('Quando for determinada uma quantidade de paradas para limpeza no turno (ex.: 2 paradas de limpeza obrigatórias) e o operador realizar menos (ex.: apenas 1 parada), para garantir justiça com quem parou para limpar a máquina, haverá DESCONTO DE 50% DA PRODUÇÃO DO OPERADOR DAQUELE DIA EXCLUSIVAMENTE NO RANKING DE PRODUTIVIDADE.\n• Relatórios e produção física da fábrica permanecem 100% preservados.', {
+      x: 1.1, y: 5.5, w: 11.0, h: 1.1, fontSize: 9.5, color: '991B1B'
     });
   }
 
@@ -292,47 +296,154 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 7: ASSIDUIDADE & PONTUALIDADE
+  // SLIDE 7: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE
   // ==========================================
   {
     const slide = pptx.addSlide();
-    addSlideHeader(slide, 'Conduta & Horários', 'Pontualidade, Saídas e Assiduidade', 'Impacto dos Atrasos, Faltas e Saídas Antecipadas na Bonificação');
+    addSlideHeader(slide, '2. Qualidade', 'Critérios de Qualidade & Apontamentos', 'Regras de Fechamento Mensal: Impacto de Devoluções, Reclamações e Registros');
 
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.8, y: 1.9, w: 5.65, h: 3.0, rectRadius: 0.2,
-      fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
-    });
-    slide.addText('SAÍDA ANTECIPADA COMUNICADA', { x: 1.1, y: 2.1, w: 5.0, h: 0.35, fontSize: 11, bold: true, color: AMBER });
-    slide.addText('Quando o colaborador precisa sair mais cedo por imprevisto e comunica previamente seu gestor direto com justificativa razoável:\n\n➔ Desconto Leve de 10% a 15% na bonificação do mês.', {
-      x: 1.1, y: 2.5, w: 5.0, h: 2.1, fontSize: 10.5, color: TEXT_MUTED
-    });
-
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.75, y: 1.9, w: 5.65, h: 3.0, rectRadius: 0.2,
-      fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
-    });
-    slide.addText('SAÍDA SEM AVISAR NINGUÉM', { x: 7.05, y: 2.1, w: 5.0, h: 0.35, fontSize: 11, bold: true, color: ROSE });
-    slide.addText('Abandonar o posto antes do término do turno sem autorização ou sem comunicar a liderança direta:\n\n➔ Desconto Severo de 35% a 50% na bonificação do mês.', {
-      x: 7.05, y: 2.5, w: 5.0, h: 2.1, fontSize: 10.5, color: TEXT_MUTED
-    });
-
-    const pills = [
-      { t: 'Atraso Injustificado', d: 'Desconto gradual de 10% a 25% conforme o tempo de atraso.' },
-      { t: 'Falta Injustificada', d: 'Desconto de 50% no bônus (1ª falta) ou 100% em reincidência.' },
-      { t: 'Atestado Médico', d: '100% de desconto no mês (política padrão de bônus por assiduidade).' }
+    const qualityItems = [
+      {
+        t: 'Erro Operacional (Devolução)',
+        p: 'Perde até 20% da meta',
+        d: 'Lote devolvido pelo cliente decorrente de erro do operador (espessura fora do padrão, bobinamento torto ou contaminação).'
+      },
+      {
+        t: '1 Reclamação Interna',
+        p: 'Perde até 20% da meta',
+        d: 'Não conformidade técnica registrada pelo controle de qualidade interno, expedição ou retrabalho gerado para o setor posterior.'
+      },
+      {
+        t: 'Matéria-Prima Molhada',
+        p: 'Perde 20% da meta',
+        d: 'Abastecimento com matéria-prima molhada decorrente de falta de atenção do auxiliar durante a operação.'
+      },
+      {
+        t: 'Mau Preenchimento',
+        p: 'Perde 10% da meta',
+        d: 'Omissão de paradas, dados incompletos de produção, rasuras ou falta de lançamento correto no sistema no final do turno.'
+      }
     ];
-    pills.forEach((item, i) => {
+
+    qualityItems.forEach((q, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8 + i * 3.95, y: 5.15, w: 3.7, h: 1.6, rectRadius: 0.15,
-        fill: { color: 'F1F5F9' }, line: { color: BORDER_COLOR, width: 1 }
+        x: 0.8 + i * 2.95, y: 1.9, w: 2.75, h: 3.6, rectRadius: 0.2,
+        fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
       });
-      slide.addText(item.t, { x: 1.0 + i * 3.95, y: 5.3, w: 3.3, h: 0.3, fontSize: 10, bold: true, color: TEXT_DARK });
-      slide.addText(item.d, { x: 1.0 + i * 3.95, y: 5.65, w: 3.3, h: 0.9, fontSize: 9, color: TEXT_MUTED });
+      slide.addText(q.t, { x: 0.95 + i * 2.95, y: 2.1, w: 2.45, h: 0.5, fontSize: 11, bold: true, color: TEXT_DARK });
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.95 + i * 2.95, y: 2.7, w: 2.45, h: 0.45, rectRadius: 0.1,
+        fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE', width: 1 }
+      });
+      slide.addText(q.p, { x: 0.95 + i * 2.95, y: 2.75, w: 2.45, h: 0.35, fontSize: 10, bold: true, color: '3730A3', align: 'center' });
+      slide.addText(q.d, { x: 0.95 + i * 2.95, y: 3.3, w: 2.45, h: 2.0, fontSize: 9, color: TEXT_MUTED });
+    });
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.8, y: 5.75, w: 11.6, h: 1.0, rectRadius: 0.15,
+      fill: { color: 'F1F5F9' }, line: { color: BORDER_COLOR, width: 1 }
+    });
+    slide.addText('Conferência diária: Todos os apontamentos de produção devem ser validados pelo líder de turno diariamente antes do fechamento.', {
+      x: 1.1, y: 5.85, w: 11.0, h: 0.75, fontSize: 10, bold: true, color: TEXT_MUTED, align: 'center'
     });
   }
 
   // ==========================================
-  // SLIDE 8: INFORMAÇÃO FALSA (-100%)
+  // SLIDE 8: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
+  // ==========================================
+  {
+    const slide = pptx.addSlide();
+    addSlideHeader(slide, '3. Assiduidade & Horários', 'Assiduidade, Faltas, Advertências e Horários', 'Regras de Fechamento Mensal: Presença e Cumprimento Rígido da Jornada');
+
+    // 3 Zero Tolerance Pills
+    const zeroPills = [
+      { t: '1 Atestado Médico', r: 'PERDE A META', d: '100% de desconto no bônus do mês.' },
+      { t: '1 Falta Injustificada', r: 'PERDE A META', d: '100% de desconto no bônus do mês.' },
+      { t: '1 Advertência por Escrito', r: 'PERDE A META', d: '100% de desconto no bônus do mês.' }
+    ];
+    zeroPills.forEach((p, i) => {
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.8 + i * 3.95, y: 1.9, w: 3.7, h: 2.1, rectRadius: 0.2,
+        fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1 }
+      });
+      slide.addText(p.t, { x: 1.0 + i * 3.95, y: 2.05, w: 3.3, h: 0.35, fontSize: 11, bold: true, color: '991B1B' });
+      slide.addText(p.r, { x: 1.0 + i * 3.95, y: 2.45, w: 3.3, h: 0.55, fontSize: 16, bold: true, color: ROSE });
+      slide.addText(p.d, { x: 1.0 + i * 3.95, y: 3.1, w: 3.3, h: 0.7, fontSize: 9.5, color: '7F1D1D' });
+    });
+
+    // Delays and Overtime
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.8, y: 4.25, w: 5.65, h: 2.5, rectRadius: 0.2,
+      fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
+    });
+    slide.addText('ATRASOS INJUSTIFICADOS', { x: 1.1, y: 4.4, w: 5.0, h: 0.3, fontSize: 11, bold: true, color: AMBER });
+    slide.addText('A cada 10 minutos de atraso ➔ Perde 1% da meta\n\nExemplo: 30 minutos de atraso acumulados no mês geram desconto automático de 3% no bônus.', {
+      x: 1.1, y: 4.8, w: 5.0, h: 1.7, fontSize: 10, color: TEXT_MUTED
+    });
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 6.75, y: 4.25, w: 5.65, h: 2.5, rectRadius: 0.2,
+      fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
+    });
+    slide.addText('HORAS EXTRAS NÃO AUTORIZADAS', { x: 7.05, y: 4.4, w: 5.0, h: 0.3, fontSize: 11, bold: true, color: AMBER });
+    slide.addText('A cada 10 minutos de HE não autorizada ➔ Perde 1% da meta\n\nPermanecer no posto além da jornada sem autorização formal do gestor direto acarreta desconto proporcional.', {
+      x: 7.05, y: 4.8, w: 5.0, h: 1.7, fontSize: 10, color: TEXT_MUTED
+    });
+  }
+
+  // ==========================================
+  // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
+  // ==========================================
+  {
+    const slide = pptx.addSlide();
+    addSlideHeader(slide, '4. Comportamento & Segurança', 'Comportamento no Trabalho & Normas de Segurança', 'Uso de Celular, Tabagismo em Área Proibida e Cumprimento Obrigatório de EPIs');
+
+    const safetyItems = [
+      {
+        t: 'Uso de Celular no Trabalho',
+        first: '1ª Ocorrência: Perde 20% da meta',
+        rec: 'Reincidente: Perde 100% da meta',
+        d: 'Proibido uso de celular ou fones em operação (risco severo de acidentes e distração).'
+      },
+      {
+        t: 'Fumar no Período de Trabalho',
+        first: '1ª Ocorrência: Perde 20% da meta',
+        rec: 'Reincidente: Perde 100% da meta',
+        d: 'Tabagismo fora das áreas expressamente designadas. Infração grave contra segurança de incêndio.'
+      },
+      {
+        t: 'Não Uso de EPIs Obrigatórios',
+        first: '1ª Ocorrência: Perde 20% da meta',
+        rec: 'Reincidente: Perde 100% da meta',
+        d: 'Uso mandatório de protetor auricular, calçado com biqueira, luvas e óculos no ambiente fabril.'
+      }
+    ];
+
+    safetyItems.forEach((s, i) => {
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.8 + i * 3.95, y: 1.9, w: 3.7, h: 4.7, rectRadius: 0.2,
+        fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
+      });
+      slide.addText(s.t, { x: 1.0 + i * 3.95, y: 2.1, w: 3.3, h: 0.45, fontSize: 12, bold: true, color: TEXT_DARK });
+
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 1.0 + i * 3.95, y: 2.7, w: 3.3, h: 0.55, rectRadius: 0.1,
+        fill: { color: 'FEF3C7' }, line: { color: 'FDE68A', width: 1 }
+      });
+      slide.addText(s.first, { x: 1.0 + i * 3.95, y: 2.75, w: 3.3, h: 0.45, fontSize: 9.5, bold: true, color: '92400E', align: 'center' });
+
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 1.0 + i * 3.95, y: 3.4, w: 3.3, h: 0.55, rectRadius: 0.1,
+        fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1 }
+      });
+      slide.addText(s.rec, { x: 1.0 + i * 3.95, y: 3.45, w: 3.3, h: 0.45, fontSize: 9.5, bold: true, color: ROSE, align: 'center' });
+
+      slide.addText(s.d, { x: 1.0 + i * 3.95, y: 4.2, w: 3.3, h: 2.1, fontSize: 9.5, color: TEXT_MUTED });
+    });
+  }
+
+  // ==========================================
+  // SLIDE 10: INFORMAÇÃO FALSA (-100%)
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -363,7 +474,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 9: TELA DE LANÇAMENTO & EXTRATO PDF
+  // SLIDE 11: TELA DE LANÇAMENTO & EXTRATO PDF
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -375,8 +486,8 @@ export const exportBonusRulesPptx = async () => {
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
     });
     slide.addText('NA TELA DE NOVO LANÇAMENTO', { x: 1.1, y: 2.1, w: 5.0, h: 0.35, fontSize: 11, bold: true, color: BLUE });
-    slide.addText('• Extrusão: Informa-se em quantos kg/h a máquina está trabalhando e a tolerância de perda no turno.\n\n• Corte de Fita: Ao selecionar a máquina, define-se a meta diária em m² e lançam-se perdas Tipo 1, Tipo 2 e Lixo.\n\n• Máquina Erema: Informa-se a meta diária em kg e a produção de pellets reciclados por pesagem.\n\n• Tempo Real: A tela calcula instantaneamente se a produção líquida atingiu ou não a meta estipulada.', {
-      x: 1.1, y: 2.6, w: 5.0, h: 3.8, fontSize: 10.5, color: TEXT_MUTED
+    slide.addText('• Extrusão: Informa-se em quantos kg/h a máquina está trabalhando e a tolerância de perda no turno.\n\n• Corte de Fita: Ao selecionar a máquina, define-se a meta diária em m² e lançam-se perdas Tipo 1, Tipo 2 e Lixo.\n\n• Lançamento de Ocorrências: Seleção direta de parada de limpeza não realizada, advertências e condutas, com cálculo imediato do impacto.\n\n• Tempo Real: A tela calcula instantaneamente se a produção líquida atingiu ou não a meta estipulada.', {
+      x: 1.1, y: 2.6, w: 5.0, h: 3.8, fontSize: 10, color: TEXT_MUTED
     });
 
     // Right: Extrato Individual PDF
@@ -385,13 +496,13 @@ export const exportBonusRulesPptx = async () => {
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1 }
     });
     slide.addText('NO EXTRATO INDIVIDUAL EM PDF', { x: 7.05, y: 2.1, w: 5.0, h: 0.35, fontSize: 11, bold: true, color: EMERALD });
-    slide.addText('• Dia a Dia Detalhado: Cada turno trabalhado é impresso com máquina, kg/h ou m², meta 12h e produção real.\n\n• Separação Clara de Refugo: Eco A, Eco BP, Borra vs. EcoBM de manutenção identificado como ISENTO.\n\n• Status por Turno: BATEU META ✅, EXC. LIMPEZA (>30m), EXC. PERDA ou ABAIXO LÍQUIDO.\n\n• 100% Auditável: Entregue a cada colaborador no fechamento com clareza absoluta.', {
-      x: 7.05, y: 2.6, w: 5.0, h: 3.8, fontSize: 10.5, color: TEXT_MUTED
+    slide.addText('• Dia a Dia Detalhado: Cada turno trabalhado é impresso com máquina, kg/h ou m², meta 12h e produção real.\n\n• Separação Clara de Refugo: Eco A (isento até 8%), Eco BP, Borra vs. EcoBM de manutenção identificado como ISENTO.\n\n• Status por Turno: BATEU META ✅, EXC. LIMPEZA (>30m), EXC. PERDA ou ABAIXO LÍQUIDO.\n\n• 100% Auditável: Entregue a cada colaborador no fechamento com clareza absoluta.', {
+      x: 7.05, y: 2.6, w: 5.0, h: 3.8, fontSize: 10, color: TEXT_MUTED
     });
   }
 
   // ==========================================
-  // SLIDE 10: CONCLUSÃO & 5 CHAVES
+  // SLIDE 12: CONCLUSÃO & 5 CHAVES
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -399,9 +510,9 @@ export const exportBonusRulesPptx = async () => {
 
     const keys = [
       { n: '1', t: 'Velocidade', d: 'Manter a máquina rodando nos kg/h recomendados para o material.' },
-      { n: '2', t: 'Refugo Baixo', d: 'Operar com atenção total para manter perdas abaixo do teto de tolerância.' },
-      { n: '3', t: 'Limpeza Ágil', d: 'Agilizar paradas de matriz para nunca passar de 30 minutos por evento.' },
-      { n: '4', t: 'Pontualidade', d: 'Cumprir a jornada e comunicar imediatamente a liderança em imprevistos.' },
+      { n: '2', t: 'Refugo Baixo', d: 'Operar com atenção para manter perdas abaixo do teto de tolerância (Eco A ≤ 8%).' },
+      { n: '3', t: 'Limpeza Ágil', d: 'Cumprir paradas obrigatórias sem nunca passar de 30 min por evento.' },
+      { n: '4', t: 'Pontualidade', d: 'Cumprir a jornada integral, zelar por EPIs e comunicar a liderança.' },
       { n: '5', t: 'Honestidade', d: 'Apontar 100% da verdade no sistema. A confiança operacional é inegociável.' }
     ];
     keys.forEach((k, i) => {

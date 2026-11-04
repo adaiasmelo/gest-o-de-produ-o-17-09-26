@@ -567,9 +567,29 @@ export const ProjectionDashboard: React.FC<ProjectionDashboardProps> = ({
         if (!operatorMap[opName]) {
           operatorMap[opName] = { totalNet: 0, count: 0, machine: e.machine || 'Extrusão', entryPenalties: [] };
         }
-        operatorMap[opName].totalNet += net;
+        const hasUnperformedCleaning = 
+          (e as any).bonusOccurrence?.type === 'parada_limpeza_nao_realizada' ||
+          (e as any).bonusOccurrenceType === 'parada_limpeza_nao_realizada' ||
+          (e as any).infractionType?.includes('Parada de Limpeza Não Realizada');
+
+        const rankingNet = hasUnperformedCleaning ? net * 0.5 : net;
+        operatorMap[opName].totalNet += rankingNet;
         operatorMap[opName].count += 1;
-        if (e.hasPenalty) {
+
+        if (hasUnperformedCleaning) {
+          operatorMap[opName].entryPenalties.push({
+            id: `clean-pen-${e.id || Math.random()}`,
+            operator: opName,
+            date: e.date,
+            infractionType: '🛑 Parada de Limpeza Não Realizada (-50% Produção do Dia no Ranking)',
+            penaltyType: 'deduction_kg' as any,
+            deductionValue: 0,
+            reason: (e as any).bonusOccurrence?.reason || 'Parada de máquina para limpeza obrigatória não realizada',
+            createdAt: e.updatedAt || new Date().toISOString()
+          });
+        }
+
+        if (e.hasPenalty && !hasUnperformedCleaning) {
           operatorMap[opName].entryPenalties.push({
             id: e.id || `entry-pen-${Math.random()}`,
             operator: opName,
