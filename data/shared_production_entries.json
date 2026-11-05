@@ -1,8 +1,1556 @@
 {
   "version": 2,
-  "updatedAt": "2026-11-02T19:32:00.310Z",
-  "count": 1151,
+  "updatedAt": "2026-11-05T11:46:30.307Z",
+  "count": 1174,
   "entries": [
+    {
+      "tubetesEcoB": 0,
+      "grossWeight": 0,
+      "ecoBPMotivo": "",
+      "netWeight": 1973,
+      "deductionValue": 500,
+      "hasPenalty": false,
+      "eremaWeight2": 0,
+      "ecoBP": 0,
+      "shift": "Noturno",
+      "borraTotalMotivo": "",
+      "tara": 0,
+      "tubetes": 0,
+      "ecoBM": 0,
+      "eremaWeight1": 1973,
+      "lossTolerancePercent": 3.5,
+      "penaltyType": "deduction_kg",
+      "downtimeCategory": "manutencao",
+      "date": "2026-11-04",
+      "isStandaloneDowntime": false,
+      "outrosMin": 0,
+      "manutencaoMin": 35,
+      "materialType": "LC3",
+      "outrosMotivo": "",
+      "volumes": 0,
+      "recycledUsed": 0,
+      "operator": "GENISON GOMES DA SILVA",
+      "id": "r00km393p",
+      "infractionType": "",
+      "updatedAt": "2026-11-05T10:35:14.347Z",
+      "eremaWeight3": 0,
+      "ecoAMotivo": "",
+      "materials": [
+        {
+          "tubetesEcoB": 0,
+          "volumes": 0,
+          "materialType": "LC3",
+          "tubetes": 0,
+          "id": "mat-init-1793874822950"
+        }
+      ],
+      "machine": "Erema",
+      "borraTotal": 0,
+      "isMaintenanceEntry": false,
+      "ecoBMMotivo": "",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "ecoA": 0,
+      "recycledBags": 0,
+      "kgPerHour": 0,
+      "isNoWorkDay": false,
+      "processoMin": 60,
+      "eremaWeight4": 0,
+      "manutencaoMotivo": "[{\"id\":\"stop-1793874882011-0.8615109715419372\",\"de\":\"19:45\",\"ate\":\"20:20\",\"motivo\":\"mangueira de agua com vazamennto.\",\"explicacao\":\"mangueira de agua com vazamennto.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"mangueira de agua com vazamennto.\",\"keyword\":\"\"}]",
+      "penaltyReason": "",
+      "processoMotivo": "[{\"id\":\"stop-1793874849375-0.14680692722846678\",\"de\":\"23:00\",\"ate\":\"00:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"}]",
+      "noWorkReason": ""
+    },
+    {
+      "tara": 0,
+      "borraTotalMotivo": "",
+      "lossTolerancePercent": 3.5,
+      "eremaWeight2": 0,
+      "isStandaloneDowntime": false,
+      "machine": "Erema",
+      "infractionType": "",
+      "hasPenalty": false,
+      "grossWeight": 0,
+      "tubetesEcoB": 0,
+      "outrosMin": 0,
+      "ecoBM": 0,
+      "ecoBPMotivo": "",
+      "recycledUsed": 0,
+      "outrosMotivo": "",
+      "shift": "Diurno",
+      "netWeight": 2627,
+      "ecoBP": 0,
+      "operator": "GILCIMAR CARLOS CORREA ARAUJO",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "eremaWeight1": 2627,
+      "date": "2026-11-04",
+      "isMaintenanceEntry": false,
+      "processoMotivo": "[{\"id\":\"stop-1793874694613-0.5199981530680668\",\"de\":\"12:00\",\"ate\":\"13:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"},{\"id\":\"stop-1793874677092-0.43252907193513057\",\"de\":\"06:00\",\"ate\":\"06:08\",\"motivo\":\"Troca dos filtros\",\"explicacao\":\"Troca dos filtros\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Troca dos filtros\",\"keyword\":\"\"}]",
+      "downtimeCategory": "manutencao",
+      "penaltyType": "deduction_kg",
+      "materialType": "LC3",
+      "penaltyReason": "",
+      "borraTotal": 0,
+      "ecoBMMotivo": "",
+      "ecoAMotivo": "",
+      "eremaWeight3": 0,
+      "tubetes": 0,
+      "id": "efpkqc91z",
+      "deductionValue": 500,
+      "kgPerHour": 0,
+      "noWorkReason": "",
+      "isNoWorkDay": false,
+      "volumes": 0,
+      "materials": [
+        {
+          "volumes": 0,
+          "id": "mat-init-1793874597560",
+          "materialType": "LC3",
+          "tubetes": 0,
+          "tubetesEcoB": 0
+        }
+      ],
+      "recycledBags": 0,
+      "eremaWeight4": 0,
+      "updatedAt": "2026-11-05T10:31:50.485Z",
+      "processoMin": 68,
+      "manutencaoMin": 0,
+      "manutencaoMotivo": "",
+      "ecoA": 0
+    },
+    {
+      "id": "qjt1yma5q",
+      "date": "2026-11-04",
+      "ecoA": 350,
+      "tara": 178,
+      "ecoBM": 0,
+      "ecoBP": 205,
+      "shift": "Diurno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Cast 1",
+      "tubetes": 128,
+      "volumes": 8,
+      "operator": "JOAO AUGUSTO CARVALHO DIAS",
+      "kgPerHour": 800,
+      "materials": [
+        {
+          "id": "mat-init-1793847568824",
+          "tubetes": 128,
+          "volumes": 8,
+          "tubetesEcoB": 30,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 6475,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-05T10:29:51.095+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "grossWeight": 6653,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 30,
+      "tubetesEcoB": 30,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 35,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793874401415-0.1717974070971916\",\"de\":\"12:36\",\"ate\":\"13:06\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "[{\"id\":\"stop-1793874493356-0.25674429728456427\",\"de\":\"12:01\",\"ate\":\"12:36\",\"motivo\":\"Foi realiizada a troca da manqueira de ar do rolo guia do câmbio da racolta, foi feito ajuste na corrrente caricatore.\",\"explicacao\":\"Foi realiizada a troca da manqueira de ar do rolo guia do câmbio da racolta, foi feito ajuste na corrrente caricatore.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Foi realiizada a troca da manqueira de ar do rolo guia do câmbio da racolta, foi feito ajuste na corrrente caricatore.\",\"keyword\":\"\"}]",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 8,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "2zqyi97k8",
+      "date": "2026-11-04",
+      "ecoA": 450,
+      "tara": 70,
+      "ecoBM": 0,
+      "ecoBP": 3484,
+      "shift": "Diurno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Cast 2",
+      "tubetes": 48,
+      "volumes": 3,
+      "operator": "MARCELO DA SILVA CASTRO",
+      "kgPerHour": 860,
+      "materials": [
+        {
+          "id": "mat-init-1793847728549",
+          "tubetes": 48,
+          "volumes": 3,
+          "tubetesEcoB": 200,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 2389,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-05T10:25:11.656+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste e outros problemas.",
+      "grossWeight": 2459,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 140,
+      "tubetesEcoB": 200,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 192,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793847792386-0.028362333514116878\",\"de\":\"06:12\",\"ate\":\"08:32\",\"motivo\":\"materia prima molhada.\",\"keyword\":\"\",\"explicacao\":\"materia prima molhada.\",\"justification\":\"materia prima molhada.\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "[{\"id\":\"stop-1793847845274-0.8853214525946309\",\"de\":\"14:06\",\"ate\":\"17:18\",\"motivo\":\"troca do parafuso da matriz, trocada a ponta do fixa borda, feito uma revis~~ao e ajuste no lado direito do lamario\",\"keyword\":\"\",\"explicacao\":\"troca do parafuso da matriz, trocada a ponta do fixa borda, feito uma revis~~ao e ajuste no lado direito do lamario\",\"justification\":\"troca do parafuso da matriz, trocada a ponta do fixa borda, feito uma revis~~ao e ajuste no lado direito do lamario\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 8,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "kgPerHour": 650,
+      "manutencaoMin": 0,
+      "volumes": 10,
+      "recycledUsed": 0,
+      "outrosMotivo": "",
+      "hasPenalty": false,
+      "tara": 183,
+      "ecoBMMotivo": "",
+      "eremaWeight1": 0,
+      "isMaintenanceEntry": false,
+      "operator": "CIDONEIDE OLIVEIRA DE LIMA",
+      "materialType": "LC3",
+      "ecoBM": 0,
+      "infractionType": "",
+      "updatedAt": "2026-11-05T10:24:33.611Z",
+      "eremaWeight2": 0,
+      "tubetes": 160,
+      "materials": [
+        {
+          "volumes": 10,
+          "materialType": "LC3",
+          "tubetes": 160,
+          "id": "mat-init-1793874151889",
+          "tubetesEcoB": 18
+        }
+      ],
+      "processoMotivo": "[{\"id\":\"stop-1793874252413-0.9846526789438712\",\"de\":\"02:24\",\"ate\":\"02:50\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"},{\"id\":\"stop-1793874234189-0.373199879296383\",\"de\":\"19:25\",\"ate\":\"19:47\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "manutencaoMotivo": "",
+      "shift": "Noturno",
+      "ecoBP": 74,
+      "isNoWorkDay": false,
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "processoMin": 48,
+      "date": "2026-11-04",
+      "id": "q338griqy",
+      "penaltyReason": "",
+      "noWorkReason": "",
+      "lossTolerancePercent": 8,
+      "outrosMin": 0,
+      "deductionValue": 500,
+      "isStandaloneDowntime": false,
+      "borraTotal": 0,
+      "borraTotalMotivo": "",
+      "grossWeight": 8270,
+      "recycledBags": 0,
+      "ecoAMotivo": "",
+      "tubetesEcoB": 18,
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "eremaWeight4": 0,
+      "downtimeCategory": "manutencao",
+      "eremaWeight3": 0,
+      "netWeight": 8087,
+      "ecoA": 0,
+      "machine": "Cast 1",
+      "penaltyType": "deduction_kg"
+    },
+    {
+      "id": "jy4mv57vy",
+      "date": "2026-11-04",
+      "ecoA": 299.9,
+      "tara": 250,
+      "ecoBM": 0,
+      "ecoBP": 328,
+      "shift": "Noturno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Cast 2",
+      "tubetes": 192,
+      "volumes": 12,
+      "operator": "ENDREY LIMA VIANA",
+      "kgPerHour": 860,
+      "materials": [
+        {
+          "id": "mat-init-1793873975833",
+          "tubetes": 192,
+          "volumes": 12,
+          "tubetesEcoB": 43,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 9688,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-05T10:22:11.841+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "Desalinhamento Lateral",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "grossWeight": 9938,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 48,
+      "tubetesEcoB": 43,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 0,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793874114499-0.36660213355486293\",\"de\":\"04:43\",\"ate\":\"05:09\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"},{\"id\":\"stop-1793874088896-0.28451989635394737\",\"de\":\"22:58\",\"ate\":\"23:20\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 8,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "ww4k3owsa",
+      "date": "2026-11-03",
+      "ecoA": 0,
+      "tara": 0,
+      "ecoBM": 0,
+      "ecoBP": 0,
+      "shift": "Noturno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Erema",
+      "tubetes": 0,
+      "volumes": 0,
+      "operator": "FABIO ANDRE BELCHIOR MATOS",
+      "kgPerHour": 0,
+      "materials": [
+        {
+          "id": "mat-init-1793804076369",
+          "tubetes": 0,
+          "volumes": 0,
+          "tubetesEcoB": 0,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 2773,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-04T14:55:04.39+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "",
+      "grossWeight": 0,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 60,
+      "tubetesEcoB": 0,
+      "eremaWeight1": 2773,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 0,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793804095041-0.436003691294896\",\"de\":\"23:00\",\"ate\":\"00:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 3.5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "p2h6zzqs7",
+      "date": "2026-11-03",
+      "ecoA": 0,
+      "tara": 0,
+      "ecoBM": 0,
+      "ecoBP": 0,
+      "shift": "Diurno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Erema",
+      "tubetes": 0,
+      "volumes": 0,
+      "operator": "ALESSANDRO NUNES DA SILVA",
+      "kgPerHour": 0,
+      "materials": [
+        {
+          "id": "mat-init-1793803963376",
+          "tubetes": 0,
+          "volumes": 0,
+          "tubetesEcoB": 0,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 2052,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-04T14:54:24.92+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "",
+      "grossWeight": 0,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 60,
+      "tubetesEcoB": 0,
+      "eremaWeight1": 2052,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 120,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793803978557-0.2881642393670051\",\"de\":\"12:00\",\"ate\":\"13:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "[{\"id\":\"stop-1793804005629-0.18824738408655517\",\"de\":\"07:40\",\"ate\":\"09:40\",\"motivo\":\"Vazamento de agua na tubulação da bomba de agua. ajiste no granulatore.\",\"explicacao\":\"Vazamento de agua na tubulação da bomba de agua. ajiste no granulatore.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Vazamento de agua na tubulação da bomba de agua. ajiste no granulatore.\",\"keyword\":\"\"}]",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 3.5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "ynxjctesv",
+      "date": "2026-11-03",
+      "ecoA": 100,
+      "tara": 202,
+      "ecoBM": 0,
+      "ecoBP": 144,
+      "shift": "Noturno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Cast 1",
+      "tubetes": 144,
+      "volumes": 9,
+      "operator": "ADRIANO DA SILVA MACIEL",
+      "kgPerHour": 650,
+      "materials": [
+        {
+          "id": "mat-init-1793803376405",
+          "tubetes": 144,
+          "volumes": 9,
+          "tubetesEcoB": 16,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 7321,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-04T14:52:22.9+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "Desalinhamento Lateral",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "grossWeight": 7523,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 63,
+      "tubetesEcoB": 16,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 0,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793803643730-0.6930269191418846\",\"de\":\"20:28\",\"ate\":\"20:58\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0},{\"id\":\"stop-1793803629113-0.22057642283229262\",\"de\":\"03:33\",\"ate\":\"04:06\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 8,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "drgc1gsi0",
+      "date": "2026-11-03",
+      "ecoA": 0,
+      "tara": 234,
+      "ecoBM": 0,
+      "ecoBP": 1215,
+      "shift": "Noturno",
+      "userId": "aiyXL3QfzHRIltkYEbKUg7D6cez1",
+      "machine": "Cast 2",
+      "tubetes": 176,
+      "volumes": 11,
+      "operator": "CARLOS PHILLIP BATISTA DA SILVA",
+      "kgPerHour": 1172,
+      "materials": [
+        {
+          "id": "mat-init-1793803680918",
+          "tubetes": 176,
+          "volumes": 11,
+          "tubetesEcoB": 74,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 8895,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-04T14:51:32.429+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste, estabilidade do  filme no fixa borda",
+      "grossWeight": 9129,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 55,
+      "tubetesEcoB": 74,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 0,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793803871593-0.14088163804708909\",\"de\":\"00:15\",\"ate\":\"00:40\",\"motivo\":\"filme não aderiu ao tubete.\",\"explicacao\":\"filme não aderiu ao tubete.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"filme não aderiu ao tubete.\",\"keyword\":\"\"},{\"id\":\"stop-1793803820983-0.05111460697289005\",\"de\":\"22:10\",\"ate\":\"22:40\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 8,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "ecoAMotivo": "",
+      "eremaWeight1": 0,
+      "borraTotal": 0,
+      "volumes": 7,
+      "manutencaoMotivo": "",
+      "netWeight": 5709,
+      "deductionValue": 500,
+      "ecoBM": 0,
+      "isNoWorkDay": false,
+      "updatedAt": "2026-11-04T06:50:37.562Z",
+      "penaltyReason": "",
+      "infractionType": "",
+      "hasPenalty": false,
+      "outrosMotivo": "",
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 3.5,
+      "shift": "Diurno",
+      "ecoA": 100,
+      "manutencaoMin": 0,
+      "isMaintenanceEntry": false,
+      "materialType": "LC3",
+      "materials": [
+        {
+          "tubetesEcoB": 55,
+          "tubetes": 112,
+          "volumes": 7,
+          "id": "mat-init-1793774761127",
+          "materialType": "LC3"
+        }
+      ],
+      "processoMotivo": "[{\"id\":\"stop-1793774963385-0.7582681723001828\",\"de\":\"10:07\",\"ate\":\"10:34\",\"motivo\":\"LIMPEZA DA MATRIZ.\",\"explicacao\":\"LIMPEZA DA MATRIZ.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"LIMPEZA DA MATRIZ.\",\"keyword\":\"\"}]",
+      "machine": "Cast 1",
+      "eremaWeight2": 0,
+      "eremaWeight4": 0,
+      "recycledUsed": 0,
+      "downtimeCategory": "manutencao",
+      "processoMin": 27,
+      "noWorkReason": "",
+      "tara": 152,
+      "eremaWeight3": 0,
+      "ecoBP": 701,
+      "outrosMin": 0,
+      "userId": "oMiGi4DD6LT2RXSlfe3r2jnRIbK2",
+      "ecoBPMotivo": "Limpeza, ajuste, teste SETUP DE LC3-30/ATX-25",
+      "borraTotalMotivo": "",
+      "id": "2ux9w55m2",
+      "ecoBMMotivo": "",
+      "tubetes": 112,
+      "recycledBags": 0,
+      "date": "2026-11-03",
+      "grossWeight": 5861,
+      "kgPerHour": 800,
+      "operator": "DEYWIS JUNIO SOUZA MENEZES",
+      "tubetesEcoB": 55,
+      "penaltyType": "deduction_kg"
+    },
+    {
+      "tubetesEcoB": 90,
+      "penaltyReason": "",
+      "penaltyType": "deduction_kg",
+      "materialType": "LC3",
+      "ecoA": 0,
+      "ecoBMMotivo": "",
+      "machine": "Cast 2",
+      "ecoBPMotivo": "Limpeza, ajuste, teste e aumento da velocidade.",
+      "materials": [
+        {
+          "tubetesEcoB": 90,
+          "materialType": "LC3",
+          "id": "mat-init-1793774536264",
+          "volumes": 12,
+          "tubetes": 192
+        }
+      ],
+      "grossWeight": 9937,
+      "lossTolerancePercent": 3.5,
+      "isStandaloneDowntime": false,
+      "outrosMotivo": "",
+      "borraTotalMotivo": "",
+      "id": "fc58prqff",
+      "userId": "oMiGi4DD6LT2RXSlfe3r2jnRIbK2",
+      "manutencaoMin": 0,
+      "operator": "CHRISTIAN DA SILVA PIMENTEL",
+      "updatedAt": "2026-11-04T06:45:49.156Z",
+      "processoMin": 69,
+      "ecoBP": 1032,
+      "tubetes": 192,
+      "downtimeCategory": "manutencao",
+      "netWeight": 9703,
+      "eremaWeight1": 0,
+      "shift": "Diurno",
+      "processoMotivo": "[{\"id\":\"stop-1793774686408-0.1829517439897832\",\"de\":\"16:15\",\"ate\":\"16:51\",\"motivo\":\"ESCAPE DO FIXAR BORDA SETUP DE LC3 25 PRA LC3 19\",\"explicacao\":\"ESCAPE DO FIXAR BORDA SETUP DE LC3 25 PRA LC3 19\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"ESCAPE DO FIXAR BORDA SETUP DE LC3 25 PRA LC3 19\",\"keyword\":\"\"},{\"id\":\"stop-1793774641073-0.041075487396449506\",\"de\":\"10:56\",\"ate\":\"11:29\",\"motivo\":\"LIMPEZA DA MATRIZ E TROCA DAS FACAS\",\"explicacao\":\"LIMPEZA DA MATRIZ E TROCA DAS FACAS\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"LIMPEZA DA MATRIZ E TROCA DAS FACAS\",\"keyword\":\"\"}]",
+      "recycledBags": 0,
+      "date": "2026-11-03",
+      "ecoAMotivo": "",
+      "volumes": 12,
+      "kgPerHour": 850,
+      "isMaintenanceEntry": false,
+      "borraTotal": 0,
+      "infractionType": "",
+      "eremaWeight3": 0,
+      "tara": 234,
+      "deductionValue": 500,
+      "isNoWorkDay": false,
+      "noWorkReason": "",
+      "manutencaoMotivo": "",
+      "outrosMin": 0,
+      "ecoBM": 0,
+      "recycledUsed": 0,
+      "eremaWeight4": 0,
+      "eremaWeight2": 0,
+      "hasPenalty": false
+    },
+    {
+      "date": "2026-11-02",
+      "isNoWorkDay": false,
+      "updatedAt": "2026-11-03T10:49:55.692Z",
+      "kgPerHour": 0,
+      "penaltyReason": "",
+      "manutencaoMin": 0,
+      "tubetesEcoB": 0,
+      "operator": "GENISON GOMES DA SILVA",
+      "tubetes": 0,
+      "shift": "Noturno",
+      "hasPenalty": false,
+      "deductionValue": 500,
+      "noWorkReason": "",
+      "volumes": 0,
+      "ecoBM": 0,
+      "netWeight": 1060,
+      "ecoBP": 0,
+      "eremaWeight4": 0,
+      "tara": 0,
+      "isMaintenanceEntry": false,
+      "ecoA": 0,
+      "recycledBags": 0,
+      "materialType": "LC3",
+      "lossTolerancePercent": 3.5,
+      "materials": [
+        {
+          "id": "mat-init-1793702731572",
+          "volumes": 0,
+          "materialType": "LC3",
+          "tubetes": 0,
+          "tubetesEcoB": 0
+        }
+      ],
+      "processoMin": 276,
+      "eremaWeight1": 783,
+      "ecoBPMotivo": "",
+      "ecoBMMotivo": "",
+      "ecoAMotivo": "",
+      "outrosMotivo": "",
+      "machine": "Erema",
+      "downtimeCategory": "manutencao",
+      "borraTotal": 0,
+      "grossWeight": 0,
+      "eremaWeight3": 0,
+      "outrosMin": 0,
+      "borraTotalMotivo": "",
+      "eremaWeight2": 277,
+      "recycledUsed": 0,
+      "id": "5yvp6c00y",
+      "penaltyType": "deduction_kg",
+      "manutencaoMotivo": "",
+      "processoMotivo": "[{\"id\":\"stop-1793702961542-0.01478534458052927\",\"de\":\"01:46\",\"ate\":\"04:48\",\"motivo\":\"Criou borra no granulatore\",\"explicacao\":\"Criou borra no granulatore\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Criou borra no granulatore\",\"keyword\":\"\"},{\"id\":\"stop-1793702890757-0.3483305902195144\",\"de\":\"23:00\",\"ate\":\"00:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"},{\"id\":\"stop-1793702857356-0.40060987100065737\",\"de\":\"18:50\",\"ate\":\"19:20\",\"motivo\":\"Troca dos parafusos da faca, estavam desgastados.\",\"explicacao\":\"Troca dos parafusos da faca, estavam desgastados.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Troca dos parafusos da faca, estavam desgastados.\",\"keyword\":\"\"},{\"id\":\"stop-1793702826462-0.690888479104147\",\"de\":\"18:00\",\"ate\":\"18:04\",\"motivo\":\"Troca dos filtros\",\"explicacao\":\"Troca dos filtros\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Troca dos filtros\",\"keyword\":\"\"}]",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "isStandaloneDowntime": false,
+      "infractionType": ""
+    },
+    {
+      "id": "ogwpawo1a",
+      "date": "2026-11-02",
+      "ecoA": 0,
+      "tara": 0,
+      "ecoBM": 0,
+      "ecoBP": 0,
+      "shift": "Diurno",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "machine": "Erema",
+      "tubetes": 0,
+      "volumes": 0,
+      "operator": "GILCIMAR CARLOS CORREA ARAUJO",
+      "kgPerHour": 0,
+      "materials": [
+        {
+          "id": "mat-init-1793702657303",
+          "tubetes": 0,
+          "volumes": 0,
+          "tubetesEcoB": 0,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 1790,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-03T10:45:28.304+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "",
+      "grossWeight": 0,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 69,
+      "tubetesEcoB": 0,
+      "eremaWeight1": 1790,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 0,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793702710933-0.05237792450245404\",\"de\":\"12:00\",\"ate\":\"13:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"},{\"id\":\"stop-1793702683269-0.47005511520393284\",\"de\":\"06:00\",\"ate\":\"06:09\",\"motivo\":\"Troca dos filtros\",\"explicacao\":\"Troca dos filtros\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Troca dos filtros\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 3.5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "umwp7j2b0",
+      "date": "2026-11-02",
+      "ecoA": 600,
+      "tara": 148,
+      "ecoBM": 146,
+      "ecoBP": 408,
+      "shift": "Diurno",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "machine": "Cast 1",
+      "tubetes": 112,
+      "volumes": 7,
+      "operator": "JOAO AUGUSTO CARVALHO DIAS",
+      "kgPerHour": 668,
+      "materials": [
+        {
+          "id": "mat-init-1793668073262",
+          "tubetes": 112,
+          "volumes": 7,
+          "tubetesEcoB": 46,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 5636,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-03T10:44:00.781+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "DESARME DO TRAINO.1 ",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "grossWeight": 5784,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 38,
+      "tubetesEcoB": 46,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 95,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793668279480-0.23584701547960374\",\"de\":\"12:34\",\"ate\":\"13:12\",\"motivo\":\"FILME SE ROMPEU E ENROLOU NO TRAINO SUPERIOR,APROVEITOU PRA A LIMPEZA DA MATRIZ\",\"keyword\":\"\",\"explicacao\":\"FILME SE ROMPEU E ENROLOU NO TRAINO SUPERIOR,APROVEITOU PRA A LIMPEZA DA MATRIZ\",\"justification\":\"FILME SE ROMPEU E ENROLOU NO TRAINO SUPERIOR,APROVEITOU PRA A LIMPEZA DA MATRIZ\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "[{\"id\":\"stop-1793668212673-0.007090606830372548\",\"de\":\"07:17\",\"ate\":\"08:52\",\"motivo\":\"CARRO EXTRATOR FEZ A RETIRADA DO EIXO FORA DE POSIÇÃO .\",\"keyword\":\"\",\"explicacao\":\"CARRO EXTRATOR FEZ A RETIRADA DO EIXO FORA DE POSIÇÃO .\",\"justification\":\"CARRO EXTRATOR FEZ A RETIRADA DO EIXO FORA DE POSIÇÃO .\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "jd7j2hpqx",
+      "date": "2026-11-02",
+      "ecoA": 50,
+      "tara": 238,
+      "ecoBM": 436,
+      "ecoBP": 613,
+      "shift": "Diurno",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "machine": "Cast 2",
+      "tubetes": 160,
+      "volumes": 10,
+      "operator": "MARCELO DA SILVA CASTRO",
+      "kgPerHour": 1048,
+      "materials": [
+        {
+          "id": "mat-init-1793667457836",
+          "tubetes": 160,
+          "volumes": 10,
+          "tubetesEcoB": 54,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 7994,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-03T10:43:48.495+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "DESARME DA EXT.D ",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "grossWeight": 8232,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 53,
+      "tubetesEcoB": 54,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 127,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793667804057-0.30179558756281455\",\"de\":\"16:05\",\"ate\":\"16:27\",\"motivo\":\"TROCA DAS TELAS,E LIMPEZA DA MATRIZ.\",\"keyword\":\"\",\"explicacao\":\"TROCA DAS TELAS,E LIMPEZA DA MATRIZ.\",\"justification\":\"TROCA DAS TELAS,E LIMPEZA DA MATRIZ.\",\"isAvulso\":false,\"durationMinutes\":0},{\"id\":\"stop-1793667709489-0.6740890126105975\",\"de\":\"10:20\",\"ate\":\"10:51\",\"motivo\":\"Limpeza de matriz\",\"keyword\":\"\",\"explicacao\":\"Limpeza de matriz\",\"justification\":\"Limpeza de matriz\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "[{\"id\":\"stop-1793668029473-0.3985056926929563\",\"de\":\"14:00\",\"ate\":\"16:07\",\"motivo\":\"CILINDRO DO CARRO EXTRATOR.\",\"keyword\":\"\",\"explicacao\":\"CILINDRO DO CARRO EXTRATOR.\",\"justification\":\"CILINDRO DO CARRO EXTRATOR.\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "id": "48zpmd7s4",
+      "date": "2026-11-02",
+      "ecoA": 50,
+      "tara": 259,
+      "ecoBM": 0,
+      "ecoBP": 897,
+      "shift": "Noturno",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "machine": "Cast 2",
+      "tubetes": 176,
+      "volumes": 11,
+      "operator": "CIDONEIDE OLIVEIRA DE LIMA",
+      "kgPerHour": 1045,
+      "materials": [
+        {
+          "id": "mat-init-1793701661717",
+          "tubetes": 176,
+          "volumes": 11,
+          "tubetesEcoB": 33,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 8879,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-03T10:41:05.85+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "Desalinhamento Lateral",
+      "hasPenalty": false,
+      "ecoBMMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste e outros problemas.",
+      "grossWeight": 9138,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 0,
+      "tubetesEcoB": 33,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 186,
+      "penaltyReason": "",
+      "deductionValue": 0,
+      "infractionType": "",
+      "processoMotivo": "",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "[{\"id\":\"stop-1793702322301-0.07466626094913797\",\"de\":\"22:45\",\"ate\":\"23:26\",\"motivo\":\"Temperatura da água muito alta.\",\"explicacao\":\"Temperatura da água muito alta.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Temperatura da água muito alta.\",\"keyword\":\"\"},{\"id\":\"stop-1793702275996-0.11405982286157401\",\"de\":\"20:00\",\"ate\":\"22:25\",\"motivo\":\"Troca do aspirador do moinho\",\"explicacao\":\"Troca do aspirador do moinho\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Troca do aspirador do moinho\",\"keyword\":\"\"}]",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
+    {
+      "isMaintenanceEntry": false,
+      "lossTolerancePercent": 5,
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "penaltyType": "deduction_kg",
+      "deductionValue": 500,
+      "materials": [
+        {
+          "tubetes": 112,
+          "id": "mat-init-1793701484049",
+          "volumes": 7,
+          "tubetesEcoB": 25,
+          "materialType": "LC3"
+        }
+      ],
+      "borraTotal": 0,
+      "date": "2026-11-02",
+      "tara": 152,
+      "updatedAt": "2026-11-03T10:27:37.766Z",
+      "outrosMin": 0,
+      "outrosMotivo": "",
+      "operator": "EDILSON DA SILVA BENTES",
+      "isNoWorkDay": false,
+      "kgPerHour": 668,
+      "manutencaoMotivo": "[{\"id\":\"stop-1793701570142-0.1494223507414707\",\"de\":\"18:00\",\"ate\":\"19:00\",\"motivo\":\"Manutenção atuou na esteira e biela que estavam apresentando problema.\",\"explicacao\":\"Manutenção atuou na esteira e biela que estavam apresentando problema.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Manutenção atuou na esteira e biela que estavam apresentando problema.\",\"keyword\":\"\"}]",
+      "eremaWeight1": 0,
+      "processoMotivo": "[{\"id\":\"stop-1793701633459-0.28298720569877533\",\"de\":\"04:10\",\"ate\":\"04:30\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "penaltyReason": "",
+      "eremaWeight4": 0,
+      "recycledBags": 0,
+      "eremaWeight2": 0,
+      "ecoBP": 252.5,
+      "borraTotalMotivo": "",
+      "infractionType": "",
+      "recycledUsed": 0,
+      "hasPenalty": false,
+      "grossWeight": 5820,
+      "shift": "Noturno",
+      "id": "bemaul1c1",
+      "machine": "Cast 1",
+      "netWeight": 5668,
+      "noWorkReason": "",
+      "eremaWeight3": 0,
+      "tubetes": 112,
+      "processoMin": 20,
+      "ecoA": 50.1,
+      "ecoAMotivo": "Desalinhamento Lateral",
+      "manutencaoMin": 60,
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "ecoBM": 0,
+      "ecoBMMotivo": "",
+      "downtimeCategory": "manutencao",
+      "volumes": 7,
+      "tubetesEcoB": 25,
+      "isStandaloneDowntime": false,
+      "materialType": "LC3"
+    },
+    {
+      "outrosMotivo": "",
+      "infractionType": "",
+      "penaltyReason": "",
+      "noWorkReason": "",
+      "userId": "oMiGi4DD6LT2RXSlfe3r2jnRIbK2",
+      "isStandaloneDowntime": false,
+      "operator": "DEYWIS JUNIO SOUZA MENEZES",
+      "processoMotivo": "[{\"id\":\"stop-1793618486114-0.22178360553193122\",\"de\":\"16:46\",\"ate\":\"17:07\",\"motivo\":\"Filme não aderiu ao tubete\",\"keyword\":\"\",\"explicacao\":\"Filme não aderiu ao tubete\",\"justification\":\"Filme não aderiu ao tubete\",\"isAvulso\":false,\"durationMinutes\":0},{\"id\":\"stop-1793618406608-0.17427740932945213\",\"de\":\"15:22\",\"ate\":\"15:52\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0},{\"id\":\"stop-1793618364453-0.4054380288579108\",\"de\":\"14:55\",\"ate\":\"15:22\",\"motivo\":\"Troca dos filtros\",\"keyword\":\"\",\"explicacao\":\"Troca dos filtros\",\"justification\":\"Troca dos filtros\",\"isAvulso\":false,\"durationMinutes\":0}]",
+      "materials": [
+        {
+          "materialType": "LC3",
+          "tubetesEcoB": 30,
+          "tubetes": 208,
+          "volumes": 13,
+          "id": "mat-init-1793618108837"
+        }
+      ],
+      "machine": "Cast 2",
+      "ecoA": 198.92,
+      "ecoBM": 0,
+      "borraTotal": 0,
+      "manutencaoMotivo": "",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "shift": "Diurno",
+      "isNoWorkDay": false,
+      "recycledBags": 0,
+      "tara": 304,
+      "volumes": 13,
+      "recycledUsed": 0,
+      "id": "744nsm9gi",
+      "ecoBP": 334,
+      "tubetesEcoB": 30,
+      "ecoBMMotivo": "",
+      "date": "2026-11-01",
+      "deductionValue": 500,
+      "eremaWeight2": 0,
+      "ecoAMotivo": "Desalinhamento Lateral",
+      "downtimeCategory": "manutencao",
+      "netWeight": 10523,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "grossWeight": 10827,
+      "tubetes": 208,
+      "lossTolerancePercent": 5,
+      "outrosMin": 0,
+      "kgPerHour": 1048,
+      "processoMin": 78,
+      "hasPenalty": false,
+      "updatedAt": "2026-11-03T00:56:36.442Z",
+      "isMaintenanceEntry": false,
+      "borraTotalMotivo": "",
+      "manutencaoMin": 0,
+      "penaltyType": "deduction_kg",
+      "eremaWeight1": 0
+    },
+    {
+      "grossWeight": 0,
+      "ecoBP": 0,
+      "processoMin": 60,
+      "machine": "Erema",
+      "ecoAMotivo": "",
+      "eremaWeight1": 1737,
+      "manutencaoMin": 285,
+      "ecoBM": 0,
+      "netWeight": 1737,
+      "penaltyType": "deduction_kg",
+      "shift": "Noturno",
+      "isMaintenanceEntry": false,
+      "volumes": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "lossTolerancePercent": 3.5,
+      "materialType": "LC3",
+      "updatedAt": "2026-11-02T22:43:18.970Z",
+      "deductionValue": 500,
+      "manutencaoMotivo": "[{\"id\":\"stop-1793659344590-0.01727261866453389\",\"de\":\"18:00\",\"ate\":\"22:45\",\"motivo\":\"Vazamento de agua no granulatore (retentor)\",\"explicacao\":\"Vazamento de agua no granulatore (retentor)\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Vazamento de agua no granulatore (retentor)\",\"keyword\":\"\"}]",
+      "hasPenalty": false,
+      "kgPerHour": 0,
+      "outrosMin": 0,
+      "eremaWeight2": 0,
+      "materials": [
+        {
+          "materialType": "LC3",
+          "tubetes": 0,
+          "volumes": 0,
+          "id": "mat-init-1793659313477",
+          "tubetesEcoB": 0
+        }
+      ],
+      "operator": "FABIO ANDRE BELCHIOR MATOS",
+      "recycledUsed": 0,
+      "ecoA": 0,
+      "ecoBPMotivo": "",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "tubetes": 0,
+      "downtimeCategory": "manutencao",
+      "isNoWorkDay": false,
+      "tara": 0,
+      "isStandaloneDowntime": false,
+      "ecoBMMotivo": "",
+      "tubetesEcoB": 0,
+      "date": "2026-11-01",
+      "recycledBags": 0,
+      "borraTotal": 0,
+      "noWorkReason": "",
+      "infractionType": "",
+      "penaltyReason": "",
+      "id": "iliv2oho3",
+      "processoMotivo": "[{\"id\":\"stop-1793659384577-0.43756502477932735\",\"de\":\"23:00\",\"ate\":\"00:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "outrosMotivo": ""
+    },
+    {
+      "isNoWorkDay": false,
+      "ecoBPMotivo": "",
+      "kgPerHour": 0,
+      "ecoA": 0,
+      "outrosMin": 0,
+      "tubetes": 0,
+      "recycledUsed": 0,
+      "recycledBags": 0,
+      "tara": 0,
+      "ecoBMMotivo": "",
+      "borraTotal": 0,
+      "tubetesEcoB": 0,
+      "date": "2026-11-01",
+      "updatedAt": "2026-11-02T22:41:32.109Z",
+      "operator": "ALESSANDRO NUNES DA SILVA",
+      "manutencaoMotivo": "",
+      "netWeight": 2306,
+      "manutencaoMin": 0,
+      "noWorkReason": "",
+      "deductionValue": 500,
+      "lossTolerancePercent": 3.5,
+      "outrosMotivo": "",
+      "eremaWeight1": 2306,
+      "processoMin": 60,
+      "hasPenalty": false,
+      "downtimeCategory": "manutencao",
+      "isStandaloneDowntime": false,
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "machine": "Erema",
+      "grossWeight": 0,
+      "penaltyType": "deduction_kg",
+      "penaltyReason": "",
+      "volumes": 0,
+      "id": "xnvm1brxn",
+      "ecoBP": 0,
+      "infractionType": "",
+      "materialType": "LC3",
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "isMaintenanceEntry": false,
+      "materials": [
+        {
+          "tubetes": 0,
+          "materialType": "LC3",
+          "volumes": 0,
+          "tubetesEcoB": 0,
+          "id": "mat-init-1793659240892"
+        }
+      ],
+      "ecoBM": 0,
+      "processoMotivo": "[{\"id\":\"stop-1793659265074-0.996635644014956\",\"de\":\"12:00\",\"ate\":\"13:00\",\"motivo\":\"Intervalo\",\"explicacao\":\"Intervalo\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Intervalo\",\"keyword\":\"\"}]",
+      "ecoAMotivo": "",
+      "eremaWeight2": 0,
+      "shift": "Diurno",
+      "borraTotalMotivo": ""
+    },
+    {
+      "eremaWeight2": 0,
+      "grossWeight": 12447,
+      "machine": "Cast 2",
+      "shift": "Noturno",
+      "ecoBM": 0,
+      "processoMin": 30,
+      "volumes": 15,
+      "materialType": "LC3",
+      "deductionValue": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "isStandaloneDowntime": false,
+      "penaltyType": "deduction_kg",
+      "penaltyReason": "",
+      "ecoBP": 350,
+      "netWeight": 12120,
+      "updatedAt": "2026-11-02T22:27:29.300Z",
+      "manutencaoMotivo": "",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "operator": "CARLOS PHILLIP BATISTA DA SILVA",
+      "eremaWeight1": 0,
+      "borraTotal": 0,
+      "outrosMin": 0,
+      "kgPerHour": 1048,
+      "tubetes": 240,
+      "outrosMotivo": "",
+      "processoMotivo": "[{\"id\":\"stop-1793658358831-0.48090605788413177\",\"de\":\"22:45\",\"ate\":\"23:15\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "materials": [
+        {
+          "tubetes": 240,
+          "id": "mat-init-1793658171685",
+          "volumes": 15,
+          "materialType": "LC3",
+          "tubetesEcoB": 0
+        }
+      ],
+      "isNoWorkDay": false,
+      "downtimeCategory": "manutencao",
+      "ecoAMotivo": "",
+      "noWorkReason": "",
+      "ecoBMMotivo": "",
+      "infractionType": "",
+      "tubetesEcoB": 0,
+      "isMaintenanceEntry": false,
+      "manutencaoMin": 0,
+      "date": "2026-11-01",
+      "id": "jnm77usqx",
+      "lossTolerancePercent": 5,
+      "recycledBags": 0,
+      "tara": 327,
+      "hasPenalty": false,
+      "borraTotalMotivo": "",
+      "recycledUsed": 0,
+      "ecoA": 0
+    },
+    {
+      "recycledUsed": 0,
+      "ecoAMotivo": "",
+      "tubetesEcoB": 12,
+      "lossTolerancePercent": 5,
+      "ecoBMMotivo": "",
+      "tubetes": 128,
+      "ecoBP": 388,
+      "materials": [
+        {
+          "tubetesEcoB": 12,
+          "volumes": 8,
+          "id": "mat-init-1793657643837",
+          "tubetes": 128,
+          "materialType": "LC3"
+        }
+      ],
+      "manutencaoMotivo": "",
+      "shift": "Noturno",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "isNoWorkDay": false,
+      "ecoBM": 0,
+      "deductionValue": 500,
+      "recycledBags": 0,
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "penaltyReason": "",
+      "hasPenalty": false,
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "date": "2026-11-01",
+      "processoMotivo": "[{\"id\":\"stop-1793657999630-0.5862722932680212\",\"de\":\"22:07\",\"ate\":\"23:00\",\"motivo\":\"Limpeza da matriz e verificação dos rolos, retirada de risco no filme\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos, retirada de risco no filme\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos, retirada de risco no filme\",\"keyword\":\"\"}]",
+      "penaltyType": "deduction_kg",
+      "manutencaoMin": 0,
+      "machine": "Cast 1",
+      "tara": 191,
+      "borraTotalMotivo": "",
+      "eremaWeight1": 0,
+      "isMaintenanceEntry": false,
+      "infractionType": "",
+      "volumes": 8,
+      "operator": "ADRIANO DA SILVA MACIEL",
+      "processoMin": 53,
+      "grossWeight": 6646,
+      "ecoA": 0,
+      "netWeight": 6455,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "id": "6holwst8z",
+      "updatedAt": "2026-11-02T22:21:47.870Z",
+      "materialType": "LC3",
+      "borraTotal": 0,
+      "downtimeCategory": "manutencao",
+      "isStandaloneDowntime": false,
+      "eremaWeight2": 0,
+      "outrosMin": 0,
+      "kgPerHour": 1000
+    },
+    {
+      "id": "blaidzryp",
+      "date": "2026-11-01",
+      "ecoA": 0,
+      "tara": 161,
+      "ecoBM": 122,
+      "ecoBP": 422,
+      "shift": "Diurno",
+      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
+      "machine": "Cast 1",
+      "tubetes": 128,
+      "volumes": 8,
+      "operator": "CHRISTIAN DA SILVA PIMENTEL",
+      "kgPerHour": 668,
+      "materials": [
+        {
+          "id": "mat-init-1793656693516",
+          "tubetes": 128,
+          "volumes": 8,
+          "tubetesEcoB": 36,
+          "materialType": "LC3"
+        }
+      ],
+      "netWeight": 6480,
+      "outrosMin": 0,
+      "updatedAt": "2026-11-02T22:01:43.496+00:00",
+      "borraTotal": 0,
+      "ecoAMotivo": "",
+      "hasPenalty": false,
+      "ecoBMMotivo": "Eixo com vazamento",
+      "ecoBPMotivo": "Limpeza, ajuste, teste",
+      "grossWeight": 6641,
+      "isNoWorkDay": false,
+      "penaltyType": "deduction_kg",
+      "processoMin": 51,
+      "tubetesEcoB": 36,
+      "eremaWeight1": 0,
+      "eremaWeight2": 0,
+      "eremaWeight3": 0,
+      "eremaWeight4": 0,
+      "materialType": "LC3",
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "recycledBags": 0,
+      "recycledUsed": 0,
+      "manutencaoMin": 0,
+      "penaltyReason": "",
+      "deductionValue": 500,
+      "infractionType": "",
+      "processoMotivo": "[{\"id\":\"stop-1793656867483-0.2851114582620462\",\"de\":\"16:00\",\"ate\":\"16:30\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"},{\"id\":\"stop-1793656847646-0.6291453966951168\",\"de\":\"14:11\",\"ate\":\"14:32\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"}]",
+      "borraTotalMotivo": "",
+      "downtimeCategory": "manutencao",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "isStandaloneDowntime": false,
+      "lossTolerancePercent": 5,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0
+    },
     {
       "ecoBP": 210,
       "downtimeCategory": "manutencao",
@@ -9009,63 +10557,6 @@
       "id": "s8wrce3vg",
       "updatedAt": "2026-10-05T10:29:39.176Z",
       "operator": "DEYWIS JUNIO SOUZA MENEZES"
-    },
-    {
-      "recycledBags": 0,
-      "ecoBM": 0,
-      "eremaWeight4": 0,
-      "isMaintenanceEntry": false,
-      "noWorkReason": "",
-      "recycledUsed": 0,
-      "borraTotal": 0,
-      "tubetesEcoB": 30,
-      "ecoAMotivo": "Desalinhamento Lateral",
-      "outrosMotivo": "",
-      "updatedAt": "2026-11-02T11:22:56.795Z",
-      "materialType": "LC3",
-      "downtimeCategory": "manutencao",
-      "netWeight": 10523,
-      "manutencaoMin": 0,
-      "isStandaloneDowntime": false,
-      "userId": "U221Ngmm6HbO6xS9Nm9rugqJwEC3",
-      "deductionValue": 500,
-      "hasPenalty": false,
-      "grossWeight": 10827,
-      "operator": "DEYWIS JUNIO SOUZA MENEZES",
-      "eremaWeight3": 0,
-      "tara": 304,
-      "date": "2026-10-01",
-      "eremaWeight2": 0,
-      "eremaWeight1": 0,
-      "ecoBP": 334,
-      "processoMotivo": "[{\"id\":\"stop-1793618486114-0.22178360553193122\",\"de\":\"16:46\",\"ate\":\"17:07\",\"motivo\":\"Filme não aderiu ao tubete\",\"explicacao\":\"Filme não aderiu ao tubete\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Filme não aderiu ao tubete\",\"keyword\":\"\"},{\"id\":\"stop-1793618406608-0.17427740932945213\",\"de\":\"15:22\",\"ate\":\"15:52\",\"motivo\":\"Limpeza da matriz e verificação dos rolos.\",\"explicacao\":\"Limpeza da matriz e verificação dos rolos.\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Limpeza da matriz e verificação dos rolos.\",\"keyword\":\"\"},{\"id\":\"stop-1793618364453-0.4054380288579108\",\"de\":\"14:55\",\"ate\":\"15:22\",\"motivo\":\"Troca dos filtros\",\"explicacao\":\"Troca dos filtros\",\"isAvulso\":false,\"durationMinutes\":0,\"justification\":\"Troca dos filtros\",\"keyword\":\"\"}]",
-      "penaltyType": "deduction_kg",
-      "penaltyReason": "",
-      "ecoBMMotivo": "",
-      "isNoWorkDay": false,
-      "tubetes": 208,
-      "ecoBPMotivo": "Limpeza, ajuste, teste",
-      "processoMin": 78,
-      "volumes": 13,
-      "shift": "Noturno",
-      "materials": [
-        {
-          "volumes": 13,
-          "id": "mat-init-1793618108837",
-          "tubetes": 208,
-          "materialType": "LC3",
-          "tubetesEcoB": 30
-        }
-      ],
-      "machine": "Cast 2",
-      "id": "744nsm9gi",
-      "ecoA": 198.92,
-      "kgPerHour": 1048,
-      "lossTolerancePercent": 5,
-      "manutencaoMotivo": "",
-      "borraTotalMotivo": "",
-      "infractionType": "",
-      "outrosMin": 0
     },
     {
       "ecoBPMotivo": "",
@@ -42471,7 +43962,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.646+00:00"
+      "updatedAt": "2026-11-04T13:08:36.465+00:00"
     },
     {
       "id": "d73pjca27",
@@ -42513,7 +44004,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.646+00:00"
+      "updatedAt": "2026-11-04T13:08:36.414+00:00"
     },
     {
       "eremaWeight4": 0,
@@ -42586,7 +44077,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.646+00:00"
+      "updatedAt": "2026-11-04T13:08:36.459+00:00"
     },
     {
       "id": "sdlrjby58",
@@ -42628,7 +44119,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.646+00:00"
+      "updatedAt": "2026-11-04T13:08:36.454+00:00"
     },
     {
       "id": "j9hs4xm7j",
@@ -42670,7 +44161,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.646+00:00"
+      "updatedAt": "2026-11-04T13:08:36.429+00:00"
     },
     {
       "id": "hzvf9pgw5",
@@ -42712,7 +44203,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.646+00:00"
+      "updatedAt": "2026-11-04T13:08:36.424+00:00"
     },
     {
       "borraTotal": 0,
@@ -42785,7 +44276,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.471+00:00"
     },
     {
       "id": "sfsucm8ov",
@@ -42827,7 +44318,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.455+00:00"
     },
     {
       "id": "iekgdh9p1",
@@ -42869,7 +44360,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.426+00:00"
     },
     {
       "id": "gck2s8wc8",
@@ -42911,7 +44402,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.419+00:00"
     },
     {
       "eremaWeight4": 0,
@@ -42984,7 +44475,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.394+00:00"
     },
     {
       "id": "0lixhtfou",
@@ -43026,7 +44517,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.379+00:00"
     },
     {
       "tubetes": 0,
@@ -43099,7 +44590,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.465+00:00"
     },
     {
       "id": "rfne9o1uo",
@@ -43141,7 +44632,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.452+00:00"
     },
     {
       "id": "gi6jf9oec",
@@ -43183,7 +44674,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.42+00:00"
     },
     {
       "id": "241wdt7zu",
@@ -43225,7 +44716,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.385+00:00"
     },
     {
       "isNoWorkDay": false,
@@ -43298,7 +44789,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.397+00:00"
     },
     {
       "manutencaoMin": 0,
@@ -43371,7 +44862,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.455+00:00"
     },
     {
       "id": "csn9b5ikh",
@@ -43413,7 +44904,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.413+00:00"
     },
     {
       "id": "3cbfzw6mr",
@@ -43455,7 +44946,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.388+00:00"
     },
     {
       "volumes": 0,
@@ -43528,7 +45019,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.461+00:00"
     },
     {
       "id": "hbk9lz01v",
@@ -43570,7 +45061,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.422+00:00"
     },
     {
       "id": "55oqt279m",
@@ -43612,7 +45103,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.393+00:00"
     },
     {
       "isNoWorkDay": false,
@@ -43685,7 +45176,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.458+00:00"
     },
     {
       "id": "sabigxbkb",
@@ -43727,7 +45218,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.454+00:00"
     },
     {
       "outrosMotivo": "",
@@ -43800,7 +45291,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.455+00:00"
     },
     {
       "ecoBP": 0,
@@ -43900,7 +45391,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.421+00:00"
     },
     {
       "id": "9h4crcpgm",
@@ -43942,7 +45433,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.404+00:00"
     },
     {
       "userId": "cNGzDlCYrtQ3MPBr0Vsfm7UDmR82",
@@ -44015,7 +45506,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.416+00:00"
     },
     {
       "isMaintenanceEntry": false,
@@ -44088,7 +45579,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.469+00:00"
     },
     {
       "grossWeight": 0,
@@ -44192,7 +45683,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.413+00:00"
     },
     {
       "isNoWorkDay": false,
@@ -44327,7 +45818,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.459+00:00"
     },
     {
       "id": "p1p6gdjjd",
@@ -44369,7 +45860,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.44+00:00"
     },
     {
       "isNoWorkDay": false,
@@ -44504,7 +45995,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.402+00:00"
     },
     {
       "tubetes": 0,
@@ -44577,7 +46068,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.467+00:00"
     },
     {
       "id": "jwe1knk6o",
@@ -44619,7 +46110,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.43+00:00"
     },
     {
       "id": "14t8x4g63",
@@ -44661,7 +46152,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.382+00:00"
     },
     {
       "id": "03i1l5gp0",
@@ -44703,7 +46194,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.376+00:00"
     },
     {
       "ecoBP": 0,
@@ -44776,7 +46267,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.436+00:00"
     },
     {
       "noWorkReason": "",
@@ -44849,7 +46340,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.421+00:00"
     },
     {
       "id": "6an4uwlmo",
@@ -44891,7 +46382,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.396+00:00"
     },
     {
       "id": "5qijvq7jq",
@@ -44933,7 +46424,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.395+00:00"
     },
     {
       "id": "3hhrjlshf",
@@ -44975,7 +46466,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.389+00:00"
     },
     {
       "borraTotal": 0,
@@ -45048,7 +46539,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.384+00:00"
     },
     {
       "outrosMin": 0,
@@ -45121,7 +46612,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.468+00:00"
     },
     {
       "id": "nlg8qhm6r",
@@ -45163,7 +46654,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.438+00:00"
     },
     {
       "id": "n1wghn0zh",
@@ -45205,7 +46696,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.437+00:00"
     },
     {
       "id": "kuwn7ue5q",
@@ -45247,7 +46738,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.432+00:00"
     },
     {
       "processoMotivo": "",
@@ -45320,7 +46811,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.383+00:00"
     },
     {
       "borraTotal": 0,
@@ -45393,7 +46884,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.472+00:00"
     },
     {
       "id": "txk3ilszp",
@@ -45435,7 +46926,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.458+00:00"
     },
     {
       "id": "ns82zboj3",
@@ -45477,7 +46968,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.438+00:00"
     },
     {
       "id": "ffi1yqnpf",
@@ -45519,7 +47010,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.417+00:00"
     },
     {
       "ecoBP": 0,
@@ -45592,7 +47083,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.41+00:00"
     },
     {
       "shift": "Diurno",
@@ -45665,7 +47156,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.461+00:00"
     },
     {
       "id": "qry59kn1y",
@@ -45707,7 +47198,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.445+00:00"
     },
     {
       "id": "lnwhevng3",
@@ -45749,7 +47240,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.434+00:00"
     },
     {
       "id": "huncrnbcl",
@@ -45791,7 +47282,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.424+00:00"
     },
     {
       "outrosMin": 0,
@@ -45919,7 +47410,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.461+00:00"
     },
     {
       "ecoBP": 0,
@@ -45994,7 +47485,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.475+00:00"
     },
     {
       "id": "g59dzr39c",
@@ -46036,7 +47527,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.419+00:00"
     },
     {
       "id": "9lac6irmo",
@@ -46078,7 +47569,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.404+00:00"
     },
     {
       "processoMin": 0,
@@ -46180,7 +47671,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.397+00:00"
     },
     {
       "outrosMotivo": "",
@@ -46255,7 +47746,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.458+00:00"
     },
     {
       "id": "6cdsqcesi",
@@ -46297,7 +47788,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.396+00:00"
     },
     {
       "id": "4hk2ickzy",
@@ -46339,7 +47830,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.391+00:00"
     },
     {
       "eremaWeight1": 0,
@@ -46441,7 +47932,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.422+00:00"
     },
     {
       "noWorkReason": "",
@@ -46516,7 +48007,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.472+00:00"
     },
     {
       "id": "wodiycnv0",
@@ -46558,7 +48049,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.466+00:00"
     },
     {
       "id": "v3wswu8h1",
@@ -46600,7 +48091,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.462+00:00"
     },
     {
       "id": "t38wnjpcb",
@@ -46642,7 +48133,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.456+00:00"
     },
     {
       "id": "hggeek4o5",
@@ -46684,7 +48175,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.422+00:00"
     },
     {
       "volumes": 0,
@@ -46753,7 +48244,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.412+00:00"
     },
     {
       "ecoBP": 0,
@@ -46828,7 +48319,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.472+00:00"
     },
     {
       "id": "q79mt1b3o",
@@ -46870,7 +48361,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.444+00:00"
     },
     {
       "eremaWeight1": 0,
@@ -46945,7 +48436,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.404+00:00"
     },
     {
       "tubetes": 0,
@@ -47014,7 +48505,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.439+00:00"
     },
     {
       "id": "m5sjcq0b7",
@@ -47056,7 +48547,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.435+00:00"
     },
     {
       "id": "33p93y51b",
@@ -47098,7 +48589,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.388+00:00"
     },
     {
       "noWorkReason": "",
@@ -47200,7 +48691,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.443+00:00"
     },
     {
       "outrosMotivo": "",
@@ -47269,7 +48760,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.476+00:00"
     },
     {
       "id": "r1rslee2p",
@@ -47311,7 +48802,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.451+00:00"
     },
     {
       "id": "0304ryotd",
@@ -47353,7 +48844,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.376+00:00"
     },
     {
       "noWorkReason": "",
@@ -47455,7 +48946,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.425+00:00"
     },
     {
       "id": "qdmip1sh2",
@@ -47497,7 +48988,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.444+00:00"
     },
     {
       "id": "dg96by5f3",
@@ -47539,7 +49030,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.414+00:00"
     },
     {
       "id": "aljrsq6yx",
@@ -47581,7 +49072,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.406+00:00"
     },
     {
       "date": "2026-02-15",
@@ -47683,7 +49174,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.458+00:00"
     },
     {
       "id": "8hjq1tt5u",
@@ -47725,7 +49216,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.402+00:00"
     },
     {
       "eremaWeight1": 1091,
@@ -47798,7 +49289,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.459+00:00"
     },
     {
       "id": "e0ogukb8l",
@@ -47840,7 +49331,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.415+00:00"
     },
     {
       "id": "0pm2dci5z",
@@ -47882,7 +49373,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.38+00:00"
     },
     {
       "tubetes": 0,
@@ -47988,7 +49479,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.415+00:00"
     },
     {
       "id": "y40ln5fzy",
@@ -48030,7 +49521,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.471+00:00"
     },
     {
       "id": "jj28kknt6",
@@ -48072,7 +49563,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.43+00:00"
     },
     {
       "id": "50a6zq6yh",
@@ -48114,7 +49605,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.392+00:00"
     },
     {
       "eremaWeight4": 0,
@@ -48220,7 +49711,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.426+00:00"
     },
     {
       "id": "f64fy7gj3",
@@ -48262,7 +49753,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.417+00:00"
     },
     {
       "id": "yxvqjljqt",
@@ -48304,7 +49795,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.474+00:00"
     },
     {
       "id": "w7sqbflbf",
@@ -48346,7 +49837,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.466+00:00"
     },
     {
       "id": "adjzufb1h",
@@ -48388,7 +49879,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.406+00:00"
     },
     {
       "manutencaoMotivo": "",
@@ -48461,7 +49952,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.466+00:00"
     },
     {
       "id": "4x2d4368c",
@@ -48534,7 +50025,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.466+00:00"
     },
     {
       "id": "ujfc72kh8",
@@ -48576,7 +50067,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.46+00:00"
     },
     {
       "id": "2j5cm9n4e",
@@ -48618,7 +50109,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.386+00:00"
     },
     {
       "updatedAt": "2026-06-01T12:56:49.483Z",
@@ -48687,7 +50178,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.474+00:00"
     },
     {
       "id": "iii8j5ig4",
@@ -48729,7 +50220,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.426+00:00"
     },
     {
       "updatedAt": "2026-06-01T16:44:55.141Z",
@@ -48761,48 +50252,6 @@
       "borraTotal": 0,
       "processoMotivo": "",
       "userId": "cNGzDlCYrtQ3MPBr0Vsfm7UDmR82"
-    },
-    {
-      "id": "8f7wz73xx",
-      "date": "2026-02-05",
-      "ecoA": 0,
-      "tara": 370,
-      "ecoBM": 0,
-      "ecoBP": 89,
-      "shift": "Noturno 1",
-      "userId": "cNGzDlCYrtQ3MPBr0Vsfm7UDmR82",
-      "machine": "Cast 2",
-      "tubetes": 0,
-      "volumes": 0,
-      "operator": "DEYWIS JUNIO SOUZA MENEZES",
-      "netWeight": 12977,
-      "outrosMin": 0,
-      "borraTotal": 0,
-      "grossWeight": 13347,
-      "isNoWorkDay": false,
-      "processoMin": 0,
-      "noWorkReason": "",
-      "outrosMotivo": "",
-      "manutencaoMin": 0,
-      "processoMotivo": "",
-      "manutencaoMotivo": "",
-      "isMaintenanceEntry": false,
-      "thickness": 0,
-      "width": 0,
-      "rollsCount": 0,
-      "scrapProcess": 0,
-      "scrapMechanical": 0,
-      "scrapPurge": 0,
-      "scrapTrim": 0,
-      "totalScrap": 0,
-      "scrapReasons": [],
-      "stops": [],
-      "notes": "",
-      "speed": 0,
-      "rpm": 0,
-      "meltPressure": 0,
-      "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
     },
     {
       "id": "w2udlck36",
@@ -48844,7 +50293,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.465+00:00"
     },
     {
       "id": "lehrhinug",
@@ -48886,7 +50335,49 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.647+00:00"
+      "updatedAt": "2026-11-04T13:08:36.434+00:00"
+    },
+    {
+      "id": "8f7wz73xx",
+      "date": "2026-02-05",
+      "ecoA": 0,
+      "tara": 370,
+      "ecoBM": 0,
+      "ecoBP": 89,
+      "shift": "Noturno 1",
+      "userId": "cNGzDlCYrtQ3MPBr0Vsfm7UDmR82",
+      "machine": "Cast 2",
+      "tubetes": 0,
+      "volumes": 0,
+      "operator": "DEYWIS JUNIO SOUZA MENEZES",
+      "netWeight": 12977,
+      "outrosMin": 0,
+      "borraTotal": 0,
+      "grossWeight": 13347,
+      "isNoWorkDay": false,
+      "processoMin": 0,
+      "noWorkReason": "",
+      "outrosMotivo": "",
+      "manutencaoMin": 0,
+      "processoMotivo": "",
+      "manutencaoMotivo": "",
+      "isMaintenanceEntry": false,
+      "thickness": 0,
+      "width": 0,
+      "rollsCount": 0,
+      "scrapProcess": 0,
+      "scrapMechanical": 0,
+      "scrapPurge": 0,
+      "scrapTrim": 0,
+      "totalScrap": 0,
+      "scrapReasons": [],
+      "stops": [],
+      "notes": "",
+      "speed": 0,
+      "rpm": 0,
+      "meltPressure": 0,
+      "meltTemperature": 0,
+      "updatedAt": "2026-11-04T13:08:36.402+00:00"
     },
     {
       "operator": "GILCIMAR CARLOS CORREA ARAUJO",
@@ -48955,7 +50446,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.463+00:00"
     },
     {
       "id": "hp6utm6in",
@@ -48997,7 +50488,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.424+00:00"
     },
     {
       "userId": "cNGzDlCYrtQ3MPBr0Vsfm7UDmR82",
@@ -49070,7 +50561,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.474+00:00"
     },
     {
       "id": "9pv4gihqa",
@@ -49112,7 +50603,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.405+00:00"
     },
     {
       "id": "27x355buu",
@@ -49154,7 +50645,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.385+00:00"
     },
     {
       "eremaWeight4": 0,
@@ -49227,7 +50718,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.406+00:00"
     },
     {
       "id": "7edxo9h1b",
@@ -49269,7 +50760,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.399+00:00"
     },
     {
       "id": "pr96tyexk",
@@ -49311,7 +50802,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.443+00:00"
     },
     {
       "id": "kovodkg5m",
@@ -49353,7 +50844,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.432+00:00"
     },
     {
       "id": "a1pu0d8g8",
@@ -49395,7 +50886,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.405+00:00"
     },
     {
       "shift": "Diurno 1",
@@ -49521,7 +51012,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.467+00:00"
     },
     {
       "id": "szda7pp1n",
@@ -49563,7 +51054,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.456+00:00"
     },
     {
       "id": "898qjxabc",
@@ -49605,7 +51096,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.402+00:00"
     },
     {
       "id": "vgc78c3s3",
@@ -49647,7 +51138,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.464+00:00"
     },
     {
       "id": "doz055wgf",
@@ -49689,7 +51180,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.414+00:00"
     },
     {
       "id": "5130eiv1m",
@@ -49731,7 +51222,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.393+00:00"
     },
     {
       "id": "xoljlhxv5",
@@ -49773,7 +51264,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.469+00:00"
     },
     {
       "id": "qlzunsyps",
@@ -49815,7 +51306,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.445+00:00"
     },
     {
       "id": "gtj9bht09",
@@ -49857,7 +51348,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.421+00:00"
     },
     {
       "borraTotal": 0,
@@ -49952,7 +51443,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.419+00:00"
     },
     {
       "id": "asnhpt6of",
@@ -49994,7 +51485,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.407+00:00"
     },
     {
       "id": "5uv6osuvv",
@@ -50036,7 +51527,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.395+00:00"
     },
     {
       "id": "y3hvjbpn4",
@@ -50078,7 +51569,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.471+00:00"
     },
     {
       "id": "wyl9mk4ev",
@@ -50120,7 +51611,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.467+00:00"
     },
     {
       "id": "6re0kt28u",
@@ -50162,7 +51653,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.397+00:00"
     },
     {
       "id": "yv9136132",
@@ -50204,7 +51695,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.473+00:00"
     },
     {
       "id": "ifjx0be9y",
@@ -50246,7 +51737,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.426+00:00"
     },
     {
       "id": "508knemsu",
@@ -50288,7 +51779,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.392+00:00"
     },
     {
       "id": "l8k6je8an",
@@ -50330,7 +51821,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.433+00:00"
     },
     {
       "id": "jgm2x0ai0",
@@ -50372,7 +51863,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.429+00:00"
     },
     {
       "id": "1rsaw94ow",
@@ -50414,7 +51905,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.384+00:00"
     },
     {
       "id": "vnkch6akn",
@@ -50456,7 +51947,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.464+00:00"
     },
     {
       "id": "mrjrofhay",
@@ -50498,7 +51989,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.436+00:00"
     },
     {
       "id": "ephghtojf",
@@ -50540,7 +52031,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.416+00:00"
     },
     {
       "id": "sh51axkfp",
@@ -50582,7 +52073,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.455+00:00"
     },
     {
       "id": "nsq9j4dvr",
@@ -50624,7 +52115,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.438+00:00"
     },
     {
       "id": "a35wqg6lo",
@@ -50666,7 +52157,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.405+00:00"
     },
     {
       "id": "04y7kr6vs",
@@ -50708,7 +52199,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.378+00:00"
     },
     {
       "id": "rmn2s21bb",
@@ -50750,7 +52241,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.452+00:00"
     },
     {
       "id": "prvsejj7f",
@@ -50792,7 +52283,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.443+00:00"
     },
     {
       "id": "2fk0ngikk",
@@ -50834,7 +52325,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.385+00:00"
     },
     {
       "id": "xmsdx4m6v",
@@ -50876,7 +52367,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.469+00:00"
     },
     {
       "id": "vzurngtby",
@@ -50918,7 +52409,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.465+00:00"
     },
     {
       "id": "rm26m8xi4",
@@ -50960,7 +52451,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.452+00:00"
     },
     {
       "id": "hrnj6u5ks",
@@ -51002,7 +52493,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.424+00:00"
     },
     {
       "id": "xpqt4hp94",
@@ -51044,7 +52535,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.469+00:00"
     },
     {
       "id": "btrpjo6jq",
@@ -51086,7 +52577,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.411+00:00"
     },
     {
       "id": "wj3yxq8ti",
@@ -51128,7 +52619,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.466+00:00"
     },
     {
       "id": "ho31uso8l",
@@ -51170,7 +52661,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.423+00:00"
     },
     {
       "id": "32cxd352k",
@@ -51212,7 +52703,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.388+00:00"
     },
     {
       "id": "q9jkcllav",
@@ -51254,7 +52745,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.444+00:00"
     },
     {
       "id": "nuu06csm6",
@@ -51296,7 +52787,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.438+00:00"
     },
     {
       "id": "23sen6ecm",
@@ -51338,7 +52829,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.385+00:00"
     },
     {
       "id": "gehpxy7td",
@@ -51380,7 +52871,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.419+00:00"
     },
     {
       "id": "7mojrrcqb",
@@ -51422,7 +52913,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.4+00:00"
     },
     {
       "id": "2zhct9w4r",
@@ -51464,7 +52955,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.388+00:00"
     },
     {
       "id": "zrspfjxql",
@@ -51506,7 +52997,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.475+00:00"
     },
     {
       "id": "x5bwyn4fr",
@@ -51548,7 +53039,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.468+00:00"
     },
     {
       "id": "h5pdxkhbx",
@@ -51590,7 +53081,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.422+00:00"
     },
     {
       "id": "xcmm4vthj",
@@ -51632,7 +53123,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.468+00:00"
     },
     {
       "id": "vjsyzrv7r",
@@ -51674,7 +53165,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.464+00:00"
     },
     {
       "id": "pz83bgsio",
@@ -51716,7 +53207,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.443+00:00"
     },
     {
       "id": "peuwendjg",
@@ -51758,7 +53249,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.442+00:00"
     },
     {
       "id": "lbv44fdtd",
@@ -51800,7 +53291,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.433+00:00"
     },
     {
       "id": "kyz1y617w",
@@ -51842,7 +53333,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.433+00:00"
     },
     {
       "id": "wtfg8dpr2",
@@ -51884,7 +53375,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.467+00:00"
     },
     {
       "id": "oajqb15oa",
@@ -51926,7 +53417,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.439+00:00"
     },
     {
       "id": "a9bu5kwhm",
@@ -51968,7 +53459,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.406+00:00"
     },
     {
       "id": "7qab4mtlt",
@@ -52010,7 +53501,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.4+00:00"
     },
     {
       "id": "3bkw48mp2",
@@ -52052,7 +53543,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.388+00:00"
     },
     {
       "id": "rwp4we4oo",
@@ -52094,7 +53585,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.453+00:00"
     },
     {
       "id": "ltd1i6zrs",
@@ -52136,7 +53627,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.435+00:00"
     },
     {
       "id": "bamj0htzj",
@@ -52178,7 +53669,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.409+00:00"
     },
     {
       "id": "lkmwg32kv",
@@ -52220,7 +53711,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.434+00:00"
     },
     {
       "id": "99btk4kll",
@@ -52262,7 +53753,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.404+00:00"
     },
     {
       "id": "6x5n70xtw",
@@ -52304,7 +53795,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.397+00:00"
     },
     {
       "id": "yqdgi6oke",
@@ -52346,7 +53837,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.473+00:00"
     },
     {
       "id": "15bgpa762",
@@ -52388,7 +53879,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.382+00:00"
     },
     {
       "id": "f35ppi1i6",
@@ -52430,7 +53921,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.416+00:00"
     },
     {
       "id": "9s1zwacxx",
@@ -52472,7 +53963,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.405+00:00"
     },
     {
       "id": "5f4ut258j",
@@ -52514,7 +54005,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.393+00:00"
     },
     {
       "id": "0x9p9cly6",
@@ -52556,7 +54047,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.381+00:00"
     },
     {
       "id": "83s1z6ykv",
@@ -52598,7 +54089,7 @@
       "rpm": 0,
       "meltPressure": 0,
       "meltTemperature": 0,
-      "updatedAt": "2026-10-14T20:31:03.648+00:00"
+      "updatedAt": "2026-11-04T13:08:36.401+00:00"
     }
   ]
 }
