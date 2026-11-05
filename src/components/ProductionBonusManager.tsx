@@ -698,9 +698,12 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
         } else if (inc.type === 'saida_nao_comunicada') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 35;
           label = 'SAÍDA SEM AVISAR GESTOR';
+        } else if (inc.type === 'parada_limpeza_nao_realizada') {
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 20;
+          label = 'LIMPEZA OBRIGATÓRIA NÃO REALIZADA (-50% RANKING / -20% BÔNUS)';
         } else if (inc.type === 'limpeza_excessiva') {
-          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 15;
-          label = 'LIMPEZA EXCEDEU 30 MIN';
+          pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 20;
+          label = 'LIMPEZA EXCEDEU 30 MIN (-20%)';
         } else if (inc.type === 'partida_demorada') {
           pct = inc.penaltyRatePercent !== undefined ? inc.penaltyRatePercent : 15;
           label = 'PARTIDA DEMORADA';
@@ -1180,7 +1183,8 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       if (inc.type === 'informacao_falsa') typeLabel = 'INFORMAÇÃO FALSA / FRAUDE (-100%)';
       if (inc.type === 'saida_mais_cedo') typeLabel = 'SAÍDA MAIS CEDO (COMUNICADA)';
       if (inc.type === 'saida_nao_comunicada') typeLabel = 'SAÍDA SEM AVISAR GESTOR';
-      if (inc.type === 'limpeza_excessiva') typeLabel = 'LIMPEZA EXCEDEU 30 MIN';
+      if (inc.type === 'parada_limpeza_nao_realizada') typeLabel = 'LIMPEZA NÃO REALIZADA (-50% RANKING / -20% BÔNUS)';
+      if (inc.type === 'limpeza_excessiva') typeLabel = 'LIMPEZA EXCEDEU 30 MIN (-20% BÔNUS)';
       if (inc.type === 'partida_demorada') typeLabel = 'PARTIDA DEMORADA';
       return [
         inc.date,
@@ -1749,15 +1753,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                         ? 'bg-rose-100 text-rose-800 border border-rose-200' 
                                         : inc.type === 'saida_mais_cedo' 
                                           ? 'bg-amber-100 text-amber-800'
-                                          : inc.type === 'limpeza_excessiva'
-                                            ? 'bg-blue-100 text-blue-800'
-                                            : 'bg-slate-100 text-slate-700'
+                                          : inc.type === 'parada_limpeza_nao_realizada'
+                                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                            : inc.type === 'limpeza_excessiva'
+                                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                              : 'bg-slate-100 text-slate-700'
                                     }`}
                                   >
                                     {inc.type === 'informacao_falsa' && '🚨 Informação Falsa (-100%)'}
                                     {inc.type === 'saida_mais_cedo' && 'Saída Comunicada (-10%)'}
                                     {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar (-35%)'}
-                                    {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-30%)'}
+                                    {inc.type === 'parada_limpeza_nao_realizada' && 'Limpeza Não Realizada (-20% Bônus / -50% Ranking)'}
+                                    {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-20%)'}
                                     {inc.type === 'partida_demorada' && 'Partida Demorada (-20%)'}
                                     {inc.type === 'atestado' && 'Atestado (-100%)'}
                                     {inc.type === 'atraso_injustificado' && 'Atraso (-15%)'}
@@ -1765,7 +1772,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                     {inc.type === 'falta_injustificada' && 'Falta Injustificada (-100%)'}
                                     {inc.type === 'falta_justificada' && 'Falta Justificada (-100%)'}
                                     {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina (-30%)'}
-                                    {!['informacao_falsa', 'saida_mais_cedo', 'saida_nao_comunicada', 'limpeza_excessiva', 'partida_demorada', 'atestado', 'atraso_injustificado', 'atraso_justificado', 'falta_injustificada', 'falta_justificada', 'meta_maquina_nao_atingida'].includes(inc.type) && `${inc.type.replace(/_/g, ' ')} (-${inc.penaltyRatePercent || 0}%)`}
+                                    {!['informacao_falsa', 'saida_mais_cedo', 'saida_nao_comunicada', 'parada_limpeza_nao_realizada', 'limpeza_excessiva', 'partida_demorada', 'atestado', 'atraso_injustificado', 'atraso_justificado', 'falta_injustificada', 'falta_justificada', 'meta_maquina_nao_atingida'].includes(inc.type) && `${inc.type.replace(/_/g, ' ')} (-${inc.penaltyRatePercent || 0}%)`}
                                   </span>
                                 ))}
                                 {item.perf && item.perf.discountPct > 0 && (
@@ -1893,15 +1900,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                   ? 'bg-rose-100 text-rose-800 border-rose-200'
                                   : inc.type === 'saida_mais_cedo'
                                     ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                    : inc.type === 'limpeza_excessiva'
-                                      ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                      : inc.type === 'atestado'
-                                        ? 'bg-purple-100 text-purple-800 border-purple-200'
-                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                                    : inc.type === 'parada_limpeza_nao_realizada'
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                      : inc.type === 'limpeza_excessiva'
+                                        ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                        : inc.type === 'atestado'
+                                          ? 'bg-purple-100 text-purple-800 border-purple-200'
+                                          : 'bg-slate-100 text-slate-700 border-slate-200'
                               }`}>
                                 {inc.type === 'saida_mais_cedo' && 'Saída Comunicada'}
                                 {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar'}
-                                {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min'}
+                                {inc.type === 'parada_limpeza_nao_realizada' && 'Limpeza Não Realizada (-20% Bônus)'}
+                                {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-20%)'}
                                 {inc.type === 'partida_demorada' && 'Partida Demorada'}
                                 {inc.type === 'atestado' && 'Atestado'}
                                 {inc.type === 'atraso_injustificado' && 'Atraso Injust.'}
@@ -2065,17 +2075,13 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                         if (t === 'informacao_falsa' || t === 'atestado' || t === 'falta_injustificada' || t === 'falta_justificada' || t === 'advertencia_escrita' || t === 'uso_celular_reincidente' || t === 'fumar_reincidente' || t === 'nao_uso_epi_reincidente') {
                           setCustomPenaltyPercent(100);
                           setIsJustified(false);
-                        } else if (t === 'parada_limpeza_nao_realizada') {
-                          setCustomPenaltyPercent(50);
                         } else if (t === 'saida_nao_comunicada') {
                           setCustomPenaltyPercent(35);
                           setNotifiedManager(false);
                         } else if (t === 'meta_maquina_nao_atingida') {
                           setCustomPenaltyPercent(30);
-                        } else if (t === 'devolucao_externa' || t === 'reclamacao_interna' || t === 'materia_prima_molhada' || t === 'uso_celular' || t === 'fumar_trabalho' || t === 'nao_uso_epi' || t === 'atraso_injustificado' || t === 'partida_demorada') {
+                        } else if (t === 'parada_limpeza_nao_realizada' || t === 'limpeza_excessiva' || t === 'devolucao_externa' || t === 'reclamacao_interna' || t === 'materia_prima_molhada' || t === 'uso_celular' || t === 'fumar_trabalho' || t === 'nao_uso_epi' || t === 'atraso_injustificado' || t === 'partida_demorada') {
                           setCustomPenaltyPercent(20);
-                        } else if (t === 'limpeza_excessiva') {
-                          setCustomPenaltyPercent(15);
                         } else if (t === 'mau_preenchimento' || t === 'saida_mais_cedo') {
                           setCustomPenaltyPercent(10);
                           if (t === 'saida_mais_cedo') setNotifiedManager(true);
@@ -2109,9 +2115,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                         <option value="saida_nao_comunicada">🚪 Saída Não Comunicada (-35%)</option>
                       </optgroup>
                       <optgroup label="3. Operacional & Paradas de Máquina">
-                        <option value="parada_limpeza_nao_realizada">🛑 Parada de Limpeza Não Realizada (50% Desc. no Ranking)</option>
+                        <option value="parada_limpeza_nao_realizada">🛑 Parada de Limpeza Não Realizada (-50% Ranking e -20% Bônus)</option>
+                        <option value="limpeza_excessiva">⏱️ Parada de Limpeza Excedeu 30 Minutos (-20% Bônus)</option>
                         <option value="informacao_falsa">🚨 Informação Falsa / Fraude de Apontamento (-100%)</option>
-                        <option value="limpeza_excessiva">⏱️ Parada de Limpeza Excedeu 30 Minutos (-15%)</option>
                         <option value="partida_demorada">⏳ Partida de Máquina com Demora Excessiva (-20%)</option>
                         <option value="meta_maquina_nao_atingida">📉 Meta de Máquina/kg-h Não Atingida (-30%)</option>
                         <option value="outra">📝 Outra Ocorrência Personalizada...</option>
@@ -2127,6 +2133,18 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                       </div>
                       <p className="text-[11px] text-red-700 leading-snug">
                         Lançamento de informação falsa (ex: desvio de refugo de produção para manutenção, justificar quebra inverídica desmentida por câmeras, adulteração de dados) acarreta perda total (100%) da bonificação do período.
+                      </p>
+                    </div>
+                  )}
+
+                  {incidentType === 'parada_limpeza_nao_realizada' && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5 text-xs text-amber-950">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                        <ShieldAlert className="w-4 h-4 text-amber-700" />
+                        Penalidade Dupla: -50% no Ranking e -20% no Bônus de Produção
+                      </div>
+                      <p className="text-[11px] text-amber-900 leading-snug">
+                        Se for determinada uma quantidade de limpezas obrigatórias no turno (ex.: 2 paradas) e o operador realizar menos (ex.: apenas 1 parada), aplica-se <strong>50% de desconto no Ranking de Produtividade</strong> (para anular vantagem indevida de volume) e <strong>20% de desconto direto na bonificação mensal</strong> por descumprimento do procedimento técnico de limpeza.
                       </p>
                     </div>
                   )}
@@ -2178,11 +2196,14 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
                   {/* Contextual helper for cleaning > 30 min */}
                   {incidentType === 'limpeza_excessiva' && (
-                    <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-800 flex items-start gap-2">
-                      <Timer className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                      <span>
-                        <strong>Regra de 30 minutos:</strong> A tolerância padrão de parada de máquina para limpeza de matriz/troca é de até 30 min. Tempo excedente desconta na avaliação do turno.
-                      </span>
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-950 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                        <Timer className="w-4 h-4 text-rose-600 shrink-0" />
+                        Desconto no Bônus: Parada de Limpeza Excedeu 30 Minutos (-20%)
+                      </div>
+                      <p className="text-[11px] text-rose-900 leading-snug">
+                        <strong>Regra de 30 minutos:</strong> A tolerância máxima de parada para limpeza de matriz/máquina é de 30 min por evento individual. Passou de 30 minutos, o operador perde a meta de parada do dia e sofre <strong>desconto de 20% no bônus de produção</strong>.
+                      </p>
                     </div>
                   )}
                 </div>

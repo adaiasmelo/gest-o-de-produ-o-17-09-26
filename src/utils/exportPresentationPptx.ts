@@ -1,50 +1,89 @@
 import pptxgen from 'pptxgenjs';
 
+const getLogoDataUrl = async (): Promise<string> => {
+  try {
+    const res = await fetch('/assets/aistudio/ap_logo-ISO-Manuli__002__42f5b2f1.png');
+    const blob = await res.blob();
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return '';
+  }
+};
+
 export const exportBonusRulesPptx = async () => {
+  const logoData = await getLogoDataUrl();
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE'; // 16:9 widescreen (13.33" x 7.5")
-  pptx.author = 'Manupackaging';
+  pptx.author = 'Adaías Melo – Supervisor de Produção';
   pptx.company = 'Manupackaging';
   pptx.subject = 'Regras de Bonificação de Produção';
   pptx.title = 'Gestão de Bônus de Produção - Regras e Critérios';
 
-  const BG_COLOR = 'F8FAFC'; // Clean light off-white background
+  const BG_COLOR = 'F8FAFC';
   const CARD_BG = 'FFFFFF';
-  const BORDER_COLOR = 'E2E8F0';
+  const BORDER_COLOR = 'CBD5E1';
   const TEXT_DARK = '0F172A';
-  const TEXT_MUTED = '475569';
+  const TEXT_MUTED = '334155';
   const AMBER = 'D97706';
   const EMERALD = '059669';
   const BLUE = '2563EB';
   const ROSE = 'DC2626';
   const PURPLE = '7C3AED';
 
-  // Helper to add header to any slide with larger fonts & margins filling the wide canvas
+  // Helper to add header to any slide filling the upper space
   const addSlideHeader = (slide: pptxgen.Slide, category: string, title: string, subtitle: string) => {
     slide.background = { color: BG_COLOR };
 
     // Category Pill
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 0.35, w: 3.2, h: 0.38,
+      x: 0.65, y: 0.28, w: 3.6, h: 0.38,
       rectRadius: 0.15,
       fill: { color: 'FEF3C7' },
       line: { color: 'FDE68A', width: 1 }
     });
     slide.addText(category.toUpperCase(), {
-      x: 0.65, y: 0.35, w: 3.2, h: 0.38,
+      x: 0.65, y: 0.28, w: 3.6, h: 0.38,
       fontSize: 11, bold: true, color: '92400E', align: 'center', valign: 'middle'
     });
 
     // Title
     slide.addText(title, {
-      x: 0.65, y: 0.78, w: 12.03, h: 0.65,
+      x: 0.65, y: 0.72, w: 10.6, h: 0.62,
       fontSize: 26, bold: true, color: TEXT_DARK
     });
 
-    // Subtitle
+    // Subtitle (Tamanho 14)
     slide.addText(subtitle, {
-      x: 0.65, y: 1.45, w: 12.03, h: 0.4,
-      fontSize: 13.5, color: TEXT_MUTED
+      x: 0.65, y: 1.36, w: 10.6, h: 0.38,
+      fontSize: 14, color: TEXT_MUTED
+    });
+
+    // Logo ISO 9001 on top-right
+    if (logoData) {
+      slide.addImage({
+        data: logoData,
+        x: 11.5,
+        y: 0.26,
+        w: 1.32,
+        h: 1.32
+      });
+    }
+
+    // Supervisor Footer on bottom-right (Tamanho 14)
+    slide.addText('Adaías Melo – Supervisor de Produção', {
+      x: 7.0,
+      y: 7.14,
+      w: 5.68,
+      h: 0.28,
+      fontSize: 12,
+      bold: true,
+      color: '64748B',
+      align: 'right'
     });
   };
 
@@ -55,16 +94,16 @@ export const exportBonusRulesPptx = async () => {
     const slide = pptx.addSlide();
     addSlideHeader(slide, 'Programa de Excelência', 'Gestão de Bônus de Produção', 'Manual Completo de Regras, Metas Operacionais e Critérios de Bonificação');
 
-    // Left card (expanded width and height)
+    // Left card
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 1.95, w: 7.0, h: 5.1, rectRadius: 0.2,
+      x: 0.65, y: 1.82, w: 7.0, h: 5.24, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
     slide.addText('Reconhecer quem entrega performance real com disciplina e qualidade.', {
-      x: 0.95, y: 2.15, w: 6.4, h: 1.0, fontSize: 20, bold: true, color: TEXT_DARK
+      x: 0.95, y: 2.05, w: 6.4, h: 1.05, fontSize: 22, bold: true, color: TEXT_DARK
     });
     slide.addText('O programa de bonificação da fábrica foi estruturado para recompensar a eficiência operacional nas condições reais de cada turno, equilibrando produtividade, redução de perdas técnicas e pontualidade da equipe.', {
-      x: 0.95, y: 3.2, w: 6.4, h: 1.4, fontSize: 13.5, color: TEXT_MUTED
+      x: 0.95, y: 3.18, w: 6.4, h: 1.45, fontSize: 14, color: TEXT_MUTED
     });
 
     // 3 Metric Pills
@@ -75,26 +114,26 @@ export const exportBonusRulesPptx = async () => {
     ];
     metrics.forEach((m, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.95 + i * 2.13, y: 4.85, w: 2.05, h: 1.9, rectRadius: 0.15,
+        x: 0.95 + i * 2.13, y: 4.8, w: 2.05, h: 2.05, rectRadius: 0.15,
         fill: { color: 'F1F5F9' }, line: { color: BORDER_COLOR, width: 1 }
       });
       slide.addText(m.val, {
-        x: 0.95 + i * 2.13, y: 5.05, w: 2.05, h: 0.75,
-        fontSize: 20, bold: true, color: m.color, align: 'center'
+        x: 0.95 + i * 2.13, y: 5.05, w: 2.05, h: 0.85,
+        fontSize: 22, bold: true, color: m.color, align: 'center'
       });
       slide.addText(m.label, {
-        x: 0.95 + i * 2.13, y: 5.8, w: 2.05, h: 0.7,
-        fontSize: 11, bold: true, color: TEXT_MUTED, align: 'center'
+        x: 0.95 + i * 2.13, y: 5.95, w: 2.05, h: 0.75,
+        fontSize: 14, bold: true, color: TEXT_DARK, align: 'center'
       });
     });
 
     // Right card: 4 pillars
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 7.85, y: 1.95, w: 4.83, h: 5.1, rectRadius: 0.2,
+      x: 7.85, y: 1.82, w: 4.83, h: 5.24, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
     slide.addText('OS 4 PILARES DA BONIFICAÇÃO', {
-      x: 8.15, y: 2.15, w: 4.25, h: 0.45, fontSize: 13.5, bold: true, color: AMBER
+      x: 8.15, y: 2.05, w: 4.25, h: 0.45, fontSize: 16, bold: true, color: AMBER
     });
 
     const pillars = [
@@ -105,60 +144,149 @@ export const exportBonusRulesPptx = async () => {
     ];
     pillars.forEach((p, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 8.15, y: 2.7 + i * 1.05, w: 4.23, h: 0.92, rectRadius: 0.12,
+        x: 8.15, y: 2.58 + i * 1.08, w: 4.23, h: 0.98, rectRadius: 0.12,
         fill: { color: 'F8FAFC' }, line: { color: BORDER_COLOR, width: 1 }
       });
       slide.addText(`${p.n}. ${p.t}`, {
-        x: 8.35, y: 2.78 + i * 1.05, w: 3.9, h: 0.4, fontSize: 12.5, bold: true, color: TEXT_DARK
+        x: 8.35, y: 2.66 + i * 1.08, w: 3.9, h: 0.42, fontSize: 16, bold: true, color: TEXT_DARK
       });
       slide.addText(p.d, {
-        x: 8.35, y: 3.18 + i * 1.05, w: 3.9, h: 0.4, fontSize: 11, color: TEXT_MUTED
+        x: 8.35, y: 3.08 + i * 1.08, w: 3.9, h: 0.44, fontSize: 14, color: TEXT_MUTED
       });
     });
   }
 
   // ==========================================
-  // SLIDE 2: QUILO-HORA EXTRUSÃO (TOLERÂNCIA 8%)
+  // SLIDE 2: COMPARATIVO POR FUNÇÃO & CESTA BÁSICA (VR ALIMENTAÇÃO)
+  // ==========================================
+  {
+    const slide = pptx.addSlide();
+    addSlideHeader(slide, 'Benefícios & VR Alimentação', 'Comparativo de Metas por Função & Cesta Básica', 'Evolução dos Valores de Bonificação e Saldo Total Depositado no Cartão VR Alimentação');
+
+    // Top Explanatory Banner (Tamanho 14)
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.65, y: 1.82, w: 12.03, h: 0.95, rectRadius: 0.15,
+      fill: { color: 'ECFDF5' }, line: { color: 'A7F3D0', width: 1.2 }
+    });
+    slide.addText('CESTA BÁSICA PADRONIZADA EM R$ 236,00 PARA TODOS OS COLABORADORES:\nA nova meta mensal atingida é somada à cesta básica fixa (R$ 236,00). O valor total resultante cai direto no cartão VR Alimentação do colaborador!', {
+      x: 0.9, y: 1.9, w: 11.5, h: 0.78, fontSize: 14, bold: true, color: '065F46'
+    });
+
+    // Comparative Table (3 Linhas - Tamanho 14)
+    const tableHeader = [
+      { text: 'Função', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_DARK, align: 'left' } },
+      { text: 'Setor', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_DARK, align: 'left' } },
+      { text: 'Meta Antiga', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_MUTED, align: 'center' } },
+      { text: 'Nova Meta', options: { bold: true, fill: { color: 'FEF3C7' }, color: '92400E', align: 'center' } },
+      { text: 'Aumento (R$)', options: { bold: true, fill: { color: 'ECFDF5' }, color: '065F46', align: 'center' } },
+      { text: 'Aumento (%)', options: { bold: true, fill: { color: 'ECFDF5' }, color: '065F46', align: 'center' } },
+      { text: 'Cesta Básica', options: { bold: true, fill: { color: 'F8FAFC' }, color: TEXT_DARK, align: 'center' } },
+      { text: 'Total no Cartão VR', options: { bold: true, fill: { color: '059669' }, color: 'FFFFFF', align: 'center' } }
+    ];
+
+    const tableRows = [
+      tableHeader,
+      [
+        { text: 'Aux. de Produção', options: { bold: true } },
+        { text: 'Extrusão/ Fita' },
+        { text: 'R$ 100,00', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: 'R$ 250,00', options: { bold: true, color: AMBER, align: 'center' } },
+        { text: '+ R$ 150,00', options: { bold: true, color: EMERALD, align: 'center' } },
+        { text: '+ 150,0%', options: { bold: true, color: EMERALD, align: 'center' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 486,00', options: { bold: true, color: '065F46', fill: { color: 'ECFDF5' }, align: 'center' } }
+      ],
+      [
+        { text: 'Op. de Extrusora', options: { bold: true } },
+        { text: 'Extrusão' },
+        { text: 'R$ 200,00', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: 'R$ 300,00', options: { bold: true, color: BLUE, align: 'center' } },
+        { text: '+ R$ 100,00', options: { bold: true, color: EMERALD, align: 'center' } },
+        { text: '+ 50,0%', options: { bold: true, color: EMERALD, align: 'center' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 536,00', options: { bold: true, color: '1E3A8A', fill: { color: 'EFF6FF' }, align: 'center' } }
+      ],
+      [
+        { text: 'Operador I', options: { bold: true } },
+        { text: 'Corte de Fita' },
+        { text: 'R$ 150,00', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: 'R$ 300,00', options: { bold: true, color: BLUE, align: 'center' } },
+        { text: '+ R$ 150,00', options: { bold: true, color: EMERALD, align: 'center' } },
+        { text: '+ 100,0%', options: { bold: true, color: EMERALD, align: 'center' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 536,00', options: { bold: true, color: '1E3A8A', fill: { color: 'EFF6FF' }, align: 'center' } }
+      ]
+    ];
+
+    slide.addTable(tableRows as any, {
+      x: 0.65, y: 2.88, w: 12.03, h: 2.35,
+      fontSize: 14,
+      border: { pt: 1, color: BORDER_COLOR },
+      fill: { color: CARD_BG }
+    });
+
+    // 2 Quick Summary Cards (Títulos 16, Textos 14)
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.65, y: 5.38, w: 5.9, h: 1.68, rectRadius: 0.15,
+      fill: { color: 'FEF3C7' }, line: { color: 'FDE68A', width: 1.2 }
+    });
+    slide.addText('AUXILIARES DE PRODUÇÃO (TODOS OS SETORES)', { x: 0.9, y: 5.52, w: 5.4, h: 0.38, fontSize: 16, bold: true, color: '92400E' });
+    slide.addText('Nova Meta: R$ 250,00 + Cesta Básica: R$ 236,00\n➔ VALOR NO CARTÃO VR ALIMENTAÇÃO: R$ 486,00', {
+      x: 0.9, y: 5.95, w: 5.4, h: 0.95, fontSize: 14, bold: true, color: TEXT_DARK
+    });
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 6.78, y: 5.38, w: 5.9, h: 1.68, rectRadius: 0.15,
+      fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE', width: 1.2 }
+    });
+    slide.addText('OPERADORES I (EXTRUSÃO E CORTE DE FITA)', { x: 7.05, y: 5.52, w: 5.4, h: 0.38, fontSize: 16, bold: true, color: '1E3A8A' });
+    slide.addText('Nova Meta: R$ 300,00 + Cesta Básica: R$ 236,00\n➔ VALOR NO CARTÃO VR ALIMENTAÇÃO: R$ 536,00', {
+      x: 7.05, y: 5.95, w: 5.4, h: 0.95, fontSize: 14, bold: true, color: TEXT_DARK
+    });
+  }
+
+  // ==========================================
+  // SLIDE 3: QUILO-HORA EXTRUSÃO (TOLERÂNCIA 8%)
   // ==========================================
   {
     const slide = pptx.addSlide();
     addSlideHeader(slide, 'Extrusão (Cast 1 e Cast 2)', 'A Meta Baseada nas Condições Reais do Turno', 'Aferição Dinâmica em Quilo-Hora (kg/h) em Função do Material e Velocidade');
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 1.95, w: 12.03, h: 0.95, rectRadius: 0.15,
+      x: 0.65, y: 1.82, w: 12.03, h: 1.0, rectRadius: 0.15,
       fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE', width: 1.2 }
     });
     slide.addText('Regra Fundamental: A meta é vinculada aos kg/h reais que a máquina está rodando naquele turno de 12 horas. Isso considera o material que está sendo puxado (LC3, LC2, ATX) e as velocidades nominais de processo com tolerância oficial de perda fixada em 8,0%.', {
-      x: 0.9, y: 2.05, w: 11.5, h: 0.75, fontSize: 12.5, bold: true, color: '1E3A8A'
+      x: 0.9, y: 1.9, w: 11.5, h: 0.82, fontSize: 14, bold: true, color: '1E3A8A'
     });
 
     // Cast 1 Card
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 3.1, w: 5.9, h: 3.95, rectRadius: 0.2,
+      x: 0.65, y: 2.95, w: 5.9, h: 4.1, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('CAST 1 (EXEMPLO)', { x: 0.95, y: 3.28, w: 5.3, h: 0.35, fontSize: 13, bold: true, color: AMBER });
-    slide.addText('1.000 kg/h', { x: 0.95, y: 3.65, w: 5.3, h: 0.75, fontSize: 32, bold: true, color: TEXT_DARK });
-    slide.addText('Material Stretch LC3 rodando a 1.000 kg/h no turno de 12 horas:', { x: 0.95, y: 4.45, w: 5.3, h: 0.45, fontSize: 12.5, color: TEXT_MUTED });
+    slide.addText('CAST 1 (EXEMPLO PRÁTICO)', { x: 0.95, y: 3.12, w: 5.3, h: 0.4, fontSize: 16, bold: true, color: AMBER });
+    slide.addText('1.000 kg/h', { x: 0.95, y: 3.55, w: 5.3, h: 0.8, fontSize: 34, bold: true, color: TEXT_DARK });
+    slide.addText('Material Stretch LC3 rodando a 1.000 kg/h no turno de 12 horas:', { x: 0.95, y: 4.4, w: 5.3, h: 0.45, fontSize: 14, color: TEXT_MUTED });
     slide.addText('• Produção Teórica (12h): 12.000 Kg\n• Tolerância de Perdas (8,0%): - 960 Kg\n• Meta Líquida a Produzir: 11.040 Kg', {
-      x: 0.95, y: 4.95, w: 5.3, h: 1.85, fontSize: 14, bold: true, color: TEXT_DARK
+      x: 0.95, y: 4.95, w: 5.3, h: 1.95, fontSize: 15, bold: true, color: TEXT_DARK
     });
 
     // Cast 2 Card
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.78, y: 3.1, w: 5.9, h: 3.95, rectRadius: 0.2,
+      x: 6.78, y: 2.95, w: 5.9, h: 4.1, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('CAST 2 (EXEMPLO)', { x: 7.08, y: 3.28, w: 5.3, h: 0.35, fontSize: 13, bold: true, color: BLUE });
-    slide.addText('850 kg/h', { x: 7.08, y: 3.65, w: 5.3, h: 0.75, fontSize: 32, bold: true, color: TEXT_DARK });
-    slide.addText('Material Stretch LC2 / ATX rodando a 850 kg/h no turno de 12 horas:', { x: 7.08, y: 4.45, w: 5.3, h: 0.45, fontSize: 12.5, color: TEXT_MUTED });
+    slide.addText('CAST 2 (EXEMPLO PRÁTICO)', { x: 7.08, y: 3.12, w: 5.3, h: 0.4, fontSize: 16, bold: true, color: BLUE });
+    slide.addText('850 kg/h', { x: 7.08, y: 3.55, w: 5.3, h: 0.8, fontSize: 34, bold: true, color: TEXT_DARK });
+    slide.addText('Material Stretch LC2 / ATX rodando a 850 kg/h no turno de 12 horas:', { x: 7.08, y: 4.4, w: 5.3, h: 0.45, fontSize: 14, color: TEXT_MUTED });
     slide.addText('• Produção Teórica (12h): 10.200 Kg\n• Tolerância de Perdas (8,0%): - 816 Kg\n• Meta Líquida a Produzir: 9.384 Kg', {
-      x: 7.08, y: 4.95, w: 5.3, h: 1.85, fontSize: 14, bold: true, color: TEXT_DARK
+      x: 7.08, y: 4.95, w: 5.3, h: 1.95, fontSize: 15, bold: true, color: TEXT_DARK
     });
   }
 
   // ==========================================
-  // SLIDE 3: TOLERÂNCIA DE PERDAS (8%)
+  // SLIDE 4: TOLERÂNCIA DE PERDAS (8%)
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -171,25 +299,25 @@ export const exportBonusRulesPptx = async () => {
     ];
     losses.forEach((l, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.65 + i * 4.1, y: 1.95, w: 3.85, h: 3.0, rectRadius: 0.2,
+        x: 0.65 + i * 4.1, y: 1.82, w: 3.85, h: 3.25, rectRadius: 0.2,
         fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
       });
-      slide.addText(l.t, { x: 0.85 + i * 4.1, y: 2.15, w: 3.45, h: 0.5, fontSize: 15, bold: true, color: TEXT_DARK });
-      slide.addText(l.d, { x: 0.85 + i * 4.1, y: 2.75, w: 3.45, h: 2.0, fontSize: 13, color: TEXT_MUTED });
+      slide.addText(l.t, { x: 0.85 + i * 4.1, y: 2.05, w: 3.45, h: 0.45, fontSize: 16, bold: true, color: TEXT_DARK });
+      slide.addText(l.d, { x: 0.85 + i * 4.1, y: 2.65, w: 3.45, h: 2.25, fontSize: 14, color: TEXT_MUTED });
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 5.15, w: 12.03, h: 1.9, rectRadius: 0.2,
+      x: 0.65, y: 5.2, w: 12.03, h: 1.85, rectRadius: 0.2,
       fill: { color: 'ECFDF5' }, line: { color: 'A7F3D0', width: 1.2 }
     });
-    slide.addText('REGRA ESPECIAL DE TOLERÂNCIA ESTABELECIDA EM 8,0%:', { x: 0.95, y: 5.35, w: 11.4, h: 0.4, fontSize: 13.5, bold: true, color: '065F46' });
+    slide.addText('REGRA ESPECIAL DE TOLERÂNCIA ESTABELECIDA EM 8,0%:', { x: 0.95, y: 5.35, w: 11.4, h: 0.4, fontSize: 16, bold: true, color: '065F46' });
     slide.addText('A média de tolerância de perdas para a extrusão é fixada e estabelecida em 8,0% sobre o volume do turno. O refugo de ECOA somente terá desconto de bônus se ultrapassar 8% da produção do dia. Mantendo as perdas totais avaliadas dentro do teto de 8,0%, o colaborador mantém a bonificação integral.', {
-      x: 0.95, y: 5.8, w: 11.4, h: 1.1, fontSize: 12.5, color: '047857'
+      x: 0.95, y: 5.82, w: 11.4, h: 1.1, fontSize: 14, color: '047857'
     });
   }
 
   // ==========================================
-  // SLIDE 4: ISENÇÃO DO ECOBM
+  // SLIDE 5: ISENÇÃO DO ECOBM
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -197,74 +325,74 @@ export const exportBonusRulesPptx = async () => {
 
     // Left Explanation
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 1.95, w: 5.9, h: 5.1, rectRadius: 0.2,
+      x: 0.65, y: 1.82, w: 5.9, h: 5.24, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('O que é ECOBM?', { x: 0.95, y: 2.15, w: 5.3, h: 0.5, fontSize: 18, bold: true, color: TEXT_DARK });
+    slide.addText('O que é ECOBM?', { x: 0.95, y: 2.05, w: 5.3, h: 0.5, fontSize: 20, bold: true, color: TEXT_DARK });
     slide.addText('ECOBM significa Eco B de Manutenção. É todo refugo gerado por quebras técnicas, trocas de peças, reparos elétricos ou problemas na infraestrutura da máquina.\n\nREGRA MANDATÓRIA:\nO ECOBM é 100% ISENTO da avaliação do operador. Ele é registrado para controle da manutenção, mas no cálculo do bônus ele é COMPLETAMENTE DESCONSIDERADO.', {
-      x: 0.95, y: 2.8, w: 5.3, h: 3.9, fontSize: 13.5, color: TEXT_MUTED
+      x: 0.95, y: 2.7, w: 5.3, h: 4.15, fontSize: 14, color: TEXT_MUTED
     });
 
     // Right Comparison Cards
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.78, y: 1.95, w: 5.9, h: 2.45, rectRadius: 0.2,
+      x: 6.78, y: 1.82, w: 5.9, h: 2.52, rectRadius: 0.2,
       fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1.2 }
     });
-    slide.addText('ECOBP (Produção) - CONTA NA META', { x: 7.08, y: 2.15, w: 5.3, h: 0.4, fontSize: 14, bold: true, color: ROSE });
+    slide.addText('ECOBP (Produção) - CONTA NA META', { x: 7.08, y: 2.02, w: 5.3, h: 0.42, fontSize: 16, bold: true, color: ROSE });
     slide.addText('Refugo gerado por erro operacional, bobinamento torto ou ajuste de produção. Desconta da meta se passar do limite de tolerância estabelecido (8%).', {
-      x: 7.08, y: 2.65, w: 5.3, h: 1.5, fontSize: 12.5, color: '991B1B'
+      x: 7.08, y: 2.52, w: 5.3, h: 1.65, fontSize: 14, color: '991B1B'
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.78, y: 4.6, w: 5.9, h: 2.45, rectRadius: 0.2,
+      x: 6.78, y: 4.54, w: 5.9, h: 2.52, rectRadius: 0.2,
       fill: { color: 'ECFDF5' }, line: { color: 'A7F3D0', width: 1.2 }
     });
-    slide.addText('ECOBM (Manutenção) - 100% ISENTO', { x: 7.08, y: 4.8, w: 5.3, h: 0.4, fontSize: 14, bold: true, color: EMERALD });
+    slide.addText('ECOBM (Manutenção) - 100% ISENTO', { x: 7.08, y: 4.74, w: 5.3, h: 0.42, fontSize: 16, bold: true, color: EMERALD });
     slide.addText('Refugo gerado por parada de motor, quebra mecânica, falha de aquecimento ou manutenção preventiva. Totalmente isento no bônus.', {
-      x: 7.08, y: 5.3, w: 5.3, h: 1.5, fontSize: 12.5, color: '065F46'
+      x: 7.08, y: 5.24, w: 5.3, h: 1.65, fontSize: 14, color: '065F46'
     });
   }
 
   // ==========================================
-  // SLIDE 5: PARADAS DE LIMPEZA E REGRA DE RANKING
+  // SLIDE 6: PARADAS DE LIMPEZA E REGRA DE RANKING & BÔNUS
   // ==========================================
   {
     const slide = pptx.addSlide();
-    addSlideHeader(slide, 'Paradas na Extrusão', 'Paradas de Máquina & Limpeza Obrigatória', 'Regra dos 30 Minutos e Desconto de 50% no Ranking por Limpeza Não Realizada');
+    addSlideHeader(slide, 'Paradas na Extrusão', 'Paradas de Máquina & Limpeza Obrigatória', 'Regra dos 30 Minutos (Desconto se Ultrapassar) e Limpeza a Menos (-50% no Ranking e -20% no Bônus)');
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 1.95, w: 5.9, h: 2.7, rectRadius: 0.2,
+      x: 0.65, y: 1.82, w: 5.9, h: 2.75, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('APENAS LIMPEZA DE MATRIZ E MÁQUINA', { x: 0.95, y: 2.15, w: 5.3, h: 0.4, fontSize: 13.5, bold: true, color: AMBER });
+    slide.addText('APENAS LIMPEZA DE MATRIZ E MÁQUINA', { x: 0.95, y: 2.02, w: 5.3, h: 0.42, fontSize: 16, bold: true, color: AMBER });
     slide.addText('Na Extrusão, paradas de manutenção mecânica, elétrica ou falta de energia NÃO tiram a meta do operador.\n\nA ÚNICA parada avaliada para perda de bônus é a parada para limpeza de matriz, cabeçote, roscas ou rolos.', {
-      x: 0.95, y: 2.65, w: 5.3, h: 1.8, fontSize: 12.5, color: TEXT_MUTED
+      x: 0.95, y: 2.52, w: 5.3, h: 1.9, fontSize: 14, color: TEXT_MUTED
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.78, y: 1.95, w: 5.9, h: 2.7, rectRadius: 0.2,
+      x: 6.78, y: 1.82, w: 5.9, h: 2.75, rectRadius: 0.2,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('LIMITE: 30 MINUTOS POR PARADA', { x: 7.08, y: 2.15, w: 5.3, h: 0.4, fontSize: 13.5, bold: true, color: ROSE });
-    slide.addText('O limite de 30 minutos NÃO é a soma acumulada de todas as paradas do turno!\n\nÉ 30 minutos no máximo por cada evento individual. Se houver 3 paradas de limpeza e cada uma durar até 30 minutos, o operador está 100% aprovado.', {
-      x: 7.08, y: 2.65, w: 5.3, h: 1.8, fontSize: 12.5, color: TEXT_MUTED
+    slide.addText('LIMITE: 30 MINUTOS (DESCONTO NO BÔNUS SE PASSAR)', { x: 7.08, y: 2.02, w: 5.3, h: 0.42, fontSize: 15, bold: true, color: ROSE });
+    slide.addText('O limite é 30 minutos no máximo por evento individual de limpeza. Se qualquer parada de limpeza exceder 30 minutos, o turno perde a meta de parada e sofre DESCONTO NO BÔNUS DE PRODUÇÃO!\nSe durar até 30 min, o operador está 100% aprovado.', {
+      x: 7.08, y: 2.52, w: 5.3, h: 1.9, fontSize: 14, color: TEXT_MUTED
     });
 
-    // Ranking penalty block
+    // Ranking and Bonus penalty block
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 4.85, w: 12.03, h: 2.2, rectRadius: 0.2,
+      x: 0.65, y: 4.75, w: 12.03, h: 2.3, rectRadius: 0.2,
       fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1.2 }
     });
-    slide.addText('REGRA DE JUSTIÇA: PARADA DE LIMPEZA OBRIGATÓRIA NÃO REALIZADA (-50% NO RANKING)', {
-      x: 0.95, y: 5.05, w: 11.4, h: 0.4, fontSize: 13.5, bold: true, color: ROSE
+    slide.addText('LIMPEZA OBRIGATÓRIA NÃO REALIZADA ➔ -50% NO RANKING E -20% NO BÔNUS', {
+      x: 0.95, y: 4.95, w: 11.4, h: 0.42, fontSize: 16, bold: true, color: ROSE
     });
-    slide.addText('Quando for determinada uma quantidade de paradas para limpeza no turno (ex.: 2 paradas de limpeza obrigatórias) e o operador realizar menos (ex.: apenas 1 parada), para garantir justiça com quem parou para limpar a máquina, haverá DESCONTO DE 50% DA PRODUÇÃO DO OPERADOR DAQUELE DIA EXCLUSIVAMENTE NO RANKING DE PRODUTIVIDADE.\n• Relatórios e produção física da fábrica permanecem 100% preservados.', {
-      x: 0.95, y: 5.5, w: 11.4, h: 1.35, fontSize: 12.5, color: '991B1B'
+    slide.addText('Se for determinada uma quantidade de paradas para limpeza no turno (ex.: 2 paradas de limpeza obrigatórias) e o operador realizar menos (ex.: apenas 1 parada):\n• 📉 Desconto de 50% na produção líquida do dia no Ranking de Produtividade (anula a vantagem indevida de volume).\n• 💰 Desconto de 20% diretamente na Bonificação de Produção mensal do operador.\n• 📊 Relatórios contábeis e faturamento mantêm 100% dos quilos reais produzidos na fábrica.', {
+      x: 0.95, y: 5.42, w: 11.4, h: 1.5, fontSize: 14, color: '991B1B'
     });
   }
 
   // ==========================================
-  // SLIDE 6: CORTE DE FITA
+  // SLIDE 7: CORTE DE FITA
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -277,26 +405,26 @@ export const exportBonusRulesPptx = async () => {
     ];
     machs.forEach((item, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.65 + i * 4.1, y: 1.95, w: 3.85, h: 2.6, rectRadius: 0.2,
+        x: 0.65 + i * 4.1, y: 1.82, w: 3.85, h: 2.75, rectRadius: 0.2,
         fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
       });
-      slide.addText(item.m, { x: 0.85 + i * 4.1, y: 2.15, w: 3.45, h: 0.4, fontSize: 14, bold: true, color: PURPLE });
-      slide.addText(item.g, { x: 0.85 + i * 4.1, y: 2.6, w: 3.45, h: 0.75, fontSize: 26, bold: true, color: TEXT_DARK });
-      slide.addText(item.d, { x: 0.85 + i * 4.1, y: 3.45, w: 3.45, h: 0.9, fontSize: 12, color: TEXT_MUTED });
+      slide.addText(item.m, { x: 0.85 + i * 4.1, y: 2.02, w: 3.45, h: 0.42, fontSize: 16, bold: true, color: PURPLE });
+      slide.addText(item.g, { x: 0.85 + i * 4.1, y: 2.48, w: 3.45, h: 0.8, fontSize: 30, bold: true, color: TEXT_DARK });
+      slide.addText(item.d, { x: 0.85 + i * 4.1, y: 3.38, w: 3.45, h: 1.0, fontSize: 14, color: TEXT_MUTED });
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: 0.65, y: 4.75, w: 12.03, h: 2.3, rectRadius: 0.2,
       fill: { color: 'FAF5FF' }, line: { color: 'E9D5FF', width: 1.2 }
     });
-    slide.addText('ABATIMENTO DE PERDAS NO CORTE DE FITA:', { x: 0.95, y: 4.95, w: 11.4, h: 0.4, fontSize: 13.5, bold: true, color: '6B21A8' });
+    slide.addText('ABATIMENTO DE PERDAS NO CORTE DE FITA:', { x: 0.95, y: 4.95, w: 11.4, h: 0.42, fontSize: 16, bold: true, color: '6B21A8' });
     slide.addText('• Perda Tipo 1 (m²): Abate diretamente da metragem atingida no dia.\n• Perda Tipo 2 (m²): Abate diretamente da metragem atingida no dia.\n• Lixo / Refugo (kg ➔ m²): O peso em kg é convertido em m² pela gramatura do jumbo e abatido da meta.', {
-      x: 0.95, y: 5.45, w: 11.4, h: 1.4, fontSize: 13, color: TEXT_DARK
+      x: 0.95, y: 5.45, w: 11.4, h: 1.45, fontSize: 14, color: TEXT_DARK
     });
   }
 
   // ==========================================
-  // SLIDE 7: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE
+  // SLIDE 8: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -327,29 +455,29 @@ export const exportBonusRulesPptx = async () => {
 
     qualityItems.forEach((q, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.65 + i * 3.05, y: 1.95, w: 2.9, h: 3.9, rectRadius: 0.2,
+        x: 0.65 + i * 3.05, y: 1.82, w: 2.9, h: 4.15, rectRadius: 0.2,
         fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
       });
-      slide.addText(q.t, { x: 0.8 + i * 3.05, y: 2.15, w: 2.6, h: 0.55, fontSize: 13, bold: true, color: TEXT_DARK });
+      slide.addText(q.t, { x: 0.8 + i * 3.05, y: 2.02, w: 2.6, h: 0.6, fontSize: 16, bold: true, color: TEXT_DARK });
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8 + i * 3.05, y: 2.8, w: 2.6, h: 0.5, rectRadius: 0.1,
+        x: 0.8 + i * 3.05, y: 2.72, w: 2.6, h: 0.55, rectRadius: 0.1,
         fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE', width: 1 }
       });
-      slide.addText(q.p, { x: 0.8 + i * 3.05, y: 2.85, w: 2.6, h: 0.4, fontSize: 11.5, bold: true, color: '3730A3', align: 'center' });
-      slide.addText(q.d, { x: 0.8 + i * 3.05, y: 3.45, w: 2.6, h: 2.2, fontSize: 11, color: TEXT_MUTED });
+      slide.addText(q.p, { x: 0.8 + i * 3.05, y: 2.78, w: 2.6, h: 0.45, fontSize: 14, bold: true, color: '3730A3', align: 'center' });
+      slide.addText(q.d, { x: 0.8 + i * 3.05, y: 3.42, w: 2.6, h: 2.4, fontSize: 14, color: TEXT_MUTED });
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 6.05, w: 12.03, h: 1.0, rectRadius: 0.15,
+      x: 0.65, y: 6.15, w: 12.03, h: 0.9, rectRadius: 0.15,
       fill: { color: 'F1F5F9' }, line: { color: BORDER_COLOR, width: 1.2 }
     });
     slide.addText('Conferência diária: Todos os apontamentos de produção devem ser validados pelo líder de turno diariamente antes do fechamento.', {
-      x: 0.95, y: 6.18, w: 11.4, h: 0.7, fontSize: 12.5, bold: true, color: TEXT_MUTED, align: 'center'
+      x: 0.95, y: 6.25, w: 11.4, h: 0.65, fontSize: 14, bold: true, color: TEXT_MUTED, align: 'center'
     });
   }
 
   // ==========================================
-  // SLIDE 8: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
+  // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -363,36 +491,55 @@ export const exportBonusRulesPptx = async () => {
     ];
     zeroPills.forEach((p, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.65 + i * 4.1, y: 1.95, w: 3.85, h: 2.3, rectRadius: 0.2,
+        x: 0.65 + i * 4.1, y: 1.82, w: 3.85, h: 2.45, rectRadius: 0.2,
         fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1.2 }
       });
-      slide.addText(p.t, { x: 0.85 + i * 4.1, y: 2.15, w: 3.45, h: 0.4, fontSize: 13, bold: true, color: '991B1B' });
-      slide.addText(p.r, { x: 0.85 + i * 4.1, y: 2.6, w: 3.45, h: 0.65, fontSize: 20, bold: true, color: ROSE });
-      slide.addText(p.d, { x: 0.85 + i * 4.1, y: 3.35, w: 3.45, h: 0.75, fontSize: 12, color: '7F1D1D' });
+      slide.addText(p.t, { x: 0.85 + i * 4.1, y: 2.02, w: 3.45, h: 0.42, fontSize: 16, bold: true, color: '991B1B' });
+      slide.addText(p.r, { x: 0.85 + i * 4.1, y: 2.48, w: 3.45, h: 0.7, fontSize: 22, bold: true, color: ROSE });
+      slide.addText(p.d, { x: 0.85 + i * 4.1, y: 3.28, w: 3.45, h: 0.85, fontSize: 14, color: '7F1D1D' });
     });
 
     // Delays and Overtime
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 4.45, w: 5.9, h: 2.6, rectRadius: 0.2,
+      x: 0.65, y: 4.1, w: 5.9, h: 1.55, rectRadius: 0.15,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('ATRASOS INJUSTIFICADOS', { x: 0.95, y: 4.65, w: 5.3, h: 0.35, fontSize: 13.5, bold: true, color: AMBER });
-    slide.addText('A cada 10 minutos de atraso ➔ Perde 1% da meta\n\nExemplo: 30 minutos de atraso acumulados no mês geram desconto automático de 3% no bônus.', {
-      x: 0.95, y: 5.15, w: 5.3, h: 1.7, fontSize: 12.5, color: TEXT_MUTED
+    slide.addText('ATRASOS INJUSTIFICADOS', { x: 0.95, y: 4.22, w: 5.3, h: 0.32, fontSize: 15, bold: true, color: AMBER });
+    slide.addText('A cada 10 minutos de atraso ➔ Perde 1% da meta\nExemplo: 30 minutos acumulados no mês = 3% de perda no bônus.', {
+      x: 0.95, y: 4.6, w: 5.3, h: 0.95, fontSize: 13, color: TEXT_MUTED
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 6.78, y: 4.45, w: 5.9, h: 2.6, rectRadius: 0.2,
+      x: 6.78, y: 4.1, w: 5.9, h: 1.55, rectRadius: 0.15,
       fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
     });
-    slide.addText('HORAS EXTRAS NÃO AUTORIZADAS', { x: 7.08, y: 4.65, w: 5.3, h: 0.35, fontSize: 13.5, bold: true, color: AMBER });
-    slide.addText('A cada 10 minutos de HE não autorizada ➔ Perde 1% da meta\n\nPermanecer no posto além da jornada sem autorização formal do gestor direto acarreta desconto proporcional.', {
-      x: 7.08, y: 5.15, w: 5.3, h: 1.7, fontSize: 12.5, color: TEXT_MUTED
+    slide.addText('HORAS EXTRAS NÃO AUTORIZADAS', { x: 7.08, y: 4.22, w: 5.3, h: 0.32, fontSize: 15, bold: true, color: AMBER });
+    slide.addText('A cada 10 minutos de HE não autorizada ➔ Perde 1% da meta\nPermanecer no posto além da jornada sem autorização formal acarreta desconto.', {
+      x: 7.08, y: 4.6, w: 5.3, h: 0.95, fontSize: 13, color: TEXT_MUTED
+    });
+
+    // Saídas Fora do Horário (Avisando vs Sem Avisar)
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.65, y: 5.8, w: 5.9, h: 1.3, rectRadius: 0.15,
+      fill: { color: 'FEF3C7' }, line: { color: 'FDE68A', width: 1.2 }
+    });
+    slide.addText('SAÍDA FORA DO HORÁRIO COMUNICADA (COM AVISO)', { x: 0.95, y: 5.92, w: 5.3, h: 0.32, fontSize: 14, bold: true, color: '92400E' });
+    slide.addText('➔ Desconto de 10% a 15% na bonificação do mês.\nSaída antecipada devidamente informada e validada pela liderança imediata.', {
+      x: 0.95, y: 6.28, w: 5.3, h: 0.72, fontSize: 13, color: '78350F'
+    });
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 6.78, y: 5.8, w: 5.9, h: 1.3, rectRadius: 0.15,
+      fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1.2 }
+    });
+    slide.addText('SAÍDA FORA DO HORÁRIO SEM AVISAR (ABANDONO)', { x: 7.08, y: 5.92, w: 5.3, h: 0.32, fontSize: 14, bold: true, color: ROSE });
+    slide.addText('➔ Desconto severo de 35% a 50% na bonificação do mês.\nDeixar o posto de trabalho sem avisar a liderança do turno.', {
+      x: 7.08, y: 6.28, w: 5.3, h: 0.72, fontSize: 13, color: '991B1B'
     });
   }
 
   // ==========================================
-  // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
+  // SLIDE 10: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -421,41 +568,41 @@ export const exportBonusRulesPptx = async () => {
 
     safetyItems.forEach((s, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.65 + i * 4.1, y: 1.95, w: 3.85, h: 5.1, rectRadius: 0.2,
+        x: 0.65 + i * 4.1, y: 1.82, w: 3.85, h: 5.24, rectRadius: 0.2,
         fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
       });
-      slide.addText(s.t, { x: 0.85 + i * 4.1, y: 2.15, w: 3.45, h: 0.5, fontSize: 14, bold: true, color: TEXT_DARK });
+      slide.addText(s.t, { x: 0.85 + i * 4.1, y: 2.05, w: 3.45, h: 0.5, fontSize: 16, bold: true, color: TEXT_DARK });
 
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.85 + i * 4.1, y: 2.8, w: 3.45, h: 0.6, rectRadius: 0.1,
+        x: 0.85 + i * 4.1, y: 2.75, w: 3.45, h: 0.65, rectRadius: 0.1,
         fill: { color: 'FEF3C7' }, line: { color: 'FDE68A', width: 1 }
       });
-      slide.addText(s.first, { x: 0.85 + i * 4.1, y: 2.85, w: 3.45, h: 0.5, fontSize: 11.5, bold: true, color: '92400E', align: 'center' });
+      slide.addText(s.first, { x: 0.85 + i * 4.1, y: 2.82, w: 3.45, h: 0.5, fontSize: 14, bold: true, color: '92400E', align: 'center' });
 
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.85 + i * 4.1, y: 3.55, w: 3.45, h: 0.6, rectRadius: 0.1,
+        x: 0.85 + i * 4.1, y: 3.55, w: 3.45, h: 0.65, rectRadius: 0.1,
         fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1 }
       });
-      slide.addText(s.rec, { x: 0.85 + i * 4.1, y: 3.6, w: 3.45, h: 0.5, fontSize: 11.5, bold: true, color: ROSE, align: 'center' });
+      slide.addText(s.rec, { x: 0.85 + i * 4.1, y: 3.62, w: 3.45, h: 0.5, fontSize: 14, bold: true, color: ROSE, align: 'center' });
 
-      slide.addText(s.d, { x: 0.85 + i * 4.1, y: 4.4, w: 3.45, h: 2.4, fontSize: 12, color: TEXT_MUTED });
+      slide.addText(s.d, { x: 0.85 + i * 4.1, y: 4.45, w: 3.45, h: 2.4, fontSize: 14, color: TEXT_MUTED });
     });
   }
 
   // ==========================================
-  // SLIDE 10: INFORMAÇÃO FALSA (-100%)
+  // SLIDE 11: INFORMAÇÃO FALSA (-100%)
   // ==========================================
   {
     const slide = pptx.addSlide();
     addSlideHeader(slide, 'Ética & Fraude', 'Tolerância Zero: Informação Falsa / Fraude', 'Manipulação de Apontamentos ou Declarações Inverídicas = 100% de Desconto Imediato');
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 1.95, w: 4.8, h: 5.1, rectRadius: 0.2,
+      x: 0.65, y: 1.82, w: 4.8, h: 5.24, rectRadius: 0.2,
       fill: { color: 'FEF2F2' }, line: { color: 'FECACA', width: 1.2 }
     });
-    slide.addText('DESQUALIFICAÇÃO IMEDIATA (-100%)', { x: 0.95, y: 2.25, w: 4.2, h: 0.8, fontSize: 16, bold: true, color: ROSE });
+    slide.addText('DESQUALIFICAÇÃO IMEDIATA (-100%)', { x: 0.95, y: 2.15, w: 4.2, h: 0.8, fontSize: 20, bold: true, color: ROSE });
     slide.addText('O sistema possui auditoria cruzada por balanças eletrônicas, câmeras do circuito interno e registros de CLP.\n\nA tentativa de burlar as regras resulta em perda imediata e irrecorrível de 100% do bônus no ciclo.', {
-      x: 0.95, y: 3.2, w: 4.2, h: 3.5, fontSize: 13, color: '991B1B'
+      x: 0.95, y: 3.1, w: 4.2, h: 3.65, fontSize: 14, color: '991B1B'
     });
 
     const frauds = [
@@ -465,16 +612,16 @@ export const exportBonusRulesPptx = async () => {
     ];
     frauds.forEach((f, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 5.75, y: 1.95 + i * 1.72, w: 6.93, h: 1.55, rectRadius: 0.15,
+        x: 5.75, y: 1.82 + i * 1.78, w: 6.93, h: 1.62, rectRadius: 0.15,
         fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
       });
-      slide.addText(f.t, { x: 6.05, y: 2.12 + i * 1.72, w: 6.35, h: 0.4, fontSize: 13.5, bold: true, color: TEXT_DARK });
-      slide.addText(f.d, { x: 6.05, y: 2.55 + i * 1.72, w: 6.35, h: 0.85, fontSize: 12, color: TEXT_MUTED });
+      slide.addText(f.t, { x: 6.05, y: 1.98 + i * 1.78, w: 6.35, h: 0.42, fontSize: 16, bold: true, color: TEXT_DARK });
+      slide.addText(f.d, { x: 6.05, y: 2.45 + i * 1.78, w: 6.35, h: 0.9, fontSize: 14, color: TEXT_MUTED });
     });
   }
 
   // ==========================================
-  // SLIDE 11: CONCLUSÃO & 5 CHAVES
+  // SLIDE 12: CONCLUSÃO & 5 CHAVES (CENTRALIZADAS NO MEIO DA TELA)
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -489,23 +636,23 @@ export const exportBonusRulesPptx = async () => {
     ];
     keys.forEach((k, i) => {
       slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.65 + i * 2.45, y: 1.95, w: 2.3, h: 3.5, rectRadius: 0.15,
+        x: 0.65 + i * 2.45, y: 2.15, w: 2.3, h: 3.25, rectRadius: 0.15,
         fill: { color: CARD_BG }, line: { color: BORDER_COLOR, width: 1.2 }
       });
-      slide.addText(k.n, { x: 0.85 + i * 2.45, y: 2.15, w: 1.9, h: 0.6, fontSize: 24, bold: true, color: AMBER, align: 'center' });
-      slide.addText(k.t, { x: 0.85 + i * 2.45, y: 2.8, w: 1.9, h: 0.4, fontSize: 13.5, bold: true, color: TEXT_DARK, align: 'center' });
-      slide.addText(k.d, { x: 0.8 + i * 2.45, y: 3.3, w: 2.0, h: 2.0, fontSize: 11.5, color: TEXT_MUTED, align: 'center' });
+      slide.addText(k.n, { x: 0.85 + i * 2.45, y: 2.32, w: 1.9, h: 0.55, fontSize: 26, bold: true, color: AMBER, align: 'center' });
+      slide.addText(k.t, { x: 0.85 + i * 2.45, y: 2.92, w: 1.9, h: 0.42, fontSize: 16, bold: true, color: TEXT_DARK, align: 'center' });
+      slide.addText(k.d, { x: 0.8 + i * 2.45, y: 3.42, w: 2.0, h: 1.85, fontSize: 14, color: TEXT_MUTED, align: 'center' });
     });
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.65, y: 5.65, w: 12.03, h: 1.4, rectRadius: 0.2,
+      x: 0.65, y: 5.65, w: 12.03, h: 1.45, rectRadius: 0.2,
       fill: { color: 'FEF3C7' }, line: { color: 'FDE68A', width: 1.2 }
     });
-    slide.addText('PRODUZIR COM QUALIDADE E SEGURANÇA É NOSSO MAIOR VALOR!', {
-      x: 0.95, y: 5.8, w: 11.4, h: 0.45, fontSize: 15, bold: true, color: '92400E', align: 'center'
+    slide.addText('MUITO OBRIGADO PELA ATENÇÃO E DEDICAÇÃO DE TODOS!', {
+      x: 0.95, y: 5.8, w: 11.4, h: 0.45, fontSize: 18, bold: true, color: '92400E', align: 'center'
     });
-    slide.addText('A gestão de bônus existe para construir uma fábrica mais forte e recompensar os melhores colaboradores.', {
-      x: 0.95, y: 6.3, w: 11.4, h: 0.5, fontSize: 12.5, color: 'B45309', align: 'center'
+    slide.addText('Produzir com qualidade, segurança e disciplina é o nosso maior valor.\nContamos com o compromisso e profissionalismo de toda a equipe para superarmos todas as metas!', {
+      x: 0.95, y: 6.3, w: 11.4, h: 0.65, fontSize: 14, color: 'B45309', align: 'center'
     });
   }
 

@@ -150,8 +150,8 @@ export const evaluateCleaningStoppages = (allStops: ParsedStop[]): CleaningStops
   if (cleaningStops.length > 0) {
     if (hasCleaningOver30) {
       const excesses = cleaningStopsOver30.map(s => `${s.durationMinutes} min (+${s.durationMinutes - 30}m)`).join(', ');
-      statusText = `Excedeu 30 min por parada ⚠️ (${excesses})`;
-      details = `${cleaningStopsOver30.length} parada(s) de limpeza de máquina/matriz excederam o limite individual de 30 minutos: ${excesses}.`;
+      statusText = `Excedeu 30 min por parada ⚠️ (${excesses}) [Desconto no Bônus]`;
+      details = `${cleaningStopsOver30.length} parada(s) de limpeza de máquina/matriz excederam o limite individual de 30 minutos: ${excesses}. Acarreta perda da meta de parada e desconto no bônus de produção.`;
     } else {
       statusText = `OK ≤ 30 min (${cleaningStops.length}x, máx ${maxCleaningRecorded}m) ✅`;
       details = `Todas as ${cleaningStops.length} parada(s) de limpeza de máquina/matriz foram realizadas dentro do limite de até 30 minutos por parada.`;
