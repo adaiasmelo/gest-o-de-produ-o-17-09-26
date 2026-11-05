@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Search, Plus, Trash2, Database, ShieldCheck, UserPlus, UserX, Edit2, VolumeX, Volume2 } from 'lucide-react';
 import { Employee, EmployeeStatus, Collaborator } from '../types';
 import { db } from '../lib/firebase';
+import { saveCollaboratorToSupabase } from '../lib/supabase';
 import { setDoc, doc } from 'firebase/firestore';
 import { IMPORTED_COLLABORATORS } from '../constants/importedCollaborators';
 import { isCollaboratorSilenced, isEmployeeSilenced, normalizeText } from '../utils/silenceUtils';
@@ -691,16 +692,36 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                       setIsImporting(true);
                       try {
                         let count = 0;
+                        const silencedRegs = new Set(
+                          silencedCollaborators
+                            .map(s => String(s.registration || '').trim().toLowerCase())
+                            .filter(Boolean)
+                        );
+                        const silencedNames = new Set(
+                          silencedCollaborators
+                            .map(s => normalizeText(s.name))
+                            .filter(Boolean)
+                        );
+
                         for (const item of IMPORTED_COLLABORATORS) {
                           if (!item.registration || !item.registration.trim()) continue;
+                          const regKey = item.registration.trim().toLowerCase();
+                          const nameKey = normalizeText(item.name);
+                          // NUNCA reativar ou sobrescrever colaborador silenciado/desligado ao sincronizar PDF
+                          if (silencedRegs.has(regKey) || silencedNames.has(nameKey)) {
+                            continue;
+                          }
+
                           const stableId = `col_${item.registration}`;
-                          await setDoc(doc(db, 'collaborators', stableId), {
+                          const colData = {
                             id: stableId,
                             registration: item.registration,
                             name: item.name,
                             role: item.role,
                             updatedAt: new Date().toISOString()
-                          }, { merge: true });
+                          };
+                          await setDoc(doc(db, 'collaborators', stableId), colData, { merge: true });
+                          saveCollaboratorToSupabase(colData).catch(() => {});
                           count++;
                         }
                         alert(`Sucesso! ${count} colaboradores foram sincronizados no Cadastro Global.`);

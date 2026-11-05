@@ -33,10 +33,10 @@ export const isCollaboratorSilenced = (c?: Collaborator | null): boolean => {
   if (c.isSilenced === true) return true;
 
   const statusNorm = normalizeText((c as any).status);
-  if (statusNorm.includes('silenciad')) return true;
+  if (statusNorm.includes('silenciad') || statusNorm.includes('desligad') || statusNorm.includes('demitid')) return true;
 
   const nameNorm = normalizeText(c.name);
-  if (nameNorm.includes('silenciad')) return true;
+  if (nameNorm.includes('silenciad') || nameNorm.includes('desligad') || nameNorm.includes('demitid')) return true;
 
   return false;
 };
@@ -53,10 +53,10 @@ export const isEmployeeSilenced = (
   if (emp.isSilenced === true) return true;
 
   const statusNorm = normalizeText(emp.status);
-  if (statusNorm.includes('silenciad')) return true;
+  if (statusNorm.includes('silenciad') || statusNorm.includes('desligad') || statusNorm.includes('demitid')) return true;
 
   const nameNorm = normalizeText(emp.name);
-  if (nameNorm.includes('silenciad')) return true;
+  if (nameNorm.includes('silenciad') || nameNorm.includes('desligad') || nameNorm.includes('demitid')) return true;
 
   // Vagas em contratação e placeholders de sistema nunca devem ser silenciados por coincidência de nome
   if (isGenericPlaceholder(emp.name) || statusNorm === 'em contratacao') {
@@ -67,7 +67,7 @@ export const isEmployeeSilenced = (
   if (collaborators && Array.isArray(collaborators) && collaborators.length > 0) {
     const matchedCol = collaborators.find(c => {
       if (emp.collaboratorId && c.id === emp.collaboratorId) return true;
-      if (emp.registration && c.registration && emp.registration === c.registration) return true;
+      if (emp.registration && c.registration && emp.registration.trim() === c.registration.trim()) return true;
       if (emp.name && c.name && !isGenericPlaceholder(emp.name) && !isGenericPlaceholder(c.name) && normalizeText(emp.name) === normalizeText(c.name)) return true;
       return false;
     });
@@ -151,9 +151,9 @@ export const getSilencedLookup = (collaborators?: Collaborator[]) => {
       if (!emp) return false;
       if (emp.isSilenced === true) return true;
       const statusNorm = normalizeText(emp.status);
-      if (statusNorm.includes('silenciad')) return true;
+      if (statusNorm.includes('silenciad') || statusNorm.includes('desligad') || statusNorm.includes('demitid')) return true;
       const nameNorm = normalizeText(emp.name);
-      if (nameNorm.includes('silenciad')) return true;
+      if (nameNorm.includes('silenciad') || nameNorm.includes('desligad') || nameNorm.includes('demitid')) return true;
       if (isGenericPlaceholder(emp.name) || statusNorm === 'em contratacao') return false;
       if (emp.collaboratorId && silencedIds.has(emp.collaboratorId)) return true;
       if (emp.registration && silencedRegs.has(emp.registration)) return true;

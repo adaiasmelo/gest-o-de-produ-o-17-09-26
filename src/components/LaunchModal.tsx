@@ -340,7 +340,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     recycledBags: 0,
     materialType: 'LC3',
     kgPerHour: 0,
-    lossTolerancePercent: 3.5,
+    lossTolerancePercent: 8,
     hasPenalty: false,
     infractionType: '',
     penaltyType: 'deduction_kg' as 'deduction_kg' | 'deduction_percent' | 'disqualify',
@@ -741,7 +741,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         recycledBags: initialData.recycledBags ?? (initialData.recycledUsed ? Number((initialData.recycledUsed / 1100).toFixed(2)) : 0),
         materialType: initialData.materialType || 'LC3',
         kgPerHour: initialData.kgPerHour ?? (initialData.machine?.toLowerCase().includes('cast 2') ? 850 : initialData.machine?.toLowerCase().includes('cast 1') ? 1000 : 0),
-        lossTolerancePercent: initialData.lossTolerancePercent ?? 3.5,
+        lossTolerancePercent: initialData.lossTolerancePercent ?? 8,
         hasPenalty: initialData.hasPenalty || false,
         infractionType: initialData.infractionType || '',
         penaltyType: initialData.penaltyType || 'deduction_kg',
@@ -839,7 +839,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           recycledBags: 0,
           materialType: 'LC3',
           kgPerHour: (initialMachine?.toLowerCase().includes('cast 2') ? 850 : initialMachine?.toLowerCase().includes('cast 1') ? 1000 : 0),
-          lossTolerancePercent: 3.5,
+          lossTolerancePercent: 8,
           hasPenalty: false,
           infractionType: '',
           penaltyType: 'deduction_kg',
@@ -1002,7 +1002,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const baseWithStops = {
         ...data,
         kgPerHour: Number(data.kgPerHour) || 0,
-        lossTolerancePercent: Number(data.lossTolerancePercent) || 3.5,
+        lossTolerancePercent: Number(data.lossTolerancePercent) || 8,
         shift: normalizeExtrusionShift(data.shift),
         manutencaoMin: finalManutencaoMin,
         processoMin: finalProcessoMin,
@@ -1171,7 +1171,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         recycledBags: 0,
         materialType: 'LC3',
         kgPerHour: (initialMachine?.toLowerCase().includes('cast 2') ? 850 : initialMachine?.toLowerCase().includes('cast 1') ? 1000 : 0),
-        lossTolerancePercent: 3.5,
+        lossTolerancePercent: 8,
         hasPenalty: false,
         infractionType: '',
         penaltyType: 'deduction_kg',
@@ -1843,7 +1843,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           ) && (() => {
             const kgH = Number(formData.kgPerHour) || 0;
             const theoretical12h = kgH * 12;
-            const tolerancePct = Number(formData.lossTolerancePercent) > 0 ? Number(formData.lossTolerancePercent) : 3.5;
+            const tolerancePct = Number(formData.lossTolerancePercent) > 0 ? Number(formData.lossTolerancePercent) : 8;
             const maxAllowedLossKg = theoretical12h * (tolerancePct / 100);
             const targetNetKg = Math.max(0, theoretical12h - maxAllowedLossKg);
 
@@ -1963,7 +1963,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           name="lossTolerancePercent"
                           value={formData.lossTolerancePercent || ''}
                           onChange={handleChange}
-                          placeholder="3.5"
+                          placeholder="8.0"
                           className="w-full bg-white border border-slate-200 focus:border-amber-500 rounded-lg px-2 py-1 text-xs font-black text-slate-900 outline-none pr-6 h-7"
                         />
                         <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400 uppercase pointer-events-none">
@@ -1971,13 +1971,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-0.5">
-                        {[2.5, 3.0, 3.5, 4.0, 5.0].map(val => (
+                        {[2.5, 3.0, 3.5, 4.0, 8.0].map(val => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setFormData(p => ({ ...p, lossTolerancePercent: val }))}
                             className={`px-1 py-0.5 rounded text-[7.5px] font-black uppercase border transition-all cursor-pointer ${
-                              formData.lossTolerancePercent === val 
+                              Number(formData.lossTolerancePercent) === val 
                                 ? 'bg-amber-500 text-white border-amber-600 shadow-2xs' 
                                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                             }`}

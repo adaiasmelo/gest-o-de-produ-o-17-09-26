@@ -97,6 +97,7 @@ export interface Collaborator {
   updatedAt: string;
   isBrigadista?: boolean;
   isSilenced?: boolean;
+  status?: string;
   silencedAt?: string;
   silenceReason?: string;
 }

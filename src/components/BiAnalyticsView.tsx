@@ -21,6 +21,7 @@ interface BiAnalyticsViewProps {
   standaloneSection?: 'matrix' | 'mom_yoy' | 'stoppages' | 'operators' | 'eco_b_vs_tubetes';
   dashboardMonth?: string;
   targetMonth?: string;
+  isBonusManagerView?: boolean;
 }
 
 // Helper formats
@@ -69,7 +70,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   onOpenDowntimeReasons,
   standaloneSection,
   dashboardMonth,
-  targetMonth
+  targetMonth,
+  isBonusManagerView
 }) => {
   const activeRefMonth = targetMonth || dashboardMonth;
   // 100% Consistent Filter replicating App.tsx logic for data validity
@@ -710,8 +712,10 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Upper Welcome Header */}
-      {standaloneSection ? (
+      {!isBonusManagerView && (
+        <>
+          {/* Upper Welcome Header */}
+          {standaloneSection ? (
         <div className="bg-[#1e293b] text-white p-6 sm:p-7 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-700/40">
           <div className="absolute right-0 top-0 -mr-12 -mt-12 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
           <div className="relative">
@@ -985,6 +989,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
           </div>
         </div>
       </div>
+    </>
+  )}
 
       {/* Internal Navigation tabs for comparison features */}
       {!standaloneSection && (

@@ -165,12 +165,12 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
                   <span className="font-bold text-slate-900">12.000 Kg</span>
                 </div>
                 <div className="flex justify-between text-slate-700">
-                  <span>Tolerância de Perdas (3,5%):</span>
-                  <span className="font-bold text-amber-700">- 420 Kg</span>
+                  <span>Tolerância de Perdas (8,0%):</span>
+                  <span className="font-bold text-amber-700">- 960 Kg</span>
                 </div>
                 <div className="flex justify-between text-emerald-700 font-bold border-t border-slate-200 pt-1.5 text-xs xl:text-sm">
                   <span>Meta Líquida a Produzir:</span>
-                  <span>11.580 Kg</span>
+                  <span>11.040 Kg</span>
                 </div>
               </div>
             </div>
@@ -190,12 +190,12 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
                   <span className="font-bold text-slate-900">10.200 Kg</span>
                 </div>
                 <div className="flex justify-between text-slate-700">
-                  <span>Tolerância de Perdas (3,5%):</span>
-                  <span className="font-bold text-amber-700">- 357 Kg</span>
+                  <span>Tolerância de Perdas (8,0%):</span>
+                  <span className="font-bold text-amber-700">- 816 Kg</span>
                 </div>
                 <div className="flex justify-between text-emerald-700 font-bold border-t border-slate-200 pt-1.5 text-xs xl:text-sm">
                   <span>Meta Líquida a Produzir:</span>
-                  <span>9.843 Kg</span>
+                  <span>9.384 Kg</span>
                 </div>
               </div>
             </div>
@@ -222,7 +222,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       content: (
         <div className="space-y-4 w-full">
           <p className="text-slate-700 text-xs xl:text-sm leading-relaxed">
-            Nenhuma máquina produz 100% de material líquido contínuo. É natural e previsto que existam aparas e purgas. Por isso, existe uma <strong>tolerância percentual de perda (padrão de 3,5% a 4,0%)</strong> sobre o volume total programado do turno.
+            Nenhuma máquina produz 100% de material líquido contínuo. É natural e previsto que existam aparas e purgas. Por isso, existe uma <strong>tolerância percentual de perda estabelecida em 8,0%</strong> sobre o volume total programado do turno.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -277,7 +277,7 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
             <div>
               <div className="text-xs xl:text-sm font-black text-slate-900">Regra de Abatimento Geral por Refugo</div>
               <div className="text-xs text-slate-700 mt-0.5 leading-relaxed font-medium">
-                Se as perdas avaliadas (EcoA acima de 8% + Eco BP + Borra) ficarem <strong>dentro do limite de tolerância</strong>, a pontuação integral é mantida. Se <strong>ultrapassarem o limite</strong>, a produção líquida é comprometida e ocorre desconto na bonificação proporcional ao excesso de refugo.
+                Se as perdas avaliadas (EcoA acima de 8% + Eco BP + Borra) ficarem <strong>dentro do limite de tolerância (8,0%)</strong>, a pontuação integral é mantida. Se <strong>ultrapassarem o limite</strong>, a produção líquida é comprometida e ocorre desconto na bonificação proporcional ao excesso de refugo.
               </div>
             </div>
           </div>
@@ -782,81 +782,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 11: TELA DE LANÇAMENTO E EXTRATO EM PDF (GENÉRICO)
+    // SLIDE 11: CONCLUSÃO & DIRETRIZES FINAIS
     {
       id: 11,
-      category: 'Ferramentas do Sistema',
-      badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-300',
-      title: 'Transparência: Tela de Lançamento & Extrato em PDF',
-      subtitle: 'Como as Informações são Registradas e Disponibilizadas em Detalhes para Cada Colaborador',
-      content: (
-        <div className="space-y-4 w-full">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 xl:gap-6">
-            <div className="p-5 xl:p-6 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex items-center gap-2 text-cyan-800 font-bold text-xs xl:text-sm uppercase">
-                <FileText className="w-4 h-4 text-cyan-600" />
-                Na Tela de Novo Lançamento
-              </div>
-              <ul className="text-xs text-slate-700 space-y-2.5 font-medium">
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-cyan-600 shrink-0 mt-0.5" />
-                  <span><strong>Extrusão:</strong> Informa-se em quantos kg/h a máquina está trabalhando e a tolerância de perda no turno.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-cyan-600 shrink-0 mt-0.5" />
-                  <span><strong>Corte de Fita:</strong> Ao selecionar a máquina, define-se a meta diária em m² e lançam-se perdas Tipo 1, Tipo 2 e Lixo.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-cyan-600 shrink-0 mt-0.5" />
-                  <span><strong>Ocorrências Integradas:</strong> Lançam-se paradas de limpeza não realizadas, advertências e condutas direto no formulário com reflexo automático na gestão de bônus.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-cyan-600 shrink-0 mt-0.5" />
-                  <span><strong>Em Tempo Real:</strong> A tela indica de imediato se a produção líquida atingiu ou não a meta estipulada.</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="p-5 xl:p-6 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs xl:text-sm uppercase">
-                <FileText className="w-4 h-4 text-emerald-600" />
-                No Extrato Individual em PDF
-              </div>
-              <ul className="text-xs text-slate-700 space-y-2.5 font-medium">
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Dia a Dia Detalhado:</strong> Cada turno trabalhado é impresso com máquina, kg/h ou m², meta 12h e produção real.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Separação Clara de Refugo:</strong> Eco A (isento até 8%), Eco BP, Borra vs. EcoBM de manutenção identificado como ISENTO.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Status por Turno:</strong> BATEU META ✅, EXC. LIMPEZA (&gt;30m), EXC. PERDA ou ABAIXO LÍQUIDO.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>100% Auditável:</strong> Entregue a cada colaborador no fechamento com clareza absoluta.</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-cyan-50 border border-cyan-200 text-xs text-cyan-950 flex items-center justify-between font-medium">
-            <span className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-cyan-600" />
-              O extrato pode ser impresso e entregue a cada colaborador no fechamento mensal com clareza total.
-            </span>
-            <span className="font-bold text-cyan-800">100% Auditável</span>
-          </div>
-        </div>
-      )
-    },
-
-    // SLIDE 12: CONCLUSÃO & DIRETRIZES FINAIS
-    {
-      id: 12,
       category: 'Compromisso com o Sucesso',
       badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
       title: 'Conclusão: As 5 Chaves do Operador Nota 10',

@@ -125,12 +125,12 @@ export const DEFAULT_MACHINE_TARGETS: Record<string, {
   maxLossPercent: number;
   recommendedAbatement: number;
 }> = {
-  'Cast 1': { kgPerHour: 1000, material: 'Stretch LC3 (1.000 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 3.5, recommendedAbatement: 30 },
-  'Cast 2': { kgPerHour: 850, material: 'Stretch LC2 (850 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 3.5, recommendedAbatement: 30 },
-  'Erema 1': { kgPerHour: 350, material: 'Recuperado Erema (350 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 60, maxLossPercent: 4.0, recommendedAbatement: 25 },
-  'Ghezzi': { kgPerHour: 500, material: 'Fita Stretch Comercial (500 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 2.5, recommendedAbatement: 30 },
-  'Lintech': { kgPerHour: 450, material: 'Fita Lintech Comercial (450 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 2.5, recommendedAbatement: 30 },
-  'Wutec': { kgPerHour: 400, material: 'Fita Wutec Comercial (400 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 2.5, recommendedAbatement: 30 }
+  'Cast 1': { kgPerHour: 1000, material: 'Stretch LC3 (1.000 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 8.0, recommendedAbatement: 30 },
+  'Cast 2': { kgPerHour: 850, material: 'Stretch LC2 (850 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 8.0, recommendedAbatement: 30 },
+  'Erema 1': { kgPerHour: 350, material: 'Recuperado Erema (350 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 60, maxLossPercent: 8.0, recommendedAbatement: 25 },
+  'Ghezzi': { kgPerHour: 500, material: 'Fita Stretch Comercial (500 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 8.0, recommendedAbatement: 30 },
+  'Lintech': { kgPerHour: 450, material: 'Fita Lintech Comercial (450 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 8.0, recommendedAbatement: 30 },
+  'Wutec': { kgPerHour: 400, material: 'Fita Wutec Comercial (400 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 8.0, recommendedAbatement: 30 }
 };
 
 export const MATERIAL_PRESETS = [
@@ -176,25 +176,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   // Navigation tabs: 'overview' | 'teams_evolution' | 'payroll' | 'incidents'
   const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents'>('overview');
 
-  // Cycle period state (synced with dashboardMonth from settings)
-  const [selectedCycle, setSelectedCycle] = useState<string>(() => {
-    return dashboardMonth || localStorage.getItem('manupackaging_bonus_cycle') || '2026-10';
-  });
-
-  useEffect(() => {
-    if (dashboardMonth && dashboardMonth !== selectedCycle) {
-      setSelectedCycle(dashboardMonth);
-    }
-  }, [dashboardMonth]);
-
-  useEffect(() => {
-    localStorage.setItem('manupackaging_bonus_cycle', selectedCycle);
-  }, [selectedCycle]);
-
-  const handleCycleChange = (newCycle: string) => {
-    setSelectedCycle(newCycle);
-    onMonthChange?.(newCycle);
-  };
+  // O Gestão de Bônus de Produção é diretamente vinculado ao Mês de Referência das Configurações Gerais
+  const selectedCycle = dashboardMonth || '2026-10';
+  const [cycleYear, cycleMonth] = (selectedCycle || '2026-10').split('-').map(Number);
 
   // Base bonus configurations by role
   const [baseBonusValues, setBaseBonusValues] = useState<Record<string, number>>(() => {
@@ -1384,16 +1368,13 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
         {/* Cycle & Action Buttons */}
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Cycle Selector (Mês de Referência) */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 shadow-xs" title="Mês de Referência sincronizado com as Configurações de Filtro">
-            <Calendar className="w-4 h-4 text-slate-400" />
+          {/* Mês de Referência Vinculado Diretamente às Configurações Gerais */}
+          <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2 shadow-2xs" title="Mês de Referência vinculado à Configuração Geral do Sistema">
+            <Calendar className="w-4 h-4 text-amber-600" />
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mês:</span>
-            <input
-              type="month"
-              value={selectedCycle}
-              onChange={(e) => handleCycleChange(e.target.value)}
-              className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
-            />
+            <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
+              {MONTH_NAMES[cycleMonth - 1] || 'Mês'} de {cycleYear}
+            </span>
           </div>
 
           {/* New Incident Button */}
@@ -1653,6 +1634,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             standaloneSection="operators"
             dashboardMonth={selectedCycle}
             targetMonth={selectedCycle}
+            isBonusManagerView={true}
           />
         </motion.div>
       )}

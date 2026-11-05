@@ -1387,6 +1387,29 @@ export const App: React.FC = () => {
       return [];
     }
   });
+  const getAutoReferenceMonth = (savedMonth?: string | null): string => {
+    const now = new Date();
+    const currentDay = now.getDate();
+    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+
+    // No dia 1, as informações sempre estão relacionadas ao dia 31 (dia anterior), mantendo o mês que finalizou
+    if (currentDay === 1) {
+      return prevMonthStr;
+    }
+
+    // A partir do dia 2 em diante, se o mês salvo for anterior ao mês corrente, abre automaticamente no novo mês!
+    if (savedMonth && /^\d{4}-\d{2}$/.test(savedMonth)) {
+      if (savedMonth < currentMonthStr) {
+        return currentMonthStr;
+      }
+      return savedMonth;
+    }
+
+    return currentMonthStr;
+  };
+
   const [dashboardMonth, setDashboardMonth] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -1395,11 +1418,10 @@ export const App: React.FC = () => {
         if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) return urlMonth;
 
         const saved = localStorage.getItem('manupackaging_dashboard_month');
-        if (saved) return saved;
+        return getAutoReferenceMonth(saved);
       }
     } catch {}
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return getAutoReferenceMonth();
   });
 
   useEffect(() => {
@@ -2715,9 +2737,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           setAvailableRoles(rolesList);
         }
         if (data.dashboardMonth && typeof data.dashboardMonth === 'string') {
-          setDashboardMonth(data.dashboardMonth);
+          const autoMonth = getAutoReferenceMonth(data.dashboardMonth);
+          setDashboardMonth(autoMonth);
           try {
-            localStorage.setItem('manupackaging_dashboard_month', data.dashboardMonth);
+            localStorage.setItem('manupackaging_dashboard_month', autoMonth);
           } catch {}
         }
 
@@ -3148,12 +3171,15 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     try {
       const now = new Date().toISOString();
       const colRef = doc(db, 'collaborators', col.id);
-      await setDoc(colRef, {
+      const updatedColData: Partial<Collaborator> = {
         isSilenced: shouldSilence,
+        status: shouldSilence ? ((col as any).status || 'Silenciado') : 'Ativo',
         silencedAt: shouldSilence ? now : null,
         silenceReason: shouldSilence ? (reason || 'Silenciado via Base de Dados') : null,
         updatedAt: now
-      }, { merge: true });
+      };
+      await setDoc(colRef, updatedColData, { merge: true });
+      saveCollaboratorToSupabase({ ...col, ...updatedColData }).catch(() => {});
 
       // Atualiza os slots correspondentes em 'employees'
       const normTarget = normalizeText(col.name);
@@ -3164,20 +3190,28 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
                       (emp.name && normalizeText(emp.name) === normTarget);
         if (match) {
           emp.isSilenced = shouldSilence;
-          await setDoc(doc(db, 'employees', emp.id), {
+          if (!shouldSilence && emp.status === 'Desligado') {
+            emp.status = 'Ativo';
+          }
+          const empUpdates: any = {
             isSilenced: shouldSilence,
+            status: emp.status,
             updatedAt: now
-          }, { merge: true });
+          };
+          await setDoc(doc(db, 'employees', emp.id), empUpdates, { merge: true });
+          saveEmployeeToSupabase({ ...emp, ...empUpdates }).catch(() => {});
         }
       }
 
       const updatedCollaborators = collaborators.map(c => 
-        c.id === col.id ? { ...c, isSilenced: shouldSilence, silencedAt: shouldSilence ? now : null, silenceReason: shouldSilence ? (reason || null) : null } : c
+        c.id === col.id ? { ...c, ...updatedColData } : c
       );
+      setCollaborators(updatedCollaborators);
+      setEmployees(updatedEmployeesList);
 
       // Log de pessoal
       const logId = Math.random().toString(36).substring(2, 15);
-      await setDoc(doc(db, 'personnelLogs', logId), {
+      const logData = {
         id: logId,
         userId: currentUser?.uid || 'system',
         date: now,
@@ -3187,7 +3221,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           ? `Colaborador silenciado: ocultado de todas as listas de seleção do sistema (${reason || 'Sem motivo informado'})`
           : `Colaborador reativado no sistema`,
         user: loggedUser?.name || 'Sistema'
-      });
+      };
+      await setDoc(doc(db, 'personnelLogs', logId), logData);
+      savePersonnelLogToSupabase(logData).catch(() => {});
 
       await syncOperatorsSetting(updatedEmployeesList, updatedCollaborators);
     } catch (err) {
@@ -23301,15 +23337,18 @@ Atenciosamente,
             } else if (action === 'Exclusão') {
               await deleteDoc(doc(db, 'employees', empId));
               deleteEmployeeFromSupabase(empId).catch(() => {});
-            } else if (action === 'Desligamento') {
+            } else if (action === 'Desligamento' || data.status === 'Desligado') {
               const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || 'Não informado';
               const fullEmp = { 
                 ...data, 
                 id: empId,
                 status: 'Desligado', 
+                isSilenced: true,
                 name: data.name,
                 terminationReason,
                 statusDetails: terminationReason,
+                silencedAt: data.terminatedAt || now,
+                silenceReason: `Desligado via Quadro Geral de Pessoal - ${terminationReason}`,
                 terminatedAt: data.terminatedAt || now,
                 updatedAt: now, 
                 userId: currentUser.uid 
@@ -23336,7 +23375,7 @@ Atenciosamente,
             
             const logId = Math.random().toString(36).substr(2, 9);
             const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || '';
-            const logDetails = action === 'Desligamento' 
+            const logDetails = (action === 'Desligamento' || data.status === 'Desligado') 
               ? (terminationReason ? `Motivo: ${terminationReason}` : (details || 'Desligamento de colaborador'))
               : (details || '');
 
@@ -23355,7 +23394,7 @@ Atenciosamente,
               type: 'action',
               screen: 'Gestão de Pessoas',
               subScreen: 'Quadro de Funcionários',
-              action: action === 'Contratação' ? 'Contratação de Funcionário' : action === 'Desligamento' ? 'Desligamento de Funcionário' : action === 'Exclusão' ? 'Exclusão de Funcionário' : 'Alteração no Quadro',
+              action: action === 'Contratação' ? 'Contratação de Funcionário' : (action === 'Desligamento' || data.status === 'Desligado') ? 'Desligamento de Funcionário' : action === 'Exclusão' ? 'Exclusão de Funcionário' : 'Alteração no Quadro',
               details: `${data.name || 'Vaga'} - ${action}${logDetails ? ` (${logDetails})` : ''}`
             });
 
@@ -23365,13 +23404,16 @@ Atenciosamente,
             const employeeMerged = { ...data, id: empId, updatedAt: now } as Employee;
             if (action === 'Exclusão') {
               if (empIdx >= 0) updatedEmployeesList.splice(empIdx, 1);
-            } else if (action === 'Desligamento') {
+            } else if (action === 'Desligamento' || data.status === 'Desligado') {
               const terminatedEmp = { 
                 ...employeeMerged, 
                 status: 'Desligado', 
+                isSilenced: true,
                 name: data.name,
                 terminationReason: data.terminationReason || terminationReason,
                 statusDetails: data.terminationReason || terminationReason,
+                silencedAt: data.terminatedAt || now,
+                silenceReason: `Desligado via Quadro Geral de Pessoal - ${terminationReason}`,
                 terminatedAt: data.terminatedAt || now
               } as Employee;
               if (empIdx >= 0) updatedEmployeesList[empIdx] = terminatedEmp;
@@ -23382,7 +23424,35 @@ Atenciosamente,
             }
 
             const updatedCollaboratorsList = [...collaborators];
-            if (data.collaboratorId && data.role) {
+            if (action === 'Desligamento' || data.status === 'Desligado') {
+              const termReason = data.terminationReason || terminationReason || 'Não informado';
+              const targetNameNorm = normalizeText(data.name);
+              const targetReg = data.registration ? String(data.registration).trim() : '';
+              const matchedCol = collaborators.find(c => 
+                (data.collaboratorId && c.id === data.collaboratorId) ||
+                (targetReg && c.registration && String(c.registration).trim() === targetReg) ||
+                (data.name && c.name && normalizeText(c.name) === targetNameNorm)
+              );
+
+              if (matchedCol) {
+                const updatedCol: Collaborator = {
+                  ...matchedCol,
+                  isSilenced: true,
+                  status: 'Desligado' as any,
+                  silencedAt: now,
+                  silenceReason: `Desligado via Quadro Geral de Pessoal - ${termReason}`,
+                  updatedAt: now
+                };
+                await setDoc(doc(db, 'collaborators', matchedCol.id), cleanUndefined(updatedCol), { merge: true });
+                saveCollaboratorToSupabase(updatedCol).catch(() => {});
+                
+                const colIdx = updatedCollaboratorsList.findIndex(c => c.id === matchedCol.id);
+                if (colIdx >= 0) {
+                  updatedCollaboratorsList[colIdx] = updatedCol;
+                }
+                setCollaborators(prev => prev.map(c => c.id === matchedCol.id ? updatedCol : c));
+              }
+            } else if (data.collaboratorId && data.role) {
               await setDoc(doc(db, 'collaborators', data.collaboratorId), {
                 role: data.role,
                 updatedAt: now
@@ -23394,6 +23464,7 @@ Atenciosamente,
               }
             }
 
+            setEmployees(updatedEmployeesList);
             await syncOperatorsSetting(updatedEmployeesList, updatedCollaboratorsList);
           } catch(error) {
             console.error(error);
@@ -23660,22 +23731,28 @@ Atenciosamente,
             onTerminate={(id, name) => {
               openConfirm(
                 'Confirmar Desligamento',
-                `Deseja DESLIGAR ${name}? Isso abrirá uma vaga disponível no quadro.`,
+                `Deseja DESLIGAR ${name}? Isso abrirá uma vaga disponível no quadro e enviará o colaborador imediatamente para a aba Silenciados.`,
                 async () => {
                   try {
                     const now = new Date().toISOString();
-                    await setDoc(doc(db, 'employees', id), { 
+                    const targetEmp = employees.find(e => e.id === id);
+                    const empData = { 
                       status: 'Desligado', 
+                      isSilenced: true,
                       name: name,
                       terminationReason: 'Desligamento direto via Banco de Dados',
                       statusDetails: 'Desligamento direto via Banco de Dados',
+                      silencedAt: now,
+                      silenceReason: 'Desligamento direto via Banco de Dados',
                       terminatedAt: now,
                       updatedAt: now, 
                       userId: currentUser.uid 
-                    }, { merge: true });
+                    };
+                    await setDoc(doc(db, 'employees', id), empData, { merge: true });
+                    saveEmployeeToSupabase({ ...targetEmp, ...empData, id }).catch(() => {});
                     
                     const logId = Math.random().toString(36).substring(2, 15);
-                    await setDoc(doc(db, 'personnelLogs', logId), {
+                    const logObj = {
                       id: logId,
                       userId: currentUser.uid,
                       date: now,
@@ -23683,17 +23760,48 @@ Atenciosamente,
                       action: 'Desligamento' as any,
                       details: `Motivo: Desligamento direto via Banco de Dados`,
                       user: loggedUser?.name || 'Sistema'
-                    });
+                    };
+                    await setDoc(doc(db, 'personnelLogs', logId), logObj);
+                    savePersonnelLogToSupabase(logObj).catch(() => {});
                     
+                    // Localiza e silencia o colaborador na base de dados
+                    const targetNameNorm = normalizeText(name);
+                    const targetReg = targetEmp?.registration ? String(targetEmp.registration).trim() : '';
+                    const matchedCol = collaborators.find(c => 
+                      (targetEmp?.collaboratorId && c.id === targetEmp.collaboratorId) ||
+                      (targetReg && c.registration && String(c.registration).trim() === targetReg) ||
+                      (name && c.name && normalizeText(c.name) === targetNameNorm)
+                    );
+
+                    let updatedCollaborators = [...collaborators];
+                    if (matchedCol) {
+                      const updatedCol: Collaborator = {
+                        ...matchedCol,
+                        isSilenced: true,
+                        status: 'Desligado' as any,
+                        silencedAt: now,
+                        silenceReason: 'Desligamento direto via Banco de Dados',
+                        updatedAt: now
+                      };
+                      await setDoc(doc(db, 'collaborators', matchedCol.id), cleanUndefined(updatedCol), { merge: true });
+                      saveCollaboratorToSupabase(updatedCol).catch(() => {});
+                      updatedCollaborators = updatedCollaborators.map(c => c.id === matchedCol.id ? updatedCol : c);
+                      setCollaborators(updatedCollaborators);
+                    }
+
                     const simulatedEmps = employees.map(e => e.id === id ? { 
                       ...e, 
                       name: name, 
                       status: 'Desligado' as any,
+                      isSilenced: true,
                       terminationReason: 'Desligamento direto via Banco de Dados',
                       statusDetails: 'Desligamento direto via Banco de Dados',
+                      silencedAt: now,
+                      silenceReason: 'Desligamento direto via Banco de Dados',
                       terminatedAt: now
                     } : e);
-                    await syncOperatorsSetting(simulatedEmps);
+                    setEmployees(simulatedEmps);
+                    await syncOperatorsSetting(simulatedEmps, updatedCollaborators);
                   } catch (err) {
                     console.error(err);
                   }
