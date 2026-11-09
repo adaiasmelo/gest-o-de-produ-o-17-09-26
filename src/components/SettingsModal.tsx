@@ -65,6 +65,10 @@ export const SettingsModal: React.FC<{
   operators: string[];
   goals: Record<string, number>;
   setGoals: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  extrusionWasteLimit?: number;
+  setExtrusionWasteLimit?: React.Dispatch<React.SetStateAction<number>>;
+  extrusionWasteLimits?: Record<string, number>;
+  setExtrusionWasteLimits?: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   eremaGoals?: Record<string, number>;
   setEremaGoals?: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   ribbonGoals: Record<string, number>;
@@ -106,7 +110,9 @@ export const SettingsModal: React.FC<{
 }> = ({
   isOpen, onClose, onSave, activeTab, setActiveTab,
   filterOperator, setFilterOperator, filterDay, setFilterDay, filterStartDate, setFilterStartDate, filterEndDate, setFilterEndDate, dashboardMonth, setDashboardMonth,
-  operators, goals, setGoals, eremaGoals = {}, setEremaGoals, ribbonGoals, setRibbonGoals,
+  operators, goals, setGoals, 
+  extrusionWasteLimit = 8.0, setExtrusionWasteLimit, extrusionWasteLimits = {}, setExtrusionWasteLimits,
+  eremaGoals = {}, setEremaGoals, ribbonGoals, setRibbonGoals,
   setIsUserManagementOpen, setIsDowntimeReasonsModalOpen, setIsDowntimeAnalyticsModalOpen, setIsOperatorModalOpen, setIsRoleModalOpen, setIsShiftModalOpen, setIsPermissionModalOpen,
   downloadBackup, handleRestoreData, handleSyncLocalToCloud, openConfirm, isInitializing, fileInputRef,
   systemName, setSystemName, loginSystemName, setLoginSystemName, loginSystemSubtitle, setLoginSystemSubtitle, systemLogo, setSystemLogo, systemCoverImage, setSystemCoverImage, 
@@ -453,21 +459,77 @@ export const SettingsModal: React.FC<{
               </div>
               <div className="max-w-xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Extrusão */}
-                <div className="bg-slate-50/50 p-6 rounded-3xl border border-slate-100 text-center space-y-3">
-                  <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">Setor Extrusão</span>
-                  <div className="relative">
-                    <input 
-                      type="number" 
-                      value={goals[dashboardMonth] || GOAL_VALUE} 
-                      onChange={e => setGoals(prev => {
-                        const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
-                        localStorage.setItem('manupackaging_goals', JSON.stringify(updated));
-                        setDoc(doc(db, 'settings', 'global'), { goals: updated }, { merge: true });
-                        return updated;
-                      })} 
-                      className="w-full bg-white border border-slate-200 rounded-[1.5rem] px-4 py-4 text-xl font-black text-center text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 tracking-tighter"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-300 text-[10px]">KG</span>
+                <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-200/80 text-left space-y-3.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-slate-500 block tracking-wider">Setor Extrusão</span>
+                    <span className="text-[9px] font-black uppercase text-orange-600 bg-orange-50 px-2.5 py-0.5 rounded-full border border-orange-200">
+                      Metas Extrusão
+                    </span>
+                  </div>
+
+                  {/* Meta em KG */}
+                  <div>
+                    <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                      Meta de Produção Líquida
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        value={goals[dashboardMonth] || GOAL_VALUE} 
+                        onChange={e => setGoals(prev => {
+                          const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
+                          localStorage.setItem('manupackaging_goals', JSON.stringify(updated));
+                          setDoc(doc(db, 'settings', 'global'), { goals: updated }, { merge: true });
+                          return updated;
+                        })} 
+                        className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-lg font-black text-center text-slate-800 outline-none focus:ring-2 focus:ring-orange-200 tracking-tight"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-400 text-[10px]">KG</span>
+                    </div>
+                  </div>
+
+                  {/* Limite / Tolerância de Rejeito (Eco B / Perda) */}
+                  <div className="pt-2.5 border-t border-slate-200/70">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[9.5px] font-bold text-rose-800 uppercase tracking-wider block">
+                        Tolerância / Limite de Rejeito (Eco B)
+                      </label>
+                      <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
+                        {((extrusionWasteLimits && extrusionWasteLimits[dashboardMonth] !== undefined ? extrusionWasteLimits[dashboardMonth] : extrusionWasteLimit) || 8.0).toFixed(1).replace('.', ',')}%
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={extrusionWasteLimits && extrusionWasteLimits[dashboardMonth] !== undefined ? extrusionWasteLimits[dashboardMonth] : (extrusionWasteLimit ?? 8.0)} 
+                        onChange={e => {
+                          const val = Math.max(0, Number(e.target.value) || 0);
+                          if (setExtrusionWasteLimits) {
+                            setExtrusionWasteLimits(prev => {
+                              const updated = { ...prev, [dashboardMonth]: val };
+                              localStorage.setItem('manupackaging_extrusion_waste_limits', JSON.stringify(updated));
+                              localStorage.setItem('manupackaging_extrusion_waste_limit', String(val));
+                              setDoc(doc(db, 'settings', 'global'), { 
+                                extrusionWasteLimits: updated,
+                                extrusionWasteLimit: val 
+                              }, { merge: true });
+                              return updated;
+                            });
+                          }
+                          if (setExtrusionWasteLimit) {
+                            setExtrusionWasteLimit(val);
+                          }
+                        }} 
+                        className="w-full bg-white border border-rose-200 rounded-2xl px-4 py-3 text-lg font-black text-center text-rose-600 outline-none focus:ring-2 focus:ring-rose-200 tracking-tight"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-rose-400 text-xs">%</span>
+                    </div>
+                    <p className="text-[8.5px] text-slate-400 mt-1 leading-tight text-center font-medium">
+                      Define a meta máxima de perda/rejeito nos Gráficos da Extrusão e nos indicadores (Ex: 8%, 7%, 10%).
+                    </p>
                   </div>
                 </div>
 

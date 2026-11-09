@@ -317,7 +317,160 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 5: ISENÇÃO DO ECOBM
+  // SLIDE 5: DESCONTO LINEAR POR DÉCIMO EXCEDENTE (ACIMA DE 8,0%)
+  // ==========================================
+  {
+    const slide = pptx.addSlide();
+    addSlideHeader(slide, 'Regra dos Décimos Excedentes', 'Desconto Linear por Décimo Excedente (Acima de 8,0%)', 'Isenção Total até 8,00% de Perda • Desconto de R$ 5,00 por Cada 0,10% (Décimo) que Ultrapassar a Meta');
+
+    // 3 Summary Cards across the top
+    const ruleCards = [
+      {
+        title: 'ATÉ 8,00% = ISENÇÃO TOTAL',
+        desc: '0% de desconto. O operador recebe 100% do bônus (R$ 300,00) + Cesta Fixa (R$ 236,00) = R$ 536,00 no Cartão VR.',
+        bg: 'ECFDF5', line: 'A7F3D0', color: '065F46'
+      },
+      {
+        title: 'R$ 5,00 POR CADA 0,10% EXCEDENTE',
+        desc: 'Passou de 8,00%? Cada décimo percentual (0,10%) que ultrapassar desconta exatamente R$ 5,00 (R$ 50 a cada 1,0%).',
+        bg: 'FEF3C7', line: 'FDE68A', color: '92400E'
+      },
+      {
+        title: 'CESTA DE R$ 236,00 INTOCÁVEL',
+        desc: 'A cesta básica é benefício fixo garantido. Mesmo com 14% de perda (desconto máx. de R$ 300), a cesta é 100% paga.',
+        bg: 'EFF6FF', line: 'BFDBFE', color: '1E3A8A'
+      }
+    ];
+
+    ruleCards.forEach((c, i) => {
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.65 + i * 4.1, y: 1.82, w: 3.85, h: 1.18, rectRadius: 0.15,
+        fill: { color: c.bg }, line: { color: c.line, width: 1.2 }
+      });
+      slide.addText(c.title, {
+        x: 0.8, y: 1.9, w: 3.55, h: 0.35, fontSize: 13, bold: true, color: c.color
+      });
+      slide.addText(c.desc, {
+        x: 0.8, y: 2.25, w: 3.55, h: 0.68, fontSize: 11, color: TEXT_DARK
+      });
+    });
+
+    // Detailed Simulation Table
+    const tableHeader = [
+      { text: 'Média de Perda', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_DARK, align: 'left' } },
+      { text: 'Excesso (>8%)', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_DARK, align: 'center' } },
+      { text: 'Décimos', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_DARK, align: 'center' } },
+      { text: 'Desconto no Bônus', options: { bold: true, fill: { color: 'FEE2E2' }, color: '991B1B', align: 'right' } },
+      { text: 'Bônus Produção', options: { bold: true, fill: { color: 'EFF6FF' }, color: '1E3A8A', align: 'right' } },
+      { text: 'Cesta Básica', options: { bold: true, fill: { color: 'F8FAFC' }, color: TEXT_MUTED, align: 'center' } },
+      { text: 'Total no Cartão VR', options: { bold: true, fill: { color: '059669' }, color: 'FFFFFF', align: 'right' } },
+      { text: 'Situação / Classificação', options: { bold: true, fill: { color: 'F1F5F9' }, color: TEXT_DARK, align: 'center' } }
+    ];
+
+    const tableRows = [
+      tableHeader,
+      [
+        { text: '≤ 8,00% (Meta)', options: { bold: true, color: EMERALD, fill: { color: 'ECFDF5' } } },
+        { text: '0,00%', options: { color: EMERALD, align: 'center', fill: { color: 'ECFDF5' } } },
+        { text: '0 décimo', options: { align: 'center', fill: { color: 'ECFDF5' } } },
+        { text: 'R$ 0,00 (0%)', options: { bold: true, color: EMERALD, align: 'right', fill: { color: 'ECFDF5' } } },
+        { text: 'R$ 300,00', options: { bold: true, color: '1E3A8A', align: 'right', fill: { color: 'EFF6FF' } } },
+        { text: '+ R$ 236,00', options: { align: 'center', fill: { color: 'ECFDF5' } } },
+        { text: 'R$ 536,00', options: { bold: true, color: '065F46', align: 'right', fill: { color: 'D1FAE5' } } },
+        { text: '100% Isento (Meta Plena)', options: { bold: true, color: '065F46', align: 'center', fill: { color: 'ECFDF5' } } }
+      ],
+      [
+        { text: '8,05%', options: { bold: true } },
+        { text: '+ 0,05%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '0,5 décimo', options: { align: 'center' } },
+        { text: '- R$ 2,50 (-0,8%)', options: { bold: true, color: AMBER, align: 'right' } },
+        { text: 'R$ 297,50', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 533,50', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: 'Oscilação Mínima', options: { color: TEXT_MUTED, align: 'center' } }
+      ],
+      [
+        { text: '8,10%', options: { bold: true } },
+        { text: '+ 0,10%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '1 décimo', options: { align: 'center' } },
+        { text: '- R$ 5,00 (-1,7%)', options: { bold: true, color: AMBER, align: 'right' } },
+        { text: 'R$ 295,00', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 531,00', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: '1º Décimo Excedente', options: { color: AMBER, bold: true, align: 'center' } }
+      ],
+      [
+        { text: '8,20%', options: { bold: true } },
+        { text: '+ 0,20%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '2 décimos', options: { align: 'center' } },
+        { text: '- R$ 10,00 (-3,3%)', options: { bold: true, color: AMBER, align: 'right' } },
+        { text: 'R$ 290,00', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 526,00', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: 'Desconto Muito Leve', options: { color: TEXT_MUTED, align: 'center' } }
+      ],
+      [
+        { text: '8,50%', options: { bold: true } },
+        { text: '+ 0,50%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '5 décimos', options: { align: 'center' } },
+        { text: '- R$ 25,00 (-8,3%)', options: { bold: true, color: AMBER, align: 'right' } },
+        { text: 'R$ 275,00', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 511,00', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: 'Desconto Leve', options: { color: AMBER, bold: true, align: 'center' } }
+      ],
+      [
+        { text: '9,00%', options: { bold: true } },
+        { text: '+ 1,00%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '10 décimos', options: { align: 'center' } },
+        { text: '- R$ 50,00 (-16,7%)', options: { bold: true, color: ROSE, align: 'right' } },
+        { text: 'R$ 250,00', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 486,00', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: '+1% Acima da Tolerância', options: { color: TEXT_MUTED, align: 'center' } }
+      ],
+      [
+        { text: '10,00%', options: { bold: true } },
+        { text: '+ 2,00%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '20 décimos', options: { align: 'center' } },
+        { text: '- R$ 100,00 (-33,3%)', options: { bold: true, color: ROSE, align: 'right' } },
+        { text: 'R$ 200,00', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 436,00', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: '+2% Acima da Tolerância', options: { color: TEXT_MUTED, align: 'center' } }
+      ],
+      [
+        { text: '12,00%', options: { bold: true } },
+        { text: '+ 4,00%', options: { color: TEXT_MUTED, align: 'center' } },
+        { text: '40 décimos', options: { align: 'center' } },
+        { text: '- R$ 200,00 (-66,7%)', options: { bold: true, color: ROSE, align: 'right' } },
+        { text: 'R$ 100,00', options: { align: 'right' } },
+        { text: '+ R$ 236,00', options: { align: 'center' } },
+        { text: 'R$ 336,00', options: { bold: true, color: TEXT_DARK, align: 'right' } },
+        { text: '+4% Acima da Tolerância', options: { color: ROSE, bold: true, align: 'center' } }
+      ],
+      [
+        { text: '≥ 14,00% (Teto)', options: { bold: true, color: ROSE, fill: { color: 'FEF2F2' } } },
+        { text: '+ 6,00%+', options: { color: ROSE, align: 'center', fill: { color: 'FEF2F2' } } },
+        { text: '60 décimos', options: { align: 'center', fill: { color: 'FEF2F2' } } },
+        { text: '- R$ 300,00 (-100%)', options: { bold: true, color: ROSE, align: 'right', fill: { color: 'FEF2F2' } } },
+        { text: 'R$ 0,00', options: { bold: true, color: TEXT_MUTED, align: 'right', fill: { color: 'FEF2F2' } } },
+        { text: '+ R$ 236,00', options: { color: EMERALD, bold: true, align: 'center', fill: { color: 'FEF2F2' } } },
+        { text: 'R$ 236,00', options: { bold: true, color: TEXT_DARK, align: 'right', fill: { color: 'FEE2E2' } } },
+        { text: 'Desconto Máx. (Garante Cesta)', options: { bold: true, color: '991B1B', align: 'center', fill: { color: 'FEF2F2' } } }
+      ]
+    ];
+
+    slide.addTable(tableRows as any, {
+      x: 0.65, y: 3.12, w: 12.03, h: 3.82,
+      fontSize: 10,
+      border: { pt: 0.8, color: BORDER_COLOR },
+      fill: { color: CARD_BG }
+    });
+  }
+
+  // ==========================================
+  // SLIDE 6: ISENÇÃO DO ECOBM
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -354,7 +507,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 6: PARADAS DE LIMPEZA E REGRA DE RANKING & BÔNUS
+  // SLIDE 7: PARADAS DE LIMPEZA E REGRA DE RANKING & BÔNUS
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -392,7 +545,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 7: CORTE DE FITA
+  // SLIDE 8: CORTE DE FITA
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -424,7 +577,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 8: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE
+  // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -477,7 +630,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
+  // SLIDE 10: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -539,7 +692,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 10: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
+  // SLIDE 11: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -590,7 +743,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 11: INFORMAÇÃO FALSA (-100%)
+  // SLIDE 12: INFORMAÇÃO FALSA (-100%)
   // ==========================================
   {
     const slide = pptx.addSlide();
@@ -621,7 +774,7 @@ export const exportBonusRulesPptx = async () => {
   }
 
   // ==========================================
-  // SLIDE 12: CONCLUSÃO & 5 CHAVES (CENTRALIZADAS NO MEIO DA TELA)
+  // SLIDE 13: CONCLUSÃO & 5 CHAVES (CENTRALIZADAS NO MEIO DA TELA)
   // ==========================================
   {
     const slide = pptx.addSlide();

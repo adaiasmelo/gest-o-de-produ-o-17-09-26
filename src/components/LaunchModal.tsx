@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap, Target, CheckCircle2 } from 'lucide-react';
-import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation } from '../types';
+import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation, EcoBItem } from '../types';
 import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives } from '../constants/downtimeReasons';
 import { StopItemCard } from './StopItemCard';
@@ -407,6 +407,49 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
   const processoMinCalculado = useMemo(() => calcTotalMinutes(processoStops), [processoStops]);
   const outrosMinCalculado = useMemo(() => calcTotalMinutes(outrosStops), [outrosStops]);
 
+  // Eco B Produção (Múltiplos Lançamentos com Caixinha de Desconto de Bônus)
+  const [ecoBPItems, setEcoBPItems] = useState<EcoBItem[]>([
+    { id: 'ecobp-init', type: 'producao', weightKg: 0, motivo: '', countForBonusDiscount: true }
+  ]);
+
+  const ecoBPTotalCalculado = useMemo(() => {
+    return ecoBPItems.reduce((sum, i) => sum + (Number(i.weightKg) || 0), 0);
+  }, [ecoBPItems]);
+
+  const ecoBPDiscountTotalCalculado = useMemo(() => {
+    return ecoBPItems
+      .filter(i => i.countForBonusDiscount)
+      .reduce((sum, i) => sum + (Number(i.weightKg) || 0), 0);
+  }, [ecoBPItems]);
+
+  const ecoBPExemptTotalCalculado = useMemo(() => {
+    return Math.max(0, ecoBPTotalCalculado - ecoBPDiscountTotalCalculado);
+  }, [ecoBPTotalCalculado, ecoBPDiscountTotalCalculado]);
+
+  const handleAddEcoBPItem = () => {
+    const newItem: EcoBItem = {
+      id: `ecobp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      type: 'producao',
+      weightKg: 0,
+      motivo: '',
+      countForBonusDiscount: true
+    };
+    setEcoBPItems(prev => [...prev, newItem]);
+  };
+
+  const handleUpdateEcoBPItem = (id: string, field: keyof EcoBItem, value: any) => {
+    setEcoBPItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const handleRemoveEcoBPItem = (id: string) => {
+    setEcoBPItems(prev => {
+      if (prev.length <= 1) {
+        return [{ id: `ecobp-${Date.now()}`, type: 'producao', weightKg: 0, motivo: '', countForBonusDiscount: true }];
+      }
+      return prev.filter(item => item.id !== id);
+    });
+  };
+
   const [opSearchTerm, setOpSearchTerm] = useState('');
   const [isOpDropdownOpen, setIsOpDropdownOpen] = useState(false);
 
@@ -657,8 +700,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         (formData.tara > 0) || 
         (formData.netWeight > 0) || 
         (formData.ecoA > 0) || 
-        (formData.ecoBP > 0) || 
         (formData.ecoBM > 0) || 
+        ecoBPItems.some(i => (i.weightKg || 0) > 0 || Boolean(i.motivo)) ||
         (formData.borraTotal > 0) || 
         materials.some(m => (m.volumes || 0) > 0 || (m.tubetes || 0) > 0) ||
         manutencaoStops.length > 0 ||
@@ -690,6 +733,34 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       setManutencaoStops(parseMotivo(initialData.manutencaoMotivo, initialData.manutencaoMin));
       setProcessoStops(parseMotivo(initialData.processoMotivo, initialData.processoMin));
       setOutrosStops(parseMotivo(initialData.outrosMotivo, initialData.outrosMin));
+
+      // Inicializa Eco B Produção (Múltiplos Lançamentos)
+      if (initialData.ecoBItems && Array.isArray(initialData.ecoBItems) && initialData.ecoBItems.length > 0) {
+        const prodItems = initialData.ecoBItems.filter(i => i.type === 'producao' || !i.type);
+        setEcoBPItems(prodItems.length > 0 ? prodItems : [{
+          id: `ecobp-${Date.now()}`,
+          type: 'producao',
+          weightKg: initialData.ecoBP || 0,
+          motivo: (initialData.ecoBPMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, ''),
+          countForBonusDiscount: initialData.ecoBPDiscountKg !== undefined ? initialData.ecoBPDiscountKg > 0 : true
+        }]);
+      } else if ((initialData.ecoBP || 0) > 0 || initialData.ecoBPMotivo) {
+        setEcoBPItems([{
+          id: `ecobp-${Date.now()}`,
+          type: 'producao',
+          weightKg: initialData.ecoBP || 0,
+          motivo: (initialData.ecoBPMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, ''),
+          countForBonusDiscount: initialData.ecoBPDiscountKg !== undefined ? initialData.ecoBPDiscountKg > 0 : true
+        }]);
+      } else {
+        setEcoBPItems([{
+          id: `ecobp-${Date.now()}`,
+          type: 'producao',
+          weightKg: 0,
+          motivo: '',
+          countForBonusDiscount: true
+        }]);
+      }
 
       const initMats = initialData.materials && initialData.materials.length > 0 
         ? initialData.materials 
@@ -792,6 +863,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       }
       setProcessoStops([]);
       setOutrosStops([]);
+      setEcoBPItems([{
+        id: `ecobp-${Date.now()}`,
+        type: 'producao',
+        weightKg: 0,
+        motivo: '',
+        countForBonusDiscount: true
+      }]);
       setMaterials([{
         id: `mat-init-${Date.now()}`,
         materialType: 'LC3',
@@ -999,11 +1077,46 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       const finalProcessoMotivo = isCurrent ? (processoStops.length > 0 ? JSON.stringify(sanitizeStops(processoStops)) : '') : data.processoMotivo;
       const finalOutrosMotivo = isCurrent ? (outrosStops.length > 0 ? JSON.stringify(sanitizeStops(outrosStops)) : '') : data.outrosMotivo;
 
+      const finalEcoBP = isCurrent
+        ? (ecoBPItems.length > 0 ? ecoBPTotalCalculado : (Number(data.ecoBP) || 0))
+        : (Number(data.ecoBP) || 0);
+
+      const finalEcoBM = Number(data.ecoBM) || 0;
+
+      const finalEcoBPDiscountKg = isCurrent
+        ? (ecoBPItems.length > 0 ? ecoBPDiscountTotalCalculado : (Number(data.ecoBPDiscountKg) !== undefined ? Number(data.ecoBPDiscountKg) : (Number(data.ecoBP) || 0)))
+        : (Number(data.ecoBPDiscountKg) !== undefined ? Number(data.ecoBPDiscountKg) : (Number(data.ecoBP) || 0));
+
+      const finalEcoBPMotivo = isCurrent && ecoBPItems.length > 0
+        ? ecoBPItems.filter(i => (Number(i.weightKg) > 0 || i.motivo)).map(i => `${i.motivo || 'Eco B Produção'}${i.explicacao ? ` (${i.explicacao})` : ''} [${i.weightKg}kg${!i.countForBonusDiscount ? ' - ISENTO BÔNUS' : ''}]`).join(' • ') || data.ecoBPMotivo
+        : data.ecoBPMotivo;
+
+      const finalEcoBMMotivo = data.ecoBMMotivo || '';
+
+      const compiledEcoBItems: EcoBItem[] = isCurrent
+        ? [
+            ...ecoBPItems.filter(i => Number(i.weightKg) > 0 || i.motivo),
+            ...(finalEcoBM > 0 || finalEcoBMMotivo ? [{
+              id: 'ecobm-fixed',
+              type: 'manutencao' as const,
+              weightKg: finalEcoBM,
+              motivo: finalEcoBMMotivo || 'Manutenção',
+              countForBonusDiscount: false
+            }] : [])
+          ]
+        : ((data as any).ecoBItems || []);
+
       const baseWithStops = {
         ...data,
         kgPerHour: Number(data.kgPerHour) || 0,
         lossTolerancePercent: Number(data.lossTolerancePercent) || 8,
         shift: normalizeExtrusionShift(data.shift),
+        ecoBP: finalEcoBP,
+        ecoBM: finalEcoBM,
+        ecoBPDiscountKg: finalEcoBPDiscountKg,
+        ecoBPMotivo: finalEcoBPMotivo,
+        ecoBMMotivo: finalEcoBMMotivo,
+        ecoBItems: compiledEcoBItems,
         manutencaoMin: finalManutencaoMin,
         processoMin: finalProcessoMin,
         outrosMin: finalOutrosMin,
@@ -1034,6 +1147,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         ecoA: 0,
         ecoBP: 0,
         ecoBM: 0,
+        ecoBPDiscountKg: 0,
+        ecoBItems: [],
         borraTotal: 0,
         ecoAMotivo: '',
         ecoBPMotivo: '',
@@ -1057,6 +1172,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         ecoA: 0,
         ecoBP: 0,
         ecoBM: 0,
+        ecoBPDiscountKg: 0,
+        ecoBItems: [],
         borraTotal: 0,
         ecoAMotivo: '',
         ecoBPMotivo: '',
@@ -1076,6 +1193,8 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         ecoA: 0,
         ecoBP: 0,
         ecoBM: 0,
+        ecoBPDiscountKg: 0,
+        ecoBItems: [],
         borraTotal: 0,
         ecoAMotivo: '',
         ecoBPMotivo: '',
@@ -1849,7 +1968,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
             const netKg = Number(formData.netWeight) || 0;
             // Regra: ECOBM (Manutenção) é isento e NÃO conta como perda para a meta do operador!
-            const realLossesKg = (Number(formData.ecoA) || 0) + (Number(formData.ecoBP) || 0) + (Number(formData.borraTotal) || 0);
+            // Regra: Apenas ECOBP marcado para desconto no bônus é contabilizado para a tolerância de 8% do operador!
+            const discountableEcoBP = ecoBPDiscountTotalCalculado;
+            const realLossesKg = (Number(formData.ecoA) || 0) + discountableEcoBP + (Number(formData.borraTotal) || 0);
             const ecoBMKg = Number(formData.ecoBM) || 0;
             const totalProcessed = netKg + realLossesKg;
             const realLossPct = totalProcessed > 0 ? (realLossesKg / totalProcessed) * 100 : (theoretical12h > 0 ? (realLossesKg / theoretical12h) * 100 : 0);
@@ -2015,6 +2136,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                       <div className="flex items-center justify-between text-[7.5px] text-slate-500 font-semibold pt-0.5">
                         <span>🛡️ EcoBM (Manutenção): <strong>{formatWeight(ecoBMKg)}</strong></span>
                         <span className="text-emerald-700 font-black uppercase text-[7px] bg-emerald-50 px-1 rounded border border-emerald-200">Isento da Meta</span>
+                      </div>
+                    )}
+
+                    {ecoBPExemptTotalCalculado > 0 && (
+                      <div className="flex items-center justify-between text-[7.5px] text-slate-500 font-semibold pt-0.5">
+                        <span>🛡️ EcoBP Isento (Supervisor/Ajuste): <strong>{formatWeight(ecoBPExemptTotalCalculado)}</strong></span>
+                        <span className="text-emerald-700 font-black uppercase text-[7px] bg-emerald-50 px-1 rounded border border-emerald-200">Não Desconta Bônus</span>
                       </div>
                     )}
 
@@ -2523,39 +2651,215 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     )}
                   </div>
 
-                  {/* Card Eco B (Reciclagem) */}
-                  <div className="p-2.5 bg-orange-50/50 border border-orange-100 rounded-xl space-y-2 shrink-0">
-                    <div className="flex items-center gap-1.5 text-orange-700 font-black text-[10px] uppercase tracking-widest">
-                      <Layers size={13} /> Reciclagem Eco B (Kg)
-                    </div>
-                    <div className="space-y-2">
-                      <EcoBReasonCard
-                        label="Eco B (P)"
-                        weightName="ecoBP"
-                        motivoName="ecoBPMotivo"
-                        categoryName="ecoBPCategory"
-                        categoryValue={formData.ecoBPCategory || ''}
-                        weightValue={formData.ecoBP || 0}
-                        motivoValue={formData.ecoBPMotivo || ''}
-                        onWeightChange={handleChange}
-                        onMotivoChange={handleMotivoChange}
-                        onCategoryChange={(field, val) => setFormData(prev => ({ ...prev, [field]: val }))}
-                        loggedUserName={formData.operator || 'Sistema'}
-                      />
+                  {/* Card Eco B (Reciclagem e Perdas Detalhadas) */}
+                  <div className="p-2.5 bg-orange-50/50 border border-orange-200 rounded-xl space-y-2.5 shrink-0">
+                    <div className="flex items-center justify-between gap-1 flex-wrap border-b border-orange-200/80 pb-1.5">
+                      <div className="flex items-center gap-1.5 text-orange-800 font-black text-[10px] uppercase tracking-wider">
+                        <Layers size={13} className="text-orange-600" />
+                        <span>Lançamentos de Eco B (Kg)</span>
+                        {(ecoBPTotalCalculado > 0 || (Number(formData.ecoBM) || 0) > 0) && (
+                          <span className="bg-orange-200/80 text-orange-900 px-1.5 py-0.2 rounded-full text-[9px] font-bold">
+                            Total Geral: {ecoBPTotalCalculado + (Number(formData.ecoBM) || 0)} kg
+                          </span>
+                        )}
+                      </div>
 
-                      <EcoBReasonCard
-                        label="Eco B (M)"
-                        weightName="ecoBM"
-                        motivoName="ecoBMMotivo"
-                        categoryName="ecoBMCategory"
-                        categoryValue={formData.ecoBMCategory || ''}
-                        weightValue={formData.ecoBM || 0}
-                        motivoValue={formData.ecoBMMotivo || ''}
-                        onWeightChange={handleChange}
-                        onMotivoChange={handleMotivoChange}
-                        onCategoryChange={(field, val) => setFormData(prev => ({ ...prev, [field]: val }))}
-                        loggedUserName={formData.operator || 'Sistema'}
-                      />
+                      <button
+                        type="button"
+                        onClick={handleAddEcoBPItem}
+                        className="inline-flex items-center gap-1 text-[8.5px] font-black text-amber-900 hover:text-amber-950 uppercase bg-amber-200/90 hover:bg-amber-300 border border-amber-400 px-2 py-0.5 rounded-lg shadow-2xs cursor-pointer transition-all"
+                        title="Adicionar novo lançamento de Eco B Produção"
+                      >
+                        <Plus size={10} /> + Lançamento Eco B (P)
+                      </button>
+                    </div>
+
+                    {/* BLOCO 1: ECO B PRODUÇÃO (Múltiplos Lançamentos) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase text-amber-900">
+                        <span className="flex items-center gap-1">
+                          <span>📦 Eco B Produção</span>
+                          <span className="text-[8px] font-bold px-1.5 py-0.2 bg-amber-100 border border-amber-300 rounded text-amber-800">
+                            {ecoBPItems.length} {ecoBPItems.length === 1 ? 'item' : 'itens'}
+                          </span>
+                        </span>
+                        <span className="text-[8px] text-amber-700 font-semibold normal-case">
+                          Selecione na caixinha o que desconta ou isenta no bônus
+                        </span>
+                      </div>
+
+                      {ecoBPItems.map((item, idx) => (
+                        <div 
+                          key={item.id}
+                          className="p-2.5 rounded-xl border border-amber-200/90 bg-white space-y-2 shadow-2xs transition-all"
+                        >
+                          {/* Topo do item: Índice, Peso e Botão Excluir */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                Eco B (P) #{idx + 1}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={item.weightKg || ''}
+                                  onChange={(e) => handleUpdateEcoBPItem(item.id, 'weightKg', parseFloat(e.target.value) || 0)}
+                                  placeholder="0"
+                                  className="w-20 bg-slate-50 border border-slate-300 rounded-lg px-2 py-0.5 text-xs font-black text-slate-800 text-right focus:bg-white focus:ring-1 focus:ring-amber-400 outline-none h-6"
+                                />
+                                <span className="text-[10px] font-bold text-slate-400">Kg</span>
+                              </div>
+                              {ecoBPItems.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveEcoBPItem(item.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                  title="Excluir este lançamento de Eco B Produção"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Motivo / Justificativa com biblioteca salva */}
+                          <div className="space-y-1">
+                            <label className="text-[8.5px] font-black text-slate-600 uppercase flex items-center justify-between">
+                              <span>✍️ Motivo / Justificativa da Perda:</span>
+                              <span className="text-[7.5px] text-amber-700 font-semibold normal-case">
+                                escolha da lista ou digite e salve
+                              </span>
+                            </label>
+                            <ReasonInputWithSave
+                              category="extrusao_ecobp"
+                              value={(item.motivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '')}
+                              onChange={(val) => handleUpdateEcoBPItem(item.id, 'motivo', val)}
+                              placeholder="Descreva o motivo (ex: ajuste de bobina, troca de micragem, acerto de velocidade...)"
+                              loggedUserName={formData.operator || 'Sistema'}
+                              hideLabel={true}
+                              inputClassName="!py-1.5 !text-[11px]"
+                            />
+                          </div>
+
+                          {/* CAIXINHA DE SELEÇÃO: Contar para desconto no bônus */}
+                          <label className={`flex items-start gap-2.5 p-2 rounded-xl border text-xs cursor-pointer select-none transition-all ${
+                            item.countForBonusDiscount
+                              ? 'bg-amber-50/90 border-amber-300 text-amber-950 hover:bg-amber-100/50'
+                              : 'bg-emerald-50/90 border-emerald-300 text-emerald-950 hover:bg-emerald-100/50'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={item.countForBonusDiscount}
+                              onChange={(e) => handleUpdateEcoBPItem(item.id, 'countForBonusDiscount', e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-1.5 font-black text-[10px]">
+                                {item.countForBonusDiscount ? (
+                                  <>
+                                    <span className="text-amber-800">⚠️ Descontar no Bônus de Produção</span>
+                                    <span className="text-[8px] px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 font-black uppercase">Entra nos 8%</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-emerald-700 font-black">✅ Isento de Desconto no Bônus de Produção</span>
+                                    <span className="text-[8px] px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900 font-black uppercase">NÃO desconta</span>
+                                  </>
+                                )}
+                              </div>
+                              <p className="text-[9px] text-slate-500 font-medium mt-0.5 leading-tight">
+                                {item.countForBonusDiscount 
+                                  ? 'Este valor será contado para desconto na meta de 8% do bônus do operador.' 
+                                  : 'Perda não relacionada ao operador (ex: acerto do supervisor, ajuste técnico, troca de micragem). Não desconta do bônus!'}
+                              </p>
+                            </div>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* BLOCO 2: ECO B MANUTENÇÃO (Entrada Fixa • 100% Isento) */}
+                    <div className="p-2.5 rounded-xl border border-purple-200/90 bg-white space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-300">
+                            🔧 Eco B Manutenção
+                          </span>
+                          <span className="text-[8px] font-bold px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded">
+                            Entrada Fixa • 100% Isento
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            name="ecoBM"
+                            value={formData.ecoBM || ''}
+                            onChange={handleChange}
+                            placeholder="0"
+                            className="w-20 bg-slate-50 border border-purple-300 rounded-lg px-2 py-0.5 text-xs font-black text-purple-950 text-right focus:bg-white focus:ring-1 focus:ring-purple-400 outline-none h-6"
+                          />
+                          <span className="text-[10px] font-bold text-slate-400">Kg</span>
+                        </div>
+                      </div>
+
+                      {/* Motivo de Manutenção com biblioteca salva */}
+                      <div className="space-y-1">
+                        <label className="text-[8.5px] font-black text-purple-900 uppercase flex items-center justify-between">
+                          <span>✍️ Justificativa de Manutenção:</span>
+                          <span className="text-[7.5px] text-purple-600 font-semibold normal-case">
+                            partida de máquina ou mecânica/elétrica
+                          </span>
+                        </label>
+                        <ReasonInputWithSave
+                          category="extrusao_ecobm"
+                          value={(formData.ecoBMMotivo || '').replace(/^\[[^\]]+\]\s*:?\s*/, '')}
+                          onChange={(val) => {
+                            setFormData(prev => ({
+                              ...prev,
+                              ecoBMMotivo: val
+                            }));
+                          }}
+                          placeholder="Descreva o motivo de manutenção..."
+                          loggedUserName={formData.operator || 'Sistema'}
+                          hideLabel={true}
+                          inputClassName="!py-1.5 !text-[11px]"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-[9.5px] font-medium">
+                        <CheckCircle2 size={12} className="text-purple-600 shrink-0" />
+                        <span>O Eco B Manutenção possui apenas uma entrada fixa e é sempre 100% isento, sem penalidade no bônus do operador.</span>
+                      </div>
+                    </div>
+
+                    {/* Subtotal Informativo */}
+                    <div className="p-2 bg-white rounded-xl border border-orange-200/80 text-[9.5px] space-y-1 shadow-2xs">
+                      <div className="flex justify-between items-center text-slate-700 font-bold">
+                        <span>Eco B Produção Total:</span>
+                        <span className="text-amber-700 font-black">{ecoBPTotalCalculado} Kg</span>
+                      </div>
+                      {ecoBPTotalCalculado > 0 && (
+                        <div className="flex justify-between items-center text-[8.5px] pl-2 border-l-2 border-amber-300 text-slate-500">
+                          <span>• Sujeito a Desconto no Bônus: <strong className="text-amber-800">{ecoBPDiscountTotalCalculado} Kg</strong></span>
+                          <span>• Isento de Desconto: <strong className="text-emerald-700">{ecoBPExemptTotalCalculado} Kg</strong></span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center text-slate-700 font-bold">
+                        <span>Eco B Manutenção (Isento):</span>
+                        <span className="text-purple-700 font-black">{Number(formData.ecoBM) || 0} Kg</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-100 text-[10px] font-black text-slate-800">
+                        <span>Total Eco B Geral (Relatórios & Outlook):</span>
+                        <span className="text-orange-600">{ecoBPTotalCalculado + (Number(formData.ecoBM) || 0)} Kg</span>
+                      </div>
                     </div>
                   </div>
 

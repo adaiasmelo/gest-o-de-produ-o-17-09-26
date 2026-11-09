@@ -7,7 +7,7 @@ import {
   X, Info, Layers, AlertOctagon, HelpCircle, FileSpreadsheet,
   SlidersHorizontal, HardHat, Briefcase, Palmtree, Download,
   ExternalLink, Check, DollarSign, Activity, Zap,
-  Timer, Gauge, Scale, Sparkles, CheckSquare, Wrench, PlayCircle, LogOut, MonitorPlay
+  Timer, Gauge, Scale, Sparkles, CheckSquare, Wrench, PlayCircle, LogOut, MonitorPlay, Pencil
 } from 'lucide-react';
 import { Employee, RibbonCuttingEntry } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -106,6 +106,7 @@ interface ProductionBonusManagerProps {
   loggedUser?: { username?: string; name?: string; role?: string } | null;
   dashboardMonth?: string;
   onMonthChange?: (month: string) => void;
+  wasteLimit?: number;
 }
 
 const MONTH_NAMES = [
@@ -171,8 +172,10 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   onBlockedAction,
   loggedUser,
   dashboardMonth,
-  onMonthChange
+  onMonthChange,
+  wasteLimit
 }) => {
+  const effectiveWasteLimit = wasteLimit !== undefined ? wasteLimit : 8.0;
   // Navigation tabs: 'overview' | 'teams_evolution' | 'payroll' | 'incidents'
   const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents'>('overview');
 
@@ -232,6 +235,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   const [isIncidentModalOpen, setIsIncidentModalOpen] = useState(false);
   const [editingIncident, setEditingIncident] = useState<BonusIncident | null>(null);
   const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<Employee | null>(null);
+  const [selectedEmployeeForIncidents, setSelectedEmployeeForIncidents] = useState<any | null>(null);
   const [isPresentationOpen, setIsPresentationOpen] = useState(false);
 
   // Form State for Incident
@@ -397,7 +401,14 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       const evaluatedEcoA = ecoAPct > 8 ? rawEcoA : 0;
 
       // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
-      const evaluatedLoss = (Number(e.borraTotal) || 0) + evaluatedEcoA + (Number(e.ecoBP) || 0);
+      // Regra: Apenas ECOBP com desconto ativado conta para perda do operador na meta!
+      const discountEcoBP = e.ecoBPDiscountKg !== undefined
+        ? Number(e.ecoBPDiscountKg)
+        : (Array.isArray(e.ecoBItems) && e.ecoBItems.length > 0
+            ? e.ecoBItems.filter(i => i.type === 'producao' && i.countForBonusDiscount).reduce((s, i) => s + (Number(i.weightKg) || 0), 0)
+            : Number(e.ecoBP) || 0);
+
+      const evaluatedLoss = (Number(e.borraTotal) || 0) + evaluatedEcoA + discountEcoBP;
       map[key].totalLoss += evaluatedLoss;
 
       // Avaliação de Paradas:
@@ -483,7 +494,13 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       acc[e.operator][m].netProd += (e.netWeight || 0);
       const entryEcoA = e.ecoA || 0;
       // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
-      const entryEcoB = e.ecoBP || 0; // apenas ECOBP de produção
+      // Regra: Apenas ECOBP com desconto ativado conta como refugo do operador na meta!
+      const entryDiscountEcoBP = e.ecoBPDiscountKg !== undefined
+        ? Number(e.ecoBPDiscountKg)
+        : (Array.isArray(e.ecoBItems) && e.ecoBItems.length > 0
+            ? e.ecoBItems.filter(i => i.type === 'producao' && i.countForBonusDiscount).reduce((s, i) => s + (Number(i.weightKg) || 0), 0)
+            : Number(e.ecoBP) || 0);
+      const entryEcoB = entryDiscountEcoBP; // apenas ECOBP de produção sujeito a desconto
       const entryBorra = e.borraTotal || 0;
       acc[e.operator][m].waste += (entryEcoA + entryEcoB + entryBorra);
       acc[e.operator][m].ecoA += entryEcoA;
@@ -606,9 +623,21 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
     if (!found) return null;
 
-    const discountPct = wasteRange === 0 ? 0 : ((found.averageWasteIdx - minWaste) / wasteRange) * 100;
-    const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
-    const lossAmt = metaMensalBonus * (discountPct / 100);
+    const wasteIdx = found.averageWasteIdx || 0;
+    let discountPct = 0;
+    let lossAmt = 0;
+
+    // Regra Oficial de Desconto Linear dos Décimos:
+    // Se perda <= effectiveWasteLimit%: 0% de desconto (R$ 0,00). Totalmente isento dentro da meta.
+    // Se perda > effectiveWasteLimit%: Desconto linear de R$ 5,00 por décimo (0,10%) que passar de effectiveWasteLimit%.
+    if (wasteIdx > effectiveWasteLimit) {
+      const excessPoints = wasteIdx - effectiveWasteLimit;
+      const tenths = excessPoints / 0.1;
+      lossAmt = Math.min(metaMensalBonus, Math.max(0, tenths * 5.0));
+      discountPct = metaMensalBonus > 0 ? (lossAmt / metaMensalBonus) * 100 : 0;
+    }
+
+    const bonusAmt = Math.max(0, metaMensalBonus - lossAmt);
 
     return {
       ...found,
@@ -731,9 +760,10 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       let perfLossAmount = 0;
       if (perf && perf.discountPct > 0) {
         perfDiscountPct = perf.discountPct;
-        perfLossAmount = (baseAmount * perfDiscountPct) / 100;
+        perfLossAmount = perf.lossAmt || ((baseAmount * perfDiscountPct) / 100);
         totalDeductionPercent += perfDiscountPct;
-        reasonsList.push(`Desconto Linear Desempenho Extrusão (${perf.discountPct.toFixed(1)}% - Perda: ${perf.averageWasteIdx.toFixed(2)}% | -${formatBRL(perfLossAmount)})`);
+        const excessPts = Math.max(0, perf.averageWasteIdx - 8.0);
+        reasonsList.push(`Desconto Linear Perdas >8% (Perda: ${perf.averageWasteIdx.toFixed(2)}% • Excesso: +${excessPts.toFixed(2)}% • R$ 5/décimo | -${formatBRL(perfLossAmount)})`);
       }
 
       totalDeductionPercent = Math.min(100, Math.max(0, totalDeductionPercent));
@@ -764,26 +794,29 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   const autoPerformanceIncidents = useMemo(() => {
     return payrollData
       .filter(item => item.perf && item.perf.discountPct > 0)
-      .map(item => ({
-        id: `auto_perf_${item.employee.id}_${selectedCycle}`,
-        employeeId: item.employee.id,
-        employeeName: item.employee.name,
-        registration: item.employee.registration,
-        sector: item.employee.sector || 'Extrusão',
-        machine: item.employee.machine || 'Cast',
-        shift: item.employee.shift || 'Todos',
-        type: 'meta_maquina_nao_atingida' as BonusIncidentType,
-        date: `${selectedCycle}-01`,
-        cyclePeriod: selectedCycle,
-        description: `Desconto Linear Histórico de Equipe: Coeficiente de Perda de ${item.perf!.averageWasteIdx.toFixed(2)}% (Descarte Acum.: ${formatWeight(item.perf!.totalWaste)} | Borra: ${formatWeight(item.perf!.totalBorra)}) gerando perda de ${formatBRL(item.perfLossAmount)} (${item.perf!.discountPct.toFixed(1)}% de desconto).`,
-        documentNumber: 'BI-DESEMPENHO',
-        documentDetails: `Produção: ${formatWeight(item.perf!.totalProd)} | Histórico: ${item.perf!.monthsActive} meses`,
-        isJustified: false,
-        penaltyRatePercent: Number(item.perf!.discountPct.toFixed(1)),
-        registeredBy: 'Automático (Evolução Histórica BI)',
-        isAutomatic: true,
-        createdAt: new Date().toISOString()
-      }));
+      .map(item => {
+        const excessPts = Math.max(0, item.perf!.averageWasteIdx - effectiveWasteLimit);
+        return {
+          id: `auto_perf_${item.employee.id}_${selectedCycle}`,
+          employeeId: item.employee.id,
+          employeeName: item.employee.name,
+          registration: item.employee.registration,
+          sector: item.employee.sector || 'Extrusão',
+          machine: item.employee.machine || 'Cast',
+          shift: item.employee.shift || 'Todos',
+          type: 'meta_maquina_nao_atingida' as BonusIncidentType,
+          date: `${selectedCycle}-01`,
+          cyclePeriod: selectedCycle,
+          description: `Desconto Linear por Excesso de Perdas (>${effectiveWasteLimit.toFixed(1).replace('.', ',')}%): Coeficiente de ${item.perf!.averageWasteIdx.toFixed(2)}% (excesso de +${excessPts.toFixed(2)}% acima da meta), gerando desconto linear de R$ 5,00 por décimo excedente (-${formatBRL(item.perfLossAmount)} / ${item.perf!.discountPct.toFixed(1)}%).`,
+          documentNumber: 'BI-DESEMPENHO',
+          documentDetails: `Produção: ${formatWeight(item.perf!.totalProd)} | Histórico: ${item.perf!.monthsActive} meses`,
+          isJustified: false,
+          penaltyRatePercent: Number(item.perf!.discountPct.toFixed(1)),
+          registeredBy: 'Automático (Evolução Histórica BI)',
+          isAutomatic: true,
+          createdAt: new Date().toISOString()
+        };
+      });
   }, [payrollData, selectedCycle]);
 
   const combinedIncidents = useMemo(() => {
@@ -858,28 +891,56 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     setIsIncidentModalOpen(true);
   };
 
-  // Save Incident
-  const handleSaveIncident = () => {
+  // Open incident edit modal
+  const handleOpenEditIncident = (inc: BonusIncident) => {
+    if (isReadOnly && onBlockedAction) {
+      onBlockedAction();
+      return;
+    }
+    setEditingIncident(inc);
+    if (inc.targetMachine || inc.type === 'meta_maquina_nao_atingida') {
+      setFormMode('machine');
+      setTargetMachine(inc.targetMachine || inc.machine || 'Cast 1');
+      setTargetShift(inc.targetShift || inc.shift || 'Todos');
+    } else {
+      setFormMode('individual');
+      setTargetEmployeeId(inc.employeeId || '');
+      setTargetMachine(inc.machine || 'Cast 1');
+      setTargetShift(inc.shift || 'Todos');
+    }
+    setIncidentType(inc.type);
+    setIncidentDate(inc.date || new Date().toISOString().split('T')[0]);
+    setIncidentDescription(inc.description || '');
+    setDocumentNumber(inc.documentNumber || '');
+    setDocumentDetails(inc.documentDetails || '');
+    setIsJustified(inc.isJustified ?? false);
+    setNotifiedManager(inc.notifiedManager ?? true);
+    setCustomPenaltyPercent(inc.penaltyRatePercent ?? 100);
+    setIsIncidentModalOpen(true);
+  };
+
+  // Save Incident (Create or Update)
+  const handleSaveIncident = async () => {
     if (isReadOnly && onBlockedAction) {
       onBlockedAction();
       return;
     }
 
     if (formMode === 'individual') {
-      const emp = activeEmployees.find(e => e.id === targetEmployeeId);
-      if (!emp) {
+      const emp = activeEmployees.find(e => e.id === targetEmployeeId) || employees.find(e => e.id === targetEmployeeId);
+      if (!emp && !editingIncident) {
         alert('Selecione um colaborador válido.');
         return;
       }
 
       const newInc: BonusIncident = {
         id: editingIncident ? editingIncident.id : `inc_${Date.now()}`,
-        employeeId: emp.id,
-        employeeName: emp.name,
-        registration: emp.registration,
-        sector: emp.sector,
-        machine: emp.machine,
-        shift: emp.shift,
+        employeeId: emp ? emp.id : (editingIncident?.employeeId || targetEmployeeId),
+        employeeName: emp ? emp.name : (editingIncident?.employeeName || 'Colaborador'),
+        registration: emp ? emp.registration : editingIncident?.registration,
+        sector: emp ? emp.sector : (editingIncident?.sector || 'Extrusão'),
+        machine: emp ? emp.machine : editingIncident?.machine,
+        shift: emp ? emp.shift : editingIncident?.shift,
         type: incidentType,
         date: incidentDate,
         cyclePeriod: selectedCycle,
@@ -895,9 +956,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       };
 
       if (editingIncident) {
-        persistIncidents(incidents.map(i => i.id === newInc.id ? newInc : i));
+        await persistIncidents(incidents.map(i => i.id === newInc.id ? newInc : i));
       } else {
-        persistIncidents([newInc, ...incidents]);
+        await persistIncidents([newInc, ...incidents]);
       }
     } else {
       // Machine mode
@@ -921,27 +982,30 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       };
 
       if (editingIncident) {
-        persistIncidents(incidents.map(i => i.id === newInc.id ? newInc : i));
+        await persistIncidents(incidents.map(i => i.id === newInc.id ? newInc : i));
       } else {
-        persistIncidents([newInc, ...incidents]);
+        await persistIncidents([newInc, ...incidents]);
       }
     }
 
+    setEditingIncident(null);
     setIsIncidentModalOpen(false);
   };
 
   // Delete incident
-  const handleDeleteIncident = (id: string) => {
+  const handleDeleteIncident = async (id: string) => {
     if (isReadOnly && onBlockedAction) {
       onBlockedAction();
       return;
     }
     if (confirm('Deseja excluir este lançamento de ocorrência?')) {
       const updated = incidents.filter(i => i.id !== id);
-      persistIncidents(updated);
+      await persistIncidents(updated);
       try {
-        deleteDoc(doc(db, 'bonus_incidents', id));
-      } catch {}
+        await deleteDoc(doc(db, 'bonus_incidents', id));
+      } catch (err) {
+        console.error('Erro ao excluir no Firestore:', err);
+      }
     }
   };
 
@@ -1064,7 +1128,13 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       const evaluatedEcoA = ecoAPct > 8 ? rawEcoA : 0;
 
       // Regra estrita: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
-      const evaluatedLosses = evaluatedEcoA + (Number(e.ecoBP) || 0) + (Number(e.borraTotal) || 0);
+      // Regra estrita: Apenas ECOBP com desconto ativado conta como refugo do operador na meta!
+      const discountEcoBP = e.ecoBPDiscountKg !== undefined
+        ? Number(e.ecoBPDiscountKg)
+        : (Array.isArray(e.ecoBItems) && e.ecoBItems.length > 0
+            ? e.ecoBItems.filter(i => i.type === 'producao' && i.countForBonusDiscount).reduce((s, i) => s + (Number(i.weightKg) || 0), 0)
+            : Number(e.ecoBP) || 0);
+      const evaluatedLosses = evaluatedEcoA + discountEcoBP + (Number(e.borraTotal) || 0);
       const ecoBM = Number(e.ecoBM) || 0;
 
       // Avaliação de Paradas:
@@ -1247,7 +1317,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
     doc.text(`Valor Base Estipulado: ${formatBRL(item.baseAmount)}`, 20, summaryStartY + 14);
     
     if (item.perf && item.perf.discountPct > 0) {
-      doc.text(`Desconto Linear de Desempenho (BI): - ${formatBRL(item.perfLossAmount)} (${item.perf.discountPct.toFixed(1)}% desc. | Perda: ${item.perf.averageWasteIdx.toFixed(2)}%)`, 20, summaryStartY + 19);
+      doc.text(`Desconto Linear de Perdas (>${effectiveWasteLimit.toFixed(1).replace('.', ',')}%): - ${formatBRL(item.perfLossAmount)} (${item.perf.discountPct.toFixed(1)}% desc. | Perda: ${item.perf.averageWasteIdx.toFixed(2)}% | R$ 5,00/décimo)`, 20, summaryStartY + 19);
       doc.text(`Percentual de Desconto Total: ${item.totalDeductionPercent.toFixed(1)}% (- ${formatBRL(item.deductionAmount)})`, 20, summaryStartY + 24);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
@@ -1748,7 +1818,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                 {item.personalIncidents.map(inc => (
                                   <span 
                                     key={inc.id} 
-                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded mt-0.5 whitespace-nowrap ${
+                                    onClick={() => canManage && handleOpenEditIncident(inc)}
+                                    title={canManage ? "Clique para editar este apontamento" : undefined}
+                                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 whitespace-nowrap inline-flex items-center gap-1 ${canManage ? 'cursor-pointer hover:ring-1 hover:ring-amber-400 hover:shadow-xs transition-all' : ''} ${
                                       inc.type === 'saida_nao_comunicada' 
                                         ? 'bg-rose-100 text-rose-800 border border-rose-200' 
                                         : inc.type === 'saida_mais_cedo' 
@@ -1760,19 +1832,22 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                                               : 'bg-slate-100 text-slate-700'
                                     }`}
                                   >
-                                    {inc.type === 'informacao_falsa' && '🚨 Informação Falsa (-100%)'}
-                                    {inc.type === 'saida_mais_cedo' && 'Saída Comunicada (-10%)'}
-                                    {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar (-35%)'}
-                                    {inc.type === 'parada_limpeza_nao_realizada' && 'Limpeza Não Realizada (-20% Bônus / -50% Ranking)'}
-                                    {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-20%)'}
-                                    {inc.type === 'partida_demorada' && 'Partida Demorada (-20%)'}
-                                    {inc.type === 'atestado' && 'Atestado (-100%)'}
-                                    {inc.type === 'atraso_injustificado' && 'Atraso (-15%)'}
-                                    {inc.type === 'atraso_justificado' && 'Atraso (-10%)'}
-                                    {inc.type === 'falta_injustificada' && 'Falta Injustificada (-100%)'}
-                                    {inc.type === 'falta_justificada' && 'Falta Justificada (-100%)'}
-                                    {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina (-30%)'}
-                                    {!['informacao_falsa', 'saida_mais_cedo', 'saida_nao_comunicada', 'parada_limpeza_nao_realizada', 'limpeza_excessiva', 'partida_demorada', 'atestado', 'atraso_injustificado', 'atraso_justificado', 'falta_injustificada', 'falta_justificada', 'meta_maquina_nao_atingida'].includes(inc.type) && `${inc.type.replace(/_/g, ' ')} (-${inc.penaltyRatePercent || 0}%)`}
+                                    {canManage && <Pencil className="w-2.5 h-2.5 opacity-60" />}
+                                    <span>
+                                      {inc.type === 'informacao_falsa' && '🚨 Informação Falsa (-100%)'}
+                                      {inc.type === 'saida_mais_cedo' && 'Saída Comunicada (-10%)'}
+                                      {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar (-35%)'}
+                                      {inc.type === 'parada_limpeza_nao_realizada' && 'Limpeza Não Realizada (-20% Bônus / -50% Ranking)'}
+                                      {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min (-20%)'}
+                                      {inc.type === 'partida_demorada' && 'Partida Demorada (-20%)'}
+                                      {inc.type === 'atestado' && 'Atestado (-100%)'}
+                                      {inc.type === 'atraso_injustificado' && 'Atraso (-15%)'}
+                                      {inc.type === 'atraso_justificado' && 'Atraso (-10%)'}
+                                      {inc.type === 'falta_injustificada' && 'Falta Injustificada (-100%)'}
+                                      {inc.type === 'falta_justificada' && 'Falta Justificada (-100%)'}
+                                      {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina (-30%)'}
+                                      {!['informacao_falsa', 'saida_mais_cedo', 'saida_nao_comunicada', 'parada_limpeza_nao_realizada', 'limpeza_excessiva', 'partida_demorada', 'atestado', 'atraso_injustificado', 'atraso_justificado', 'falta_injustificada', 'falta_justificada', 'meta_maquina_nao_atingida'].includes(inc.type) && `${inc.type.replace(/_/g, ' ')} (-${inc.penaltyRatePercent || 0}%)`}
+                                    </span>
                                   </span>
                                 ))}
                                 {item.perf && item.perf.discountPct > 0 && (
@@ -1813,6 +1888,16 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                             >
                               PDF
                             </button>
+                            {item.personalIncidents.length > 0 && canManage && (
+                              <button
+                                onClick={() => setSelectedEmployeeForIncidents(item)}
+                                className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1"
+                                title="Gerenciar / Editar / Excluir Ocorrências deste Colaborador"
+                              >
+                                <Pencil className="w-3 h-3 text-amber-700" />
+                                <span>Ocorrências ({item.personalIncidents.length})</span>
+                              </button>
+                            )}
                             {canManage && (
                               <button
                                 onClick={() => handleOpenAddIncident(emp)}
@@ -1940,13 +2025,22 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                               <span className="text-[10px] text-slate-400 font-bold italic">Integrado BI</span>
                             ) : (
                               canManage && (
-                                <button
-                                  onClick={() => handleDeleteIncident(inc.id)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-                                  title="Excluir Ocorrência"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    onClick={() => handleOpenEditIncident(inc)}
+                                    className="p-1.5 text-slate-500 hover:text-amber-600 rounded-lg hover:bg-amber-50 transition-colors cursor-pointer"
+                                    title="Editar Ocorrência / Apontamento"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteIncident(inc.id)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Excluir Ocorrência"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
                               )
                             )}
                           </td>
@@ -1976,9 +2070,13 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-black text-slate-800 tracking-tight">
-                  Lançar Ocorrência / Apontamento
+                  {editingIncident ? 'Editar Ocorrência / Apontamento' : 'Lançar Ocorrência / Apontamento'}
                 </h3>
-                <p className="text-xs text-slate-500 font-semibold">Ciclo: {selectedCycle}</p>
+                <p className="text-xs text-slate-500 font-semibold">
+                  {editingIncident 
+                    ? `Editando apontamento de: ${editingIncident.employeeName || editingIncident.machine || 'Colaborador'}` 
+                    : `Ciclo: ${selectedCycle}`}
+                </p>
               </div>
               <button
                 onClick={() => setIsIncidentModalOpen(false)}
@@ -2283,12 +2381,150 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
                 onClick={handleSaveIncident}
                 className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer"
               >
-                Salvar Lançamento
+                {editingIncident ? 'Salvar Alterações' : 'Salvar Lançamento'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* MODAL: GERENCIAR OCORRÊNCIAS DO COLABORADOR              */}
+      {/* ======================================================== */}
+      {selectedEmployeeForIncidents && (() => {
+        const currentItem = payrollData.find(p => p.employee.id === selectedEmployeeForIncidents.employee.id) || selectedEmployeeForIncidents;
+        const currentEmp = currentItem.employee;
+        const currentIncidents: BonusIncident[] = currentItem.personalIncidents || [];
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-5 border border-slate-100 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
+                      <FileText className="w-4 h-4" />
+                    </span>
+                    <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                      Ocorrências de {currentEmp.name}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-500 font-semibold mt-1">
+                    Matrícula: {currentEmp.registration} • Função: {currentEmp.role} • Setor: {currentEmp.sector} (Ciclo {selectedCycle})
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedEmployeeForIncidents(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* List of incidents */}
+              <div className="space-y-3">
+                {currentIncidents.length > 0 ? (
+                  currentIncidents.map(inc => (
+                    <div 
+                      key={inc.id}
+                      className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-amber-300 transition-colors"
+                    >
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-700">Data: {inc.date}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                            inc.type === 'saida_nao_comunicada'
+                              ? 'bg-rose-100 text-rose-800 border-rose-200'
+                              : inc.type === 'saida_mais_cedo'
+                                ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                : inc.type === 'parada_limpeza_nao_realizada'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : inc.type === 'limpeza_excessiva'
+                                    ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                    : inc.type === 'atestado'
+                                      ? 'bg-purple-100 text-purple-800 border-purple-200'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}>
+                            {inc.type === 'informacao_falsa' && '🚨 Informação Falsa'}
+                            {inc.type === 'saida_mais_cedo' && 'Saída Comunicada'}
+                            {inc.type === 'saida_nao_comunicada' && 'Saída SEM Avisar'}
+                            {inc.type === 'parada_limpeza_nao_realizada' && 'Limpeza Não Realizada'}
+                            {inc.type === 'limpeza_excessiva' && 'Limpeza > 30 min'}
+                            {inc.type === 'partida_demorada' && 'Partida Demorada'}
+                            {inc.type === 'atestado' && 'Atestado'}
+                            {inc.type === 'atraso_injustificado' && 'Atraso Injustificado'}
+                            {inc.type === 'atraso_justificado' && 'Atraso Justificado'}
+                            {inc.type === 'falta_injustificada' && 'Falta Injustificada'}
+                            {inc.type === 'falta_justificada' && 'Falta Justificada'}
+                            {inc.type === 'meta_maquina_nao_atingida' && 'Meta Máquina'}
+                            {!['informacao_falsa', 'saida_mais_cedo', 'saida_nao_comunicada', 'parada_limpeza_nao_realizada', 'limpeza_excessiva', 'partida_demorada', 'atestado', 'atraso_injustificado', 'atraso_justificado', 'falta_injustificada', 'falta_justificada', 'meta_maquina_nao_atingida'].includes(inc.type) && inc.type.replace(/_/g, ' ')}
+                          </span>
+                          <span className="font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full text-[10px]">
+                            -{inc.penaltyRatePercent ?? 100}% Desconto
+                          </span>
+                        </div>
+                        {inc.description && (
+                          <p className="text-slate-600 font-medium">{inc.description}</p>
+                        )}
+                        {(inc.documentNumber || inc.documentDetails) && (
+                          <p className="text-slate-400 text-[11px] font-mono">
+                            {inc.documentNumber ? `Doc: ${inc.documentNumber}` : ''}
+                            {inc.documentNumber && inc.documentDetails ? ' • ' : ''}
+                            {inc.documentDetails ? `Ref: ${inc.documentDetails}` : ''}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 self-end md:self-center">
+                        <button
+                          onClick={() => {
+                            handleOpenEditIncident(inc);
+                          }}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                          title="Editar Ocorrência"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await handleDeleteIncident(inc.id);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Excluir Ocorrência"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-8 text-center text-slate-400 text-xs font-semibold">
+                    Nenhuma ocorrência registrada para este colaborador no ciclo {selectedCycle}.
+                  </div>
+                )}
+              </div>
+
+              {/* Footer actions */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => handleOpenAddIncident(currentEmp)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4 text-slate-600" />
+                  <span>Adicionar Mais Uma Ocorrência</span>
+                </button>
+                <button
+                  onClick={() => setSelectedEmployeeForIncidents(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Concluir / Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal de Apresentação em Tela Cheia (Estilo PowerPoint) */}
       <BonusRulesPresentationModal

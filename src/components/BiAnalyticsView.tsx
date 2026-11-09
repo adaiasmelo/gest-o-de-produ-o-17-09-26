@@ -22,6 +22,7 @@ interface BiAnalyticsViewProps {
   dashboardMonth?: string;
   targetMonth?: string;
   isBonusManagerView?: boolean;
+  wasteLimit?: number;
 }
 
 // Helper formats
@@ -71,8 +72,10 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
   standaloneSection,
   dashboardMonth,
   targetMonth,
-  isBonusManagerView
+  isBonusManagerView,
+  wasteLimit
 }) => {
+  const effectiveWasteLimit = wasteLimit !== undefined ? wasteLimit : 8.0;
   const activeRefMonth = targetMonth || dashboardMonth;
   // 100% Consistent Filter replicating App.tsx logic for data validity
   const processedDataFiltered = useMemo(() => {
@@ -725,8 +728,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
             <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Evolução Histórica das Equipes</h2>
             <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
               {activeRefMonth 
-                ? `Cálculo analítico do mês de referência: ${translateMonthYear(activeRefMonth)}. Descontos lineares e bônus individual calculados com base no volume entregue e coeficiente de perdas do mês.`
-                : 'Cálculo analítico idêntico e sincronizado ao BI Extrusão. Descontos lineares e bônus estimado por operador calculados com base no volume entregue e coeficiente de perdas.'}
+                ? `Cálculo analítico do mês de referência: ${translateMonthYear(activeRefMonth)}. Regra oficial da tolerância de ${effectiveWasteLimit.toFixed(1).replace('.', ',')}%: Isenção total para perdas de até ${effectiveWasteLimit.toFixed(2).replace('.', ',')}%. Acima de ${effectiveWasteLimit.toFixed(2).replace('.', ',')}%, desconto linear de R$ 5,00 por décimo (0,10%) excedente.`
+                : `Cálculo analítico idêntico e sincronizado ao BI Extrusão. Isenção total até ${effectiveWasteLimit.toFixed(2).replace('.', ',')}% de perda; acima de ${effectiveWasteLimit.toFixed(2).replace('.', ',')}%, desconto linear de R$ 5,00 por cada décimo (0,10%) que passar do limite.`}
             </p>
           </div>
           <div className="flex items-center gap-3 bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60 shrink-0">
@@ -1737,8 +1740,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                           Desconto Linear
                           <span className="group relative inline-block cursor-help align-middle text-slate-400">
                             <Info size={10} className="hover:text-slate-600 inline" />
-                            <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                              Desconto aplicado de forma proporcional linear, variando de 0% (Melhor Média de Perdas do período) até 100% (Pior Média de Perdas).
+                            <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-56 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                              Regra Oficial: Perda ≤ {effectiveWasteLimit.toFixed(1).replace('.', ',')}% é 100% isenta (0% desconto). Acima de {effectiveWasteLimit.toFixed(1).replace('.', ',')}%, desconto linear de R$ 5,00 por cada décimo (0,10%) que passar (R$ 50,00 por 1%).
                             </span>
                           </span>
                         </div>
@@ -1748,8 +1751,8 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                           Bônus Estimado
                           <span className="group relative inline-block cursor-help align-middle text-slate-400">
                             <Info size={10} className="hover:text-slate-600 inline" />
-                            <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
-                              Valor final do bônus proporcional recebido após o desconto proporcional linear do mês com base no valor de referência.
+                            <span className="pointer-events-none absolute top-full right-0 mt-1.5 w-52 bg-slate-900 border border-slate-700 text-white text-[9px] font-semibold py-1.5 px-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] text-center normal-case tracking-normal">
+                              Valor final do bônus após o desconto linear por perdas excedentes acima de {effectiveWasteLimit.toFixed(1).replace('.', ',')}% (Base: R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).
                             </span>
                           </span>
                         </div>
@@ -1847,14 +1850,27 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                                   return <span className="text-slate-400 italic font-semibold text-[10px]">Sem apontamento</span>;
                                 }
                                 const targetIdx = activeRefMonth ? op.monthWasteIdx : op.averageWasteIdx;
-                                const discountPct = wasteRange === 0 ? 0 : ((targetIdx - minWaste) / wasteRange) * 100;
+                                let discountPct = 0;
+                                let lossAmt = 0;
+                                if (targetIdx > effectiveWasteLimit) {
+                                  const excessPoints = targetIdx - effectiveWasteLimit;
+                                  const tenths = excessPoints / 0.1;
+                                  lossAmt = Math.min(metaMensalBonus, Math.max(0, tenths * 5.0));
+                                  discountPct = metaMensalBonus > 0 ? (lossAmt / metaMensalBonus) * 100 : 0;
+                                }
+
                                 if (discountPct === 0) {
-                                  return <span className="text-emerald-600 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (Melhor)</span>;
+                                  return <span className="text-emerald-700 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (Meta ≤{effectiveWasteLimit.toFixed(0)}%)</span>;
                                 }
-                                if (discountPct === 100) {
-                                  return <span className="text-rose-500 font-black bg-rose-50 px-2 py-1 rounded-lg">100,0% (Máx.)</span>;
+                                if (discountPct >= 100) {
+                                  return <span className="text-rose-600 font-black bg-rose-50 px-2 py-1 rounded-lg">100,0% (-R$ 300)</span>;
                                 }
-                                return <span className="text-slate-600 font-bold">{discountPct.toFixed(1).replace('.', ',')}%</span>;
+                                return (
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-amber-800 font-black">{discountPct.toFixed(1).replace('.', ',')}%</span>
+                                    <span className="text-[8.5px] text-slate-400 font-bold">-R$ {lossAmt.toFixed(2).replace('.', ',')}</span>
+                                  </div>
+                                );
                               })()}
                             </td>
                             <td className="px-4 py-4 text-right">
@@ -1868,34 +1884,42 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                                   );
                                 }
                                 const targetIdx = activeRefMonth ? op.monthWasteIdx : op.averageWasteIdx;
-                                const discountPct = wasteRange === 0 ? 0 : ((targetIdx - minWaste) / wasteRange) * 100;
-                                const bonusAmt = metaMensalBonus * (1 - (discountPct / 100));
+                                let discountPct = 0;
+                                let lossAmt = 0;
+                                if (targetIdx > effectiveWasteLimit) {
+                                  const excessPoints = targetIdx - effectiveWasteLimit;
+                                  const tenths = excessPoints / 0.1;
+                                  lossAmt = Math.min(metaMensalBonus, Math.max(0, tenths * 5.0));
+                                  discountPct = metaMensalBonus > 0 ? (lossAmt / metaMensalBonus) * 100 : 0;
+                                }
+                                const bonusAmt = Math.max(0, metaMensalBonus - lossAmt);
+
                                 if (discountPct === 0) {
                                   return (
                                     <div className="flex justify-end items-center gap-1">
-                                      <span className="text-emerald-600 font-black text-xs flex flex-col items-end bg-emerald-50 px-2.5 py-1 rounded-xl">
+                                      <span className="text-emerald-700 font-black text-xs flex flex-col items-end bg-emerald-50 px-2.5 py-1 rounded-xl">
                                         <span className="flex items-center gap-0.5"><Award size={12} className="text-amber-500 fill-amber-500 inline mr-0.5" /> R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                        <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">Sem desconto (Meta R$ {metaMensalBonus})</span>
+                                        <span className="text-[8px] text-emerald-600 font-bold block mt-0.5">100% da Meta (Perda ≤{effectiveWasteLimit.toFixed(0)}%)</span>
                                       </span>
                                     </div>
                                   );
                                 }
-                                if (discountPct === 100) {
+                                if (discountPct >= 100) {
                                   return (
                                     <div className="flex flex-col items-end">
                                       <span className="text-slate-400 font-normal">R$ 0,00</span>
-                                      <span className="text-[8px] text-rose-400 font-bold block mt-0.5">100% desconto (Pior perda)</span>
+                                      <span className="text-[8px] text-rose-500 font-bold block mt-0.5">100% desc. (Perda ≥{(effectiveWasteLimit + 6.0).toFixed(0)}%)</span>
                                     </div>
                                   );
                                 }
-                                return (
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-slate-700 font-extrabold text-xs">R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                    <span className="text-[8px] text-slate-400 font-semibold">Meta: R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                  </div>
-                                );
-                              })()}
-                            </td>
+                                 return (
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-slate-800 font-extrabold text-xs">R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                      <span className="text-[8.5px] text-amber-700 font-bold">-R$ {lossAmt.toFixed(2).replace('.', ',')} ({discountPct.toFixed(1)}%)</span>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                             <td className="px-4 py-4 text-right">
                               <span className={op.volatility > 12 ? "text-rose-500" : "text-emerald-600"}>
                                 {op.volatility === 0 ? 'Estável' : `± ${op.volatility.toFixed(1)}%`}

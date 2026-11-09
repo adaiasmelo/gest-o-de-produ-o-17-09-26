@@ -678,26 +678,40 @@ export const generateRibbonMonthlyReportPDF = async ({
     return { name: label, manut: mManut, proc: mProc, outros: mOutros, total: totalM };
   });
 
-  const macStopsHead = [['MÁQUINA', 'PARADA MANUTENÇÃO', 'PARADA PROCESSO', 'OUTRAS PARADAS', 'TOTAL DE PARADAS']];
-  const macStopsBody = macStopsData.map(m => [
-    m.name.toUpperCase(),
-    formatHours(m.manut),
-    formatHours(m.proc),
-    formatHours(m.outros),
-    formatHours(m.total)
-  ]);
+  const [yRib, mRib] = dashboardMonth.split('-');
+  const daysInRibMonth = new Date(Number(yRib), Number(mRib), 0).getDate();
+  const totalRibPeriodMinutes = daysInRibMonth * 1440;
+
+  const macStopsHead = [['MÁQUINA', 'PARADA MANUTENÇÃO', 'PARADA PROCESSO', 'OUTRAS PARADAS', 'TOTAL DE PARADAS', 'DISPONIBILIDADE (%)']];
+  const macStopsBody = macStopsData.map(m => {
+    const stopPct = totalRibPeriodMinutes > 0 ? (m.total / totalRibPeriodMinutes) * 100 : 0;
+    const availPct = Math.max(0, Math.min(100, 100 - stopPct));
+    return [
+      m.name.toUpperCase(),
+      formatHours(m.manut),
+      formatHours(m.proc),
+      formatHours(m.outros),
+      `${formatHours(m.total)} (${stopPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)`,
+      `${availPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+    ];
+  });
 
   const totalMacStopManut = macStopsData.reduce((a, b) => a + b.manut, 0);
   const totalMacStopProc = macStopsData.reduce((a, b) => a + b.proc, 0);
   const totalMacStopOutros = macStopsData.reduce((a, b) => a + b.outros, 0);
   const totalMacStopGeral = macStopsData.reduce((a, b) => a + b.total, 0);
 
+  const totalRibAllMacPeriodMin = macStopsData.length * totalRibPeriodMinutes;
+  const totalRibStopPct = totalRibAllMacPeriodMin > 0 ? (totalMacStopGeral / totalRibAllMacPeriodMin) * 100 : 0;
+  const totalRibAvailPct = Math.max(0, Math.min(100, 100 - totalRibStopPct));
+
   const macStopsFoot = [[
     'TOTAL GERAL',
     formatHours(totalMacStopManut),
     formatHours(totalMacStopProc),
     formatHours(totalMacStopOutros),
-    formatHours(totalMacStopGeral)
+    `${formatHours(totalMacStopGeral)} (${totalRibStopPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)`,
+    `${totalRibAvailPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
   ]];
 
   autoTable(doc, {
@@ -709,28 +723,57 @@ export const generateRibbonMonthlyReportPDF = async ({
     headStyles: {
       fillColor: [220, 38, 38], // Red-600
       textColor: [255, 255, 255],
-      fontSize: 8,
+      fontSize: 7.5,
       fontStyle: 'bold',
       halign: 'center'
     },
     footStyles: {
       fillColor: [241, 245, 249],
       textColor: [30, 41, 59],
-      fontSize: 8,
+      fontSize: 7.5,
       fontStyle: 'bold',
       halign: 'center'
     },
     styles: {
-      fontSize: 7.5,
-      cellPadding: 3,
+      fontSize: 7,
+      cellPadding: 2.8,
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'left' }
+      0: { fontStyle: 'bold', halign: 'left', cellWidth: 36 },
+      1: { cellWidth: 28 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 28 },
+      4: { fontStyle: 'bold', halign: 'center', cellWidth: 34 },
+      5: { fontStyle: 'bold', halign: 'center', cellWidth: 28 }
+    },
+    didParseCell: function(data) {
+      if (data.column.index === 5) {
+        const rawVal = String(data.cell.raw || '');
+        const num = parseFloat(rawVal.replace(',', '.'));
+        if (!isNaN(num)) {
+          if (num >= 90) {
+            data.cell.styles.textColor = [5, 150, 105];
+          } else if (num >= 75) {
+            data.cell.styles.textColor = [217, 119, 6];
+          } else {
+            data.cell.styles.textColor = [220, 38, 38];
+          }
+        }
+      }
     }
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 8;
+  yPos = (doc as any).lastAutoTable.finalY + 4;
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  const ribAvailNote = `* Disponibilidade (%): Percentual operacional no mês (${daysInRibMonth} dias = ${daysInRibMonth * 24}h por máquina). Entre parênteses na coluna de paradas: taxa percentual de inatividade.`;
+  const splitRibAvail = doc.splitTextToSize(ribAvailNote, pageWidth - 28);
+  checkYPage(splitRibAvail.length * 3 + 4);
+  doc.text(splitRibAvail, 14, yPos);
+  yPos += splitRibAvail.length * 3 + 5;
 
   // 6. CONSUMO E BALANÇO DE JUMBOS POR TIPO DE MATERIAL
   const jumboTypeMap: Record<string, { type: string; usedM2: number; rolls: number; wasteKg: number }> = {};
@@ -1854,18 +1897,29 @@ export const generateIntegratedMonthlyReportPDF = async ({
   yPos += 4;
 
   const totalAllPlantStops = totalCastStops + eremaStops + totalRibMacStops;
+  const [yInt, mInt] = dashboardMonth.split('-');
+  const daysInIntMonth = new Date(Number(yInt), Number(mInt), 0).getDate();
+  const totalIntPeriodMinutes = daysInIntMonth * 1440;
 
-  const stopsSummaryHead = [['SETOR', 'MÁQUINA / EQUIPAMENTO', 'PARADA TOTAL (HORAS)', 'PARTICIPAÇÃO NO TEMPO PARADO']];
+  const getAvailStr = (stopMin: number) => {
+    const avail = totalIntPeriodMinutes > 0 ? Math.max(0, Math.min(100, ((totalIntPeriodMinutes - stopMin) / totalIntPeriodMinutes) * 100)) : 100;
+    return `${avail.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  };
+
+  const totalAllPlantPeriodMin = 6 * totalIntPeriodMinutes; // 6 máquinas principais
+  const totalPlantAvail = totalAllPlantPeriodMin > 0 ? Math.max(0, Math.min(100, ((totalAllPlantPeriodMin - totalAllPlantStops) / totalAllPlantPeriodMin) * 100)) : 100;
+
+  const stopsSummaryHead = [['SETOR', 'MÁQUINA / EQUIPAMENTO', 'PARADA TOTAL (HORAS)', 'PARTICIPAÇÃO NAS PARADAS', 'DISPONIBILIDADE (%)']];
   const stopsSummaryBody: any[] = [
-    [{ content: 'EXTRUSÃO', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'Cast 1', formatHours(castMacMap['Cast 1'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 1'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['Cast 2', formatHours(castMacMap['Cast 2'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 2'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['RECICLAGEM', 'Erema 1', formatHours(eremaStops), `${totalAllPlantStops > 0 ? ((eremaStops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    [{ content: 'CORTE DE FITA', rowSpan: 3, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'Ghezzi', formatHours(ribMacMap['Ghezzi'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Ghezzi'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['Lintech', formatHours(ribMacMap['Lintech'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Lintech'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`],
-    ['Wultec / Ultratec', formatHours(ribMacMap['Wultec'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Wultec'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`]
+    [{ content: 'EXTRUSÃO', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'Cast 1', formatHours(castMacMap['Cast 1'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 1'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`, getAvailStr(castMacMap['Cast 1'].stops)],
+    ['Cast 2', formatHours(castMacMap['Cast 2'].stops), `${totalAllPlantStops > 0 ? ((castMacMap['Cast 2'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`, getAvailStr(castMacMap['Cast 2'].stops)],
+    ['RECICLAGEM', 'Erema 1', formatHours(eremaStops), `${totalAllPlantStops > 0 ? ((eremaStops / totalAllPlantStops) * 100).toFixed(1) : 0}%`, getAvailStr(eremaStops)],
+    [{ content: 'CORTE DE FITA', rowSpan: 3, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold' } }, 'Ghezzi', formatHours(ribMacMap['Ghezzi'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Ghezzi'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`, getAvailStr(ribMacMap['Ghezzi'].stops)],
+    ['Lintech', formatHours(ribMacMap['Lintech'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Lintech'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`, getAvailStr(ribMacMap['Lintech'].stops)],
+    ['Wultec / Ultratec', formatHours(ribMacMap['Wultec'].stops), `${totalAllPlantStops > 0 ? ((ribMacMap['Wultec'].stops / totalAllPlantStops) * 100).toFixed(1) : 0}%`, getAvailStr(ribMacMap['Wultec'].stops)]
   ];
   const stopsSummaryFoot = [
-    ['TOTAL', 'Todas as Máquinas', formatHours(totalAllPlantStops), '100.0%']
+    ['TOTAL', 'Todas as Máquinas', formatHours(totalAllPlantStops), '100.0%', `${totalPlantAvail.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`]
   ];
 
   autoTable(doc, {
@@ -1895,13 +1949,27 @@ export const generateIntegratedMonthlyReportPDF = async ({
       halign: 'center'
     },
     columnStyles: {
-      0: { fontStyle: 'bold', halign: 'center', cellWidth: 38 },
-      1: { fontStyle: 'bold', halign: 'left', cellWidth: 54 },
-      2: { fontStyle: 'bold', cellWidth: 45 },
-      3: { cellWidth: 45 }
+      0: { fontStyle: 'bold', halign: 'center', cellWidth: 32 },
+      1: { fontStyle: 'bold', halign: 'left', cellWidth: 44 },
+      2: { fontStyle: 'bold', cellWidth: 36 },
+      3: { cellWidth: 36 },
+      4: { fontStyle: 'bold', cellWidth: 34 }
     },
     didParseCell: function(data) {
       if (data.section === 'body') {
+        if (data.column.index === 4) {
+          const rawVal = String(data.cell.raw || '');
+          const num = parseFloat(rawVal.replace(',', '.'));
+          if (!isNaN(num)) {
+            if (num >= 90) {
+              data.cell.styles.textColor = [5, 150, 105];
+            } else if (num >= 75) {
+              data.cell.styles.textColor = [217, 119, 6];
+            } else {
+              data.cell.styles.textColor = [220, 38, 38];
+            }
+          }
+        }
         if (data.row.index >= 0 && data.row.index <= 1) {
           data.cell.styles.fillColor = [248, 250, 252]; // Extrusão
         } else if (data.row.index === 2) {

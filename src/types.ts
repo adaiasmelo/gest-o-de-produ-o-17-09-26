@@ -41,6 +41,8 @@ export interface ProductionEntry {
   ecoBPCategory?: string;
   ecoBMMotivo?: string;
   ecoBMCategory?: string;
+  ecoBItems?: EcoBItem[];
+  ecoBPDiscountKg?: number;
   borraTotalMotivo?: string;
   borraCategory?: string;
   materialType?: 'LC3' | 'LC2' | 'ATX' | 'ATX Plus' | string;
@@ -65,6 +67,15 @@ export interface ProductionEntry {
     reason: string;
     description?: string;
   };
+}
+
+export interface EcoBItem {
+  id: string;
+  type: 'producao' | 'manutencao';
+  weightKg: number;
+  motivo: string;
+  explicacao?: string;
+  countForBonusDiscount: boolean;
 }
 
 export interface SummaryStats {

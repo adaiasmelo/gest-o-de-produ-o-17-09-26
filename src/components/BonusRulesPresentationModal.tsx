@@ -6,7 +6,7 @@ import {
   X, Scale, Gauge, Flame, Wrench, Sparkles, AlertOctagon,
   Check, Play, Pause, RotateCcw, MonitorPlay, Download,
   Smartphone, HardHat, Ban, FileSpreadsheet, UserX, Droplets,
-  CreditCard, ShoppingBasket, TrendingUp, LogOut
+  CreditCard, ShoppingBasket, TrendingUp, LogOut, Calculator
 } from 'lucide-react';
 import { exportBonusRulesPptx } from '../utils/exportPresentationPptx';
 
@@ -414,9 +414,216 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 5: ISENÇÃO DO ECOBM (MANUTENÇÃO)
+    // SLIDE 5: DESCONTO LINEAR POR DÉCIMO EXCEDENTE (ACIMA DE 8,0%)
     {
       id: 5,
+      category: 'Regra dos Décimos Excedentes',
+      badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
+      title: 'Desconto Linear por Décimo Excedente (Acima de 8,0%)',
+      subtitle: 'Isenção Total até 8,00% de Perda • Desconto de R$ 5,00 por Cada 0,10% (Décimo) que Ultrapassar a Meta',
+      content: (
+        <div className="space-y-3.5 xl:space-y-4 w-full py-1">
+          {/* Banner de Destaque das 3 Regras Mestras */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 xl:gap-4 items-stretch">
+            <div className="lg:col-span-8 p-4 xl:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-amber-50 to-rose-50 border border-slate-200 shadow-2xs space-y-2.5">
+              <div className="flex items-center gap-2 text-xs xl:text-sm font-black uppercase tracking-wider text-slate-800">
+                <Calculator className="w-4 h-4 text-amber-600" />
+                <span>Como Funciona a Matemática dos Décimos no Fechamento Mensal</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs xl:text-sm">
+                <div className="p-3 rounded-xl bg-emerald-100/70 border border-emerald-300 text-emerald-950 space-y-1">
+                  <div className="font-black text-emerald-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Até 8,00% = ISENÇÃO TOTAL</span>
+                  </div>
+                  <p className="text-[11px] xl:text-xs leading-relaxed text-emerald-900 font-medium">
+                    0% de desconto. O operador recebe 100% do bônus (<strong>R$ 300,00</strong>) + Cesta (<strong>R$ 236,00</strong>) = <strong>R$ 536,00</strong> no cartão.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-100/70 border border-amber-300 text-amber-950 space-y-1">
+                  <div className="font-black text-amber-900 flex items-center gap-1.5">
+                    <Scale className="w-4 h-4 shrink-0" />
+                    <span>R$ 5,00 por cada 0,10%</span>
+                  </div>
+                  <p className="text-[11px] xl:text-xs leading-relaxed text-amber-950 font-medium">
+                    Passou de 8,00%? Cada <strong>décimo percentual (0,10%)</strong> que ultrapassar desconta exatamente <strong>R$ 5,00</strong> do bônus.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-blue-100/70 border border-blue-300 text-blue-950 space-y-1">
+                  <div className="font-black text-blue-900 flex items-center gap-1.5">
+                    <ShoppingBasket className="w-4 h-4 shrink-0" />
+                    <span>Cesta de R$ 236 Intocável</span>
+                  </div>
+                  <p className="text-[11px] xl:text-xs leading-relaxed text-blue-950 font-medium">
+                    A cesta básica é fixa. Mesmo que o operador atinja 14% de perda (desconto de R$ 300), <strong>a cesta básica de R$ 236,00 é garantida</strong>.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Fórmula Prática */}
+            <div className="lg:col-span-4 p-4 xl:p-5 rounded-2xl bg-slate-900 text-white shadow-2xs flex flex-col justify-between space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400">
+                <span>FÓRMULA MATEMÁTICA</span>
+                <span>PASSO A PASSO</span>
+              </div>
+              <div className="space-y-1 font-mono text-[11px] xl:text-xs bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                <div className="text-slate-300">1. Excesso = Perda Real - 8,00%</div>
+                <div className="text-slate-300">2. Décimos = Excesso ÷ 0,10%</div>
+                <div className="text-amber-300 font-bold">3. Desconto = Décimos × R$ 5,00</div>
+                <div className="text-emerald-400 font-bold">4. Bônus = R$ 300 - Desconto</div>
+              </div>
+              <div className="text-[10px] text-slate-400">
+                * Desconto máximo limitado a R$ 300,00 (atingido exatamente em 14,00% de perda).
+              </div>
+            </div>
+          </div>
+
+          {/* Tabela de Simulação com os Exemplos do Supervisor */}
+          <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs xl:text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 font-black uppercase tracking-wider text-slate-700 text-[10px] xl:text-xs">
+                    <th className="py-2.5 px-3">Média de Perda</th>
+                    <th className="py-2.5 px-3">Excesso Acima de 8%</th>
+                    <th className="py-2.5 px-3 text-center">Décimos Excedentes</th>
+                    <th className="py-2.5 px-3 text-right">Desconto no Bônus</th>
+                    <th className="py-2.5 px-3 text-right bg-blue-50/50 text-blue-900">Bônus Produção</th>
+                    <th className="py-2.5 px-3 text-center text-slate-500">Cesta Básica</th>
+                    <th className="py-2.5 px-3 text-right bg-emerald-50 text-emerald-900 font-black">Total no Cartão VR</th>
+                    <th className="py-2.5 px-3 text-center">Situação / Mérito</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[11px] xl:text-xs font-medium">
+                  {/* Linha 1: <= 8.00% */}
+                  <tr className="bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
+                    <td className="py-2 px-3 font-black text-emerald-800">≤ 8,00% (Meta)</td>
+                    <td className="py-2 px-3 text-emerald-700 font-bold">0,00% (Dentro da tolerância)</td>
+                    <td className="py-2 px-3 text-center font-bold text-emerald-700">0 décimo</td>
+                    <td className="py-2 px-3 text-right font-black text-emerald-700">R$ 0,00 (0%)</td>
+                    <td className="py-2 px-3 text-right font-black text-blue-800 bg-blue-50/30">R$ 300,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-emerald-800 bg-emerald-100/50 text-sm">R$ 536,00</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">
+                        100% Isento (Meta Plena)
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Linha 2: 8.05% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">8,05%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 0,05%</td>
+                    <td className="py-2 px-3 text-center text-slate-600 font-semibold">0,5 décimo</td>
+                    <td className="py-2 px-3 text-right font-bold text-amber-700">- R$ 2,50 (-0,8%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 297,50</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 533,50</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-slate-500 font-semibold">Oscilação Mínima</td>
+                  </tr>
+
+                  {/* Linha 3: 8.10% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">8,10%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 0,10%</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">1 décimo</td>
+                    <td className="py-2 px-3 text-right font-bold text-amber-700">- R$ 5,00 (-1,7%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 295,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 531,00</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-amber-700 font-bold">1º Décimo Excedente</td>
+                  </tr>
+
+                  {/* Linha 4: 8.20% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">8,20%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 0,20%</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">2 décimos</td>
+                    <td className="py-2 px-3 text-right font-bold text-amber-700">- R$ 10,00 (-3,3%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 290,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 526,00</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-slate-500 font-semibold">Desconto Muito Leve</td>
+                  </tr>
+
+                  {/* Linha 5: 8.50% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">8,50%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 0,50%</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">5 décimos</td>
+                    <td className="py-2 px-3 text-right font-bold text-amber-700">- R$ 25,00 (-8,3%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 275,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 511,00</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-amber-700 font-bold">Desconto Leve</td>
+                  </tr>
+
+                  {/* Linha 6: 9.00% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">9,00%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 1,00%</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">10 décimos</td>
+                    <td className="py-2 px-3 text-right font-bold text-rose-600">- R$ 50,00 (-16,7%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 250,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 486,00</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-slate-600 font-semibold">+1% Acima da Tolerância</td>
+                  </tr>
+
+                  {/* Linha 7: 10.00% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">10,00%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 2,00%</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">20 décimos</td>
+                    <td className="py-2 px-3 text-right font-bold text-rose-600">- R$ 100,00 (-33,3%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 200,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 436,00</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-slate-600 font-semibold">+2% Acima da Tolerância</td>
+                  </tr>
+
+                  {/* Linha 8: 12.00% */}
+                  <tr className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-slate-800">12,00%</td>
+                    <td className="py-2 px-3 text-slate-600">+ 4,00%</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">40 décimos</td>
+                    <td className="py-2 px-3 text-right font-bold text-rose-700">- R$ 200,00 (-66,7%)</td>
+                    <td className="py-2 px-3 text-right font-bold text-slate-800 bg-blue-50/20">R$ 100,00</td>
+                    <td className="py-2 px-3 text-center text-slate-600">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-50/30">R$ 336,00</td>
+                    <td className="py-2 px-3 text-center text-[10px] text-rose-600 font-bold">+4% Acima da Tolerância</td>
+                  </tr>
+
+                  {/* Linha 9: 14.00%+ */}
+                  <tr className="bg-rose-50/40 hover:bg-rose-50/70 transition-colors">
+                    <td className="py-2 px-3 font-black text-rose-800">≥ 14,00% (Teto)</td>
+                    <td className="py-2 px-3 text-rose-700 font-bold">+ 6,00% ou mais</td>
+                    <td className="py-2 px-3 text-center font-bold text-rose-700">60 décimos</td>
+                    <td className="py-2 px-3 text-right font-black text-rose-700">- R$ 300,00 (-100%)</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-400 bg-blue-50/20">R$ 0,00</td>
+                    <td className="py-2 px-3 text-center text-emerald-700 font-bold">+ R$ 236,00</td>
+                    <td className="py-2 px-3 text-right font-black text-slate-900 bg-emerald-100/50 text-sm">R$ 236,00</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase">
+                        Desconto Máx. Bônus (Garante a Cesta)
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )
+    },
+
+    // SLIDE 6: ISENÇÃO DO ECOBM (MANUTENÇÃO)
+    {
+      id: 6,
       category: 'Regra de Ouro da Extrusão',
       badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
       title: 'Isenção de ECOBM (Manutenção)',
@@ -478,9 +685,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 6: PARADAS DE MÁQUINA E LIMPEZA OBRIGATÓRIA
+    // SLIDE 7: PARADAS DE MÁQUINA E LIMPEZA OBRIGATÓRIA
     {
-      id: 6,
+      id: 7,
       category: 'Paradas na Extrusão',
       badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
       title: 'Paradas de Máquina & Limpeza Obrigatória',
@@ -554,9 +761,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 7: CORTE DE FITA (METAS EM M² E ABATIMENTO DE PERDAS)
+    // SLIDE 8: CORTE DE FITA (METAS EM M² E ABATIMENTO DE PERDAS)
     {
-      id: 7,
+      id: 8,
       category: 'Setor de Corte de Fita',
       badgeColor: 'bg-purple-100 text-purple-800 border-purple-300',
       title: 'Regras do Setor de Corte de Fita (Rebobinadeiras)',
@@ -614,9 +821,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 8: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE & APONTAMENTOS
+    // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - QUALIDADE & APONTAMENTOS
     {
-      id: 8,
+      id: 9,
       category: '2. Qualidade',
       badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-300',
       title: 'Critérios de Qualidade & Apontamentos',
@@ -697,9 +904,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 9: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
+    // SLIDE 10: CRITÉRIOS DE FECHAMENTO MENSAL - ASSIDUIDADE & PONTUALIDADE
     {
-      id: 9,
+      id: 10,
       category: '3. Assiduidade & Horários',
       badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
       title: 'Assiduidade, Faltas, Advertências e Horários',
@@ -801,9 +1008,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 10: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
+    // SLIDE 11: CRITÉRIOS DE FECHAMENTO MENSAL - COMPORTAMENTO & SEGURANÇA
     {
-      id: 10,
+      id: 11,
       category: '4. Comportamento & Segurança',
       badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
       title: 'Comportamento no Trabalho & Normas de Segurança',
@@ -881,9 +1088,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 11: TOLERÂNCIA ZERO - INFORMAÇÃO FALSA (-100%)
+    // SLIDE 12: TOLERÂNCIA ZERO - INFORMAÇÃO FALSA (-100%)
     {
-      id: 11,
+      id: 12,
       category: 'Ética & Fraude',
       badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
       title: 'Tolerância Zero: Informação Falsa / Fraude',
@@ -941,9 +1148,9 @@ export const BonusRulesPresentationModal: React.FC<BonusRulesPresentationModalPr
       )
     },
 
-    // SLIDE 12: CONCLUSÃO & DIRETRIZES FINAIS
+    // SLIDE 13: CONCLUSÃO & DIRETRIZES FINAIS
     {
-      id: 12,
+      id: 13,
       category: 'Compromisso com o Sucesso',
       badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
       title: 'Conclusão: As 5 Chaves do Operador Nota 10',

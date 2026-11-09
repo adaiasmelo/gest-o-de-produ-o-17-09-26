@@ -1493,6 +1493,30 @@ export const App: React.FC = () => {
     }
   });
 
+  const [extrusionWasteLimit, setExtrusionWasteLimit] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_extrusion_waste_limit');
+      if (saved !== null && saved !== undefined && saved !== '') {
+        const val = Number(saved);
+        if (!isNaN(val) && val > 0) return val;
+      }
+      return 8.0;
+    } catch {
+      return 8.0;
+    }
+  });
+
+  const [extrusionWasteLimits, setExtrusionWasteLimits] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('manupackaging_extrusion_waste_limits');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const currentExtrusionWasteLimit = (extrusionWasteLimits[dashboardMonth] !== undefined ? extrusionWasteLimits[dashboardMonth] : extrusionWasteLimit) || 8.0;
+
 const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   initialMatrizStock: 18071,
   initialGalpaoStock: 111991,
@@ -2711,6 +2735,17 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         if (data.eremaGoals) {
           setEremaGoals(data.eremaGoals);
           localStorage.setItem('manupackaging_erema_goals', JSON.stringify(data.eremaGoals));
+        }
+        if (data.extrusionWasteLimits) {
+          setExtrusionWasteLimits(data.extrusionWasteLimits);
+          localStorage.setItem('manupackaging_extrusion_waste_limits', JSON.stringify(data.extrusionWasteLimits));
+        }
+        if (data.extrusionWasteLimit !== undefined && data.extrusionWasteLimit !== null) {
+          const parsed = Number(data.extrusionWasteLimit);
+          if (!isNaN(parsed) && parsed > 0) {
+            setExtrusionWasteLimit(parsed);
+            localStorage.setItem('manupackaging_extrusion_waste_limit', String(parsed));
+          }
         }
         if (data.ecoBalanceSettings) {
           const mergedSettings = { ...DEFAULT_ECO_BALANCE_SETTINGS, ...data.ecoBalanceSettings };
@@ -9373,27 +9408,46 @@ Atenciosamente,
       doc.text('RESUMO DE PARADAS POR MÁQUINA', 14, yPos);
       yPos += 4;
 
+      const [yPeriod, mPeriod] = dashboardMonth.split('-');
+      const daysInPeriod = isDaily
+        ? 1
+        : (isRange && filterStartDate && filterEndDate
+            ? Math.max(1, Math.round((new Date(filterEndDate).getTime() - new Date(filterStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+            : new Date(Number(yPeriod), Number(mPeriod), 0).getDate());
+      const totalPeriodMinutesPerMachine = daysInPeriod * 1440; // 24 horas operacionais por dia (2 turnos de 12h)
+
       const allExtMachines = [...Object.values(castMachinesGrouped), ...Object.values(eremaMachineGrouped)];
-      const machineStopsHead = [['MÁQUINA', 'PARADA MANUTENÇÃO', 'PARADA PROCESSO', 'OUTRAS PARADAS', 'TOTAL DE PARADAS']];
-      const machineStopsBody = allExtMachines.map((m: any) => [
-        m.name.toUpperCase(),
-        formatHours(m.manut),
-        formatHours(m.proc),
-        formatHours(m.outros),
-        formatHours(m.stops)
-      ]);
+      const machineStopsHead = [['MÁQUINA', 'PARADA MANUTENÇÃO', 'PARADA PROCESSO', 'OUTRAS PARADAS', 'TOTAL DE PARADAS', 'DISPONIBILIDADE (%)']];
+      const machineStopsBody = allExtMachines.map((m: any) => {
+        const stopMinutes = m.stops || 0;
+        const stopPct = totalPeriodMinutesPerMachine > 0 ? (stopMinutes / totalPeriodMinutesPerMachine) * 100 : 0;
+        const availPct = Math.max(0, Math.min(100, 100 - stopPct));
+        return [
+          m.name.toUpperCase(),
+          formatHours(m.manut),
+          formatHours(m.proc),
+          formatHours(m.outros),
+          `${formatHours(stopMinutes)} (${stopPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)`,
+          `${availPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+        ];
+      });
 
       const mTotalManut = allExtMachines.reduce((acc: number, m: any) => acc + (m.manut || 0), 0);
       const mTotalProc = allExtMachines.reduce((acc: number, m: any) => acc + (m.proc || 0), 0);
       const mTotalOutros = allExtMachines.reduce((acc: number, m: any) => acc + (m.outros || 0), 0);
       const mTotalStops = allExtMachines.reduce((acc: number, m: any) => acc + (m.stops || 0), 0);
 
+      const totalPeriodAllMachines = allExtMachines.length * totalPeriodMinutesPerMachine;
+      const totalStopPct = totalPeriodAllMachines > 0 ? (mTotalStops / totalPeriodAllMachines) * 100 : 0;
+      const totalAvailPct = Math.max(0, Math.min(100, 100 - totalStopPct));
+
       const machineStopsFoot = [[
         'TOTAL GERAL',
         formatHours(mTotalManut),
         formatHours(mTotalProc),
         formatHours(mTotalOutros),
-        formatHours(mTotalStops)
+        `${formatHours(mTotalStops)} (${totalStopPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)`,
+        `${totalAvailPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
       ]];
 
       autoTable(doc, {
@@ -9405,28 +9459,57 @@ Atenciosamente,
         headStyles: {
           fillColor: [220, 38, 38], // Red-600
           textColor: [255, 255, 255],
-          fontSize: 8,
+          fontSize: 7.5,
           fontStyle: 'bold',
           halign: 'center'
         },
         footStyles: {
           fillColor: [241, 245, 249],
           textColor: [30, 41, 59],
-          fontSize: 8,
+          fontSize: 7.5,
           fontStyle: 'bold',
           halign: 'center'
         },
         styles: {
-          fontSize: 7.5,
-          cellPadding: 3,
+          fontSize: 7,
+          cellPadding: 2.8,
           halign: 'center'
         },
         columnStyles: {
-          0: { fontStyle: 'bold', halign: 'left' }
+          0: { fontStyle: 'bold', halign: 'left', cellWidth: 36 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 28 },
+          3: { cellWidth: 28 },
+          4: { fontStyle: 'bold', halign: 'center', cellWidth: 34 },
+          5: { fontStyle: 'bold', halign: 'center', cellWidth: 28 }
+        },
+        didParseCell: function(data) {
+          if (data.column.index === 5) {
+            const rawVal = String(data.cell.raw || '');
+            const num = parseFloat(rawVal.replace(',', '.'));
+            if (!isNaN(num)) {
+              if (num >= 90) {
+                data.cell.styles.textColor = [5, 150, 105]; // Emerald-600
+              } else if (num >= 75) {
+                data.cell.styles.textColor = [217, 119, 6]; // Amber-600
+              } else {
+                data.cell.styles.textColor = [220, 38, 38]; // Red-600
+              }
+            }
+          }
         }
       });
 
-      yPos = (doc as any).lastAutoTable.finalY + 8;
+      yPos = (doc as any).lastAutoTable.finalY + 4;
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      const availExplanation = `* Disponibilidade (%): Percentual de tempo em que a máquina esteve operacional no período (${daysInPeriod} dias = ${daysInPeriod * 24}h totais por máquina), calculado como [Tempo Total - Paradas] / Tempo Total. Entre parênteses na coluna de paradas: taxa percentual de inatividade.`;
+      const splitAvail = doc.splitTextToSize(availExplanation, pageWidth - 28);
+      checkYPage(splitAvail.length * 3 + 4);
+      doc.text(splitAvail, 14, yPos);
+      yPos += splitAvail.length * 3 + 5;
 
       // Nota explicativa sobre inatividade pré-operação do Cast 2 em junho/2026
       if (!isDaily && dashboardMonth === '2026-06') {
@@ -15866,7 +15949,7 @@ Atenciosamente,
 
                     {/* KPI 2: Coeficiente de Rejeito (Eco B) */}
                     <div className={`bg-white rounded-[2rem] p-6 shadow-sm border flex flex-col justify-between transition-all duration-300 hover:shadow-md border-t-4 ${
-                      rejectCoef > 5 
+                      rejectCoef > currentExtrusionWasteLimit 
                         ? 'border-t-red-600 border-red-200 shadow-red-100/60 ring-1 ring-red-400/50' 
                         : 'border-slate-100 border-t-red-500'
                     }`}>
@@ -15874,7 +15957,7 @@ Atenciosamente,
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Índice Rejeito Coef. Eco B</span>
                           <span className={`p-2 rounded-xl transition-all ${
-                            rejectCoef > 5 
+                            rejectCoef > currentExtrusionWasteLimit 
                               ? 'bg-red-100 text-red-600 ring-2 ring-red-300 animate-pulse' 
                               : 'bg-rose-50 text-rose-500'
                           }`}>
@@ -15886,9 +15969,9 @@ Atenciosamente,
                             {formatWeight(totalEcoB)}
                           </h4>
                           <span className={`text-xs font-black px-2.5 py-1 rounded-lg transition-all ${
-                            rejectCoef > 5 
+                            rejectCoef > currentExtrusionWasteLimit 
                               ? 'bg-red-600 text-white font-mono animate-pulse shadow-xs' 
-                              : rejectCoef > 3.5 
+                              : rejectCoef > (currentExtrusionWasteLimit * 0.75) 
                               ? 'bg-amber-100 text-amber-800' 
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
@@ -15898,27 +15981,27 @@ Atenciosamente,
                       </div>
                       <div className="mt-4">
                         <div className={`w-full h-2.5 rounded-full overflow-hidden transition-all ${
-                          rejectCoef > 5 ? 'bg-red-100 ring-1 ring-red-400' : 'bg-slate-100'
+                          rejectCoef > currentExtrusionWasteLimit ? 'bg-red-100 ring-1 ring-red-400' : 'bg-slate-100'
                         }`}>
                           <div 
                             className={`h-full transition-all duration-500 rounded-full ${
-                              rejectCoef > 5 
+                              rejectCoef > currentExtrusionWasteLimit 
                                 ? 'bg-red-600 animate-pulse shadow-md shadow-red-500/80' 
-                                : rejectCoef > 3.5 
+                                : rejectCoef > (currentExtrusionWasteLimit * 0.75) 
                                 ? 'bg-amber-500' 
                                 : 'bg-emerald-500'
                             }`}
-                            style={{ width: `${rejectCoef > 5 ? 100 : Math.min(100, Math.max(4, (rejectCoef / 5.0) * 100))}%` }}
+                            style={{ width: `${rejectCoef > currentExtrusionWasteLimit ? 100 : Math.min(100, Math.max(4, (rejectCoef / currentExtrusionWasteLimit) * 100))}%` }}
                           />
                         </div>
                         <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest mt-1.5">
-                          <span className={rejectCoef > 5 ? 'text-red-600 font-black flex items-center gap-1 animate-pulse' : 'text-slate-400'}>
-                            {rejectCoef > 5 ? '🔥 META ESTOURADA (MÁX 5,0%)' : 'Meta Tolera: Máx 5,0%'}
+                          <span className={rejectCoef > currentExtrusionWasteLimit ? 'text-red-600 font-black flex items-center gap-1 animate-pulse' : 'text-slate-400'}>
+                            {rejectCoef > currentExtrusionWasteLimit ? `🔥 META ESTOURADA (MÁX ${currentExtrusionWasteLimit.toFixed(1).replace('.', ',')}%)` : `Meta Tolera: Máx ${currentExtrusionWasteLimit.toFixed(1).replace('.', ',')}%`}
                           </span>
-                          <span className={rejectCoef > 5 ? 'text-red-600 font-black font-mono' : 'text-slate-500 font-bold'}>
-                            {rejectCoef > 5 
-                              ? `Excedeu em +${(rejectCoef - 5).toFixed(2)}%` 
-                              : `${((rejectCoef / 5.0) * 100).toFixed(0)}% da tolerância`}
+                          <span className={rejectCoef > currentExtrusionWasteLimit ? 'text-red-600 font-black font-mono' : 'text-slate-500 font-bold'}>
+                            {rejectCoef > currentExtrusionWasteLimit 
+                              ? `Excedeu em +${(rejectCoef - currentExtrusionWasteLimit).toFixed(2)}%` 
+                              : `${((rejectCoef / currentExtrusionWasteLimit) * 100).toFixed(0)}% da tolerância`}
                           </span>
                         </div>
                       </div>
@@ -16780,6 +16863,7 @@ Atenciosamente,
               productionData={productionData}
               goals={goals}
               employees={employees}
+              wasteLimit={currentExtrusionWasteLimit}
               onOpenDowntimeAnalytics={() => setIsDowntimeAnalyticsModalOpen(true)}
               onOpenDowntimeReasons={() => setIsDowntimeReasonsModalOpen(true)}
             />
@@ -16866,13 +16950,35 @@ Atenciosamente,
 
                 {filteredMachineStopsDetails.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredMachineStopsDetails.map(([machine, data]) => (
+                    {filteredMachineStopsDetails.map(([machine, data]) => {
+                      const daysInCurrentPeriod = (filterStartDate && filterEndDate)
+                        ? Math.max(1, Math.round((new Date(filterEndDate).getTime() - new Date(filterStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                        : (filterDay ? 1 : new Date(Number(dashboardMonth.split('-')[0]), Number(dashboardMonth.split('-')[1]), 0).getDate());
+                      const totalMinPeriod = daysInCurrentPeriod * 1440;
+                      const availPct = totalMinPeriod > 0
+                        ? Math.max(0, Math.min(100, ((totalMinPeriod - data.total) / totalMinPeriod) * 100))
+                        : 100;
+
+                      return (
                       <div key={machine} className="bg-slate-50 rounded-[1.8rem] p-5 border border-slate-100 hover:border-blue-200 transition-all">
-                        <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-3">
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-3 flex-wrap gap-2">
                           <span className="text-sm font-black text-slate-700 uppercase tracking-tight">{machine}</span>
-                          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                            <Clock size={12} className="text-blue-500"/>
-                            <span className="text-[11px] font-black text-blue-600">{formatMinutes(data.total)}</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs" title="Total de horas paradas da máquina">
+                              <Clock size={12} className="text-blue-500"/>
+                              <span className="text-[11px] font-black text-blue-600">{formatMinutes(data.total)}</span>
+                            </div>
+                            <div 
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl border font-black text-[11px] shadow-2xs ${
+                                availPct >= 90 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                availPct >= 75 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                'bg-rose-50 text-rose-700 border-rose-200'
+                              }`}
+                              title={`Disponibilidade de ${availPct.toFixed(1)}% no período (${daysInCurrentPeriod} dias = ${daysInCurrentPeriod * 24}h)`}
+                            >
+                              <Activity size={12} className={availPct >= 90 ? 'text-emerald-500' : availPct >= 75 ? 'text-amber-500' : 'text-rose-500'} />
+                              <span>{availPct.toFixed(1)}% Disp.</span>
+                            </div>
                           </div>
                         </div>
                         <div className="space-y-2.5 max-h-60 overflow-y-auto custom-scrollbar pr-2">
@@ -16896,7 +17002,8 @@ Atenciosamente,
                           ))}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-16 flex flex-col items-center justify-center text-slate-400 gap-3">
@@ -21828,6 +21935,7 @@ Atenciosamente,
                 productionData={productionData}
                 ribbonEntries={ribbonEntries}
                 goals={goals}
+                wasteLimit={currentExtrusionWasteLimit}
                 onClose={() => setPersonnelSubView('board')}
                 canManage={canManagePersonnel}
                 isReadOnly={isReadOnlyAccount}
@@ -22974,6 +23082,10 @@ Atenciosamente,
         operators={activeOperators}
         goals={goals}
         setGoals={setGoals}
+        extrusionWasteLimit={extrusionWasteLimit}
+        setExtrusionWasteLimit={setExtrusionWasteLimit}
+        extrusionWasteLimits={extrusionWasteLimits}
+        setExtrusionWasteLimits={setExtrusionWasteLimits}
         eremaGoals={eremaGoals}
         setEremaGoals={setEremaGoals}
         ribbonGoals={ribbonGoals}
@@ -24242,13 +24354,35 @@ Atenciosamente,
 
                       {filteredMachineStopsDetails.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[500px] overflow-y-auto pr-2">
-                          {filteredMachineStopsDetails.map(([machine, data]) => (
+                          {filteredMachineStopsDetails.map(([machine, data]) => {
+                            const daysInCurrentPeriod = (filterStartDate && filterEndDate)
+                              ? Math.max(1, Math.round((new Date(filterEndDate).getTime() - new Date(filterStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                              : (filterDay ? 1 : new Date(Number(dashboardMonth.split('-')[0]), Number(dashboardMonth.split('-')[1]), 0).getDate());
+                            const totalMinPeriod = daysInCurrentPeriod * 1440;
+                            const availPct = totalMinPeriod > 0
+                              ? Math.max(0, Math.min(100, ((totalMinPeriod - data.total) / totalMinPeriod) * 100))
+                              : 100;
+
+                            return (
                             <div key={machine} className="bg-slate-50 rounded-[2rem] p-6 border border-slate-200 text-left hover:border-blue-300 transition-all">
-                              <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-3">
+                              <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-3 flex-wrap gap-2">
                                 <span className="text-sm font-black text-slate-700 uppercase tracking-tight">{machine}</span>
-                                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                                  <Clock size={12} className="text-blue-500"/>
-                                  <span className="text-[11px] font-black text-blue-600">{formatMinutes(data.total)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs" title="Total de paradas">
+                                    <Clock size={12} className="text-blue-500"/>
+                                    <span className="text-[11px] font-black text-blue-600">{formatMinutes(data.total)}</span>
+                                  </div>
+                                  <div 
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-xl border font-black text-[11px] shadow-2xs ${
+                                      availPct >= 90 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                      availPct >= 75 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                      'bg-rose-50 text-rose-700 border-rose-200'
+                                    }`}
+                                    title={`Disponibilidade de ${availPct.toFixed(1)}% no período (${daysInCurrentPeriod} dias = ${daysInCurrentPeriod * 24}h)`}
+                                  >
+                                    <Activity size={12} className={availPct >= 90 ? 'text-emerald-500' : availPct >= 75 ? 'text-amber-500' : 'text-rose-500'} />
+                                    <span>{availPct.toFixed(1)}% Disp.</span>
+                                  </div>
                                 </div>
                               </div>
                               <div className="space-y-2.5 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
@@ -24272,7 +24406,8 @@ Atenciosamente,
                                 ))}
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="py-20 flex flex-col items-center justify-center text-slate-300 gap-3">

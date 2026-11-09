@@ -1355,25 +1355,25 @@ export const RibbonBiAnalyticsView: React.FC<RibbonBiAnalyticsViewProps> = ({
                               <span>Cálculo da Regra de Bônus (Meta R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</span>
                             </div>
                             <p className="text-slate-300">
-                              O bônus individual é calculado com base na <strong>Meta Mensal de R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> por operador, aplicando o modelo de <strong>Desconto Linear Proporcional</strong> conforme o coeficiente de perda de cada colaborador:
+                              O bônus individual é calculado com base na <strong>Meta Mensal de R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> por operador, aplicando a regra de <strong>tolerância de 8,0% de perda</strong> e <strong>desconto linear de R$ 5,00 por décimo (0,10%) excedente</strong>:
                             </p>
                             <div className="space-y-1.5">
                               <div className="p-2 bg-emerald-950/60 border border-emerald-500/30 rounded-xl">
-                                <span className="font-bold text-emerald-400 block text-[10.5px]">Melhor Perda (Mínimo Desperdício):</span>
-                                <span className="text-slate-300 text-[9.5px]">Aplica <strong>0% de desconto</strong>. O operador recebe 100% da meta: <strong>R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>.</span>
+                                <span className="font-bold text-emerald-400 block text-[10.5px]">Perda até 8,00% (Meta Mantida):</span>
+                                <span className="text-slate-300 text-[9.5px]">Aplica <strong>0% de desconto (R$ 0,00)</strong>. O operador recebe 100% da meta: <strong>R$ {metaMensalBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> + Cesta Básica.</span>
+                              </div>
+                              <div className="p-2 bg-amber-950/60 border border-amber-500/30 rounded-xl">
+                                <span className="font-bold text-amber-400 block text-[10.5px]">Excedeu 8,00% (Desconto Linear por Décimo):</span>
+                                <span className="text-slate-300 text-[9.5px]">A cada <strong>0,10% (1 décimo)</strong> que passar do limite, desconta exatamente <strong>R$ 5,00</strong> da bonificação (R$ 50 a cada 1,0%).</span>
                               </div>
                               <div className="p-2 bg-rose-950/60 border border-rose-500/30 rounded-xl">
-                                <span className="font-bold text-rose-400 block text-[10.5px]">Pior Perda (Máximo Desperdício):</span>
-                                <span className="text-slate-300 text-[9.5px]">Aplica <strong>100% de desconto</strong>, resultando em <strong>R$ 0,00</strong>.</span>
-                              </div>
-                              <div className="p-2 bg-blue-950/60 border border-blue-500/30 rounded-xl">
-                                <span className="font-bold text-blue-400 block text-[10.5px]">Desempenho Intermediário:</span>
-                                <span className="text-slate-300 text-[9.5px]">O desconto varia linearmente entre 0% e 100% conforme a posição relativa entre a melhor e pior perda.</span>
+                                <span className="font-bold text-rose-400 block text-[10.5px]">Perda ≥ 14,00% (Teto de Desconto):</span>
+                                <span className="text-slate-300 text-[9.5px]">Atinge <strong>100% de desconto no bônus (R$ 0,00)</strong>, preservando integralmente o valor fixo da cesta básica.</span>
                               </div>
                             </div>
                             <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between font-mono">
                               <span>Fórmula:</span>
-                              <span className="text-slate-200">Bônus = R$ {metaMensalBonus} × (1 - Desconto% / 100)</span>
+                              <span className="text-slate-200">Desconto = (Perda - 8%) ÷ 0,1% × R$ 5,00</span>
                             </div>
                           </div>
                         </div>
@@ -1465,42 +1465,56 @@ export const RibbonBiAnalyticsView: React.FC<RibbonBiAnalyticsViewProps> = ({
                             <td className="px-4 py-4 text-right text-rose-550 font-black">{formatPercent(op.averageWasteIdx)}</td>
                             <td className="px-4 py-4 text-right">
                               {(() => {
-                                const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
+                                const targetIdx = op.averageWasteIdx;
+                                let discountPct = 0;
+                                let lossAmt = 0;
+                                if (targetIdx > 8.0) {
+                                  const excessPoints = targetIdx - 8.0;
+                                  const tenths = excessPoints / 0.1;
+                                  lossAmt = Math.min(opDetails.bonusRef, tenths * 5.0);
+                                  discountPct = opDetails.bonusRef > 0 ? (lossAmt / opDetails.bonusRef) * 100 : 0;
+                                }
                                 if (discountPct === 0) {
-                                  return <span className="text-emerald-600 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (Melhor)</span>;
+                                  return <span className="text-emerald-700 font-black bg-emerald-50 px-2 py-1 rounded-lg">0,0% (≤8%)</span>;
                                 }
-                                if (discountPct === 100) {
-                                  return <span className="text-rose-550 font-black bg-rose-50 px-2 py-1 rounded-lg">100,0% (Pior)</span>;
+                                if (discountPct >= 100) {
+                                  return <span className="text-rose-550 font-black bg-rose-50 px-2 py-1 rounded-lg">100,0% (-R$ {opDetails.bonusRef})</span>;
                                 }
-                                return <span className="text-slate-600 font-bold">{discountPct.toFixed(1).replace('.', ',')}%</span>;
+                                return <span className="text-amber-700 font-bold">{discountPct.toFixed(1).replace('.', ',')}% (-R$ {lossAmt.toFixed(2).replace('.', ',')})</span>;
                               })()}
                             </td>
                             <td className="px-4 py-4 text-right">
                               {(() => {
-                                const discountPct = wasteRange === 0 ? 0 : ((op.averageWasteIdx - minWaste) / wasteRange) * 100;
-                                const bonusAmt = opDetails.bonusRef * (1 - (discountPct / 100));
-                                if (discountPct === 0) {
+                                const targetIdx = op.averageWasteIdx;
+                                let lossAmt = 0;
+                                if (targetIdx > 8.0) {
+                                  const excessPoints = targetIdx - 8.0;
+                                  const tenths = excessPoints / 0.1;
+                                  lossAmt = Math.min(opDetails.bonusRef, tenths * 5.0);
+                                }
+                                const bonusAmt = Math.max(0, opDetails.bonusRef - lossAmt);
+                                if (lossAmt === 0) {
                                   return (
                                     <div className="flex justify-end items-center gap-1">
                                       <span className="text-emerald-700 font-black text-xs flex flex-col items-end bg-emerald-50 px-2.5 py-1 rounded-xl">
                                         <span className="flex items-center gap-0.5"><Award size={12} className="text-amber-500 fill-amber-500 inline mr-0.5" /> R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                        <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">Sem desconto</span>
+                                        <span className="text-[8px] text-emerald-500 font-bold block mt-0.5">100% da Meta (Perda ≤8%)</span>
                                       </span>
                                     </div>
                                   );
                                 }
-                                if (discountPct === 100) {
+                                if (bonusAmt === 0) {
                                   return (
                                     <div className="flex flex-col items-end">
                                       <span className="text-slate-400 font-normal">R$ 0,00</span>
-                                      <span className="text-[8px] text-rose-400 font-bold block mt-0.5">Pior média</span>
+                                      <span className="text-[8px] text-rose-400 font-bold block mt-0.5">100% desc. (Perda ≥14%)</span>
                                     </div>
                                   );
                                 }
                                 return (
                                   <div className="flex flex-col items-end">
                                     <span className="text-slate-705 font-extrabold text-xs">R$ {bonusAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                    <span className="text-[8px] text-slate-400 font-semibold">Base: R$ {opDetails.bonusRef}</span>
+                                    <span className="text-[8px] text-amber-700 font-semibold">-R$ {lossAmt.toFixed(2).replace('.', ',')}</span>
                                   </div>
                                 );
                               })()}
