@@ -393,12 +393,16 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       map[key].entriesCount += 1;
       map[key].totalNet += (e.netWeight || 0);
-      // Regra ECOA: O ECOA terá perda de bônus somente se ultrapassar 8% no dia.
-      // Se não ultrapassar 8% da produção do dia, não haverá perda nenhuma e não gerará perda percentual.
+      // Regra ECOA: A partir de 01/11/2026, o ECOA terá perda de bônus somente se ultrapassar 8% no dia.
+      // Se não ultrapassar 8% da produção do dia, não haverá perda nenhuma (100% isento).
+      const entryDate = e.date || '';
+      const isFromNov2026 = entryDate >= '2026-11-01';
       const dayProd = Number(e.grossWeight) || Number(e.netWeight) || 0;
       const rawEcoA = Number(e.ecoA) || 0;
       const ecoAPct = dayProd > 0 ? (rawEcoA / dayProd) * 100 : 0;
-      const evaluatedEcoA = ecoAPct > 8 ? rawEcoA : 0;
+      const evaluatedEcoA = isFromNov2026 
+        ? (ecoAPct <= 8.0 ? 0 : Math.max(0, rawEcoA - (dayProd * 0.08)))
+        : (ecoAPct > 8.0 ? rawEcoA : rawEcoA); // mantém comportamento anterior antes de 01/11
 
       // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
       // Regra: Apenas ECOBP com desconto ativado conta para perda do operador na meta!
@@ -492,8 +496,22 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       }
 
       acc[e.operator][m].netProd += (e.netWeight || 0);
-      const entryEcoA = e.ecoA || 0;
-      // Regra: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
+      const entryDate = e.date || '';
+      const isFromNov2026 = entryDate >= '2026-11-01';
+
+      const rawEcoA = Number(e.ecoA) || 0;
+      let evaluatedEntryEcoA = rawEcoA;
+
+      if (isFromNov2026) {
+        // Regra a partir de 01/11: ECO A avaliado individualmente!
+        // Se Eco A <= 8% da produção do turno, é 100% isento (0 kg para perda de bônus).
+        // Se > 8%, apenas o excedente é contabilizado.
+        const dayBaseProd = Number(e.grossWeight) || Number(e.netWeight) || 0;
+        const ecoAPct = dayBaseProd > 0 ? (rawEcoA / dayBaseProd) * 100 : 0;
+        evaluatedEntryEcoA = ecoAPct <= 8.0 ? 0 : Math.max(0, rawEcoA - (dayBaseProd * 0.08));
+      }
+
+      // Regra: ECOBM (Manutenção) é SEMPRE isento e NÃO conta como refugo do operador na meta!
       // Regra: Apenas ECOBP com desconto ativado conta como refugo do operador na meta!
       const entryDiscountEcoBP = e.ecoBPDiscountKg !== undefined
         ? Number(e.ecoBPDiscountKg)
@@ -501,9 +519,10 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             ? e.ecoBItems.filter(i => i.type === 'producao' && i.countForBonusDiscount).reduce((s, i) => s + (Number(i.weightKg) || 0), 0)
             : Number(e.ecoBP) || 0);
       const entryEcoB = entryDiscountEcoBP; // apenas ECOBP de produção sujeito a desconto
-      const entryBorra = e.borraTotal || 0;
-      acc[e.operator][m].waste += (entryEcoA + entryEcoB + entryBorra);
-      acc[e.operator][m].ecoA += entryEcoA;
+      const entryBorra = Number(e.borraTotal) || 0;
+      
+      acc[e.operator][m].waste += (evaluatedEntryEcoA + entryEcoB + entryBorra);
+      acc[e.operator][m].ecoA += evaluatedEntryEcoA;
       acc[e.operator][m].ecoB += entryEcoB;
       acc[e.operator][m].borra += entryBorra;
       acc[e.operator][m].logsCount += 1;
@@ -1120,12 +1139,15 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       let actualProdDisplay = formatWeight(e.netWeight);
       let lossDisplay = '0 Kg';
 
-      // Regra ECOA: O ECOA terá perda de bônus somente se ultrapassar 8% no dia.
-      // Se não ultrapassar 8% da produção do dia, não haverá perda nenhuma e não gerará perda percentual.
+      // Regra ECOA: A partir de 01/11/2026, o ECOA terá perda de bônus somente se ultrapassar 8% no dia.
+      const entryDate = e.date || '';
+      const isFromNov2026 = entryDate >= '2026-11-01';
       const dayProd = Number(e.grossWeight) || Number(e.netWeight) || 0;
       const rawEcoA = Number(e.ecoA) || 0;
       const ecoAPct = dayProd > 0 ? (rawEcoA / dayProd) * 100 : 0;
-      const evaluatedEcoA = ecoAPct > 8 ? rawEcoA : 0;
+      const evaluatedEcoA = isFromNov2026
+        ? (ecoAPct <= 8.0 ? 0 : Math.max(0, rawEcoA - (dayProd * 0.08)))
+        : (ecoAPct > 8.0 ? rawEcoA : rawEcoA);
 
       // Regra estrita: ECOBM (Manutenção) é isento e NÃO conta como refugo do operador na meta!
       // Regra estrita: Apenas ECOBP com desconto ativado conta como refugo do operador na meta!
@@ -1162,15 +1184,25 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
 
       if (isCast) {
         const kgH = Number(e.kgPerHour) || (machStr.includes('cast 2') || machStr.includes('k2') ? 850 : 1000);
-        const theoretical12h = kgH * 12;
-        const tolPct = Number(e.lossTolerancePercent) > 0 ? Number(e.lossTolerancePercent) : 3.5;
-        const maxAllowedLoss = theoretical12h * (tolPct / 100);
-        const targetNetKg = Math.max(0, theoretical12h - maxAllowedLoss);
+        
+        // A partir de 01/11/2026: Horas efetivas disponíveis = 12h - (Manutenção + Limpezas autorizadas de até 30m)
+        let effectiveOperatingHours = 12;
+        let totalAbatedMins = 0;
+        if (isFromNov2026) {
+          const allowedCleaningMins = cleaningEval.cleaningStops.reduce((sum, s) => sum + Math.min(30, s.durationMinutes), 0);
+          totalAbatedMins = maintMins + allowedCleaningMins;
+          effectiveOperatingHours = Math.max(0, 12 - (totalAbatedMins / 60));
+        }
+
+        const effectiveTheoretical = kgH * effectiveOperatingHours;
+        const tolPct = Number(e.lossTolerancePercent) > 0 ? Number(e.lossTolerancePercent) : 8.0;
+        const maxAllowedLoss = effectiveTheoretical * (tolPct / 100);
+        const targetNetKg = Math.max(0, effectiveTheoretical - maxAllowedLoss);
         const net = Number(e.netWeight) || 0;
 
         speedStr = `${kgH} kg/h`;
         toleranceStr = `${tolPct}% (≤ ${formatWeight(maxAllowedLoss)})`;
-        meta12hStr = formatWeight(targetNetKg);
+        meta12hStr = totalAbatedMins > 0 ? `${formatWeight(targetNetKg)} (${effectiveOperatingHours.toFixed(1)}h)` : formatWeight(targetNetKg);
         actualProdDisplay = formatWeight(e.netWeight);
         lossDisplay = formatWeight(evaluatedLosses) + 
           (rawEcoA > 0 && ecoAPct <= 8 ? ` (EcoA ${ecoAPct.toFixed(1)}% ≤ 8% Isento)` : '') +

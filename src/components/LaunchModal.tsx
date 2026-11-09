@@ -1960,31 +1960,13 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
              formData.machine?.toLowerCase().includes('k2') ||
              !isErema)
           ) && (() => {
-            const kgH = Number(formData.kgPerHour) || 0;
-            const theoretical12h = kgH * 12;
-            const tolerancePct = Number(formData.lossTolerancePercent) > 0 ? Number(formData.lossTolerancePercent) : 8;
-            const maxAllowedLossKg = theoretical12h * (tolerancePct / 100);
-            const targetNetKg = Math.max(0, theoretical12h - maxAllowedLossKg);
-
-            const netKg = Number(formData.netWeight) || 0;
-            // Regra: ECOBM (Manutenção) é isento e NÃO conta como perda para a meta do operador!
-            // Regra: Apenas ECOBP marcado para desconto no bônus é contabilizado para a tolerância de 8% do operador!
-            const discountableEcoBP = ecoBPDiscountTotalCalculado;
-            const realLossesKg = (Number(formData.ecoA) || 0) + discountableEcoBP + (Number(formData.borraTotal) || 0);
-            const ecoBMKg = Number(formData.ecoBM) || 0;
-            const totalProcessed = netKg + realLossesKg;
-            const realLossPct = totalProcessed > 0 ? (realLossesKg / totalProcessed) * 100 : (theoretical12h > 0 ? (realLossesKg / theoretical12h) * 100 : 0);
-
-            const lossExcessKg = Math.max(0, realLossesKg - maxAllowedLossKg);
-            const isLossWithinTolerance = realLossesKg <= maxAllowedLossKg;
-            const isNetGoalMet = theoretical12h > 0 && netKg >= targetNetKg;
-            const netAttainmentPct = targetNetKg > 0 ? (netKg / targetNetKg) * 100 : 0;
-
-            // Regra de Paradas:
-            // A ÚNICA parada que contabiliza para perda de meta é limpeza da matriz / máquina.
-            // Paradas de manutenção não contabilizam perda de meta.
-            // O limite de 30 minutos é POR PARADA INDIVIDUAL (não é a soma de todas as paradas!).
+            // Regra de Paradas e Tempo Efetivo de Produção (A partir de 01/11/2026):
+            // O tempo que a máquina ficou parada por motivos legais/isentos é abatido das 12h:
+            // 1) Paradas de Manutenção Mecânica/Elétrica: Abate 100% dos minutos.
+            // 2) Paradas de Limpeza de Matriz/Máquina: Abate até 30 min por parada (tempo autorizado).
+            //    Excesso de limpeza (>30m por parada) NÃO abate da meta (penaliza o operador).
             const allEnteredStops = [...processoStops, ...outrosStops, ...manutencaoStops];
+            
             const cleaningStopsList = allEnteredStops.filter(s => {
               const txt = (s.motivo || s.explicacao || s.justification || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
               return txt.includes('limpeza') || txt.includes('limp') || txt.includes('matriz') || txt.includes('cabecote') || txt.includes('rosca') || txt.includes('rolo') || txt.includes('tela');
@@ -2003,6 +1985,66 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
             const cleaningStopsOver30 = cleaningStopsList.filter(s => s.dur > 30);
             const hasCleaningOver30 = cleaningStopsOver30.length > 0;
             const maxCleaningRecorded = cleaningStopsList.length > 0 ? Math.max(...cleaningStopsList.map(s => s.dur)) : 0;
+
+            // Minutos autorizados de limpeza que abatem da meta (máximo 30 min por ocorrência)
+            const allowedCleaningMinutes = cleaningStopsList.reduce((acc, s) => acc + Math.min(30, s.dur), 0);
+
+            // Minutos de manutenção mecânica/elétrica (100% isentos da meta de produção do operador)
+            const maintenanceMinutes = manutencaoStops.reduce((acc, s) => {
+              const manual = Number(s.durationMinutes);
+              let dur = 0;
+              if (s.isAvulso || (!s.de && !s.ate)) {
+                dur = isNaN(manual) ? 0 : manual;
+              } else {
+                const diff = getDiffMinutes(s.de, s.ate);
+                dur = diff > 0 ? diff : (isNaN(manual) ? 0 : manual);
+              }
+              return acc + dur;
+            }, 0);
+
+            // Total de minutos de paradas autorizadas/isentas que abatem da meta
+            const totalAbatedStopsMin = allowedCleaningMinutes + maintenanceMinutes;
+            const abatedHours = totalAbatedStopsMin / 60;
+            const effectiveOperatingHours = Math.max(0, 12 - abatedHours);
+
+            const kgH = Number(formData.kgPerHour) || 0;
+            // Teórico nominal de 12h e Teórico efetivo abatido das paradas justificadas
+            const theoretical12h = kgH * 12;
+            const effectiveTheoreticalKg = kgH * effectiveOperatingHours;
+
+            const tolerancePct = Number(formData.lossTolerancePercent) > 0 ? Number(formData.lossTolerancePercent) : 8;
+            const maxAllowedLossKg = effectiveTheoreticalKg * (tolerancePct / 100);
+            const targetNetKg = Math.max(0, effectiveTheoreticalKg - maxAllowedLossKg);
+
+            const netKg = Number(formData.netWeight) || 0;
+            const grossKg = Number(formData.grossWeight) || (netKg + (Number(formData.taraTotal) || 0));
+            const dayBaseVolume = grossKg > 0 ? grossKg : netKg;
+            
+            // Regra 1: ECO A (Sede) é avaliado INDIVIDUALMENTE:
+            // Só conta como refugo se ultrapassar 8% no dia. Até 8,0% é 100% ISENTO!
+            const rawEcoA = Number(formData.ecoA) || 0;
+            const ecoAPct = dayBaseVolume > 0 ? (rawEcoA / dayBaseVolume) * 100 : 0;
+            const isEcoAExempt = ecoAPct <= tolerancePct;
+            const evaluatedEcoA = isEcoAExempt ? 0 : Math.max(0, rawEcoA - (dayBaseVolume * (tolerancePct / 100)));
+
+            // Regra 2: ECO B (Produção) é avaliado INDIVIDUALMENTE:
+            // Apenas ECOBP marcado para desconto no bônus é contabilizado!
+            // ECOBM (Manutenção) é SEMPRE 100% ISENTO!
+            const discountableEcoBP = ecoBPDiscountTotalCalculado;
+            const borraKg = Number(formData.borraTotal) || 0;
+            
+            // Total de refugo computável para a meta do operador:
+            const realLossesKg = evaluatedEcoA + discountableEcoBP + borraKg;
+            const ecoBMKg = Number(formData.ecoBM) || 0;
+            
+            // Percentual de refugo de produção avaliado do operador
+            const totalProcessed = netKg + realLossesKg;
+            const realLossPct = totalProcessed > 0 ? (realLossesKg / totalProcessed) * 100 : (effectiveTheoreticalKg > 0 ? (realLossesKg / effectiveTheoreticalKg) * 100 : 0);
+
+            const lossExcessKg = Math.max(0, realLossesKg - maxAllowedLossKg);
+            const isLossWithinTolerance = realLossesKg <= maxAllowedLossKg;
+            const isNetGoalMet = effectiveTheoreticalKg > 0 && netKg >= targetNetKg;
+            const netAttainmentPct = targetNetKg > 0 ? (netKg / targetNetKg) * 100 : 0;
 
             return (
               <div className="bg-slate-50 border border-amber-300/80 rounded-xl p-2 shrink-0 shadow-xs">
@@ -2113,7 +2155,14 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                   {/* Bloco 4: Indicadores em Tempo Real de Meta e Refugo (4 colunas) */}
                   <div className="md:col-span-4 bg-white border border-slate-200 rounded-lg px-2.5 py-1 space-y-0.5 text-[8.5px]">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500 font-bold uppercase">Meta Líq. Mínima ({100 - tolerancePct}%):</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-500 font-bold uppercase">Meta Líq. Mínima ({100 - tolerancePct}%):</span>
+                        {totalAbatedStopsMin > 0 && (
+                          <span className="text-[7px] font-black text-amber-700 bg-amber-50 px-1 rounded border border-amber-200" title={`Abatido ${totalAbatedStopsMin} min de paradas autorizadas/manutenção (${effectiveOperatingHours.toFixed(1)}h de máquina)`}>
+                            -{totalAbatedStopsMin}m ({effectiveOperatingHours.toFixed(1)}h)
+                          </span>
+                        )}
+                      </div>
                       <span className="font-black text-blue-700">
                         {targetNetKg > 0 ? formatWeight(targetNetKg) : '—'}
                       </span>
@@ -2131,6 +2180,15 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                         {isLossWithinTolerance ? 'Dentro da Tolerância ✅' : `Excesso (+${formatWeight(lossExcessKg)}) ⚠️`}
                       </span>
                     </div>
+
+                    {rawEcoA > 0 && (
+                      <div className="flex items-center justify-between text-[7.5px] text-slate-500 font-semibold pt-0.5">
+                        <span>📦 Eco A (Sede): <strong>{formatWeight(rawEcoA)}</strong> ({ecoAPct.toFixed(1)}%)</span>
+                        <span className={`font-black uppercase text-[7px] px-1 rounded border ${isEcoAExempt ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
+                          {isEcoAExempt ? `≤${tolerancePct.toFixed(0)}% (100% Isento)` : `Excedeu +${(ecoAPct - tolerancePct).toFixed(1)}%`}
+                        </span>
+                      </div>
+                    )}
 
                     {ecoBMKg > 0 && (
                       <div className="flex items-center justify-between text-[7.5px] text-slate-500 font-semibold pt-0.5">

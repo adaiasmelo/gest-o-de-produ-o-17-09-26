@@ -593,11 +593,30 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
       }
 
       acc[e.operator][m].netProd += (e.netWeight || 0);
-      const entryEcoA = e.ecoA || 0;
-      const entryEcoB = (e.ecoBP || 0) + (e.ecoBM || 0);
-      const entryBorra = e.borraTotal || 0;
-      acc[e.operator][m].waste += (entryEcoA + entryEcoB + entryBorra);
-      acc[e.operator][m].ecoA += entryEcoA;
+      const entryDate = e.date || '';
+      const isFromNov2026 = entryDate >= '2026-11-01';
+      
+      const rawEcoA = Number(e.ecoA) || 0;
+      let evaluatedEcoA = rawEcoA;
+      if (isFromNov2026) {
+        // Regra a partir de 01/11/2026: Eco A isento até 8% da produção do turno
+        const dayBaseProd = Number(e.grossWeight) || Number(e.netWeight) || 0;
+        const ecoAPct = dayBaseProd > 0 ? (rawEcoA / dayBaseProd) * 100 : 0;
+        evaluatedEcoA = ecoAPct <= 8.0 ? 0 : Math.max(0, rawEcoA - (dayBaseProd * 0.08));
+      }
+
+      // Regra de Eco B: ECOBM é manutenção e isento da meta do operador; apenas ECOBP com desconto conta
+      const entryEcoB = isFromNov2026
+        ? (e.ecoBPDiscountKg !== undefined 
+            ? Number(e.ecoBPDiscountKg) 
+            : (Array.isArray(e.ecoBItems) && e.ecoBItems.length > 0 
+                ? e.ecoBItems.filter((i: any) => i.type === 'producao' && i.countForBonusDiscount).reduce((s: number, i: any) => s + (Number(i.weightKg) || 0), 0)
+                : Number(e.ecoBP) || 0))
+        : ((Number(e.ecoBP) || 0) + (Number(e.ecoBM) || 0));
+
+      const entryBorra = Number(e.borraTotal) || 0;
+      acc[e.operator][m].waste += (evaluatedEcoA + entryEcoB + entryBorra);
+      acc[e.operator][m].ecoA += evaluatedEcoA;
       acc[e.operator][m].ecoB += entryEcoB;
       acc[e.operator][m].borra += entryBorra;
       acc[e.operator][m].logsCount += 1;
