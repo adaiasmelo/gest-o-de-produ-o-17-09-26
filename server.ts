@@ -251,8 +251,9 @@ async function startServer() {
   app.get("/api/sync/production", (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
-    const entries = readSharedProduction();
     const deleted = readSharedDeleted();
+    const rawEntries = readSharedProduction();
+    const entries = rawEntries.filter(e => e?.id && !deleted.has(e.id));
     res.json({
       status: "ok",
       count: entries.length,
@@ -269,20 +270,35 @@ async function startServer() {
       const clientDeleted = Array.isArray(req.body?.deletedIds) ? req.body.deletedIds : [];
       
       const deletedSet = readSharedDeleted();
-      if (clientDeleted.length > 0) {
-        clientDeleted.forEach((id: string) => { if (id) deletedSet.add(String(id)); });
+      if (Array.isArray(req.body?.restoreIds) && req.body.restoreIds.length > 0) {
+        req.body.restoreIds.forEach((id: string) => { if (id) deletedSet.delete(String(id)); });
         writeSharedDeleted(deletedSet);
+      }
+      if (clientDeleted.length > 0) {
+        let changed = false;
+        clientDeleted.forEach((id: string) => { 
+          if (id && !deletedSet.has(String(id))) {
+            deletedSet.add(String(id));
+            changed = true;
+          }
+        });
+        if (changed) {
+          writeSharedDeleted(deletedSet);
+        }
       }
 
       const current = readSharedProduction();
-      const merged = deduplicateEntriesServer([...incoming, ...current]);
-      writeSharedProduction(merged);
+      const validIncoming = incoming.filter((e: any) => e?.id && !deletedSet.has(e.id));
+      const validCurrent = current.filter((e: any) => e?.id && !deletedSet.has(e.id));
+      const merged = deduplicateEntriesServer([...validIncoming, ...validCurrent]);
+      const cleanMerged = merged.filter((e: any) => e?.id && !deletedSet.has(e.id));
+      writeSharedProduction(cleanMerged);
 
       res.json({
         status: "ok",
-        count: merged.length,
+        count: cleanMerged.length,
         lastSyncTime: new Date().toISOString(),
-        entries: merged,
+        entries: cleanMerged,
         deletedIds: Array.from(deletedSet)
       });
     } catch (err: any) {
@@ -299,22 +315,23 @@ async function startServer() {
         : (req.body?.id ? [req.body.id] : []);
 
       if (idsToDelete.length === 0) {
-        return res.json({ status: "ok", message: "Nenhum ID para excluir" });
+        return res.json({ status: "ok", message: "Nenhum ID para excluir", deletedIds: Array.from(readSharedDeleted()) });
       }
 
       const deletedSet = readSharedDeleted();
-      idsToDelete.forEach(id => deletedSet.add(String(id)));
+      idsToDelete.forEach(id => { if (id) deletedSet.add(String(id)); });
       writeSharedDeleted(deletedSet);
 
       const current = readSharedProduction();
-      const filtered = current.filter(e => !deletedSet.has(e.id));
+      const filtered = current.filter(e => e?.id && !deletedSet.has(e.id));
       writeSharedProduction(filtered);
 
       res.json({
         status: "ok",
         deletedCount: idsToDelete.length,
         remainingCount: filtered.length,
-        lastSyncTime: new Date().toISOString()
+        lastSyncTime: new Date().toISOString(),
+        deletedIds: Array.from(deletedSet)
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erro ao registrar exclusão' });

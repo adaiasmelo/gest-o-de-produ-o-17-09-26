@@ -32,6 +32,19 @@ export function recordLocalDeletedProductionIds(ids: string[]): void {
   }
 }
 
+export function removeLocalDeletedProductionId(id: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage || !id) return;
+    const current = new Set(getLocalDeletedProductionIds());
+    if (current.has(String(id))) {
+      current.delete(String(id));
+      localStorage.setItem(PROD_DELETED_IDS_KEY, JSON.stringify(Array.from(current)));
+    }
+  } catch (e) {
+    console.warn('Erro ao remover deleted ID:', e);
+  }
+}
+
 export interface CachedProductionEnvelope {
   version: number;
   lastSyncTime: string | null;
@@ -154,59 +167,49 @@ export function loadProductionCache(): {
 }
 
 /**
- * Salva os dados de produção no localStorage de forma segura, tratando estouro de cota
+ * Salva os dados de produção no localStorage de forma segura e imediata (sem debounce para evitar condições de corrida com o sync)
  */
-let saveProdTimeout: ReturnType<typeof setTimeout> | null = null;
-
 export function saveProductionCache(entries: ProductionEntry[], lastSyncTime?: string): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
 
-  // Debounce para evitar sobrecarga de I/O em atualizações em lote
-  if (saveProdTimeout) {
-    clearTimeout(saveProdTimeout);
-  }
+  try {
+    const deletedSet = new Set(getLocalDeletedProductionIds());
+    const validEntries = entries.filter(isValidProductionEntry).filter(e => !deletedSet.has(e.id));
+    const syncTime = lastSyncTime || new Date().toISOString();
 
-  saveProdTimeout = setTimeout(() => {
-    try {
-      const validEntries = entries.filter(isValidProductionEntry);
-      const syncTime = lastSyncTime || new Date().toISOString();
+    const envelope: CachedProductionEnvelope = {
+      version: 2,
+      lastSyncTime: syncTime,
+      savedAt: Date.now(),
+      entries: validEntries
+    };
 
-      const envelope: CachedProductionEnvelope = {
-        version: 2,
-        lastSyncTime: syncTime,
-        savedAt: Date.now(),
-        entries: validEntries
-      };
-
-      const serialized = JSON.stringify(envelope);
-      localStorage.setItem(PROD_CACHE_KEY, serialized);
-      // Manter compatibilidade com leituras antigas
-      localStorage.setItem(PROD_CACHE_LEGACY_KEY, JSON.stringify(validEntries));
-      localStorage.setItem(PROD_LAST_SYNC_KEY, syncTime);
-    } catch (err: any) {
-      // Tratar QuotaExceededError limpando caches temporários se necessário
-      if (err?.name === 'QuotaExceededError' || err?.code === 22) {
-        console.warn('Quota de localStorage atingida ao salvar produção. Limpando chaves temporárias...');
-        try {
-          // Limpa chaves não essenciais
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && (key.startsWith('temp_') || key.includes('_debug_') || key.startsWith('cache_pdf_'))) {
-              localStorage.removeItem(key);
-            }
+    const serialized = JSON.stringify(envelope);
+    localStorage.setItem(PROD_CACHE_KEY, serialized);
+    // Manter compatibilidade com leituras antigas
+    localStorage.setItem(PROD_CACHE_LEGACY_KEY, JSON.stringify(validEntries));
+    localStorage.setItem(PROD_LAST_SYNC_KEY, syncTime);
+  } catch (err: any) {
+    // Tratar QuotaExceededError limpando caches temporários se necessário
+    if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+      console.warn('Quota de localStorage atingida ao salvar produção. Limpando chaves temporárias...');
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('temp_') || key.includes('_debug_') || key.startsWith('cache_pdf_'))) {
+            localStorage.removeItem(key);
           }
-          // Tenta salvar novamente
-          const envelope: CachedProductionEnvelope = {
-            version: 2,
-            lastSyncTime: lastSyncTime || new Date().toISOString(),
-            savedAt: Date.now(),
-            entries: entries.slice(0, 500) // mantém os 500 mais recentes em caso de limite rígido
-          };
-          localStorage.setItem(PROD_CACHE_KEY, JSON.stringify(envelope));
-        } catch (_) {}
-      }
+        }
+        const envelope: CachedProductionEnvelope = {
+          version: 2,
+          lastSyncTime: lastSyncTime || new Date().toISOString(),
+          savedAt: Date.now(),
+          entries: entries.slice(0, 500)
+        };
+        localStorage.setItem(PROD_CACHE_KEY, JSON.stringify(envelope));
+      } catch (_) {}
     }
-  }, 150);
+  }
 }
 
 /**
@@ -239,9 +242,10 @@ export function mergeProductionDocChanges(
     };
   }
 
+  const deletedSet = new Set(getLocalDeletedProductionIds());
   const entriesMap = new Map<string, ProductionEntry>();
   currentEntries.forEach(item => {
-    if (item && item.id) {
+    if (item && item.id && !deletedSet.has(item.id)) {
       entriesMap.set(item.id, item);
     }
   });
@@ -269,6 +273,16 @@ export function mergeProductionDocChanges(
 
   for (const change of docChanges) {
     const docId = change.doc.id;
+
+    // Se o apontamento foi excluído pelo usuário na Gestão de Produção, nunca deve ser recriado!
+    if (deletedSet.has(docId)) {
+      if (entriesMap.has(docId)) {
+        entriesMap.delete(docId);
+        hasChanges = true;
+        removedCount++;
+      }
+      continue;
+    }
 
     if (change.type === 'removed') {
       if (entriesMap.has(docId)) {

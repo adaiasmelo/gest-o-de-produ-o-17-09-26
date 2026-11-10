@@ -20,6 +20,7 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas';
 import { downloadChartAsImageWithLegend } from './utils/exportChartImage';
+import { downloadChartAsLandscapePDF } from './utils/exportLandscapeChartPDF';
 import { copyRichAndPlainText, downloadOutlookEml, getFormattedFileDate } from './utils/outlookEml';
 import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialData } from './lib/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
@@ -152,6 +153,7 @@ import {
   deduplicateProductionEntries,
   getLocalDeletedProductionIds,
   recordLocalDeletedProductionIds,
+  removeLocalDeletedProductionId,
   loadRibbonCache,
   saveRibbonCache,
   mergeRibbonDocChanges
@@ -1366,6 +1368,8 @@ export const App: React.FC = () => {
     stops: []
   });
   const [stackedGroupBy, setStackedGroupBy] = useState<'machine' | 'operator'>('machine');
+  const [operatorChartViewMode, setOperatorChartViewMode] = useState<'bars' | 'scatter'>('bars');
+  const [ribbonOperatorChartViewMode, setRibbonOperatorChartViewMode] = useState<'bars' | 'scatter'>('bars');
   const [productionSyncStatus, setProductionSyncStatus] = useState<{
     lastSyncTime: string | null;
     isLoadedFromCache: boolean;
@@ -2473,7 +2477,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           fetch('/api/sync/production', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries: updatedEntries })
+            body: JSON.stringify({ entries: updatedEntries, deletedIds: getLocalDeletedProductionIds() })
           }).catch(() => {});
 
           return updatedEntries;
@@ -2534,6 +2538,24 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           }
         })
         .catch(e => console.warn('Falha no fallback de sync do servidor:', e));
+    });
+
+    const unsubDeletedProduction = onSnapshot(collection(db, 'deletedProductionEntries'), (snap) => {
+      const remoteDeleted = snap.docs.map(d => d.id).filter(Boolean);
+      if (remoteDeleted.length > 0) {
+        recordLocalDeletedProductionIds(remoteDeleted);
+        const delSet = new Set(getLocalDeletedProductionIds());
+        setProductionData(prev => {
+          const filtered = prev.filter(e => !delSet.has(e.id));
+          if (filtered.length !== prev.length) {
+            saveProductionCache(filtered);
+            return filtered;
+          }
+          return prev;
+        });
+      }
+    }, (err) => {
+      console.warn('Aviso: Firestore deletedProductionEntries:', err);
     });
 
     const unsubEmployees = onSnapshot(collection(db, 'employees'), (snap) => {
@@ -2896,6 +2918,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     return () => {
       unsubProduction();
+      if (unsubDeletedProduction) unsubDeletedProduction();
       unsubEmployees();
       unsubCollaborators();
       unsubTraining();
@@ -3097,6 +3120,72 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   };
 
+  const deleteProductionEntriesPermanently = async (idsToDelete: string[]) => {
+    if (!idsToDelete || idsToDelete.length === 0) return;
+
+    // 1. Atualização instantânea e imediata no estado React e cache do navegador
+    recordLocalDeletedProductionIds(idsToDelete);
+    setProductionData(prev => {
+      const updated = prev.filter(e => !idsToDelete.includes(e.id));
+      saveProductionCache(updated);
+      return updated;
+    });
+
+    // 2. Notifica imediatamente o servidor para atualizar o arquivo shared_deleted_ids e remover do shared_production_entries
+    try {
+      const syncRes = await fetch('/api/sync/production/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ ids: idsToDelete })
+      });
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        if (syncData?.deletedIds && Array.isArray(syncData.deletedIds)) {
+          recordLocalDeletedProductionIds(syncData.deletedIds);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Erro ao registrar exclusão no servidor:', syncErr);
+    }
+
+    // 3. Exclusão no Supabase (PostgreSQL) para garantir que não volte no polling do Supabase
+    try {
+      await deleteProductionEntriesFromSupabase(idsToDelete);
+    } catch (supErr) {
+      console.warn('Erro ao deletar lote no Supabase:', supErr);
+    }
+
+    // 4. Registra tombstone de exclusão persistente e remove em lote no Firestore
+    try {
+      for (let i = 0; i < idsToDelete.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = idsToDelete.slice(i, i + 400);
+        chunk.forEach(id => {
+          // Grava tombstone permanente para que nenhum snapshot ou outro sistema recrie na tela de Gestão de Produção
+          batch.set(doc(db, 'deletedProductionEntries', id), {
+            id,
+            deletedAt: new Date().toISOString(),
+            deletedBy: loggedUser?.name || 'Gestão de Produção'
+          });
+          // Tenta excluir do documento original
+          batch.delete(doc(db, 'productionEntries', id));
+        });
+        await batch.commit();
+      }
+    } catch (fireErr) {
+      console.warn('Aviso na exclusão de lote no Firestore (tombstones asseguram exclusão local):', fireErr);
+    }
+
+    // 5. Limpeza final definitiva no estado local
+    const finalDeleted = new Set(getLocalDeletedProductionIds());
+    setProductionData(prev => {
+      const cleaned = prev.filter(e => !finalDeleted.has(e.id));
+      saveProductionCache(cleaned);
+      return cleaned;
+    });
+  };
+
   const handleDeleteSelected = () => {
     if (isReadOnlyAccount) {
       handleBlockedReadOnlyAction('Exclusão Bloqueada', 'A exclusão de lançamentos não é permitida no Modo de Leitura.');
@@ -3111,38 +3200,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         try {
           setIsInitializing(true);
           const idsToDelete = [...selectedEntries];
-
-          // 1. Atualização instantânea na tela e no cache local
-          recordLocalDeletedProductionIds(idsToDelete);
-          setProductionData(prev => {
-            const updated = prev.filter(e => !idsToDelete.includes(e.id));
-            saveProductionCache(updated);
-            return updated;
-          });
           setSelectedEntries([]);
 
-          // 2. Exclusão em lote no Firestore
-          const batches = [];
-          for (let i = 0; i < idsToDelete.length; i += 500) {
-              const batch = writeBatch(db);
-              idsToDelete.slice(i, i + 500).forEach(id => {
-                  batch.delete(doc(db, 'productionEntries', id));
-              });
-              batches.push(batch.commit());
-          }
-          await Promise.all(batches);
-
-          // 3. Exclusão em lote no Supabase (PostgreSQL)
-          deleteProductionEntriesFromSupabase(idsToDelete).catch(err => {
-            console.warn('Erro ao deletar lote no Supabase:', err);
-          });
-
-          // 4. Exclusão no arquivo consolidado do servidor compartilhado
-          fetch('/api/sync/production/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: idsToDelete })
-          }).catch(() => {});
+          await deleteProductionEntriesPermanently(idsToDelete);
 
           addNotification(`${idsToDelete.length} registros excluídos com sucesso de todo o sistema.`);
         } catch (error) {
@@ -4727,14 +4787,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
   const handleOpenEditEntry = (entry: ProductionEntry) => {
     setEditingEntry(entry);
-    const isErema = (entry.machine || '').toLowerCase().includes('erema');
-    if (isErema) {
-      setLaunchModalMachines(['Erema']);
-      setLaunchModalPresetMachine('Erema');
-    } else {
-      setLaunchModalMachines(['Cast 1', 'Cast 2']);
-      setLaunchModalPresetMachine(entry.machine || 'Cast 1');
-    }
+    setLaunchModalMachines(['Cast 1', 'Cast 2', 'Erema']);
+    setLaunchModalPresetMachine(entry.machine || 'Erema');
     setIsModalOpen(true);
   };
 
@@ -5259,6 +5313,15 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     return Object.values(operatorMap).filter(d => d.prod > 0 || d.wastes > 0);
   }, [ribbonChartEntries, ribbonBiMachineFilter]);
+
+  const ribbonOperatorBarsData = useMemo(() => {
+    return [...ribbonScatterData]
+      .map(d => ({
+        ...d,
+        wasteRate: d.prod > 0 ? Number(((d.wastes / d.prod) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.prod - a.prod);
+  }, [ribbonScatterData]);
 
   // Resumo de KPIs da máquina selecionada no gráfico (se filtrada)
   const ribbonSelectedMachineStats = useMemo(() => {
@@ -7845,7 +7908,14 @@ Atenciosamente,
       chartType = 'stops-motifs-card';
     }
 
-    await downloadChartAsImageWithLegend({
+    const appliedFilters = {
+      machine: (id.startsWith('ribbon') ? (ribbonBiMachineFilter !== 'all' ? ribbonBiMachineFilter : undefined) : (biMachineFilter !== 'all' ? biMachineFilter : undefined)),
+      operator: (id.startsWith('ribbon') ? (ribbonBiOperatorFilter !== 'all' ? ribbonBiOperatorFilter : undefined) : (biOperatorFilter !== 'all' ? biOperatorFilter : undefined)),
+      shift: (id.startsWith('ribbon') ? (ribbonBiShiftFilter !== 'all' ? ribbonBiShiftFilter : undefined) : (biShiftFilter !== 'all' ? biShiftFilter : undefined)),
+      dateRange: (biStartDate || biEndDate) ? `${biStartDate || 'Início'} até ${biEndDate || 'Fim'}` : dashboardMonth,
+    };
+
+    await downloadChartAsLandscapePDF({
       id,
       title,
       period: dashboardMonth,
@@ -7854,7 +7924,12 @@ Atenciosamente,
       formatWeight,
       formatM2,
       formatMinutes,
-      extraInfo
+      extraInfo: {
+        ...extraInfo,
+        filters: appliedFilters,
+      },
+      systemName: 'MANUPACKAGING FITAS & AMAZÔNIA',
+      loggedUser: loggedUser ? { name: loggedUser.name, role: loggedUser.role } : null,
     });
   };
 
@@ -15044,6 +15119,12 @@ Atenciosamente,
                 scatterMap[op].stopsProcess += (e.processoMin || 0);
               });
               const scatterData = Object.values(scatterMap).filter(d => d.prod > 0 || d.wastes > 0);
+              const operatorBarsData = [...scatterData]
+                .map(d => ({
+                  ...d,
+                  wasteRate: (d.prod + d.wastes) > 0 ? Number(((d.wastes / (d.prod + d.wastes)) * 100).toFixed(1)) : 0
+                }))
+                .sort((a, b) => b.prod - a.prod);
 
               // Daily trend composite (Composed Chart Data)
               const dailyTrendMap: Record<string, { 
@@ -16086,24 +16167,65 @@ Atenciosamente,
                       </div>
                     </div>
 
-                    {/* Chart 2: Scatter / Bubble Chart - Operator vs Efficiency */}
+                    {/* Chart 2: Comparative Bar Chart / Scatter - Operator vs Efficiency */}
                     <div id="bi-chart-scatter" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col min-h-[420px] hover:shadow-md transition-shadow">
-                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-50">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-2 border-b border-slate-50">
                         <div>
-                          <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Dispersão: Produção vs Resíduos Operador</h4>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">X = Produção (kg) | Y = Resíduos (kg) | Tamanho = Paradas de Processo (min)</p>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                              {operatorChartViewMode === 'bars' ? 'Desempenho por Operador: Produção vs Resíduos' : 'Dispersão: Produção vs Resíduos Operador'}
+                            </h4>
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Gestão à Vista
+                            </span>
+                          </div>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                            {operatorChartViewMode === 'bars'
+                              ? '🟢 Produção Líquida (kg) vs 🔴 Desperdício Total (kg) por Operador'
+                              : 'X = Produção (kg) | Y = Resíduos (kg) | Tamanho = Paradas de Processo (min)'}
+                          </p>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-2">
+                          {/* Toggle View Mode */}
+                          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setOperatorChartViewMode('bars')}
+                              className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${
+                                operatorChartViewMode === 'bars'
+                                  ? 'bg-white text-slate-900 shadow-sm'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                              title="Visualização em Barras Comparativas (Ideal para Quadro Físico)"
+                            >
+                              <span>📊</span>
+                              <span>Barras</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOperatorChartViewMode('scatter')}
+                              className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${
+                                operatorChartViewMode === 'scatter'
+                                  ? 'bg-white text-slate-900 shadow-sm'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                              title="Visualização em Dispersão Cartesiana"
+                            >
+                              <span>🔵</span>
+                              <span>Dispersão</span>
+                            </button>
+                          </div>
+
                           <button 
-                            onClick={() => downloadChartAsPNG('bi-chart-scatter', 'Dispersão Performance Operador')}
-                            className="p-1.5 text-slate-350 hover:text-emerald-500 hover:bg-emerald-50/50 rounded-lg transition-all"
-                            title="Baixar Imagem"
+                            onClick={() => downloadChartAsPNG('bi-chart-scatter', 'Desempenho Produção vs Resíduos Operador')}
+                            className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50/50 rounded-lg transition-all"
+                            title="Baixar PDF Paisagem (A4 Horizontal - Gestão à Vista)"
                           >
                             <Download size={15} />
                           </button>
                           <button 
                             onClick={() => setFullscreenChart('bi-chart-scatter')}
-                            className="p-1.5 text-slate-350 hover:text-indigo-500 hover:bg-indigo-50/50 rounded-lg transition-all"
+                            className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50/50 rounded-lg transition-all"
                             title="Visualizar em Tela Cheia"
                           >
                             <Maximize2 size={15} />
@@ -16111,43 +16233,124 @@ Atenciosamente,
                         </div>
                       </div>
                       <div className="flex-1 min-h-[300px]">
-                        {scatterData.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <ScatterChart margin={{ top: 15, right: 15, bottom: 10, left: -25 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                              <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" kg" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
-                              <YAxis type="number" dataKey="wastes" name="Desperdício Total" unit=" kg" stroke="#475569" style={{ fontSize: 9, fontWeight: 'bold' }} />
-                              <ZAxis type="number" dataKey="stopsProcess" range={[50, 450]} name="Ajuste Processo" unit=" min" />
-                              <RechartsTooltip 
-                                cursor={{ strokeDasharray: '3 3' }}
-                                content={({ active, payload }: any) => {
-                                  if (active && payload && payload.length) {
-                                    const item = payload[0].payload;
-                                    return (
-                                      <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1 font-semibold">
-                                        <p className="font-extrabold uppercase tracking-wider text-emerald-400 border-b border-slate-800 pb-1.5 mb-1.5">{item.name}</p>
-                                        <p>🏆 Produção: <span className="font-black text-slate-100">{formatWeight(item.prod)}</span></p>
-                                        <p>🗑️ Resíduos: <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span></p>
-                                        <p>⏱️ Paradas Processo: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                }}
-                              />
-                              <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold', paddingTop: 10 }} />
-                              {scatterData.map((entry, index) => (
-                                <Scatter 
-                                  key={index} 
-                                  name={entry.name} 
-                                  data={[entry]} 
-                                  fill={entry.color} 
-                                  onClick={() => handleOpenDrilldown('operator', entry.name)}
-                                  className="cursor-zoom-in"
+                        {operatorBarsData.length > 0 ? (
+                          operatorChartViewMode === 'bars' ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <ComposedChart data={operatorBarsData} margin={{ top: 15, right: 15, bottom: 25, left: -10 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis 
+                                  dataKey="name" 
+                                  stroke="#64748b" 
+                                  style={{ fontSize: 9, fontWeight: 'bold' }} 
+                                  interval={0} 
+                                  angle={-20} 
+                                  textAnchor="end" 
+                                  height={40} 
                                 />
-                              ))}
-                            </ScatterChart>
-                          </ResponsiveContainer>
+                                <YAxis 
+                                  yAxisId="left" 
+                                  stroke="#10b981" 
+                                  style={{ fontSize: 9, fontWeight: 'bold' }} 
+                                  tickFormatter={(v) => formatWeight(v)} 
+                                />
+                                <YAxis 
+                                  yAxisId="right" 
+                                  orientation="right" 
+                                  stroke="#f43f5e" 
+                                  style={{ fontSize: 9, fontWeight: 'bold' }} 
+                                  tickFormatter={(v) => formatWeight(v)} 
+                                />
+                                <RechartsTooltip 
+                                  content={({ active, payload }: any) => {
+                                    if (active && payload && payload.length) {
+                                      const item = payload[0].payload;
+                                      return (
+                                        <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1.5 font-semibold min-w-[220px]">
+                                          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5">
+                                            <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
+                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                              {item.wasteRate}% perda
+                                            </span>
+                                          </div>
+                                          <p className="flex justify-between">
+                                            <span className="text-emerald-400 font-bold">🟢 Produção Líquida:</span> 
+                                            <span className="font-black text-slate-100">{formatWeight(item.prod)}</span>
+                                          </p>
+                                          <p className="flex justify-between">
+                                            <span className="text-rose-400 font-bold">🔴 Desperdício Total:</span> 
+                                            <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span>
+                                          </p>
+                                          <p className="flex justify-between border-t border-slate-800 pt-1 text-slate-400">
+                                            <span>⏱️ Paradas Processo:</span> 
+                                            <span className="font-black text-slate-200">{item.stopsProcess} min</span>
+                                          </p>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold', paddingTop: 10 }} />
+                                <Bar 
+                                  yAxisId="left" 
+                                  dataKey="prod" 
+                                  name="Produção Líquida (kg)" 
+                                  fill="#10b981" 
+                                  radius={[4, 4, 0, 0]} 
+                                  maxBarSize={38}
+                                  onClick={(entry) => handleOpenDrilldown('operator', entry.name)}
+                                  className="cursor-pointer"
+                                />
+                                <Bar 
+                                  yAxisId="right" 
+                                  dataKey="wastes" 
+                                  name="Desperdício / Resíduos (kg)" 
+                                  fill="#f43f5e" 
+                                  radius={[4, 4, 0, 0]} 
+                                  maxBarSize={38}
+                                  onClick={(entry) => handleOpenDrilldown('operator', entry.name)}
+                                  className="cursor-pointer"
+                                />
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <ScatterChart margin={{ top: 15, right: 15, bottom: 10, left: -25 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" kg" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
+                                <YAxis type="number" dataKey="wastes" name="Desperdício Total" unit=" kg" stroke="#475569" style={{ fontSize: 9, fontWeight: 'bold' }} />
+                                <ZAxis type="number" dataKey="stopsProcess" range={[50, 450]} name="Ajuste Processo" unit=" min" />
+                                <RechartsTooltip 
+                                  cursor={{ strokeDasharray: '3 3' }}
+                                  content={({ active, payload }: any) => {
+                                    if (active && payload && payload.length) {
+                                      const item = payload[0].payload;
+                                      return (
+                                        <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1 font-semibold">
+                                          <p className="font-extrabold uppercase tracking-wider text-emerald-400 border-b border-slate-800 pb-1.5 mb-1.5">{item.name}</p>
+                                          <p>🏆 Produção: <span className="font-black text-slate-100">{formatWeight(item.prod)}</span></p>
+                                          <p>🗑️ Resíduos: <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span></p>
+                                          <p>⏱️ Paradas Processo: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold', paddingTop: 10 }} />
+                                {scatterData.map((entry, index) => (
+                                  <Scatter 
+                                    key={index} 
+                                    name={entry.name} 
+                                    data={[entry]} 
+                                    fill={entry.color} 
+                                    onClick={() => handleOpenDrilldown('operator', entry.name)}
+                                    className="cursor-zoom-in"
+                                  />
+                                ))}
+                              </ScatterChart>
+                            </ResponsiveContainer>
+                          )
                         ) : (
                           <div className="h-full flex items-center justify-center text-slate-300 font-bold text-[10px] uppercase">Sem dados para análise</div>
                         )}
@@ -16258,8 +16461,8 @@ Atenciosamente,
                                   label={renderCustomizedLabel} 
                                   paddingAngle={3}
                                 >
-                                  <Cell fill="#f59e0b" stroke="none" />
-                                  <Cell fill="#10b981" stroke="none" />
+                                  <Cell key="mass-eco-b" fill="#f59e0b" stroke="none" />
+                                  <Cell key="mass-erema" fill="#10b981" stroke="none" />
                                 </Pie>
                                 <RechartsTooltip formatter={(val: any) => formatWeight(Number(val))} />
                                 <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -16410,8 +16613,8 @@ Atenciosamente,
                                 }}
                                 className="cursor-zoom-in"
                               >
-                                {dynamicChartData.map((_, i) => (
-                                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                                {dynamicChartData.map((item, i) => (
+                                  <Cell key={`bar-${item.name}-${i}`} fill={COLORS[i % COLORS.length]} />
                                 ))}
                               </Bar>
                             </BarChart>
@@ -16667,7 +16870,7 @@ Atenciosamente,
 
                           {/* Content body */}
                           <div className="flex-1 p-8 overflow-y-auto">
-                            <div className="w-full h-full min-h-[450px]">
+                            <div id="fullscreen-chart-modal-body" className="w-full h-full min-h-[450px]">
                               {fullscreenChart === 'bi-chart-composed' && (
                                 dailyTrendData.length > 0 ? (
                                   <ResponsiveContainer width="100%" height="100%">
@@ -16690,25 +16893,106 @@ Atenciosamente,
                               )}
 
                               {fullscreenChart === 'bi-chart-scatter' && (
-                                scatterData.length > 0 ? (
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -10 }}>
-                                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                      <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" kg" stroke="#94a3b8" style={{ fontSize: 11, fontWeight: 'bold' }} />
-                                      <YAxis type="number" dataKey="wastes" name="Desperdício Total" unit=" kg" stroke="#475569" style={{ fontSize: 11, fontWeight: 'bold' }} />
-                                      <ZAxis type="number" dataKey="stopsProcess" range={[100, 1000]} name="Ajuste Processo" unit=" min" />
-                                      <RechartsTooltip 
-                                        cursor={{ strokeDasharray: '3 3' }}
-                                        formatter={(value: any, name: any) => [name === 'Ajuste Processo' ? `${value} min` : formatWeight(Number(value)), name]}
-                                      />
-                                      <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
-                                      <Scatter name="Operadores" data={scatterData} fill="#4f46e5">
-                                        {scatterData.map((_entry, index) => (
-                                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                      </Scatter>
-                                    </ScatterChart>
-                                  </ResponsiveContainer>
+                                operatorBarsData.length > 0 ? (
+                                  operatorChartViewMode === 'bars' ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <ComposedChart data={operatorBarsData} margin={{ top: 20, right: 25, bottom: 40, left: 10 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis 
+                                          dataKey="name" 
+                                          stroke="#64748b" 
+                                          style={{ fontSize: 11, fontWeight: 'bold' }} 
+                                          interval={0} 
+                                          angle={-25} 
+                                          textAnchor="end" 
+                                          height={60} 
+                                        />
+                                        <YAxis 
+                                          yAxisId="left" 
+                                          stroke="#10b981" 
+                                          style={{ fontSize: 11, fontWeight: 'bold' }} 
+                                          tickFormatter={(v) => formatWeight(v)} 
+                                        />
+                                        <YAxis 
+                                          yAxisId="right" 
+                                          orientation="right" 
+                                          stroke="#f43f5e" 
+                                          style={{ fontSize: 11, fontWeight: 'bold' }} 
+                                          tickFormatter={(v) => formatWeight(v)} 
+                                        />
+                                        <RechartsTooltip 
+                                          content={({ active, payload }: any) => {
+                                            if (active && payload && payload.length) {
+                                              const item = payload[0].payload;
+                                              return (
+                                                <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-xs space-y-2 font-semibold min-w-[260px]">
+                                                  <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                                                    <p className="font-extrabold uppercase tracking-wider text-emerald-400 text-sm">{item.name}</p>
+                                                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                                      {item.wasteRate}% perda
+                                                    </span>
+                                                  </div>
+                                                  <p className="flex justify-between text-sm">
+                                                    <span className="text-emerald-400 font-bold">🟢 Produção Líquida:</span> 
+                                                    <span className="font-black text-slate-100">{formatWeight(item.prod)}</span>
+                                                  </p>
+                                                  <p className="flex justify-between text-sm">
+                                                    <span className="text-rose-400 font-bold">🔴 Desperdício Total:</span> 
+                                                    <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span>
+                                                  </p>
+                                                  <p className="flex justify-between border-t border-slate-800 pt-1.5 text-slate-400 text-xs">
+                                                    <span>⏱️ Paradas de Processo:</span> 
+                                                    <span className="font-black text-slate-200">{item.stopsProcess} min</span>
+                                                  </p>
+                                                </div>
+                                              );
+                                            }
+                                            return null;
+                                          }}
+                                        />
+                                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
+                                        <Bar 
+                                          yAxisId="left" 
+                                          dataKey="prod" 
+                                          name="Produção Líquida (kg)" 
+                                          fill="#10b981" 
+                                          radius={[6, 6, 0, 0]} 
+                                          maxBarSize={55}
+                                          onClick={(entry) => handleOpenDrilldown('operator', entry.name)}
+                                          className="cursor-pointer"
+                                        />
+                                        <Bar 
+                                          yAxisId="right" 
+                                          dataKey="wastes" 
+                                          name="Desperdício / Resíduos (kg)" 
+                                          fill="#f43f5e" 
+                                          radius={[6, 6, 0, 0]} 
+                                          maxBarSize={55}
+                                          onClick={(entry) => handleOpenDrilldown('operator', entry.name)}
+                                          className="cursor-pointer"
+                                        />
+                                      </ComposedChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -10 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                        <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" kg" stroke="#94a3b8" style={{ fontSize: 11, fontWeight: 'bold' }} />
+                                        <YAxis type="number" dataKey="wastes" name="Desperdício Total" unit=" kg" stroke="#475569" style={{ fontSize: 11, fontWeight: 'bold' }} />
+                                        <ZAxis type="number" dataKey="stopsProcess" range={[100, 1000]} name="Ajuste Processo" unit=" min" />
+                                        <RechartsTooltip 
+                                          cursor={{ strokeDasharray: '3 3' }}
+                                          formatter={(value: any, name: any) => [name === 'Ajuste Processo' ? `${value} min` : formatWeight(Number(value)), name]}
+                                        />
+                                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
+                                        <Scatter name="Operadores" data={scatterData} fill="#4f46e5">
+                                          {scatterData.map((_entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                          ))}
+                                        </Scatter>
+                                      </ScatterChart>
+                                    </ResponsiveContainer>
+                                  )
                                 ) : (
                                   <div className="h-full flex items-center justify-center text-slate-300 font-bold text-sm uppercase">Sem dados para o período</div>
                                 )
@@ -16721,16 +17005,10 @@ Atenciosamente,
                                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                       <XAxis dataKey="name" stroke="#94a3b8" style={{ fontSize: 11, fontWeight: 'bold' }} />
                                       <YAxis tickFormatter={(tick) => `${tick}%`} stroke="#475569" style={{ fontSize: 11, fontWeight: 'bold' }} />
-                                      <RechartsTooltip formatter={(val: any) => `${Number(val).toFixed(1)}%`} />
-                                      <Legend wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
-                                      <Bar dataKey="Ajuste Processo" stackId="a" fill="#3b82f6" />
-                                      <Bar dataKey="Troca de Bobina" stackId="a" fill="#10b981" />
-                                      <Bar dataKey="Limpeza" stackId="a" fill="#f59e0b" />
-                                      <Bar dataKey="Manutenção Elétrica" stackId="a" fill="#ef4444" />
-                                      <Bar dataKey="Manutenção Mecânica" stackId="a" fill="#8b5cf6" />
-                                      <Bar dataKey="Falta de Matéria-Prima" stackId="a" fill="#ec4899" />
-                                      <Bar dataKey="Troca de Facas" stackId="a" fill="#14b8a6" />
-                                      <Bar dataKey="Outros" stackId="a" fill="#64748b" />
+                                      <Legend iconType="rect" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
+                                      <Bar dataKey="manutPct" name="Parada Manutenção" stackId="stops-pct" fill="#ef4444" unit="%" />
+                                      <Bar dataKey="procPct" name="Parada Processo" stackId="stops-pct" fill="#f59e0b" unit="%" />
+                                      <Bar dataKey="outrosPct" name="Outras Paradas" stackId="stops-pct" fill="#64748b" unit="%" />
                                     </BarChart>
                                   </ResponsiveContainer>
                                 ) : (
@@ -16766,8 +17044,8 @@ Atenciosamente,
                                             }}
                                             paddingAngle={3}
                                           >
-                                            <Cell fill="#f59e0b" stroke="none" />
-                                            <Cell fill="#10b981" stroke="none" />
+                                            <Cell key="fs-mass-eco-b" fill="#f59e0b" stroke="none" />
+                                            <Cell key="fs-mass-erema" fill="#10b981" stroke="none" />
                                           </Pie>
                                           <RechartsTooltip formatter={(val: any) => formatWeight(Number(val))} />
                                         </PieChart>
@@ -16814,8 +17092,8 @@ Atenciosamente,
                                             radius={[0, 10, 10, 0]}
                                             name={selectedMetricDef.label}
                                           >
-                                            {dynamicChartData.map((_, i) => (
-                                              <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                                            {dynamicChartData.map((item, i) => (
+                                              <Cell key={`fs-bar-${item.name}-${i}`} fill={COLORS[i % COLORS.length]} />
                                             ))}
                                           </Bar>
                                         </BarChart>
@@ -17370,21 +17648,7 @@ Atenciosamente,
                                                   async () => {
                                                     try {
                                                       const entryId = entry.id;
-                                                      recordLocalDeletedProductionIds([entryId]);
-                                                      setProductionData(prev => {
-                                                        const updated = prev.filter(e => e.id !== entryId);
-                                                        saveProductionCache(updated);
-                                                        return updated;
-                                                      });
-
-                                                      await deleteDoc(doc(db, 'productionEntries', entryId));
-                                                      deleteProductionEntryFromSupabase(entryId).catch(() => {});
-
-                                                      fetch('/api/sync/production/delete', {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({ ids: [entryId] })
-                                                     }).catch(() => {});
+                                                      await deleteProductionEntriesPermanently([entryId]);
 
                                                       recordUserActivity({
                                                         user: loggedUser,
@@ -21207,12 +21471,17 @@ Atenciosamente,
                         </div>
                       </div>
 
-                      {/* Gráfico 4: Dispersão Produção vs Lixo Operador POR MÁQUINA */}
+                      {/* Gráfico 4: Comparative Bar Chart / Dispersão Produção vs Lixo Operador POR MÁQUINA */}
                       <div id="ribbon-chart-scatter" className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4 min-h-[420px]">
                         <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-50">
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="text-sm font-black uppercase text-indigo-950">Dispersão: Produção vs Lixo Operador</h3>
+                              <h3 className="text-sm font-black uppercase text-indigo-950">
+                                {ribbonOperatorChartViewMode === 'bars' ? 'Desempenho por Operador: Produção vs Lixo' : 'Dispersão: Produção vs Lixo Operador'}
+                              </h3>
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Gestão à Vista
+                              </span>
                               <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
                                 ribbonBiMachineFilter === 'all'
                                   ? 'bg-purple-100 text-purple-700'
@@ -21222,21 +21491,53 @@ Atenciosamente,
                                   ? 'bg-emerald-100 text-emerald-700'
                                   : 'bg-purple-100 text-purple-700'
                               }`}>
-                                {ribbonBiMachineFilter === 'all' ? 'Por Máquina' : getRibbonMachineKey(ribbonBiMachineFilter)}
+                                {ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : getRibbonMachineKey(ribbonBiMachineFilter)}
                               </span>
                             </div>
                             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                              {ribbonBiMachineFilter === 'all'
-                                ? 'X = Produção Líquida (m²) | Y = Lixo (Kg) | Cores = Máquinas (Ghezzi, Lintech, Wultec)'
-                                : `Performance Individual dos Operadores na Máquina ${getRibbonMachineKey(ribbonBiMachineFilter)}`}
+                              {ribbonOperatorChartViewMode === 'bars'
+                                ? '🟢 Produção Líquida (m²) vs 🔴 Lixo Total (Kg) por Operador de Corte'
+                                : (ribbonBiMachineFilter === 'all'
+                                  ? 'X = Produção Líquida (m²) | Y = Lixo (Kg) | Cores = Máquinas (Ghezzi, Lintech, Wultec)'
+                                  : `Performance Individual dos Operadores na Máquina ${getRibbonMachineKey(ribbonBiMachineFilter)}`)}
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-2">
+                            {/* Toggle View Mode */}
+                            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                              <button
+                                type="button"
+                                onClick={() => setRibbonOperatorChartViewMode('bars')}
+                                className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${
+                                  ribbonOperatorChartViewMode === 'bars'
+                                    ? 'bg-white text-slate-900 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-800'
+                                }`}
+                                title="Visualização em Barras Comparativas (Ideal para Quadro Físico)"
+                              >
+                                <span>📊</span>
+                                <span>Barras</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRibbonOperatorChartViewMode('scatter')}
+                                className={`px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${
+                                  ribbonOperatorChartViewMode === 'scatter'
+                                    ? 'bg-white text-slate-900 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-800'
+                                }`}
+                                title="Visualização em Dispersão Cartesiana"
+                              >
+                                <span>🔵</span>
+                                <span>Dispersão</span>
+                              </button>
+                            </div>
+
                             <button 
-                              onClick={() => downloadChartAsPNG('ribbon-chart-scatter', `Dispersão Produção vs Lixo Operador por Máquina - ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}`)}
+                              onClick={() => downloadChartAsPNG('ribbon-chart-scatter', `Desempenho Produção vs Lixo Operador por Máquina - ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}`)}
                               className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50/50 rounded-lg transition-all"
-                              title="Baixar Imagem com Legenda de Operadores"
+                              title="Baixar PDF Paisagem (A4 Horizontal - Gestão à Vista)"
                             >
                               <Download size={15} />
                             </button>
@@ -21251,47 +21552,124 @@ Atenciosamente,
                         </div>
 
                         <div className="h-72">
-                          {ribbonScatterData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <ScatterChart margin={{ top: 15, right: 15, bottom: 10, left: -25 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" m²" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
-                                <YAxis type="number" dataKey="wastes" name="Lixo" unit=" kg" stroke="#475569" style={{ fontSize: 9, fontWeight: 'bold' }} tickFormatter={(val) => formatWeight(val)} />
-                                <ZAxis type="number" dataKey="stopsProcess" range={[50, 450]} name="Ajustes de Paradas" unit=" min" />
-                                <RechartsTooltip 
-                                  cursor={{ strokeDasharray: '3 3' }}
-                                  content={({ active, payload }: any) => {
-                                    if (active && payload && payload.length) {
-                                      const item = payload[0].payload;
-                                      return (
-                                        <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1 font-semibold">
-                                          <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5 mb-1.5">
-                                            <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
-                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-white/20 text-slate-200">
-                                              {item.machine}
-                                            </span>
-                                          </div>
-                                          <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span></p>
-                                          <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span></p>
-                                          <p>⏱️ Tempo de Paradas: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
-                                        </div>
-                                      );
-                                    }
-                                    return null;
-                                  }}
-                                />
-                                <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold', paddingTop: 10 }} />
-                                {ribbonScatterData.map((entry, index) => (
-                                  <Scatter 
-                                    key={index} 
-                                    name={entry.name} 
-                                    data={[entry]} 
-                                    fill={entry.color} 
-                                    className="cursor-zoom-in"
+                          {ribbonOperatorBarsData.length > 0 ? (
+                            ribbonOperatorChartViewMode === 'bars' ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={ribbonOperatorBarsData} margin={{ top: 15, right: 15, bottom: 25, left: -10 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                  <XAxis 
+                                    dataKey="name" 
+                                    stroke="#64748b" 
+                                    style={{ fontSize: 9, fontWeight: 'bold' }} 
+                                    interval={0} 
+                                    angle={-20} 
+                                    textAnchor="end" 
+                                    height={40} 
                                   />
-                                ))}
-                              </ScatterChart>
-                            </ResponsiveContainer>
+                                  <YAxis 
+                                    yAxisId="left" 
+                                    stroke="#10b981" 
+                                    style={{ fontSize: 9, fontWeight: 'bold' }} 
+                                    tickFormatter={(v) => formatM2(v)} 
+                                  />
+                                  <YAxis 
+                                    yAxisId="right" 
+                                    orientation="right" 
+                                    stroke="#f43f5e" 
+                                    style={{ fontSize: 9, fontWeight: 'bold' }} 
+                                    tickFormatter={(v) => formatWeight(v)} 
+                                  />
+                                  <RechartsTooltip 
+                                    content={({ active, payload }: any) => {
+                                      if (active && payload && payload.length) {
+                                        const item = payload[0].payload;
+                                        return (
+                                          <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1.5 font-semibold min-w-[220px]">
+                                            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5">
+                                              <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
+                                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-white/20 text-slate-200">
+                                                {item.machine}
+                                              </span>
+                                            </div>
+                                            <p className="flex justify-between">
+                                              <span className="text-emerald-400 font-bold">🟢 Produção Líquida:</span> 
+                                              <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span>
+                                            </p>
+                                            <p className="flex justify-between">
+                                              <span className="text-rose-400 font-bold">🔴 Lixo Total:</span> 
+                                              <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span>
+                                            </p>
+                                            <p className="flex justify-between border-t border-slate-800 pt-1 text-slate-400">
+                                              <span>⏱️ Tempo de Paradas:</span> 
+                                              <span className="font-black text-slate-200">{item.stopsProcess} min</span>
+                                            </p>
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  />
+                                  <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold', paddingTop: 10 }} />
+                                  <Bar 
+                                    yAxisId="left" 
+                                    dataKey="prod" 
+                                    name="Produção Líquida (m²)" 
+                                    fill="#10b981" 
+                                    radius={[4, 4, 0, 0]} 
+                                    maxBarSize={38}
+                                  />
+                                  <Bar 
+                                    yAxisId="right" 
+                                    dataKey="wastes" 
+                                    name="Lixo Total (Kg)" 
+                                    fill="#f43f5e" 
+                                    radius={[4, 4, 0, 0]} 
+                                    maxBarSize={38}
+                                  />
+                                </ComposedChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <ScatterChart margin={{ top: 15, right: 15, bottom: 10, left: -25 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                  <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" m²" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
+                                  <YAxis type="number" dataKey="wastes" name="Lixo" unit=" kg" stroke="#475569" style={{ fontSize: 9, fontWeight: 'bold' }} tickFormatter={(val) => formatWeight(val)} />
+                                  <ZAxis type="number" dataKey="stopsProcess" range={[50, 450]} name="Ajustes de Paradas" unit=" min" />
+                                  <RechartsTooltip 
+                                    cursor={{ strokeDasharray: '3 3' }}
+                                    content={({ active, payload }: any) => {
+                                      if (active && payload && payload.length) {
+                                        const item = payload[0].payload;
+                                        return (
+                                          <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1 font-semibold">
+                                            <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5 mb-1.5">
+                                              <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
+                                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-white/20 text-slate-200">
+                                                {item.machine}
+                                              </span>
+                                            </div>
+                                            <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span></p>
+                                            <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span></p>
+                                            <p>⏱️ Tempo de Paradas: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  />
+                                  <Legend iconType="circle" wrapperStyle={{ fontSize: 9, fontWeight: 'bold', paddingTop: 10 }} />
+                                  {ribbonScatterData.map((entry, index) => (
+                                    <Scatter 
+                                      key={index} 
+                                      name={entry.name} 
+                                      data={[entry]} 
+                                      fill={entry.color} 
+                                      className="cursor-zoom-in"
+                                    />
+                                  ))}
+                                </ScatterChart>
+                              </ResponsiveContainer>
+                            )
                           ) : (
                             <div className="h-full flex items-center justify-center text-slate-300 font-bold text-[10px] uppercase">
                               Sem dados para análise na máquina selecionada
@@ -23291,7 +23669,7 @@ Atenciosamente,
         )}
       </AnimatePresence>
 
-      <LaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={async (e) => {
+      <LaunchModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingEntry(null); }} onSave={async (e) => {
         if (isReadOnlyAccount || !canEditProduction) {
           handleBlockedReadOnlyAction(
             'Lançamento Bloqueado',
@@ -23302,9 +23680,19 @@ Atenciosamente,
         }
         try {
           const isNew = !editingEntry;
-          const id = editingEntry ? editingEntry.id : Math.random().toString(36).substr(2, 9);
-          const entry = { ...e, shift: sanitizeProductionShift(e.shift, e.machine), id, userId: currentUser?.uid || 'usuario', updatedAt: new Date().toISOString() };
+          const id = editingEntry ? editingEntry.id : (e.id || Math.random().toString(36).substr(2, 9));
+          const entry = {
+            ...e,
+            shift: sanitizeProductionShift(e.shift, e.machine),
+            id,
+            userId: (editingEntry as any)?.userId || (e as any)?.userId || currentUser?.uid || 'usuario',
+            updatedAt: new Date().toISOString()
+          };
           const oldEntry = editingEntry ? productionData.find(x => x.id === editingEntry.id) : null;
+
+          // Ao salvar ou editar lançamento, remove do conjunto de excluídos se estivesse presente
+          removeLocalDeletedProductionId(id);
+          deleteDoc(doc(db, 'deletedProductionEntries', id)).catch(() => {});
 
           // 1. Atualização Otimista Imediata no Estado React e Cache Local
           setProductionData(prev => {
@@ -23318,7 +23706,7 @@ Atenciosamente,
           fetch('/api/sync/production', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries: [entry] })
+            body: JSON.stringify({ entries: [entry], restoreIds: [id], deletedIds: getLocalDeletedProductionIds() })
           }).catch(() => {});
 
           // 2.1 Gravação no Banco de Dados Supabase (PostgreSQL)
@@ -24272,30 +24660,63 @@ Atenciosamente,
               className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden text-left"
             >
               {/* Header */}
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="p-6 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50">
                 <div>
-                  <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
-                    {fullscreenChart === 'stops-motifs-card' && 'Relação de Paradas e Motivos'}
-                    {fullscreenChart === 'ribbon-chart-composed' && `Evolução de Perdas vs Produção Líquida (Corte de Fita) • ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}`}
-                    {fullscreenChart === 'ribbon-chart-prod' && `Produção Física Diária por Máquina • ${ribbonBiMachineFilter === 'all' ? 'Ghezzi, Lintech, Wultec' : ribbonBiMachineFilter}`}
-                    {fullscreenChart === 'ribbon-chart-waste' && `Indicadores de Lixo Acumulado por Máquina • ${ribbonBiMachineFilter === 'all' ? 'Ghezzi, Lintech, Wultec' : ribbonBiMachineFilter}`}
-                    {fullscreenChart === 'ribbon-chart-scatter' && `Dispersão Performance Operador (Corte de Fita) • ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}`}
-                    {fullscreenChart === 'ribbon-chart-stacked' && 'Distribuição Proporcional de Paradas (Corte de Fita)'}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
+                      {fullscreenChart === 'stops-motifs-card' && 'Relação de Paradas e Motivos'}
+                      {fullscreenChart === 'ribbon-chart-composed' && `Evolução de Perdas vs Produção Líquida (Corte de Fita) • ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}`}
+                      {fullscreenChart === 'ribbon-chart-prod' && `Produção Física Diária por Máquina • ${ribbonBiMachineFilter === 'all' ? 'Ghezzi, Lintech, Wultec' : ribbonBiMachineFilter}`}
+                      {fullscreenChart === 'ribbon-chart-waste' && `Indicadores de Lixo Acumulado por Máquina • ${ribbonBiMachineFilter === 'all' ? 'Ghezzi, Lintech, Wultec' : ribbonBiMachineFilter}`}
+                      {fullscreenChart === 'ribbon-chart-scatter' && (ribbonOperatorChartViewMode === 'bars' ? `Desempenho por Operador: Produção vs Lixo • ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}` : `Dispersão Performance Operador (Corte de Fita) • ${ribbonBiMachineFilter === 'all' ? 'Todas as Máquinas' : ribbonBiMachineFilter}`)}
+                      {fullscreenChart === 'ribbon-chart-stacked' && 'Distribuição Proporcional de Paradas (Corte de Fita)'}
+                    </h3>
+                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      A4 Paisagem • Gestão à Vista
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
                     {fullscreenChart === 'stops-motifs-card' && 'Detalhamento completo das paradas ocorridas por máquina'}
                     {fullscreenChart === 'ribbon-chart-composed' && 'Barras (Não conforme [Tipo 1 & Tipo 2] & Lixo) vs Linha de Produção (Eixo Secundário - m²)'}
                     {fullscreenChart === 'ribbon-chart-prod' && 'Metros quadrados produzidos dia a dia por cortadeira (Ghezzi, Lintech, Wultec)'}
                     {fullscreenChart === 'ribbon-chart-waste' && 'Mapeamento de descarte diário em peso (Kg) e m² equivalente por máquina'}
-                    {fullscreenChart === 'ribbon-chart-scatter' && 'X = Produção Líquida (m²) | Y = Lixo (Kg) | Cores = Cortadeiras'}
+                    {fullscreenChart === 'ribbon-chart-scatter' && (ribbonOperatorChartViewMode === 'bars' ? '🟢 Produção Líquida (m²) vs 🔴 Lixo Total (Kg) por Operador de Corte' : 'X = Produção Líquida (m²) | Y = Lixo (Kg) | Cores = Cortadeiras')}
                     {fullscreenChart === 'ribbon-chart-stacked' && 'Exibe a distribuição interna de motivos de inatividade'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {fullscreenChart === 'ribbon-chart-scatter' && (
+                    <div className="flex bg-slate-200/70 p-0.5 rounded-xl border border-slate-300/60 mr-1">
+                      <button
+                        type="button"
+                        onClick={() => setRibbonOperatorChartViewMode('bars')}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                          ribbonOperatorChartViewMode === 'bars'
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>📊</span>
+                        <span>Barras</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRibbonOperatorChartViewMode('scatter')}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                          ribbonOperatorChartViewMode === 'scatter'
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>🔵</span>
+                        <span>Dispersão</span>
+                      </button>
+                    </div>
+                  )}
                   <button
                     onClick={() => downloadChartAsPNG(fullscreenChart, 'Gráfico Ampliado')}
                     className="p-2.5 bg-slate-100 hover:bg-emerald-50 text-slate-500 hover:text-emerald-600 rounded-xl transition-all cursor-pointer border border-slate-200"
-                    title="Baixar Imagem"
+                    title="Baixar PDF Paisagem (A4 Horizontal - Gestão à Vista)"
                   >
                     <Download size={18} />
                   </button>
@@ -24311,7 +24732,7 @@ Atenciosamente,
 
               {/* Content body */}
               <div className="flex-1 p-8 overflow-y-auto">
-                <div className="w-full h-full min-h-[450px]">
+                <div id="ribbon-fullscreen-chart-modal-body" className="w-full h-full min-h-[450px]">
                   {fullscreenChart === 'stops-motifs-card' && (
                     <div className="space-y-4">
                       {/* Search bar inside Fullscreen Modal */}
@@ -24700,47 +25121,124 @@ Atenciosamente,
                   )}
 
                   {fullscreenChart === 'ribbon-chart-scatter' && (
-                    ribbonScatterData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" m²" stroke="#94a3b8" style={{ fontSize: 11, fontWeight: 'bold' }} />
-                          <YAxis type="number" dataKey="wastes" name="Lixo Total" unit=" kg" stroke="#475569" style={{ fontSize: 11, fontWeight: 'bold' }} tickFormatter={(val) => formatWeight(val)} />
-                          <ZAxis type="number" dataKey="stopsProcess" range={[100, 1000]} name="Ajuste Processo" unit=" min" />
-                          <RechartsTooltip 
-                            cursor={{ strokeDasharray: '3 3' }}
-                            content={({ active, payload }: any) => {
-                              if (active && payload && payload.length) {
-                                const item = payload[0].payload;
-                                return (
-                                  <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-xs space-y-1.5 font-semibold">
-                                    <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2 mb-2">
-                                      <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
-                                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-white/20 text-slate-200">
-                                        {item.machine}
-                                      </span>
-                                    </div>
-                                    <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span></p>
-                                    <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span></p>
-                                    <p>⏱️ Tempo de Paradas: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                          <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
-                          {ribbonScatterData.map((entry, index) => (
-                            <Scatter 
-                              key={index} 
-                              name={entry.name} 
-                              data={[entry]} 
-                              fill={entry.color} 
-                              className="cursor-zoom-in"
+                    ribbonOperatorBarsData.length > 0 ? (
+                      ribbonOperatorChartViewMode === 'bars' ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={ribbonOperatorBarsData} margin={{ top: 20, right: 25, bottom: 40, left: 10 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis 
+                              dataKey="name" 
+                              stroke="#64748b" 
+                              style={{ fontSize: 11, fontWeight: 'bold' }} 
+                              interval={0} 
+                              angle={-25} 
+                              textAnchor="end" 
+                              height={60} 
                             />
-                          ))}
-                        </ScatterChart>
-                      </ResponsiveContainer>
+                            <YAxis 
+                              yAxisId="left" 
+                              stroke="#10b981" 
+                              style={{ fontSize: 11, fontWeight: 'bold' }} 
+                              tickFormatter={(v) => formatM2(v)} 
+                            />
+                            <YAxis 
+                              yAxisId="right" 
+                              orientation="right" 
+                              stroke="#f43f5e" 
+                              style={{ fontSize: 11, fontWeight: 'bold' }} 
+                              tickFormatter={(v) => formatWeight(v)} 
+                            />
+                            <RechartsTooltip 
+                              content={({ active, payload }: any) => {
+                                if (active && payload && payload.length) {
+                                  const item = payload[0].payload;
+                                  return (
+                                    <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-xs space-y-2 font-semibold min-w-[260px]">
+                                      <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                                        <p className="font-extrabold uppercase tracking-wider text-emerald-400 text-sm">{item.name}</p>
+                                        <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-white/20 text-slate-200">
+                                          {item.machine}
+                                        </span>
+                                      </div>
+                                      <p className="flex justify-between text-sm">
+                                        <span className="text-emerald-400 font-bold">🟢 Produção Líquida:</span> 
+                                        <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span>
+                                      </p>
+                                      <p className="flex justify-between text-sm">
+                                        <span className="text-rose-400 font-bold">🔴 Lixo Total:</span> 
+                                        <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span>
+                                      </p>
+                                      <p className="flex justify-between border-t border-slate-800 pt-1.5 text-slate-400 text-xs">
+                                        <span>⏱️ Tempo de Paradas:</span> 
+                                        <span className="font-black text-slate-200">{item.stopsProcess} min</span>
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
+                            <Bar 
+                              yAxisId="left" 
+                              dataKey="prod" 
+                              name="Produção Líquida (m²)" 
+                              fill="#10b981" 
+                              radius={[6, 6, 0, 0]} 
+                              maxBarSize={55}
+                            />
+                            <Bar 
+                              yAxisId="right" 
+                              dataKey="wastes" 
+                              name="Lixo Total (Kg)" 
+                              fill="#f43f5e" 
+                              radius={[6, 6, 0, 0]} 
+                              maxBarSize={55}
+                            />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -10 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" m²" stroke="#94a3b8" style={{ fontSize: 11, fontWeight: 'bold' }} />
+                            <YAxis type="number" dataKey="wastes" name="Lixo Total" unit=" kg" stroke="#475569" style={{ fontSize: 11, fontWeight: 'bold' }} tickFormatter={(val) => formatWeight(val)} />
+                            <ZAxis type="number" dataKey="stopsProcess" range={[100, 1000]} name="Ajuste Processo" unit=" min" />
+                            <RechartsTooltip 
+                              cursor={{ strokeDasharray: '3 3' }}
+                              content={({ active, payload }: any) => {
+                                if (active && payload && payload.length) {
+                                  const item = payload[0].payload;
+                                  return (
+                                    <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-xs space-y-1.5 font-semibold">
+                                      <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2 mb-2">
+                                        <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
+                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-white/20 text-slate-200">
+                                          {item.machine}
+                                        </span>
+                                      </div>
+                                      <p>🏆 Produção Líquida: <span className="font-black text-slate-100">{item?.prod != null ? Number(item.prod).toLocaleString('pt-BR') : '0'} m²</span></p>
+                                      <p>🗑️ Lixo Total: <span className="font-black text-slate-100">{formatWeight(item?.wastes)}</span></p>
+                                      <p>⏱️ Tempo de Paradas: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
+                            {ribbonScatterData.map((entry, index) => (
+                              <Scatter 
+                                key={index} 
+                                name={entry.name} 
+                                data={[entry]} 
+                                fill={entry.color} 
+                                className="cursor-zoom-in"
+                              />
+                            ))}
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      )
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-300 font-bold text-sm uppercase">Sem dados para o período</div>
                     )

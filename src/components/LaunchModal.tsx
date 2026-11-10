@@ -530,17 +530,27 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
       });
     }
 
-    // 2. Se for edição de lançamento existente, preserva o operador original se pertencer ao mesmo grupo
+    // 2. Se for edição de lançamento existente ou houver operador já selecionado, preserva para não travar o dropdown
     if (initialData && initialData.operator) {
       const opName = initialData.operator.trim();
-      const initMachCanonical = getCanonicalExtrusionMachine(initialData.machine);
-      const isInitErema = initMachCanonical === 'erema';
-      if (opName && isEremaSelected === isInitErema && !operatorMap.has(opName.toLowerCase())) {
+      if (opName && !operatorMap.has(opName.toLowerCase())) {
         operatorMap.set(opName.toLowerCase(), {
-          id: `initial-op-${Date.now()}`,
+          id: `initial-op-${opName.toLowerCase()}`,
           name: opName,
           machine: initialData.machine,
           shift: initialData.shift,
+          isMachineOp: true
+        });
+      }
+    }
+    if (formData.operator && formData.operator.trim()) {
+      const opName = formData.operator.trim();
+      if (opName && !operatorMap.has(opName.toLowerCase())) {
+        operatorMap.set(opName.toLowerCase(), {
+          id: `form-op-${opName.toLowerCase()}`,
+          name: opName,
+          machine: formData.machine,
+          shift: formData.shift,
           isMachineOp: true
         });
       }
@@ -777,10 +787,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         date: initialData.date,
         operator: initialData.operator,
         machine: initialData.machine,
-        shift: normalizeExtrusionShift(initialData.shift),
-        grossWeight: initialData.grossWeight,
-        tara: initialData.tara,
-        netWeight: initialData.netWeight,
+        shift: initialData.shift || '',
+        grossWeight: initialData.grossWeight || initialData.netWeight || 0,
+        tara: initialData.tara || 0,
+        netWeight: initialData.netWeight || 0,
         volumes: initialData.volumes,
         tubetes: initialData.tubetes,
         tubetesEcoB: initialData.tubetesEcoB ?? 0,
@@ -803,7 +813,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         downtimeCategory: initCategory,
         isNoWorkDay: initialData.isNoWorkDay || false,
         noWorkReason: initialData.noWorkReason || '',
-        eremaWeight1: initialData.eremaWeight1 ?? 0,
+        eremaWeight1: (initialData.eremaWeight1 !== undefined && initialData.eremaWeight1 !== null && Number(initialData.eremaWeight1) > 0)
+          ? Number(initialData.eremaWeight1)
+          : (!initialData.eremaWeight2 && !initialData.eremaWeight3 && !initialData.eremaWeight4 && Number(initialData.netWeight) > 0 ? Number(initialData.netWeight) : 0),
         eremaWeight2: initialData.eremaWeight2 ?? 0,
         eremaWeight3: initialData.eremaWeight3 ?? 0,
         eremaWeight4: initialData.eremaWeight4 ?? 0,
@@ -974,8 +986,10 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           (Number(prev.eremaWeight3) || 0) +
           (Number(prev.eremaWeight4) || 0)
         );
-        if (prev.netWeight !== sum) {
-          return { ...prev, netWeight: sum };
+        if (sum > 0) {
+          if (prev.netWeight !== sum) return { ...prev, netWeight: sum };
+        } else if (prev.isMaintenanceEntry || prev.isNoWorkDay) {
+          if (prev.netWeight !== 0) return { ...prev, netWeight: 0 };
         }
         return prev;
       });
@@ -1895,10 +1909,12 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     className={`w-full ${isExternalOperatorMode ? 'bg-slate-100 text-slate-900 font-black cursor-not-allowed border-blue-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500/20 h-7 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-right-[0.3rem]_center bg-no-repeat`}
                   >
                     <option value="" disabled>Selecionar Máquina</option>
-                    {(activeMachines && activeMachines.length > 0 
-                      ? activeMachines.filter(m => ['cast 1', 'cast 2', 'erema'].some(x => m.toLowerCase().includes(x)))
-                      : ['Cast 1', 'Cast 2', 'Erema']
-                    ).map(mach => (
+                    {Array.from(new Set([
+                      ...((activeMachines && activeMachines.length > 0) ? activeMachines : ['Cast 1', 'Cast 2', 'Erema']),
+                      'Cast 1', 'Cast 2', 'Erema',
+                      ...(formData.machine ? [formData.machine] : []),
+                      ...(initialData?.machine ? [initialData.machine] : [])
+                    ].filter(Boolean))).map(mach => (
                       <option key={mach} value={mach}>{mach}</option>
                     ))}
                   </select>
@@ -1908,7 +1924,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                   <div>
                     <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Operador</label>
                     <select 
-                      name="operator"
+                      name="operator" 
                       value={formData.operator} 
                       onChange={handleChange} 
                       disabled={isExternalOperatorMode}
@@ -1945,6 +1961,9 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                     <option value="" disabled>Selecionar Turno</option>
                     <option value="Diurno">Diurno</option>
                     <option value="Noturno">Noturno</option>
+                    {formData.shift && formData.shift !== 'Diurno' && formData.shift !== 'Noturno' && (
+                      <option value={formData.shift}>{formData.shift}</option>
+                    )}
                   </select>
                 </div>
               </div>
