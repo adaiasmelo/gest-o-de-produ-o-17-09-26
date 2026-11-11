@@ -13,6 +13,14 @@ import {
   calcJumboUnits, 
   formatJumboUnits 
 } from "../utils/ribbonGoalsUtils";
+import { 
+  getEremaStandardGoal, 
+  saveEremaStandardGoal, 
+  DEFAULT_EREMA_STANDARD_GOAL,
+  GHEZZI_TECHNICAL_PRESETS,
+  LINTECH_TECHNICAL_PRESETS,
+  WUTEC_TECHNICAL_PRESETS
+} from "../utils/ribbonStandardGoals";
 import { ScreensaverSettings } from "../utils/screensaverUtils";
 import { SettingsPermissions } from "../types";
 import { GOAL_VALUE } from "../constants";
@@ -121,6 +129,8 @@ export const SettingsModal: React.FC<{
   settingsPerms
 }) => {
   const [isSaving, setIsSaving] = useState(false);
+  const [eremaStandardGoal12h, setEremaStandardGoal12h] = useState<number>(() => getEremaStandardGoal());
+  const [selectedTechMachine, setSelectedTechMachine] = useState<'Ghezzi' | 'Lintech' | 'Wultec'>('Ghezzi');
 
   const tabs = [
     { id: 'filters', label: 'Filtros', icon: Search, hidden: !isAdminUser && !settingsPerms?.filters },
@@ -533,22 +543,110 @@ export const SettingsModal: React.FC<{
                   </div>
                 </div>
 
-                {/* Máquina Erema (Reciclagem) */}
-                <div className="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100 text-center space-y-3">
-                  <span className="text-[10px] font-black uppercase text-emerald-700 block tracking-wider">Máquina Erema (Reciclagem)</span>
-                  <div className="relative">
-                    <input 
-                      type="number" 
-                      value={eremaGoals[dashboardMonth] || 70000} 
-                      onChange={e => setEremaGoals?.(prev => {
-                        const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
-                        localStorage.setItem('manupackaging_erema_goals', JSON.stringify(updated));
-                        setDoc(doc(db, 'settings', 'global'), { eremaGoals: updated }, { merge: true });
-                        return updated;
-                      })} 
-                      className="w-full bg-white border border-slate-200 rounded-[1.5rem] px-4 py-4 text-xl font-black text-center text-slate-800 outline-none focus:ring-4 focus:ring-emerald-100 tracking-tighter"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-emerald-400 text-[10px]">KG</span>
+                {/* Máquina Erema (Reciclagem) - Meta Mensal e Meta Padrão Diária/Turno 12h */}
+                <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-200 text-left space-y-4 md:col-span-2">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-emerald-100 pb-3">
+                    <div>
+                      <span className="text-[11px] font-black uppercase text-emerald-800 block tracking-wider">Máquina Erema (Reciclagem) • Metas Operacionais</span>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Definição da Meta Mensal do Dashboard e da Meta Padrão por Turno de 12 Horas</p>
+                    </div>
+                    <span className="text-[10px] font-extrabold px-3 py-1 bg-emerald-100 text-emerald-900 rounded-full border border-emerald-200">
+                      Padrão 12h: {eremaStandardGoal12h.toLocaleString('pt-BR')} kg ({(eremaStandardGoal12h / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} t)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Meta Mensal (Dashboard) */}
+                    <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs space-y-2 text-center">
+                      <span className="text-[10px] font-black uppercase text-emerald-700 block tracking-wider">Meta Mensal (kg/mês)</span>
+                      <p className="text-[8.5px] text-slate-400 font-medium">Usada nos gráficos e projeções mensais</p>
+                      <div className="relative">
+                        <input 
+                          type="number" 
+                          value={eremaGoals[dashboardMonth] || 70000} 
+                          onChange={e => setEremaGoals?.(prev => {
+                            const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
+                            localStorage.setItem('manupackaging_erema_goals', JSON.stringify(updated));
+                            setDoc(doc(db, 'settings', 'global'), { eremaGoals: updated }, { merge: true });
+                            return updated;
+                          })} 
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-lg font-black text-center text-slate-800 outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-emerald-500 text-[10px]">KG/MÊS</span>
+                      </div>
+                    </div>
+
+                    {/* Meta Padrão por Turno de 12h (Lançamentos Diários) */}
+                    <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs space-y-2 text-center">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">Meta Padrão (Turno 12h)</span>
+                        <span className="text-[8px] font-black uppercase px-2 py-0.5 bg-amber-100 text-amber-800 rounded">Oficial: 2.600 kg</span>
+                      </div>
+                      <p className="text-[8.5px] text-slate-400 font-medium">Meta padrão pré-carregada na tela de novo lançamento</p>
+                      <div className="relative">
+                        <input 
+                          type="number" 
+                          value={eremaStandardGoal12h} 
+                          onChange={e => {
+                            const val = Number(e.target.value) || 0;
+                            setEremaStandardGoal12h(val);
+                            saveEremaStandardGoal(val);
+                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: val }, { merge: true });
+                          }} 
+                          className="w-full bg-slate-50 border border-emerald-300 rounded-xl px-4 py-2.5 text-lg font-black text-center text-emerald-950 outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-emerald-600 text-[10px]">KG / 12H</span>
+                      </div>
+                      <div className="flex items-center justify-center gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEremaStandardGoal12h(DEFAULT_EREMA_STANDARD_GOAL);
+                            saveEremaStandardGoal(DEFAULT_EREMA_STANDARD_GOAL);
+                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: DEFAULT_EREMA_STANDARD_GOAL }, { merge: true });
+                          }}
+                          className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
+                            eremaStandardGoal12h === DEFAULT_EREMA_STANDARD_GOAL 
+                              ? 'bg-emerald-600 text-white border-emerald-700' 
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          Padrão 2.600 kg (2,6 t)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = 4200;
+                            setEremaStandardGoal12h(val);
+                            saveEremaStandardGoal(val);
+                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: val }, { merge: true });
+                          }}
+                          className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
+                            eremaStandardGoal12h === 4200 
+                              ? 'bg-emerald-600 text-white border-emerald-700' 
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          4.200 kg
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = 5200;
+                            setEremaStandardGoal12h(val);
+                            saveEremaStandardGoal(val);
+                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: val }, { merge: true });
+                          }}
+                          className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
+                            eremaStandardGoal12h === 5200 
+                              ? 'bg-emerald-600 text-white border-emerald-700' 
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          5.200 kg (Dia Todo)
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -663,6 +761,71 @@ export const SettingsModal: React.FC<{
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-300 text-[9px]">M²</span>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Matriz Técnica de Metas & Produtividade dos Estudos Oficiais (PDFs) */}
+                <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200 text-left space-y-3.5 md:col-span-2">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-200 pb-3">
+                    <div>
+                      <span className="text-[11px] font-black uppercase text-slate-800 block tracking-wider">
+                        📑 Matriz Técnica de Produtividade (Estudos de Engenharia)
+                      </span>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        Metas técnicas em m² baseadas nos PDFs oficiais com tempos de setup de 40 min
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                      {(['Ghezzi', 'Lintech', 'Wultec'] as const).map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSelectedTechMachine(m)}
+                          className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
+                            selectedTechMachine === m
+                              ? 'bg-blue-600 text-white shadow-2xs'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[9px] border-collapse bg-white rounded-xl overflow-hidden border border-slate-200 shadow-2xs">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 uppercase font-black tracking-wider border-b border-slate-200">
+                          <th className="p-2.5">Formato / Dimensão</th>
+                          <th className="p-2.5">Material / Jumbo</th>
+                          <th className="p-2.5 text-right">Meta Técnica (m²)</th>
+                          <th className="p-2.5 text-right">Consumo / Setups</th>
+                          <th className="p-2.5">Produção Resultante</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                        {(selectedTechMachine === 'Ghezzi' ? GHEZZI_TECHNICAL_PRESETS : selectedTechMachine === 'Lintech' ? LINTECH_TECHNICAL_PRESETS : WUTEC_TECHNICAL_PRESETS).map(preset => (
+                          <tr key={preset.id} className="hover:bg-blue-50/40 transition-colors">
+                            <td className="p-2.5 font-black text-slate-900">{preset.formatLabel}</td>
+                            <td className="p-2.5">
+                              <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-bold">
+                                {preset.jumboCategory === '6000m' ? 'AS50 (6.000m)' : '8.000m (AA38/AR9/Hotmelt)'}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right font-black text-blue-700">
+                              {preset.dailyTargetM2.toLocaleString('pt-BR')} m²
+                            </td>
+                            <td className="p-2.5 text-right text-slate-500 font-medium">
+                              {preset.jumbosConsumed} jumbos • {preset.setupsDescription}
+                            </td>
+                            <td className="p-2.5 text-slate-500 font-medium">
+                              {preset.boxesDescription || preset.notes || '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>

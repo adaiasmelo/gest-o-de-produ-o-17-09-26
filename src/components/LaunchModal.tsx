@@ -9,6 +9,7 @@ import { ReasonInputWithSave, saveReasonToLibrary } from './ReasonInputWithSave'
 import { isEmployeeSilenced, isCollaboratorSilenced, getSilencedNamesSet } from '../utils/silenceUtils';
 import { isOperatorOnVacation, getVacationingOperatorNamesSet } from '../utils/vacationUtils';
 import { triggerHaptic } from '../utils/haptics';
+import { getEremaStandardGoal, DEFAULT_EREMA_STANDARD_GOAL } from '../utils/ribbonStandardGoals';
 
 
 interface EcoBReasonCardProps {
@@ -335,7 +336,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
     eremaWeight2: 0,
     eremaWeight3: 0,
     eremaWeight4: 0,
-    eremaDailyGoal: 4200,
+    eremaDailyGoal: getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL,
     recycledUsed: 0,
     recycledBags: 0,
     materialType: 'LC3',
@@ -819,7 +820,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         eremaWeight2: initialData.eremaWeight2 ?? 0,
         eremaWeight3: initialData.eremaWeight3 ?? 0,
         eremaWeight4: initialData.eremaWeight4 ?? 0,
-        eremaDailyGoal: initialData.eremaDailyGoal ?? 4200,
+        eremaDailyGoal: initialData.eremaDailyGoal ?? (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL),
         recycledUsed: initialData.recycledUsed ?? 0,
         recycledBags: initialData.recycledBags ?? (initialData.recycledUsed ? Number((initialData.recycledUsed / 1100).toFixed(2)) : 0),
         materialType: initialData.materialType || 'LC3',
@@ -924,7 +925,7 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
           eremaWeight2: 0,
           eremaWeight3: 0,
           eremaWeight4: 0,
-          eremaDailyGoal: 4200,
+          eremaDailyGoal: getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL,
           recycledUsed: 0,
           recycledBags: 0,
           materialType: 'LC3',
@@ -2416,24 +2417,41 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                         </div>
 
                         {/* Campo para Definir / Inserir a Meta Diária de Erema */}
-                        <div className="bg-emerald-100/70 p-2 rounded-lg border border-emerald-200 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <Target className="w-3.5 h-3.5 text-emerald-800" />
+                        <div className="bg-emerald-100/70 p-2.5 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-2xs">
+                              <Target className="w-4 h-4" />
+                            </div>
                             <div>
-                              <span className="text-[9px] font-black uppercase text-emerald-950 tracking-wider block leading-tight">Meta Diária (kg)</span>
-                              <span className="text-[7.5px] text-emerald-700 font-bold block">Padrão 12h: 4.200 kg</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-black uppercase text-emerald-950 tracking-wider block leading-tight">Meta Diária (kg) • Erema</span>
+                                <span className="text-[8px] font-black uppercase px-1.5 py-0.2 bg-emerald-200/80 text-emerald-900 rounded">Padrão: {((getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} t / turno</span>
+                              </div>
+                              <span className="text-[8px] text-emerald-800 font-bold block mt-0.5">
+                                12h: {(getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL).toLocaleString('pt-BR')} kg ({((getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} t) • Dia: {(((getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL) * 2) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} t
+                              </span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <input 
-                              type="number" 
-                              name="eremaDailyGoal" 
-                              value={formData.eremaDailyGoal ?? 4200} 
-                              onChange={handleChange} 
-                              className="w-24 bg-white border border-emerald-300 rounded px-2 py-1 text-xs font-black text-emerald-950 text-right outline-none focus:ring-2 focus:ring-emerald-400" 
-                              placeholder="4200"
-                            />
-                            <span className="text-[9px] font-black text-emerald-700">KG</span>
+                          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, eremaDailyGoal: getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL }))}
+                              className="px-2 py-1 rounded bg-white hover:bg-emerald-50 border border-emerald-300 text-[8.5px] font-black text-emerald-900 cursor-pointer shadow-2xs"
+                              title="Restaurar meta padrão configurada"
+                            >
+                              Restaurar Padrão ({(getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL).toLocaleString('pt-BR')} kg)
+                            </button>
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="number" 
+                                name="eremaDailyGoal" 
+                                value={formData.eremaDailyGoal ?? (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)} 
+                                onChange={handleChange} 
+                                className="w-24 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs font-black text-emerald-950 text-right outline-none focus:ring-2 focus:ring-emerald-400" 
+                                placeholder={String(getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)}
+                              />
+                              <span className="text-[9px] font-black text-emerald-700">KG</span>
+                            </div>
                           </div>
                         </div>
                         
@@ -2486,31 +2504,89 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
 
                         {/* Comparativo de Atingimento da Meta Diária */}
                         {(() => {
-                          const eGoal = Number(formData.eremaDailyGoal) || 4200;
+                          const eGoal = Number(formData.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL);
                           const netVal = Number(formData.netWeight) || 0;
                           const isMet = netVal >= eGoal && netVal > 0;
                           const pct = eGoal > 0 ? ((netVal / eGoal) * 100).toFixed(0) : '0';
+                          const hasBonusLinked = formData.hasBonusOccurrence && formData.bonusOccurrenceType === 'meta_maquina_nao_atingida';
+
                           return (
-                            <div className="bg-white p-2.5 rounded-lg border border-emerald-200 flex flex-col sm:flex-row justify-between items-center gap-2 shadow-2xs">
-                              <div className="flex items-center gap-3">
-                                <div>
-                                  <span className="text-[8px] font-black text-emerald-600 uppercase block">Produção Total</span>
-                                  <span className="text-sm font-black text-emerald-800">{formatWeight(formData.netWeight)}</span>
+                            <div className="bg-white p-3 rounded-xl border border-emerald-200 space-y-2 shadow-2xs">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                                <div className="flex items-center gap-3">
+                                  <div>
+                                    <span className="text-[8px] font-black text-emerald-600 uppercase block">Produção Total</span>
+                                    <span className="text-sm font-black text-emerald-800">{formatWeight(formData.netWeight)}</span>
+                                  </div>
+                                  <div className="h-6 w-px bg-emerald-100" />
+                                  <div>
+                                    <span className="text-[8px] font-black text-slate-400 uppercase block">Meta Padrão</span>
+                                    <span className="text-xs font-bold text-slate-700">{formatWeight(eGoal)} ({(eGoal / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} t)</span>
+                                  </div>
                                 </div>
-                                <div className="h-6 w-px bg-emerald-100" />
-                                <div>
-                                  <span className="text-[8px] font-black text-slate-400 uppercase block">Meta Diária</span>
-                                  <span className="text-xs font-bold text-slate-700">{formatWeight(eGoal)}</span>
-                                </div>
+
+                                <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                  isMet
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : 'bg-rose-50 text-rose-800 border border-rose-200'
+                                }`}>
+                                  {isMet ? `Meta Batida ✅ (${pct}%)` : `Abaixo da Meta ❌ (${pct}%)`}
+                                </span>
                               </div>
 
-                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-                                isMet
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : 'bg-rose-50 text-rose-800 border border-rose-200'
-                              }`}>
-                                {isMet ? `Meta Batida ✅ (${pct}%)` : `Abaixo da Meta ❌ (${pct}%)`}
-                              </span>
+                              {/* Vinculação do Desconto de Bônus da Erema */}
+                              {!isMet && netVal > 0 && !hasBonusLinked && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      hasBonusOccurrence: true,
+                                      bonusOccurrenceType: 'meta_maquina_nao_atingida',
+                                      bonusOccurrenceDiscount: 30,
+                                      bonusOccurrenceReason: `Meta diária padrão da Erema não atingida: ${formatWeight(netVal)} produzido vs ${formatWeight(eGoal)} de meta (${pct}% atingido).`,
+                                      hasPenalty: true,
+                                      infractionType: '📉 Meta de Produção Não Atingida (30% Desconto)',
+                                      penaltyType: 'deduction_percent',
+                                      deductionValue: 30,
+                                      penaltyReason: `Meta Erema não atingida: ${formatWeight(netVal)} / ${formatWeight(eGoal)} (${pct}%)`
+                                    }));
+                                  }}
+                                  className="w-full py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                                >
+                                  <Zap className="w-3.5 h-3.5" />
+                                  Lançar Desconto de Bônus (-30% Meta Erema Não Atingida)
+                                </button>
+                              )}
+
+                              {hasBonusLinked && (
+                                <div className="p-2 rounded-lg bg-amber-50 border border-amber-300 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 text-amber-900 text-[9.5px] font-black">
+                                    <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>Desconto de 30% no Bônus vinculado ao apontamento (Meta não atingida)</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        hasBonusOccurrence: false,
+                                        bonusOccurrenceType: '',
+                                        bonusOccurrenceDiscount: 0,
+                                        bonusOccurrenceReason: '',
+                                        hasPenalty: false,
+                                        infractionType: '',
+                                        penaltyType: 'deduction_kg',
+                                        deductionValue: 0,
+                                        penaltyReason: ''
+                                      }));
+                                    }}
+                                    className="text-[8.5px] font-bold text-amber-700 underline hover:text-amber-900 cursor-pointer"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}

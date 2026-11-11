@@ -95,6 +95,18 @@ import {
   JUMBO_AVG_LENGTH, 
   JUMBO_AVG_M2 
 } from './utils/ribbonGoalsUtils';
+import { 
+  findTechnicalRibbonPreset, 
+  getEremaStandardGoal, 
+  DEFAULT_EREMA_STANDARD_GOAL,
+  GHEZZI_TECHNICAL_PRESETS,
+  LINTECH_TECHNICAL_PRESETS,
+  WUTEC_TECHNICAL_PRESETS,
+  TechnicalRibbonPreset,
+  calculateProportionalRibbonGoals,
+  calcHoursBetween,
+  ProportionalCalculationResult
+} from './utils/ribbonStandardGoals';
 import { generateRibbonMonthlyReportPDF, generateIntegratedMonthlyReportPDF } from './utils/monthlyReportsPdf';
 import { 
   getScreensaverSettings, 
@@ -1307,6 +1319,13 @@ export const App: React.FC = () => {
     rollsTipo2?: number;
     m2Tipo1?: number;
     m2Tipo2?: number;
+    startTime?: string;
+    endTime?: string;
+    durationHours?: number;
+    nominalTargetDailyM2?: number;
+    proportionalTargetM2?: number;
+    attainmentPercent?: number;
+    formatLabel?: string;
   }>>([]);
   const [tempJumboType, setTempJumboType] = useState('');
   const [tempJumboM2, setTempJumboM2] = useState('');
@@ -1322,6 +1341,24 @@ export const App: React.FC = () => {
   const [tempRollsTipo2, setTempRollsTipo2] = useState('');
   const [tempM2Tipo1, setTempM2Tipo1] = useState('');
   const [tempM2Tipo2, setTempM2Tipo2] = useState('');
+  const [tempStartTime, setTempStartTime] = useState('');
+  const [tempEndTime, setTempEndTime] = useState('');
+  const [tempDurationHours, setTempDurationHours] = useState('');
+  
+  const [ribbonHasBonusOccurrence, setRibbonHasBonusOccurrence] = useState(false);
+  const [ribbonBonusOccurrenceType, setRibbonBonusOccurrenceType] = useState('meta_maquina_nao_atingida');
+  const [ribbonBonusOccurrenceDiscount, setRibbonBonusOccurrenceDiscount] = useState(30);
+  const [ribbonBonusOccurrenceReason, setRibbonBonusOccurrenceReason] = useState('');
+  const [selectedRibbonPresetId, setSelectedRibbonPresetId] = useState<string>('');
+
+  const proportionalGoalsResult = useMemo(() => {
+    return calculateProportionalRibbonGoals({
+      machine: ribbonMachine,
+      items: ribbonJumboItems,
+      fallbackTargetM2: parseFloat(ribbonTargetDailyM2) || 50000,
+      defaultShiftHours: 8.8
+    });
+  }, [ribbonMachine, ribbonJumboItems, ribbonTargetDailyM2]);
   
   const [editingRibbonId, setEditingRibbonId] = useState<string | null>(null);
   const [showRibbonForm, setShowRibbonForm] = useState(false);
@@ -6168,6 +6205,23 @@ Atenciosamente,
     const ribbonStoppedReasonCombined = parts.join(', ') || 'Nenhum';
 
     const entryId = editingRibbonId || `ribbon_${Date.now()}`;
+    const isProportional = proportionalGoalsResult.isProportional;
+    const finalTargetDailyM2 = isProportional 
+      ? proportionalGoalsResult.totalCompositeTargetM2 
+      : (ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) || undefined : undefined);
+
+    const enrichedJumboItems = ribbonJumboItems.length > 0 ? ribbonJumboItems.map((it, idx) => {
+      const calc = proportionalGoalsResult.items.find(c => c.id === it.id) || proportionalGoalsResult.items[idx];
+      return {
+        ...it,
+        nominalTargetDailyM2: calc?.nominalTargetDailyM2 ?? it.nominalTargetDailyM2,
+        proportionalTargetM2: calc?.proportionalTargetM2 ?? it.proportionalTargetM2,
+        attainmentPercent: calc?.attainmentPercent ?? it.attainmentPercent,
+        durationHours: calc?.durationHours ?? it.durationHours,
+        formatLabel: calc?.formatLabel ?? it.formatLabel
+      };
+    }) : undefined;
+
     const payload: RibbonCuttingEntry = {
       id: entryId,
       date: ribbonDate,
@@ -6189,7 +6243,7 @@ Atenciosamente,
       rollsTipo2: ribbonRollsTipo2 ? parseInt(ribbonRollsTipo2) || 0 : undefined,
       m2Tipo1: ribbonM2Tipo1 ? parseFloat(ribbonM2Tipo1) || 0 : undefined,
       m2Tipo2: ribbonM2Tipo2 ? parseFloat(ribbonM2Tipo2) || 0 : undefined,
-      jumboItems: ribbonJumboItems.length > 0 ? ribbonJumboItems : undefined,
+      jumboItems: enrichedJumboItems,
       stoppedMinutes: totalStoppedMinutes,
       stoppedReason: ribbonStoppedReasonCombined,
       manutencaoMin: manutencaoMinCalculado,
@@ -6198,7 +6252,17 @@ Atenciosamente,
       processoMotivo: ribbonProcessoStops.length > 0 ? JSON.stringify(ribbonProcessoStops) : '',
       outrosMin: outrosMinCalculado,
       outrosMotivo: ribbonOutrosStops.length > 0 ? JSON.stringify(ribbonOutrosStops) : '',
-      targetDailyM2: ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) || undefined : undefined,
+      targetDailyM2: finalTargetDailyM2,
+      isProportionalGoal: isProportional,
+      proportionalBreakdown: isProportional ? proportionalGoalsResult.items : undefined,
+      hasBonusOccurrence: ribbonHasBonusOccurrence,
+      bonusOccurrence: ribbonHasBonusOccurrence ? {
+        enabled: true,
+        type: ribbonBonusOccurrenceType || 'meta_maquina_nao_atingida',
+        penaltyRatePercent: Number(ribbonBonusOccurrenceDiscount) || 30,
+        reason: ribbonBonusOccurrenceReason || `Meta de corte de fita não atingida (${ribbonMachine})`,
+        description: ribbonBonusOccurrenceReason || `Meta de corte de fita (${ribbonMachine}): ${prodVal} m² vs meta ${finalTargetDailyM2} m²`
+      } : undefined,
     };
 
     // Grava motivos preenchidos na biblioteca de motivos de fita
@@ -6212,6 +6276,54 @@ Atenciosamente,
     try {
       const oldEntry = editingRibbonId ? ribbonEntries.find(r => r.id === editingRibbonId) : null;
       await setDoc(doc(db, 'ribbon_cutting_entries', entryId), cleanUndefined(payload));
+
+      // Sincroniza ocorrência de desconto de bônus (Meta não atingida ou outras)
+      const incidentId = `inc_${entryId}`;
+      if (ribbonHasBonusOccurrence) {
+        const opName = (ribbonOperator || '').trim();
+        const matchedEmp = employees.find(emp => 
+          emp.name.toLowerCase().trim() === opName.toLowerCase()
+        );
+        const bonusIncident = {
+          id: incidentId,
+          productionEntryId: entryId,
+          employeeId: matchedEmp?.id || `emp_${opName.toLowerCase().replace(/\s+/g, '_')}`,
+          employeeName: opName,
+          operatorName: opName,
+          targetOperator: opName,
+          registration: matchedEmp?.registration || '',
+          sector: matchedEmp?.sector || 'Corte de Fita',
+          machine: ribbonMachine || undefined,
+          targetMachine: ribbonMachine || undefined,
+          shift: 'Comercial',
+          type: ribbonBonusOccurrenceType || 'meta_maquina_nao_atingida',
+          date: ribbonDate,
+          cyclePeriod: (ribbonDate || '').slice(0, 7),
+          description: ribbonBonusOccurrenceReason || `Meta de corte de fita (${ribbonMachine}) não atingida: ${prodVal} m²`,
+          penaltyRatePercent: Number(ribbonBonusOccurrenceDiscount) || 30,
+          isJustified: false,
+          registeredBy: loggedUser?.name || 'Apontamento de Corte de Fita',
+          source: 'corte_fita',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        try {
+          await setDoc(doc(db, 'bonus_incidents', incidentId), bonusIncident);
+          const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
+          const updatedIncidents = [bonusIncident, ...storedIncidents.filter((i: any) => i.id !== incidentId)];
+          localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
+        } catch (incErr) {
+          console.warn('Erro ao sincronizar ocorrência de bônus no Firestore:', incErr);
+        }
+      } else if (editingRibbonId) {
+        try {
+          await deleteDoc(doc(db, 'bonus_incidents', incidentId));
+          const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
+          const updatedIncidents = storedIncidents.filter((i: any) => i.id !== incidentId);
+          localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
+        } catch {}
+      }
+
       logAuditEvent({
         action: editingRibbonId ? 'UPDATE' : 'CREATE',
         module: 'Corte de Fita',
@@ -6255,6 +6367,11 @@ Atenciosamente,
       setRibbonProcessoStops([]);
       setRibbonOutrosStops([]);
       setRibbonJumboItems([]);
+      setRibbonHasBonusOccurrence(false);
+      setRibbonBonusOccurrenceType('meta_maquina_nao_atingida');
+      setRibbonBonusOccurrenceDiscount(30);
+      setRibbonBonusOccurrenceReason('');
+      setSelectedRibbonPresetId('');
       setEditingRibbonId(null);
       setShowRibbonForm(false);
     } catch (err) {
@@ -6452,6 +6569,10 @@ Atenciosamente,
     setRibbonProcessoStops(parseMotivo(entry.processoMotivo, entry.processoMin || 0));
     setRibbonOutrosStops(parseMotivo(entry.outrosMotivo, entry.outrosMin || 0));
     setRibbonJumboItems(entry.jumboItems || []);
+    setRibbonHasBonusOccurrence(Boolean(entry.hasBonusOccurrence || entry.bonusOccurrence?.enabled));
+    setRibbonBonusOccurrenceType(entry.bonusOccurrence?.type || 'meta_maquina_nao_atingida');
+    setRibbonBonusOccurrenceDiscount(entry.bonusOccurrence?.penaltyRatePercent ?? 30);
+    setRibbonBonusOccurrenceReason(entry.bonusOccurrence?.reason || '');
     setShowRibbonForm(true);
     window.scrollTo({ top: 300, behavior: 'smooth' });
   };
@@ -19142,79 +19263,140 @@ Atenciosamente,
                       const totalLossesM2 = lossTipo1M2 + lossTipo2M2 + wasteM2;
                       const totalM2Processed = prodM2 + totalLossesM2;
                       const lossPct = totalM2Processed > 0 ? (totalLossesM2 / totalM2Processed) * 100 : 0;
-                      const netAttainment = targetM2 > 0 ? (prodM2 / targetM2) * 100 : 0;
-                      const hasMetGoal = targetM2 > 0 && prodM2 >= targetM2;
+
+                      // Se há múltiplos jumbos/OPs rodadas no dia, usamos a Meta Proporcional Composta calculada
+                      const isMultiOP = proportionalGoalsResult.isProportional;
+                      const effectiveTargetM2 = isMultiOP ? proportionalGoalsResult.totalCompositeTargetM2 : targetM2;
+                      const effectiveProdM2 = prodM2 > 0 ? prodM2 : proportionalGoalsResult.totalProducedM2;
+                      const netAttainment = effectiveTargetM2 > 0 ? (effectiveProdM2 / effectiveTargetM2) * 100 : 0;
+                      const hasMetGoal = effectiveTargetM2 > 0 && effectiveProdM2 >= effectiveTargetM2;
+
+                      const presetsForMachine = (() => {
+                        const norm = (ribbonMachine || '').toLowerCase();
+                        if (norm.includes('ghez')) return GHEZZI_TECHNICAL_PRESETS;
+                        if (norm.includes('lin')) return LINTECH_TECHNICAL_PRESETS;
+                        if (norm.includes('wut') || norm.includes('rebobinad')) return WUTEC_TECHNICAL_PRESETS;
+                        return [];
+                      })();
+                      const hasBonusLinked = ribbonHasBonusOccurrence && ribbonBonusOccurrenceType === 'meta_maquina_nao_atingida';
 
                       return (
-                        <div className="bg-slate-50 border border-purple-300 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs animate-in fade-in duration-200">
+                        <div className={`border rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs animate-in fade-in duration-200 transition-all ${
+                          isMultiOP ? 'bg-gradient-to-r from-purple-50/90 via-indigo-50/70 to-purple-50/90 border-purple-400' : 'bg-slate-50 border-purple-300'
+                        }`}>
                           <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-center">
                             
                             {/* Bloco 1: Identificador */}
                             <div className="md:col-span-3 flex items-center gap-3 border-b md:border-b-0 md:border-r border-purple-200 pr-3">
-                              <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-base shrink-0 shadow-xs">
-                                🎯
+                              <div className={`w-9 h-9 rounded-xl text-white flex items-center justify-center font-black text-base shrink-0 shadow-xs ${
+                                isMultiOP ? 'bg-gradient-to-tr from-purple-700 to-indigo-600' : 'bg-purple-600'
+                              }`}>
+                                {isMultiOP ? '⚖️' : '🎯'}
                               </div>
                               <div className="min-w-0">
-                                <div className="text-xs font-black uppercase text-purple-950 tracking-tight truncate">
-                                  {ribbonMachine} (Corte)
+                                <div className="text-xs font-black uppercase text-purple-950 tracking-tight truncate flex items-center gap-1.5">
+                                  <span>{ribbonMachine} (Corte)</span>
                                 </div>
-                                <div className="text-[10px] font-bold text-slate-500 truncate">
-                                  Meta Diária & Abatimento
+                                <div className="text-[10px] font-bold text-slate-500 truncate flex items-center gap-1">
+                                  {isMultiOP ? (
+                                    <span className="text-purple-700 font-extrabold uppercase">
+                                      ⚡ Meta Composta ({proportionalGoalsResult.itemCount} OPs)
+                                    </span>
+                                  ) : (
+                                    <span>Meta Diária & Abatimento</span>
+                                  )}
                                 </div>
                               </div>
                             </div>
 
-                            {/* Bloco 2: Entrada da Meta Diária (m²) */}
+                            {/* Bloco 2: Entrada da Meta Diária (m²) e Presets Técnicos */}
                             <div className="md:col-span-4 space-y-1.5">
                               <div className="flex items-center justify-between">
                                 <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                                  Meta Diária da Máquina (m²)
+                                  {isMultiOP ? 'Meta Composta Ponderada (m²)' : 'Meta Diária da Máquina (m²)'}
                                 </label>
                                 <span className="text-[10px] font-bold text-slate-400">
-                                  Alvo: <strong className="text-purple-900">{targetM2 > 0 ? `${targetM2.toLocaleString('pt-BR')} m²` : 'Definir'}</strong>
+                                  Alvo: <strong className="text-purple-900">{effectiveTargetM2 > 0 ? `${effectiveTargetM2.toLocaleString('pt-BR')} m²` : 'Definir'}</strong>
                                 </span>
                               </div>
-                              <div className="flex items-center gap-1.5">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="number"
-                                    value={ribbonTargetDailyM2}
-                                    onChange={(e) => setRibbonTargetDailyM2(e.target.value)}
-                                    placeholder="Ex: 60000"
-                                    className="w-full bg-white border border-purple-200 focus:border-purple-600 rounded-xl px-3 py-1.5 text-xs sm:text-sm font-black text-slate-900 outline-none pr-10 h-8 shadow-2xs"
-                                  />
-                                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400 uppercase pointer-events-none">
-                                    m²
+
+                              {/* Seletor de Formato Técnico dos Estudos (apenas se for 1 OP simples) */}
+                              {!isMultiOP && presetsForMachine.length > 0 && (
+                                <select
+                                  value={selectedRibbonPresetId}
+                                  onChange={(e) => {
+                                    const pid = e.target.value;
+                                    setSelectedRibbonPresetId(pid);
+                                    const match = presetsForMachine.find(p => p.id === pid);
+                                    if (match) {
+                                      setRibbonTargetDailyM2(String(match.dailyTargetM2));
+                                      if (match.widthMm) setTempRollWidth(String(match.widthMm));
+                                      if (match.lengthM) setTempRollLength(String(match.lengthM));
+                                    }
+                                  }}
+                                  className="w-full bg-purple-50 border border-purple-300 rounded-lg px-2 py-1 text-[10px] font-black text-purple-950 outline-none focus:ring-1 focus:ring-purple-500 shadow-2xs"
+                                >
+                                  <option value="">⚙️ Selecionar Formato Técnico do Estudo...</option>
+                                  {presetsForMachine.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.formatLabel} → {p.dailyTargetM2.toLocaleString('pt-BR')} m²
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+
+                              {isMultiOP ? (
+                                <div className="bg-white border border-purple-300 rounded-xl px-3 py-1.5 flex items-center justify-between shadow-2xs">
+                                  <span className="text-[10px] font-bold text-purple-900 uppercase">
+                                    Soma Proporcional Ponderada:
+                                  </span>
+                                  <span className="text-sm font-black text-purple-950">
+                                    {effectiveTargetM2.toLocaleString('pt-BR')} m²
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  {[40000, 50000, 60000, 70000].map(val => (
-                                    <button
-                                      key={val}
-                                      type="button"
-                                      onClick={() => setRibbonTargetDailyM2(String(val))}
-                                      className={`px-1.5 py-1 rounded-lg text-[9px] font-black uppercase border transition-all cursor-pointer ${
-                                        Number(ribbonTargetDailyM2) === val
-                                          ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
-                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                                      }`}
-                                    >
-                                      {(val / 1000)}k
-                                    </button>
-                                  ))}
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="relative flex-1">
+                                    <input
+                                      type="number"
+                                      value={ribbonTargetDailyM2}
+                                      onChange={(e) => setRibbonTargetDailyM2(e.target.value)}
+                                      placeholder="Ex: 60000"
+                                      className="w-full bg-white border border-purple-200 focus:border-purple-600 rounded-xl px-3 py-1.5 text-xs sm:text-sm font-black text-slate-900 outline-none pr-10 h-8 shadow-2xs"
+                                    />
+                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400 uppercase pointer-events-none">
+                                      m²
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {[40000, 50000, 60000, 70000].map(val => (
+                                      <button
+                                        key={val}
+                                        type="button"
+                                        onClick={() => setRibbonTargetDailyM2(String(val))}
+                                        className={`px-1.5 py-1 rounded-lg text-[9px] font-black uppercase border transition-all cursor-pointer ${
+                                          Number(ribbonTargetDailyM2) === val
+                                            ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
+                                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        {(val / 1000)}k
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
 
-                            {/* Bloco 3: Avaliação em Tempo Real com Abatimento de Perdas */}
+                            {/* Bloco 3: Avaliação em Tempo Real com Abatimento de Perdas e Desconto no Bônus */}
                             <div className="md:col-span-5 bg-white border border-slate-200 rounded-xl p-2.5 space-y-1 text-[10px]">
                               <div className="flex items-center justify-between">
                                 <span className="text-slate-500 font-bold uppercase">Produção Líquida:</span>
                                 <span className="font-black text-indigo-900">
-                                  {prodM2 > 0 ? `${prodM2.toLocaleString('pt-BR')} m²` : '0 m²'}
+                                  {effectiveProdM2 > 0 ? `${effectiveProdM2.toLocaleString('pt-BR')} m²` : '0 m²'}
                                 </span>
                                 <span className={`px-2 py-0.5 rounded-md font-black uppercase text-[8.5px] ${hasMetGoal ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
-                                  {hasMetGoal ? `BATEU META ✅ (${netAttainment.toFixed(0)}%)` : targetM2 > 0 ? `Falta ${(targetM2 - prodM2).toLocaleString('pt-BR')} m² (${netAttainment.toFixed(0)}%)` : 'Sem Meta'}
+                                  {hasMetGoal ? `BATEU META ✅ (${netAttainment.toFixed(0)}%)` : effectiveTargetM2 > 0 ? `Falta ${(effectiveTargetM2 - effectiveProdM2).toLocaleString('pt-BR')} m² (${netAttainment.toFixed(0)}%)` : 'Sem Meta'}
                                 </span>
                               </div>
 
@@ -19237,9 +19419,91 @@ Atenciosamente,
                                 <span>Total Perdas da Fita: <strong className="text-rose-700">{totalLossesM2.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m² ({lossPct.toFixed(1)}%)</strong></span>
                                 <span className="text-slate-400">Tipo 1 + Tipo 2 + Lixo abatem da produtividade</span>
                               </div>
+
+                              {/* Botão de Lançar Desconto no Bônus por Meta Não Batida */}
+                              {!hasMetGoal && effectiveTargetM2 > 0 && effectiveProdM2 > 0 && !hasBonusLinked && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRibbonHasBonusOccurrence(true);
+                                    setRibbonBonusOccurrenceType('meta_maquina_nao_atingida');
+                                    setRibbonBonusOccurrenceDiscount(30);
+                                    const reasonText = isMultiOP
+                                      ? `Meta composta de corte de fita (${ribbonMachine}) não atingida: ${effectiveProdM2.toLocaleString('pt-BR')} m² produzidos vs ${effectiveTargetM2.toLocaleString('pt-BR')} m² de meta proporcional ponderada (${netAttainment.toFixed(0)}% atingido em ${proportionalGoalsResult.itemCount} OPs).`
+                                      : `Meta de corte de fita (${ribbonMachine}) não atingida: ${effectiveProdM2.toLocaleString('pt-BR')} m² produzidos vs ${effectiveTargetM2.toLocaleString('pt-BR')} m² de meta (${netAttainment.toFixed(0)}% atingido).`;
+                                    setRibbonBonusOccurrenceReason(reasonText);
+                                  }}
+                                  className="mt-1 w-full py-1.5 px-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                                >
+                                  <Zap className="w-3.5 h-3.5" />
+                                  Lançar Desconto de Bônus (-30% Meta de Fita Não Atingida)
+                                </button>
+                              )}
+
+                              {hasBonusLinked && (
+                                <div className="mt-1 p-1.5 rounded-lg bg-amber-50 border border-amber-300 flex items-center justify-between gap-1 text-[9px]">
+                                  <div className="flex items-center gap-1 text-amber-900 font-black">
+                                    <Zap className="w-3 h-3 text-amber-600 shrink-0" />
+                                    <span>Desconto de 30% no Bônus vinculado ao lançamento</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRibbonHasBonusOccurrence(false);
+                                      setRibbonBonusOccurrenceType('');
+                                      setRibbonBonusOccurrenceDiscount(0);
+                                      setRibbonBonusOccurrenceReason('');
+                                    }}
+                                    className="text-[8px] font-bold text-amber-700 underline hover:text-amber-900 cursor-pointer"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
                           </div>
+
+                          {/* Se for Multi-OP, exibe grade visual de cada OP rodada com sua respectiva meta proporcional */}
+                          {isMultiOP && (
+                            <div className="pt-3 border-t border-purple-200/80 space-y-2">
+                              <div className="flex items-center justify-between text-[11px] font-black text-purple-950 uppercase tracking-tight">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
+                                  Detalhamento Proporcional por OP & Material (Turno 8,8h Rateado):
+                                </span>
+                                <span className="text-[10px] text-purple-700 font-extrabold">
+                                  Meta Composta Consolidada: <strong>{proportionalGoalsResult.totalCompositeTargetM2.toLocaleString('pt-BR')} m²</strong>
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {proportionalGoalsResult.items.map((it, idx) => (
+                                  <div key={it.id || idx} className="bg-white border border-purple-200 rounded-xl p-2.5 shadow-2xs space-y-1 text-[10px]">
+                                    <div className="flex items-center justify-between font-black">
+                                      <span className="text-indigo-900">OP #{it.orderNumber || idx + 1} ({it.jumboType})</span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase ${it.hasMetGoal ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+                                        {it.hasMetGoal ? `Bateu Meta ✅ (${it.attainmentPercent}%)` : `${it.attainmentPercent}% ⚠️`}
+                                      </span>
+                                    </div>
+                                    <div className="text-slate-600 font-medium truncate">
+                                      {it.formatLabel}
+                                    </div>
+                                    <div className="flex items-center justify-between text-slate-500 font-bold border-t border-slate-100 pt-1">
+                                      <span>
+                                        {it.startTime && it.endTime ? `${it.startTime} às ${it.endTime}` : `${it.durationHours}h`} ({it.sharePercent}%)
+                                      </span>
+                                      <span>Nominal: {it.nominalTargetDailyM2.toLocaleString('pt-BR')} m²</span>
+                                    </div>
+                                    <div className="flex items-center justify-between font-black text-[9.5px]">
+                                      <span className="text-purple-900">Meta Prop: {it.proportionalTargetM2.toLocaleString('pt-BR')} m²</span>
+                                      <span className="text-indigo-700">Prod: {it.producedM2.toLocaleString('pt-BR')} m²</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                         </div>
                       );
                     })()}
@@ -19321,7 +19585,7 @@ Atenciosamente,
                               <label className="text-[11px] sm:text-xs font-black uppercase text-slate-500 block">Largura (mm)</label>
                               <input
                                 type="number"
-                                placeholder="45"
+                                placeholder="48"
                                 value={tempRollWidth}
                                 onChange={(e) => setTempRollWidth(e.target.value)}
                                 className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-blue-500"
@@ -19370,6 +19634,130 @@ Atenciosamente,
                           </div>
                         </div>
 
+                        {/* Horário e Tempo de Produção da OP para Rateio Proporcional da Meta */}
+                        <div className="border-t border-slate-100 pt-5 space-y-3.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs sm:text-sm font-black uppercase text-indigo-950 block">
+                              Horário de Produção desta OP (Rateio Proporcional de Metas)
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">
+                              Base: <strong>Turno de 8,8h úteis</strong>
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-slate-600 block">
+                                Início da OP (De)
+                              </label>
+                              <input
+                                type="time"
+                                value={tempStartTime}
+                                onChange={(e) => {
+                                  const start = e.target.value;
+                                  setTempStartTime(start);
+                                  if (start && tempEndTime) {
+                                    const h = calcHoursBetween(start, tempEndTime);
+                                    if (h > 0) setTempDurationHours(String(h));
+                                  }
+                                }}
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-slate-600 block">
+                                Término da OP (Até)
+                              </label>
+                              <input
+                                type="time"
+                                value={tempEndTime}
+                                onChange={(e) => {
+                                  const end = e.target.value;
+                                  setTempEndTime(end);
+                                  if (tempStartTime && end) {
+                                    const h = calcHoursBetween(tempStartTime, end);
+                                    if (h > 0) setTempDurationHours(String(h));
+                                  }
+                                }}
+                                className="w-full px-3.5 py-2.5 sm:py-3 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] sm:text-xs font-black uppercase text-indigo-900 block">
+                                Duração da OP (Horas)
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  placeholder="Ex: 2.0"
+                                  value={tempDurationHours}
+                                  onChange={(e) => setTempDurationHours(e.target.value)}
+                                  className="w-full px-3.5 py-2.5 sm:py-3 border border-indigo-300 rounded-xl text-sm sm:text-base font-black text-indigo-950 focus:outline-none focus:border-indigo-600 pr-12"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">
+                                  horas
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Banner dinâmico com a detecção técnica e meta proporcional desta OP */}
+                          {(() => {
+                            const w = parseFloat(tempRollWidth) || 0;
+                            const l = parseFloat(tempRollLength) || 0;
+                            const detectedPreset = findTechnicalRibbonPreset({
+                              machine: ribbonMachine,
+                              jumboType: tempJumboType,
+                              widthMm: w,
+                              lengthM: l
+                            });
+                            const nominalGoal = detectedPreset?.dailyTargetM2 || (ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) : 0);
+                            const hours = parseFloat(tempDurationHours) || (tempStartTime && tempEndTime ? calcHoursBetween(tempStartTime, tempEndTime) : 0);
+                            const propGoal = (nominalGoal > 0 && hours > 0) ? Math.round(nominalGoal * (hours / 8.8)) : null;
+                            const currentProd = parseFloat(tempProducedM2) || 0;
+                            const attPct = (propGoal && propGoal > 0 && currentProd > 0) ? ((currentProd / propGoal) * 100).toFixed(1) : null;
+
+                            if (!detectedPreset && !nominalGoal) return null;
+
+                            return (
+                              <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <div className="space-y-0.5">
+                                  <div className="font-black text-purple-950 flex items-center gap-1.5">
+                                    <span>⚙️ Formato Detectado:</span>
+                                    <span className="text-purple-700">{detectedPreset?.formatLabel || `${w}mm × ${l}m (${tempJumboType || 'Fita'})`}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-600 font-semibold">
+                                    Meta Nominal do Turno (8,8h): <strong className="text-purple-900">{nominalGoal > 0 ? `${nominalGoal.toLocaleString('pt-BR')} m²` : 'Não definida'}</strong>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  {hours > 0 && propGoal ? (
+                                    <div className="bg-white border border-purple-300 rounded-lg px-2.5 py-1 text-right">
+                                      <div className="text-[10px] uppercase font-bold text-slate-500">Meta Proporcional ({hours.toFixed(1)}h):</div>
+                                      <div className="text-sm font-black text-purple-900">
+                                        {propGoal.toLocaleString('pt-BR')} m²
+                                        {attPct && (
+                                          <span className={`ml-1 text-[10px] font-black ${Number(attPct) >= 100 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                            ({attPct}%)
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-[11px] text-purple-700 italic font-medium">
+                                      Informe o horário ou duração para estimar a meta proporcional individual desta OP.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
                         {/* Visualização m2 calculados */}
                         <div className="bg-slate-50 rounded-2xl p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 text-xs sm:text-sm font-semibold text-slate-600 border border-slate-200/60">
                           <div>
@@ -19399,6 +19787,25 @@ Atenciosamente,
                               const rejVal = parseFloat(tempRejectedM2) || 0;
                               const wasteVal = parseFloat(tempWasteWeight) || 0;
                               
+                              const hoursVal = tempDurationHours
+                                ? parseFloat(tempDurationHours)
+                                : (tempStartTime && tempEndTime ? calcHoursBetween(tempStartTime, tempEndTime) : undefined);
+                              
+                              const wVal = tempRollWidth ? parseFloat(tempRollWidth) || 0 : undefined;
+                              const lVal = tempRollLength ? parseFloat(tempRollLength) || 0 : undefined;
+                              
+                              const detectedPreset = findTechnicalRibbonPreset({
+                                machine: ribbonMachine,
+                                jumboType: tempJumboType,
+                                widthMm: wVal,
+                                lengthM: lVal
+                              });
+                              
+                              const nominalGoal = detectedPreset?.dailyTargetM2 || (ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) : undefined);
+                              const propGoal = (nominalGoal && hoursVal && hoursVal > 0)
+                                ? Math.round(nominalGoal * (hoursVal / 8.8))
+                                : undefined;
+
                               const newItem = {
                                 id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
                                 jumboType: tempJumboType,
@@ -19408,13 +19815,20 @@ Atenciosamente,
                                 wasteWeight: wasteVal,
                                 orderNumber: tempOrderNumber || undefined,
                                 rollsCount: tempRollsCount ? parseInt(tempRollsCount) || 0 : undefined,
-                                rollWidth: tempRollWidth ? parseFloat(tempRollWidth) || 0 : undefined,
-                                rollLength: tempRollLength ? parseFloat(tempRollLength) || 0 : undefined,
+                                rollWidth: wVal,
+                                rollLength: lVal,
                                 rollsTipo1: tempRollsTipo1 ? parseInt(tempRollsTipo1) || 0 : undefined,
                                 rollsTipo2: tempRollsTipo2 ? parseInt(tempRollsTipo2) || 0 : undefined,
                                 m2Tipo1: tempM2Tipo1 ? parseFloat(tempM2Tipo1) || 0 : undefined,
-                                m2Tipo2: tempM2Tipo2 ? parseFloat(tempM2Tipo2) || 0 : undefined
+                                m2Tipo2: tempM2Tipo2 ? parseFloat(tempM2Tipo2) || 0 : undefined,
+                                startTime: tempStartTime || undefined,
+                                endTime: tempEndTime || undefined,
+                                durationHours: hoursVal || undefined,
+                                nominalTargetDailyM2: nominalGoal,
+                                proportionalTargetM2: propGoal,
+                                formatLabel: detectedPreset?.formatLabel || (wVal && lVal ? `${wVal}mm × ${lVal}m` : undefined)
                               };
+
                               setRibbonJumboItems([...ribbonJumboItems, newItem]);
                               setTempJumboType('');
                               setTempJumboM2('');
@@ -19429,6 +19843,9 @@ Atenciosamente,
                               setTempRollsTipo2('');
                               setTempM2Tipo1('');
                               setTempM2Tipo2('');
+                              setTempStartTime('');
+                              setTempEndTime('');
+                              setTempDurationHours('');
                             }}
                             className="w-full sm:w-auto px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-sm uppercase rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer"
                           >
@@ -19437,76 +19854,117 @@ Atenciosamente,
                         </div>
                       </div>
 
-                      {/* Lista do Detalhamento das Execuções */}
+                      {/* Lista do Detalhamento das Execuções com Cálculo Proporcional */}
                       {ribbonJumboItems.length > 0 ? (
                         <div className="bg-indigo-50/40 rounded-2xl p-4 border border-indigo-100">
                           <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs">
                               <thead>
                                 <tr className="border-b border-indigo-100 text-slate-500 uppercase font-black tracking-wider">
-                                  <th className="py-2.5 px-2">OP / Tipo Jumbo</th>
+                                  <th className="py-2.5 px-2">OP / Formato</th>
+                                  <th className="py-2.5 px-2 text-center">Horário / Duração</th>
                                   <th className="py-2.5 px-2 text-right">Utilizado (m²)</th>
                                   <th className="py-2.5 px-2 text-center">Rolos Prod. (m²)</th>
-                                  <th className="py-2.5 px-2 text-center text-amber-700">Tipo 1 (m²)</th>
-                                  <th className="py-2.5 px-2 text-center text-orange-700">Tipo 2 (m²)</th>
+                                  <th className="py-2.5 px-2 text-right text-purple-900">Meta Prop. (m²)</th>
+                                  <th className="py-2.5 px-2 text-center">Atingimento OP</th>
+                                  <th className="py-2.5 px-2 text-center text-amber-700">T1 / T2 (m²)</th>
                                   <th className="py-2.5 px-2 text-right">Lixo Peso</th>
-                                  <th className="py-2.5 px-2 text-right">Lixo Perdido (m²)</th>
                                   <th className="py-2.5 px-2 text-center">Remover</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {ribbonJumboItems.map((item) => (
-                                  <tr key={item.id} className="border-b border-indigo-50/50 font-bold text-slate-700">
-                                    <td className="py-2.5 px-2 text-indigo-700 uppercase">
-                                      <div className="font-black text-indigo-900">#{item.orderNumber || '-'}</div>
-                                      <div className="text-[10px] text-slate-400">{item.jumboType}</div>
-                                    </td>
-                                    <td className="py-2.5 px-2 text-right">{item.jumboM2.toLocaleString('pt-BR')} m²</td>
-                                    <td className="py-2.5 px-2 text-center text-slate-800">
-                                      <div>{item.rollsCount ? `${item.rollsCount.toLocaleString('pt-BR')} un` : '-'}</div>
-                                      <div className="text-[9px] text-slate-400">{(item.producedM2 || 0).toLocaleString('pt-BR')} m²</div>
-                                    </td>
-                                    <td className="py-2.5 px-2 text-center text-amber-900">
-                                      {item.rollsTipo1 ? (
-                                        <div>
-                                          <div>{item.rollsTipo1} un</div>
-                                          <div className="text-[9px] text-amber-500">{(item.m2Tipo1 || 0).toLocaleString('pt-BR')} m²</div>
+                                {ribbonJumboItems.map((item, idx) => {
+                                  const calcItem = proportionalGoalsResult.items.find(x => x.id === item.id) || proportionalGoalsResult.items[idx];
+                                  const propTarget = calcItem?.proportionalTargetM2 || item.proportionalTargetM2 || 0;
+                                  const nominalTarget = calcItem?.nominalTargetDailyM2 || item.nominalTargetDailyM2 || 0;
+                                  const attPct = calcItem?.attainmentPercent ?? (propTarget > 0 ? Number(((item.producedM2 / propTarget) * 100).toFixed(1)) : 0);
+                                  const metOPGoal = calcItem?.hasMetGoal ?? (propTarget > 0 && item.producedM2 >= propTarget);
+                                  const durHours = calcItem?.durationHours || item.durationHours;
+                                  const sharePct = calcItem?.sharePercent;
+
+                                  return (
+                                    <tr key={item.id} className="border-b border-indigo-50/50 font-bold text-slate-700">
+                                      <td className="py-2.5 px-2 text-indigo-700 uppercase">
+                                        <div className="font-black text-indigo-900">#{item.orderNumber || '-'}</div>
+                                        <div className="text-[10px] text-slate-500">
+                                          {calcItem?.formatLabel || (item.rollWidth && item.rollLength ? `${item.rollWidth}mm × ${item.rollLength}m` : item.jumboType)}
                                         </div>
-                                      ) : <span className="text-slate-400">-</span>}
-                                    </td>
-                                    <td className="py-2.5 px-2 text-center text-orange-900">
-                                      {item.rollsTipo2 ? (
-                                        <div>
-                                          <div>{item.rollsTipo2} un</div>
-                                          <div className="text-[9px] text-orange-500">{(item.m2Tipo2 || 0).toLocaleString('pt-BR')} m²</div>
+                                      </td>
+                                      <td className="py-2.5 px-2 text-center text-slate-700">
+                                        {item.startTime && item.endTime ? (
+                                          <div>
+                                            <div className="font-black text-slate-900">{item.startTime} às {item.endTime}</div>
+                                            <div className="text-[10px] text-purple-700 font-extrabold">{durHours}h {sharePct ? `(${sharePct}%)` : ''}</div>
+                                          </div>
+                                        ) : durHours ? (
+                                          <div>
+                                            <div className="font-black text-slate-900">{durHours}h de produção</div>
+                                            {sharePct && <div className="text-[10px] text-purple-700 font-extrabold">{sharePct}% do turno</div>}
+                                          </div>
+                                        ) : (
+                                          <span className="text-slate-400 font-medium">Rateio Ponderado</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-2 text-right">{item.jumboM2.toLocaleString('pt-BR')} m²</td>
+                                      <td className="py-2.5 px-2 text-center text-slate-800">
+                                        <div>{item.rollsCount ? `${item.rollsCount.toLocaleString('pt-BR')} un` : '-'}</div>
+                                        <div className="text-[9px] text-slate-400">{(item.producedM2 || 0).toLocaleString('pt-BR')} m²</div>
+                                      </td>
+                                      <td className="py-2.5 px-2 text-right">
+                                        <div className="font-black text-purple-950">
+                                          {propTarget > 0 ? `${propTarget.toLocaleString('pt-BR')} m²` : '-'}
                                         </div>
-                                      ) : <span className="text-slate-400">-</span>}
-                                    </td>
-                                    <td className="py-2.5 px-2 text-right text-slate-600">{formatWeight(item.wasteWeight)}</td>
-                                    <td className="py-2.5 px-2 text-right text-red-650">
-                                      {item.wasteWeight > 0 ? `${calculateLostM2(item.wasteWeight, item.jumboType).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²` : '-'}
-                                    </td>
-                                    <td className="py-2.5 px-2 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const filtered = ribbonJumboItems.filter(x => x.id !== item.id);
-                                          setRibbonJumboItems(filtered);
-                                          if (filtered.length === 0) {
-                                            setRibbonJumboM2('');
-                                            setRibbonProducedM2('');
-                                            setRibbonRejectedM2('');
-                                            setRibbonWasteWeight('');
-                                            setRibbonJumboType('');
-                                          }
-                                        }}
-                                        className="text-red-500 hover:text-red-700 uppercase font-black text-[10px] cursor-pointer"
-                                      >
-                                        Remover
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
+                                        {nominalTarget > 0 && (
+                                          <div className="text-[9px] text-slate-400">
+                                            Nominal: {nominalTarget.toLocaleString('pt-BR')} m²
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-2 text-center">
+                                        {propTarget > 0 ? (
+                                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                            metOPGoal ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                          }`}>
+                                            {metOPGoal ? `OK ✅ ${attPct}%` : `${attPct}% ⚠️`}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">-</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-2 text-center text-slate-600 text-[10px]">
+                                        <div>T1: <strong className="text-amber-700">{item.m2Tipo1 || 0} m²</strong></div>
+                                        <div>T2: <strong className="text-orange-700">{item.m2Tipo2 || 0} m²</strong></div>
+                                      </td>
+                                      <td className="py-2.5 px-2 text-right text-slate-600">
+                                        <div>{formatWeight(item.wasteWeight)}</div>
+                                        {item.wasteWeight > 0 && (
+                                          <div className="text-[9px] text-red-650">
+                                            {calculateLostM2(item.wasteWeight, item.jumboType).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-2 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const filtered = ribbonJumboItems.filter(x => x.id !== item.id);
+                                            setRibbonJumboItems(filtered);
+                                            if (filtered.length === 0) {
+                                              setRibbonJumboM2('');
+                                              setRibbonProducedM2('');
+                                              setRibbonRejectedM2('');
+                                              setRibbonWasteWeight('');
+                                              setRibbonJumboType('');
+                                            }
+                                          }}
+                                          className="text-red-500 hover:text-red-700 uppercase font-black text-[10px] cursor-pointer"
+                                        >
+                                          Remover
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -19865,6 +20323,139 @@ Atenciosamente,
                           </span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* 4. Ocorrência de Desconto no Bônus do Operador (Opcional) */}
+                    <div className="bg-amber-50/70 border border-amber-200 rounded-2xl sm:rounded-3xl p-5 sm:p-7 space-y-4 shadow-xs">
+                      <div className="flex items-center justify-between flex-wrap gap-2 border-b border-amber-200/80 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-2xs">
+                            <Zap className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h5 className="text-xs sm:text-sm font-black uppercase text-amber-950 tracking-wider">
+                              4. Ocorrência de Desconto no Bônus (Opcional)
+                            </h5>
+                            <span className="text-[10px] text-amber-700 font-bold block">
+                              Integração oficial de penalidades e descontos com o Bônus de Produção
+                            </span>
+                          </div>
+                        </div>
+
+                        <label className="inline-flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-amber-300 shadow-2xs hover:bg-amber-50/50 transition-all">
+                          <input
+                            type="checkbox"
+                            checked={ribbonHasBonusOccurrence}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setRibbonHasBonusOccurrence(checked);
+                              if (checked) {
+                                setRibbonBonusOccurrenceType('meta_maquina_nao_atingida');
+                                setRibbonBonusOccurrenceDiscount(30);
+                                const targetM2 = parseFloat(ribbonTargetDailyM2) || 0;
+                                const prodM2 = parseFloat(ribbonProducedM2) || 0;
+                                if (targetM2 > 0 && prodM2 < targetM2) {
+                                  setRibbonBonusOccurrenceReason(`Meta de corte de fita (${ribbonMachine}) não atingida: ${prodM2.toLocaleString('pt-BR')} m² vs meta ${targetM2.toLocaleString('pt-BR')} m²`);
+                                }
+                              } else {
+                                setRibbonBonusOccurrenceType('');
+                                setRibbonBonusOccurrenceDiscount(0);
+                                setRibbonBonusOccurrenceReason('');
+                              }
+                            }}
+                            className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500 cursor-pointer"
+                          />
+                          <span className="text-xs font-black uppercase text-amber-950">
+                            Lançar Ocorrência no Bônus
+                          </span>
+                        </label>
+                      </div>
+
+                      {ribbonHasBonusOccurrence && (
+                        <div className="space-y-4 pt-1 animate-in fade-in duration-200">
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                            {/* Tipo de Ocorrência */}
+                            <div className="sm:col-span-8 space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-wider text-amber-950 block">
+                                Tipo de Ocorrência *
+                              </label>
+                              <select
+                                value={ribbonBonusOccurrenceType || 'meta_maquina_nao_atingida'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  let defaultDiscount = 20;
+                                  if (val === 'meta_maquina_nao_atingida') defaultDiscount = 30;
+                                  else if (val === 'mau_preenchimento') defaultDiscount = 10;
+                                  else if (val === 'parada_limpeza_nao_realizada') defaultDiscount = 50;
+                                  else if (val === 'informacao_falsa' || val === 'falta_injustificada' || val === 'atestado') defaultDiscount = 100;
+                                  else if (val === 'devolucao_externa' || val === 'reclamacao_interna' || val === 'uso_celular' || val === 'fumar_trabalho' || val === 'nao_uso_epi') defaultDiscount = 20;
+                                  setRibbonBonusOccurrenceType(val);
+                                  setRibbonBonusOccurrenceDiscount(defaultDiscount);
+                                }}
+                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                              >
+                                <optgroup label="1. Metas e Produtividade">
+                                  <option value="meta_maquina_nao_atingida">📉 Meta de Produção / m² Não Atingida (-30% Desconto)</option>
+                                </optgroup>
+                                <optgroup label="2. Qualidade e Apontamentos">
+                                  <option value="mau_preenchimento">📝 Mau Preenchimento de Ficha/Apontamento (-10%)</option>
+                                  <option value="devolucao_externa">📦 Erro Operacional / Bobina Não Conforme (-20%)</option>
+                                  <option value="reclamacao_interna">⚠️ Reclamação Interna / Retrabalho (-20%)</option>
+                                </optgroup>
+                                <optgroup label="3. Disciplina & Operacional">
+                                  <option value="parada_limpeza_nao_realizada">🛑 Limpeza de Máquina Não Realizada (-50%)</option>
+                                  <option value="informacao_falsa">🚨 Informação Falsa / Fraude (Desqualificação 100%)</option>
+                                  <option value="nao_uso_epi">🦺 Não Uso de EPIs (-20%)</option>
+                                  <option value="uso_celular">📱 Uso de Celular Indevido (-20%)</option>
+                                  <option value="fumar_trabalho">🚬 Fumar no Posto de Trabalho (-20%)</option>
+                                  <option value="falta_injustificada">❌ Falta sem Justificativa (-100%)</option>
+                                  <option value="atestado">🏥 Atestado Médico (-100%)</option>
+                                  <option value="outra">📝 Outra Ocorrência Personalizada...</option>
+                                </optgroup>
+                              </select>
+                            </div>
+
+                            {/* Desconto Aplicado */}
+                            <div className="sm:col-span-4 space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-wider text-amber-950 block">
+                                Desconto Aplicado (%)
+                              </label>
+                              <div className="flex items-center gap-1.5 bg-white border border-amber-300 rounded-xl px-3 py-2 shadow-2xs">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={ribbonBonusOccurrenceDiscount}
+                                  onChange={(e) => setRibbonBonusOccurrenceDiscount(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                                  className="w-full text-sm font-black text-amber-950 outline-none bg-transparent"
+                                />
+                                <span className="text-xs font-black text-amber-600">%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Justificativa / Motivo */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-amber-950 block">
+                              Justificativa / Motivo Detalhado
+                            </label>
+                            <input
+                              type="text"
+                              value={ribbonBonusOccurrenceReason}
+                              onChange={(e) => setRibbonBonusOccurrenceReason(e.target.value)}
+                              placeholder="Ex: Operador não bateu a meta padrão do formato da máquina de corte devido a atrasos"
+                              className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                            />
+                          </div>
+
+                          <div className="bg-amber-100/60 p-2.5 rounded-xl border border-amber-300/80 flex items-center justify-between text-[10px] font-bold text-amber-950">
+                            <span>Operador: <strong>{ribbonOperator || 'Não selecionado'}</strong> • Máquina: <strong>{ribbonMachine || 'Corte'}</strong></span>
+                            <span className="bg-amber-200/90 text-amber-900 px-2 py-0.5 rounded font-black uppercase">
+                              Abatimento: {ribbonBonusOccurrenceDiscount}% no Bônus
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-slate-100 pt-5 mt-auto">
@@ -22050,7 +22641,18 @@ Atenciosamente,
                               )}
                             </td>
                             <td className="py-3.5 px-4 text-center font-sans font-bold text-slate-800">
-                              {entry.orderNumber ? (
+                              {entry.jumboItems && entry.jumboItems.length > 1 ? (
+                                <div className="space-y-0.5">
+                                  <span className="px-1.5 py-0.5 bg-purple-50 border border-purple-200 text-purple-900 font-black rounded text-[9px] inline-block uppercase tracking-wider">
+                                    ⚖️ {entry.jumboItems.length} OPs (Prop.)
+                                  </span>
+                                  {entry.orderNumber && (
+                                    <div className="text-[9px] text-slate-500 font-mono">
+                                      #{entry.orderNumber}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : entry.orderNumber ? (
                                 <span className="px-1.5 py-0.5 bg-sky-50 border border-sky-150 text-sky-800 font-extrabold rounded text-[10px]">
                                   #{entry.orderNumber}
                                 </span>
@@ -22095,7 +22697,16 @@ Atenciosamente,
                               )}
                             </td>
                             <td className="py-3.5 px-4 text-right font-extrabold text-slate-800">
-                              {entry.producedM2.toLocaleString('pt-BR')} m²
+                              <div>{entry.producedM2.toLocaleString('pt-BR')} m²</div>
+                              {entry.targetDailyM2 && (
+                                <div className="text-[9px] font-bold">
+                                  <span className="text-slate-400">Meta: </span>
+                                  <span className={entry.producedM2 >= entry.targetDailyM2 ? 'text-emerald-700 font-black' : 'text-amber-700 font-black'}>
+                                    {entry.targetDailyM2.toLocaleString('pt-BR')} m²
+                                    {entry.producedM2 >= entry.targetDailyM2 ? ' ✅' : ' ⚠️'}
+                                  </span>
+                                </div>
+                              )}
                             </td>
                             <td className="py-3.5 px-4 text-right text-red-500 font-medium">
                               {entry.rejectedM2 ? `${entry.rejectedM2.toLocaleString('pt-BR')} m²` : '0 m²'}

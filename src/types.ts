@@ -474,6 +474,13 @@ export interface RibbonCuttingEntry {
     rollsTipo2?: number;
     m2Tipo1?: number;
     m2Tipo2?: number;
+    startTime?: string;
+    endTime?: string;
+    durationHours?: number;
+    nominalTargetDailyM2?: number;
+    proportionalTargetM2?: number;
+    attainmentPercent?: number;
+    formatLabel?: string;
   }>;
   stoppedMinutes?: number;
   stoppedReason?: string;
@@ -484,6 +491,25 @@ export interface RibbonCuttingEntry {
   outrosMin?: number;
   outrosMotivo?: string;
   targetDailyM2?: number; // Meta diária em m² definida para a máquina/produção
+  isProportionalGoal?: boolean;
+  proportionalBreakdown?: Array<{
+    orderNumber?: string;
+    formatLabel: string;
+    durationHours?: number;
+    sharePercent: number;
+    producedM2: number;
+    nominalTargetM2: number;
+    proportionalTargetM2: number;
+    attainmentPercent: number;
+  }>;
+  hasBonusOccurrence?: boolean;
+  bonusOccurrence?: {
+    enabled: boolean;
+    type: string;
+    penaltyRatePercent: number;
+    reason: string;
+    description?: string;
+  };
 }
 
 export type DowntimeNature = 'Manutenção' | 'Processo' | 'Outros' | string;
