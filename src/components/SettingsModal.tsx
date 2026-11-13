@@ -104,6 +104,8 @@ export const SettingsModal: React.FC<{
   setSystemLogo: (logo: string | null) => void;
   systemCoverImage: string | null;
   setSystemCoverImage: (image: string | null) => void;
+  chartPdfLogo?: string | null;
+  setChartPdfLogo?: (logo: string | null) => void;
   isAdminUser: boolean;
   isInstallable: boolean;
   isStandalone: boolean;
@@ -124,6 +126,7 @@ export const SettingsModal: React.FC<{
   setIsUserManagementOpen, setIsDowntimeReasonsModalOpen, setIsDowntimeAnalyticsModalOpen, setIsOperatorModalOpen, setIsRoleModalOpen, setIsShiftModalOpen, setIsPermissionModalOpen,
   downloadBackup, handleRestoreData, handleSyncLocalToCloud, openConfirm, isInitializing, fileInputRef,
   systemName, setSystemName, loginSystemName, setLoginSystemName, loginSystemSubtitle, setLoginSystemSubtitle, systemLogo, setSystemLogo, systemCoverImage, setSystemCoverImage, 
+  chartPdfLogo, setChartPdfLogo,
   isAdminUser, isInstallable, isStandalone, isIOS, handleInstallClick, setShowInstallExperience, onTriggerUpdateNotification,
   screensaverSettings, setScreensaverSettings, onTriggerScreensaverTest,
   settingsPerms
@@ -956,6 +959,78 @@ export const SettingsModal: React.FC<{
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight leading-relaxed italic">Esta imagem será exibida na tela inicial do sistema em toda sua extensão.</p>
                       <div className="flex gap-2">
                          <button onClick={() => setSystemCoverImage(null)} className="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black uppercase text-red-500 rounded-xl hover:bg-red-50 transition-all">Remover Capa</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Logotipo dos Gráficos (Exportação PDF) */}
+                <div className="p-6 bg-blue-50/60 rounded-3xl border border-blue-100 flex items-center gap-6">
+                  <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center border border-blue-200 overflow-hidden shadow-sm relative group shrink-0">
+                    {chartPdfLogo ? (
+                      <img src={chartPdfLogo} alt="Logo Gráficos PDF" className="w-full h-full object-contain p-1" />
+                    ) : systemLogo ? (
+                      <img src={systemLogo} alt="Logo Gráficos PDF (Herança)" className="w-full h-full object-contain p-1 opacity-60" />
+                    ) : (
+                      <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center text-slate-400 p-1 text-center">
+                        <FileDown size={22} className="mb-0.5 text-blue-600" />
+                        <span className="text-[8px] font-black uppercase">Padrão</span>
+                      </div>
+                    )}
+                    <label className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer">
+                      <span className="text-[9px] font-black text-white uppercase tracking-widest text-center px-1">Alterar Logo PDF</span>
+                      <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = async () => {
+                            const compressed = await compressImage(reader.result as string, 800, 300);
+                            setChartPdfLogo?.(compressed);
+                            localStorage.setItem('manupackaging_chart_pdf_logo', compressed);
+                            setDoc(doc(db, 'settings', 'global'), { chartPdfLogo: compressed }, { merge: true });
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }} />
+                    </label>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[10px] font-black text-blue-900 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1.5">
+                      <FileDown size={14} className="text-blue-600" />
+                      Logotipo dos Gráficos (Exportação PDF)
+                    </p>
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-bold text-slate-600 uppercase tracking-tight leading-relaxed">
+                        Esta logo será impressa no cabeçalho dos relatórios em PDF gerados a partir de qualquer gráfico do sistema.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <label className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95">
+                          <Upload size={12} />
+                          Carregar Logo do PDF
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string, 800, 300);
+                                setChartPdfLogo?.(compressed);
+                                localStorage.setItem('manupackaging_chart_pdf_logo', compressed);
+                                setDoc(doc(db, 'settings', 'global'), { chartPdfLogo: compressed }, { merge: true });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }} />
+                        </label>
+                        {chartPdfLogo && (
+                          <button onClick={() => {
+                            setChartPdfLogo?.(null);
+                            localStorage.removeItem('manupackaging_chart_pdf_logo');
+                            setDoc(doc(db, 'settings', 'global'), { chartPdfLogo: null }, { merge: true });
+                          }} className="px-3.5 py-2 bg-white border border-slate-200 text-[10px] font-black uppercase text-red-500 rounded-xl hover:bg-red-50 transition-all flex items-center gap-1">
+                            <Trash2 size={12} />
+                            Remover Logo
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

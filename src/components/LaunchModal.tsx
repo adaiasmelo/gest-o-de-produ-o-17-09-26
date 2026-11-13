@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap, Target, CheckCircle2 } from 'lucide-react';
+import { X, Save, Edit2, Package, Layers, Trash2, Clock, Wrench, CalendarX, Camera, Loader2, Search, Plus, ShieldAlert, AlertTriangle, ArrowLeft, Zap, Target, CheckCircle2, Info } from 'lucide-react';
 import { ProductionEntry, RibbonCuttingEntry, Shift, Collaborator, Employee, Vacation, EcoBItem } from '../types';
 import { extractProductionData } from '../services/aiService';
 import { extractDowntimeMotives } from '../constants/downtimeReasons';
@@ -1139,6 +1139,16 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
         processoMotivo: finalProcessoMotivo,
         outrosMotivo: finalOutrosMotivo,
         materials: isCurrent ? materials : (data as any).materials || [],
+        eremaDailyGoal: Number(data.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL),
+        eremaNetTargetKg: isErema 
+          ? Math.max(0, (Number(data.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)) - Math.round((Number(data.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)) * ((finalManutencaoMin + finalOutrosMin) / 720)))
+          : undefined,
+        eremaDeductedStoppageKg: isErema 
+          ? Math.round((Number(data.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)) * ((finalManutencaoMin + finalOutrosMin) / 720))
+          : undefined,
+        eremaMaintenanceStopsMin: isErema ? finalManutencaoMin : undefined,
+        eremaTotalStopsMin: isErema ? (finalManutencaoMin + finalProcessoMin + finalOutrosMin) : undefined,
+        eremaNetWorkingHours: isErema ? Number((Math.max(0, 720 - (finalManutencaoMin + finalOutrosMin)) / 60).toFixed(1)) : undefined,
         bonusOccurrence: data.hasBonusOccurrence ? {
           enabled: true,
           type: data.bonusOccurrenceType || 'informacao_falsa',
@@ -2502,27 +2512,72 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Comparativo de Atingimento da Meta Diária */}
+                        {/* Comparativo de Atingimento da Meta Diária da Erema com Abatimento Justo de Paradas (Somente Manutenção e Outros/Queda Energia) */}
                         {(() => {
-                          const eGoal = Number(formData.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL);
+                          const eBaseGoal = Number(formData.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL);
                           const netVal = Number(formData.netWeight) || 0;
-                          const isMet = netVal >= eGoal && netVal > 0;
-                          const pct = eGoal > 0 ? ((netVal / eGoal) * 100).toFixed(0) : '0';
+
+                          // Paradas da Erema
+                          const manutMin = manutencaoMinCalculado || 0;
+                          const procMin = processoMinCalculado || 0;
+                          const outMin = outrosMinCalculado || 0;
+                          const totalStopsMin = manutMin + procMin + outMin;
+
+                          // REGRA OPERACIONAL EREMA:
+                          // - Paradas por Manutenção e Outros (queda de energia, eventos externos não operacionais): ABATEM da meta (não descontam do operador).
+                          // - Paradas de Processo (troca de filtro, troca de faca, acertos): CONTAM como tempo produtivo normal (NÃO abatem da meta).
+                          const deductibleStopsMin = manutMin + outMin;
+                          const nonDeductibleProcessMin = procMin;
+
+                          const grossShiftHours = 12;
+                          const grossShiftMinutes = 720; // 12h * 60 min
+
+                          const deductibleStoppedHours = deductibleStopsMin / 60;
+                          const netWorkingHours = Math.max(0, grossShiftHours - deductibleStoppedHours);
+
+                          // Abatimento proporcional da meta devido a paradas isentas (Manutenção + Outros)
+                          const deductedStoppageKg = Math.round(eBaseGoal * (deductibleStopsMin / grossShiftMinutes));
+                          const maintenanceDeductedKg = Math.round(eBaseGoal * (manutMin / grossShiftMinutes));
+                          const outrosDeductedKg = Math.round(eBaseGoal * (outMin / grossShiftMinutes));
+                          const effectiveGoalKg = Math.max(0, eBaseGoal - deductedStoppageKg);
+
+                          // Atingimento sobre a meta ajustada
+                          const isMet = (effectiveGoalKg === 0 && netVal >= 0) || (netVal >= effectiveGoalKg && netVal > 0);
+                          const netAttainmentPct = effectiveGoalKg > 0 ? ((netVal / effectiveGoalKg) * 100).toFixed(0) : (netVal > 0 ? '100' : '0');
+                          const nominalAttainmentPct = eBaseGoal > 0 ? ((netVal / eBaseGoal) * 100).toFixed(0) : '0';
                           const hasBonusLinked = formData.hasBonusOccurrence && formData.bonusOccurrenceType === 'meta_maquina_nao_atingida';
 
+                          const formattedReason = deductibleStopsMin > 0
+                            ? `Meta da Erema não atingida: ${formatWeight(netVal)} produzido vs ${formatWeight(effectiveGoalKg)} de meta ajustada (${netAttainmentPct}% atingido, com ${deductibleStopsMin} min de paradas isentas [Manut: ${manutMin} min, Outros: ${outMin} min] abatendo ${formatWeight(deductedStoppageKg)} da meta nominal de ${formatWeight(eBaseGoal)}).`
+                            : `Meta diária padrão da Erema não atingida: ${formatWeight(netVal)} produzido vs ${formatWeight(eBaseGoal)} de meta (${nominalAttainmentPct}% atingido em 12h sem paradas isentas).`;
+
                           return (
-                            <div className="bg-white p-3 rounded-xl border border-emerald-200 space-y-2 shadow-2xs">
+                            <div className="bg-white p-3.5 rounded-2xl border border-emerald-200 space-y-3 shadow-2xs">
                               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                                <div className="flex items-center gap-3">
+                                <div className="flex flex-wrap items-center gap-3">
                                   <div>
                                     <span className="text-[8px] font-black text-emerald-600 uppercase block">Produção Total</span>
                                     <span className="text-sm font-black text-emerald-800">{formatWeight(formData.netWeight)}</span>
                                   </div>
-                                  <div className="h-6 w-px bg-emerald-100" />
+                                  <div className="h-6 w-px bg-emerald-100 hidden sm:block" />
                                   <div>
-                                    <span className="text-[8px] font-black text-slate-400 uppercase block">Meta Padrão</span>
-                                    <span className="text-xs font-bold text-slate-700">{formatWeight(eGoal)} ({(eGoal / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} t)</span>
+                                    <span className="text-[8px] font-black text-slate-400 uppercase block">Meta Base (12h)</span>
+                                    <span className="text-xs font-bold text-slate-700">{formatWeight(eBaseGoal)}</span>
                                   </div>
+                                  {deductibleStopsMin > 0 && (
+                                    <>
+                                      <div className="h-6 w-px bg-emerald-100 hidden sm:block" />
+                                      <div>
+                                        <span className="text-[8px] font-black text-amber-600 uppercase block">Abatimento Isento</span>
+                                        <span className="text-xs font-bold text-amber-700">-{formatWeight(deductedStoppageKg)}</span>
+                                      </div>
+                                      <div className="h-6 w-px bg-emerald-100 hidden sm:block" />
+                                      <div>
+                                        <span className="text-[8px] font-black text-indigo-600 uppercase block">Meta Justa Ajustada</span>
+                                        <span className="text-xs font-black text-indigo-900">{formatWeight(effectiveGoalKg)}</span>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
 
                                 <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${
@@ -2530,9 +2585,48 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                     : 'bg-rose-50 text-rose-800 border border-rose-200'
                                 }`}>
-                                  {isMet ? `Meta Batida ✅ (${pct}%)` : `Abaixo da Meta ❌ (${pct}%)`}
+                                  {isMet
+                                    ? `Meta Batida ✅ (${netAttainmentPct}%)`
+                                    : `Abaixo da Meta Ajustada ❌ (${netAttainmentPct}%)`}
                                 </span>
                               </div>
+
+                              {/* Barra informativa de Paradas de Máquina da Erema */}
+                              {totalStopsMin > 0 ? (
+                                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-2.5 text-[9.5px] space-y-1.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5 font-black text-amber-950">
+                                    <span className="flex items-center gap-1">
+                                      <Clock size={12} className="text-amber-600" />
+                                      <span>Paradas Registradas: <strong>{totalStopsMin} min</strong> (Abatem da meta: <strong>{deductibleStopsMin} min</strong>)</span>
+                                    </span>
+                                    <span className="text-slate-600 text-[9px]">
+                                      Jornada Útil Ajustada: <strong>{netWorkingHours.toFixed(1).replace('.', ',')}h</strong> de 12h
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60 text-[9px]">
+                                    {manutMin > 0 && (
+                                      <span className="inline-flex items-center gap-1 font-bold text-orange-800 bg-orange-100 px-2 py-0.5 rounded border border-orange-200">
+                                        <Wrench size={10} /> Manutenção: <strong>{manutMin} min</strong> (-{formatWeight(maintenanceDeductedKg)} na meta)
+                                      </span>
+                                    )}
+                                    {outMin > 0 && (
+                                      <span className="inline-flex items-center gap-1 font-bold text-slate-800 bg-slate-200/80 px-2 py-0.5 rounded border border-slate-300">
+                                        Outros/Energia: <strong>{outMin} min</strong> (-{formatWeight(outrosDeductedKg)} na meta)
+                                      </span>
+                                    )}
+                                    {procMin > 0 && (
+                                      <span className="inline-flex items-center gap-1 font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200" title="Troca de filtro/faca faz parte do processo produtivo e não abate da meta">
+                                        <Layers size={10} /> Processo (Troca Filtro/Faca): <strong>{procMin} min</strong> (Conta na produção)
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-[9px] text-slate-400 font-medium italic flex items-center gap-1">
+                                  <Info size={11} className="text-slate-400 shrink-0" />
+                                  <span>Sem paradas registradas para a Erema neste apontamento (Regime integral de 12 horas úteis).</span>
+                                </div>
+                              )}
 
                               {/* Vinculação do Desconto de Bônus da Erema */}
                               {!isMet && netVal > 0 && !hasBonusLinked && (
@@ -2544,26 +2638,31 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                                       hasBonusOccurrence: true,
                                       bonusOccurrenceType: 'meta_maquina_nao_atingida',
                                       bonusOccurrenceDiscount: 30,
-                                      bonusOccurrenceReason: `Meta diária padrão da Erema não atingida: ${formatWeight(netVal)} produzido vs ${formatWeight(eGoal)} de meta (${pct}% atingido).`,
+                                      bonusOccurrenceReason: formattedReason,
                                       hasPenalty: true,
                                       infractionType: '📉 Meta de Produção Não Atingida (30% Desconto)',
                                       penaltyType: 'deduction_percent',
                                       deductionValue: 30,
-                                      penaltyReason: `Meta Erema não atingida: ${formatWeight(netVal)} / ${formatWeight(eGoal)} (${pct}%)`
+                                      penaltyReason: formattedReason
                                     }));
                                   }}
-                                  className="w-full py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                                  className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
                                 >
                                   <Zap className="w-3.5 h-3.5" />
                                   Lançar Desconto de Bônus (-30% Meta Erema Não Atingida)
                                 </button>
                               )}
 
-                              {hasBonusLinked && (
-                                <div className="p-2 rounded-lg bg-amber-50 border border-amber-300 flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-1.5 text-amber-900 text-[9.5px] font-black">
-                                    <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                    <span>Desconto de 30% no Bônus vinculado ao apontamento (Meta não atingida)</span>
+                              {hasBonusLinked && !isMet && (
+                                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5 text-amber-950 text-[10px] font-black">
+                                      <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                      <span>Desconto de 30% no Bônus vinculado (Meta Proporcional Não Atingida)</span>
+                                    </div>
+                                    <p className="text-[8.5px] text-amber-800 font-medium">
+                                      Considerando {totalStopsMin} min de paradas (sendo {manutMin} min de manutenção) • Meta justa: {formatWeight(effectiveGoalKg)}
+                                    </p>
                                   </div>
                                   <button
                                     type="button"
@@ -2581,9 +2680,43 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                                         penaltyReason: ''
                                       }));
                                     }}
-                                    className="text-[8.5px] font-bold text-amber-700 underline hover:text-amber-900 cursor-pointer"
+                                    className="px-2.5 py-1 bg-white hover:bg-amber-100 border border-amber-300 text-[9px] font-black uppercase text-amber-900 rounded-lg cursor-pointer transition-all self-end sm:self-auto shadow-2xs"
                                   >
-                                    Remover
+                                    Remover Desconto
+                                  </button>
+                                </div>
+                              )}
+
+                              {hasBonusLinked && isMet && (
+                                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 text-emerald-950 text-[10px] font-black">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                      <span>Meta Ajustada Batida com Sucesso ({netAttainmentPct}%)!</span>
+                                    </div>
+                                    <p className="text-[8.5px] text-emerald-800 font-medium">
+                                      Com o abatimento das paradas da Erema ({totalStopsMin} min parados), a meta exigida foi de {formatWeight(effectiveGoalKg)} e o operador produziu {formatWeight(netVal)}.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        hasBonusOccurrence: false,
+                                        bonusOccurrenceType: '',
+                                        bonusOccurrenceDiscount: 0,
+                                        bonusOccurrenceReason: '',
+                                        hasPenalty: false,
+                                        infractionType: '',
+                                        penaltyType: 'deduction_kg',
+                                        deductionValue: 0,
+                                        penaltyReason: ''
+                                      }));
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase rounded-lg cursor-pointer transition-all shadow-xs self-end sm:self-auto"
+                                  >
+                                    Limpar Desconto Indevido
                                   </button>
                                 </div>
                               )}
@@ -3472,6 +3605,45 @@ const LaunchModal: React.FC<LaunchModalProps> = ({
                             <span className="font-black uppercase block">Parada de Limpeza Não Realizada:</span>
                             <span>Será aplicado desconto de 50% na produção deste dia <strong>exclusivamente para o Ranking de Produtividade do Operador</strong>. Os relatórios de produção, faturamento e estoque permanecem 100% inalterados.</span>
                           </div>
+                        </div>
+                      )}
+
+                      {isErema && formData.bonusOccurrenceType === 'meta_maquina_nao_atingida' && (
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-[10px] text-amber-950 space-y-1.5">
+                          <div className="flex items-center justify-between font-black uppercase text-amber-900 border-b border-amber-200 pb-1">
+                            <span className="flex items-center gap-1.5">
+                              <Wrench size={13} className="text-orange-600" />
+                              <span>Abatimento de Paradas na Meta da Erema:</span>
+                            </span>
+                            <span className="text-[9px] bg-amber-200/80 px-2 py-0.5 rounded text-amber-950 font-bold">
+                              Turno 12h (720 min)
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[9px]">
+                            <div className="bg-white p-1.5 rounded-lg border border-amber-200">
+                              <span className="text-slate-400 block text-[7.5px] uppercase font-bold">Meta Base (12h):</span>
+                              <span className="font-black text-slate-800">
+                                {formatWeight(Number(formData.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL))}
+                              </span>
+                            </div>
+                            <div className="bg-white p-1.5 rounded-lg border border-amber-200">
+                              <span className="text-orange-600 block text-[7.5px] uppercase font-bold">Paradas Manutenção:</span>
+                              <span className="font-black text-orange-800">{manutencaoMinCalculado} min</span>
+                            </div>
+                            <div className="bg-white p-1.5 rounded-lg border border-amber-200">
+                              <span className="text-amber-600 block text-[7.5px] uppercase font-bold">Isentas (Manut+Outros):</span>
+                              <span className="font-black text-amber-900">{manutencaoMinCalculado + outrosMinCalculado} min</span>
+                            </div>
+                            <div className="bg-white p-1.5 rounded-lg border border-amber-200">
+                              <span className="text-indigo-600 block text-[7.5px] uppercase font-bold">Meta Justa Ajustada:</span>
+                              <span className="font-black text-indigo-950">
+                                {formatWeight(Math.max(0, (Number(formData.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)) - Math.round((Number(formData.eremaDailyGoal) || (getEremaStandardGoal() || DEFAULT_EREMA_STANDARD_GOAL)) * ((manutencaoMinCalculado + outrosMinCalculado) / 720))))}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[8.5px] text-amber-800 font-medium italic">
+                            * Apenas paradas de manutenção, outros (queda de energia) e intervalos abatem da meta. Paradas de processo (troca de filtro/faca) contam como tempo de produção e não abatem da meta.
+                          </p>
                         </div>
                       )}
 

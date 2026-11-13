@@ -134,11 +134,12 @@ function buildLegendHTML(details: ChartExportDetails): string {
     `;
   }
 
-  // 2. Extrusion Scatter: Operator vs Efficiency
+  // 2. Extrusion Scatter: Operator vs Eco B
   if (chartType === 'bi-chart-scatter' && Array.isArray(data)) {
     const cardsHTML = data
       .map((item) => {
-        const wasteRatio = item.prod + item.wastes > 0 ? ((item.wastes / (item.prod + item.wastes)) * 100).toFixed(2) : '0,00';
+        const ecoBVal = item.ecoB !== undefined ? item.ecoB : (item.wastes || 0);
+        const wasteRatio = item.prod + ecoBVal > 0 ? ((ecoBVal / (item.prod + ecoBVal)) * 100).toFixed(2) : '0,00';
         return `
           <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
             <td style="padding: 8px 10px; font-weight: 800; color: #1e293b; display: flex; align-items: center; gap: 8px;">
@@ -146,7 +147,7 @@ function buildLegendHTML(details: ChartExportDetails): string {
               ${item.name}
             </td>
             <td style="padding: 8px 10px; color: #059669; font-weight: 800;">${formatWeight(item.prod || 0)}</td>
-            <td style="padding: 8px 10px; color: #e11d48; font-weight: 700;">${formatWeight(item.wastes || 0)}</td>
+            <td style="padding: 8px 10px; color: #2563eb; font-weight: 700;">${formatWeight(ecoBVal)}</td>
             <td style="padding: 8px 10px; color: #f59e0b; font-weight: 700;">${item.stopsProcess || 0} min</td>
             <td style="padding: 8px 10px; color: #64748b; font-weight: 600;">${wasteRatio}%</td>
           </tr>
@@ -158,7 +159,7 @@ function buildLegendHTML(details: ChartExportDetails): string {
       <div style="margin-top: 20px; padding: 16px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 16px; font-family: system-ui, -apple-system, sans-serif;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">
           <h4 style="margin: 0; font-size: 13px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">
-            👥 Legenda de Operadores e Desempenho
+            👥 Desempenho por Operador: Produção vs Eco B (sem Eco A)
           </h4>
           <span style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">
             ${data.length} ${data.length === 1 ? 'operador' : 'operadores'}
@@ -169,9 +170,9 @@ function buildLegendHTML(details: ChartExportDetails): string {
             <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 800;">
               <th style="padding: 8px 10px;">Operador (Identificação Gráfica)</th>
               <th style="padding: 8px 10px;">🏆 Produção Líquida</th>
-              <th style="padding: 8px 10px;">🗑️ Desperdício Total</th>
+              <th style="padding: 8px 10px;">🔵 Eco B Total</th>
               <th style="padding: 8px 10px;">⏱️ Paradas de Processo</th>
-              <th style="padding: 8px 10px;">Índice de Resíduo</th>
+              <th style="padding: 8px 10px;">Taxa Eco B (%)</th>
             </tr>
           </thead>
           <tbody>

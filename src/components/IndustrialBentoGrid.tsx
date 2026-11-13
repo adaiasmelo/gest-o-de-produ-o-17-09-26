@@ -55,6 +55,7 @@ export interface IndustrialBentoGridProps {
   ) => void;
   onOpenModal: (modalName: string, payload?: any) => void;
   onInstallClick?: () => void;
+  onDownloadOeeReport?: () => void;
   setMaintenanceSubTab: (subTab: 'requests' | 'causes') => void;
   setMaintenanceInitialCreateOpen: (val: boolean) => void;
 }
@@ -78,6 +79,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
   onNavigateTab,
   onOpenModal,
   onInstallClick,
+  onDownloadOeeReport,
   setMaintenanceSubTab,
   setMaintenanceInitialCreateOpen
 }) => {
@@ -357,7 +359,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <span className="text-[9.5px] sm:text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
             Referência: {activeDayFormatted} • Mês: {dashboardMonth.split('-').reverse().join('/')}
           </span>

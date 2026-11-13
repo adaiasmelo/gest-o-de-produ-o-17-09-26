@@ -114,7 +114,7 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-export const DEFAULT_MACHINES = ["Cast 1", "Cast 2", "Erema 1", "Ghezzi", "Lintech", "Wutec"];
+export const DEFAULT_MACHINES = ["Cast 1", "Cast 2", "Erema", "Erema 1", "Ghezzi", "Lintech", "Wutec"];
 export const DEFAULT_SHIFTS = ["Todos", "Diurno", "Noturno", "Comercial", "Diurno 1", "Noturno 1", "Diurno 2", "Noturno 2"];
 
 export const DEFAULT_MACHINE_TARGETS: Record<string, { 
@@ -128,7 +128,8 @@ export const DEFAULT_MACHINE_TARGETS: Record<string, {
 }> = {
   'Cast 1': { kgPerHour: 1000, material: 'Stretch LC3 (1.000 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 8.0, recommendedAbatement: 30 },
   'Cast 2': { kgPerHour: 850, material: 'Stretch LC2 (850 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 45, maxLossPercent: 8.0, recommendedAbatement: 30 },
-  'Erema 1': { kgPerHour: 350, material: 'Recuperado Erema (350 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 60, maxLossPercent: 8.0, recommendedAbatement: 25 },
+  'Erema': { kgPerHour: 216.67, material: 'Recuperado Erema (2.600 kg / 12h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 60, maxLossPercent: 8.0, recommendedAbatement: 25 },
+  'Erema 1': { kgPerHour: 216.67, material: 'Recuperado Erema (2.600 kg / 12h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 60, maxLossPercent: 8.0, recommendedAbatement: 25 },
   'Ghezzi': { kgPerHour: 500, material: 'Fita Stretch Comercial (500 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 8.0, recommendedAbatement: 30 },
   'Lintech': { kgPerHour: 450, material: 'Fita Lintech Comercial (450 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 8.0, recommendedAbatement: 30 },
   'Wutec': { kgPerHour: 400, material: 'Fita Wutec Comercial (400 kg/h)', shiftHours: 12, maxCleaningMin: 30, maxStartupMin: 30, maxLossPercent: 8.0, recommendedAbatement: 30 }

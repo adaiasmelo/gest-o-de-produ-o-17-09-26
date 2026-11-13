@@ -60,6 +60,11 @@ export interface ProductionEntry {
   penaltyType?: 'deduction_kg' | 'deduction_percent' | 'disqualify';
   deductionValue?: number;
   penaltyReason?: string;
+  eremaNetTargetKg?: number;
+  eremaDeductedStoppageKg?: number;
+  eremaMaintenanceStopsMin?: number;
+  eremaTotalStopsMin?: number;
+  eremaNetWorkingHours?: number;
   bonusOccurrence?: {
     enabled: boolean;
     type: string;
@@ -502,6 +507,10 @@ export interface RibbonCuttingEntry {
     proportionalTargetM2: number;
     attainmentPercent: number;
   }>;
+  nominalBaseTargetM2?: number;
+  deductedStoppageTargetM2?: number;
+  netWorkingHours?: number;
+  availabilityFactor?: number;
   hasBonusOccurrence?: boolean;
   bonusOccurrence?: {
     enabled: boolean;

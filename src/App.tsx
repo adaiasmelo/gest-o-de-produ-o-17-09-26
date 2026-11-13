@@ -21,6 +21,7 @@ import {
 import html2canvas from 'html2canvas';
 import { downloadChartAsImageWithLegend } from './utils/exportChartImage';
 import { downloadChartAsLandscapePDF } from './utils/exportLandscapeChartPDF';
+import { downloadOeeAnalyticsPDF } from './utils/exportOeeReportPDF';
 import { copyRichAndPlainText, downloadOutlookEml, getFormattedFileDate } from './utils/outlookEml';
 import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialData } from './lib/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
@@ -105,6 +106,7 @@ import {
   TechnicalRibbonPreset,
   calculateProportionalRibbonGoals,
   calcHoursBetween,
+  calcStopsTotalMinutes,
   ProportionalCalculationResult
 } from './utils/ribbonStandardGoals';
 import { generateRibbonMonthlyReportPDF, generateIntegratedMonthlyReportPDF } from './utils/monthlyReportsPdf';
@@ -993,6 +995,7 @@ export const App: React.FC = () => {
   const [loginSystemSubtitle, setLoginSystemSubtitle] = useState(() => localStorage.getItem('manupackaging_login_subtitle') || '');
   const [systemLogo, setSystemLogo] = useState<string | null>(() => localStorage.getItem('manupackaging_system_logo'));
   const [systemCoverImage, setSystemCoverImage] = useState<string | null>(() => localStorage.getItem('manupackaging_system_cover'));
+  const [chartPdfLogo, setChartPdfLogo] = useState<string | null>(() => localStorage.getItem('manupackaging_chart_pdf_logo'));
   const [isSystemInfoModalOpen, setIsSystemInfoModalOpen] = useState(false);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [isDowntimeReasonsModalOpen, setIsDowntimeReasonsModalOpen] = useState(false);
@@ -1351,14 +1354,30 @@ export const App: React.FC = () => {
   const [ribbonBonusOccurrenceReason, setRibbonBonusOccurrenceReason] = useState('');
   const [selectedRibbonPresetId, setSelectedRibbonPresetId] = useState<string>('');
 
+  const totalRibbonDeductibleStopsMinutes = useMemo(() => {
+    // REGRA DE METAS: Paradas por manutenção e outros (queda de energia, externos, intervalos) abatem da meta.
+    // Paradas de processo (troca de faca, setup operacional) contam como tempo de produção e NÃO abatem da meta.
+    return calcStopsTotalMinutes(ribbonManutencaoStops) + 
+           calcStopsTotalMinutes(ribbonOutrosStops);
+  }, [ribbonManutencaoStops, ribbonOutrosStops]);
+
+  const totalRibbonAllStopsMinutes = useMemo(() => {
+    return calcStopsTotalMinutes(ribbonManutencaoStops) + 
+           calcStopsTotalMinutes(ribbonProcessoStops) + 
+           calcStopsTotalMinutes(ribbonOutrosStops);
+  }, [ribbonManutencaoStops, ribbonProcessoStops, ribbonOutrosStops]);
+
+  const totalRibbonStopsMinutes = totalRibbonAllStopsMinutes;
+
   const proportionalGoalsResult = useMemo(() => {
     return calculateProportionalRibbonGoals({
       machine: ribbonMachine,
       items: ribbonJumboItems,
+      stoppedMinutes: totalRibbonDeductibleStopsMinutes,
       fallbackTargetM2: parseFloat(ribbonTargetDailyM2) || 50000,
       defaultShiftHours: 8.8
     });
-  }, [ribbonMachine, ribbonJumboItems, ribbonTargetDailyM2]);
+  }, [ribbonMachine, ribbonJumboItems, ribbonTargetDailyM2, totalRibbonDeductibleStopsMinutes]);
   
   const [editingRibbonId, setEditingRibbonId] = useState<string | null>(null);
   const [showRibbonForm, setShowRibbonForm] = useState(false);
@@ -2751,6 +2770,14 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           setSystemCoverImage(data.systemCoverImage);
           localStorage.setItem('manupackaging_system_cover', data.systemCoverImage);
         }
+        if (data.chartPdfLogo !== undefined) {
+          setChartPdfLogo(data.chartPdfLogo);
+          if (data.chartPdfLogo) {
+            localStorage.setItem('manupackaging_chart_pdf_logo', data.chartPdfLogo);
+          } else {
+            localStorage.removeItem('manupackaging_chart_pdf_logo');
+          }
+        }
         if (data.systemName) {
           setSystemName(data.systemName);
           localStorage.setItem('manupackaging_system_name', data.systemName);
@@ -3145,6 +3172,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         loginSystemSubtitle,
         systemLogo,
         systemCoverImage,
+        chartPdfLogo,
         lastSynced: new Date().toISOString()
       }, { merge: true });
 
@@ -4100,28 +4128,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     if (target.maintenanceSubTab) setMaintenanceSubTab(target.maintenanceSubTab);
   };
 
-  const handleGuestLogin = () => {
-    const guestUser: SystemUser = {
-      id: 'guest_visitante',
-      name: 'Visitante (Leitura)',
-      registration: '9999',
-      role: 'Modo Leitura',
-      isFirstAccess: false,
-      permissions: {
-        canViewDashboard: true,
-        canViewReports: true,
-        canViewPersonnel: true,
-        canManageSettings: false,
-        canEditProduction: false,
-        canManagePersonnel: false,
-        isReadOnly: true
-      }
-    };
-    recordAccessLog(guestUser, 'login');
-    setLoggedUser(guestUser);
-    localStorage.setItem('manupackaging_user', JSON.stringify(guestUser));
-    applyUserLanding(guestUser);
-  };
 
   const handleLogin = async (matricula: string, pass: string, confirmPas?: string) => {
     // Default Admin Check
@@ -4382,6 +4388,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         loginSystemSubtitle,
         systemLogo,
         systemCoverImage,
+        chartPdfLogo,
         appBuildTime: now,
         lastUpdated: now,
         updateNotes: 'As configurações e parâmetros do sistema foram alterados e salvas.'
@@ -4922,6 +4929,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     let totWaste = 0;
     let totJumbo = 0;
     let totWasteM2 = 0;
+    let totStopsMin = 0;
+    let totManutMin = 0;
+    let totProcMin = 0;
+    let totOutrosMin = 0;
     
     filteredRibbonEntries.forEach(e => {
       totProd += e.producedM2 || 0;
@@ -4929,6 +4940,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       totWaste += e.wasteWeight || 0;
       totJumbo += e.jumboM2 || 0;
       totWasteM2 += calculateLostM2(e.wasteWeight || 0, e.jumboType || '');
+      const stops = (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
+      totStopsMin += stops;
+      totManutMin += (e.manutencaoMin || 0);
+      totProcMin += (e.processoMin || 0);
+      totOutrosMin += (e.outrosMin || 0);
     });
 
     const yieldPercent = totProd > 0 ? ((totProd - totRej) / totProd) * 100 : 0;
@@ -4943,7 +4959,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       totJumbo,
       yieldPercent,
       lossPercent,
-      jumboCount
+      jumboCount,
+      totStopsMin,
+      totManutMin,
+      totProcMin,
+      totOutrosMin
     };
   }, [filteredRibbonEntries]);
 
@@ -6152,6 +6172,51 @@ Atenciosamente,
     }
   };
 
+  const handleAddRibbonQuickStop = (
+    type: 'manutencao' | 'processo' | 'outros',
+    motivo: string,
+    defaultMinutes: number,
+    suggestedDe?: string,
+    suggestedAte?: string
+  ) => {
+    let de = suggestedDe || '';
+    let ate = suggestedAte || '';
+    if (!de && !ate) {
+      const lower = motivo.toLowerCase();
+      if (lower.includes('almoço') || lower.includes('almoco')) {
+        de = '12:00';
+        ate = '13:00';
+      } else if (lower.includes('intervalo') || lower.includes('lanche')) {
+        de = '15:00';
+        ate = '15:15';
+      } else if (lower.includes('reunião') || lower.includes('reuniao')) {
+        de = '08:00';
+        ate = '08:30';
+      } else if (lower.includes('lâmina') || lower.includes('lamina') || lower.includes('faca')) {
+        de = '10:00';
+        ate = '10:20';
+      } else if (lower.includes('manutenção') || lower.includes('manutencao')) {
+        de = '14:00';
+        ate = '14:30';
+      }
+    }
+    const newItem: StopItem = {
+      id: `stop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      de,
+      ate,
+      motivo,
+      explicacao: motivo,
+      durationMinutes: defaultMinutes
+    };
+    if (type === 'manutencao') {
+      setRibbonManutencaoStops(prev => [newItem, ...prev]);
+    } else if (type === 'processo') {
+      setRibbonProcessoStops(prev => [newItem, ...prev]);
+    } else {
+      setRibbonOutrosStops(prev => [newItem, ...prev]);
+    }
+  };
+
   const handleUpdateRibbonStop = (type: 'manutencao' | 'processo' | 'outros', id: string, field: keyof StopItem, value: string) => {
     const updateFn = (prev: StopItem[]) => prev.map(item => item.id === id ? { ...item, [field]: value } : item);
     if (type === 'manutencao') {
@@ -6253,6 +6318,10 @@ Atenciosamente,
       outrosMin: outrosMinCalculado,
       outrosMotivo: ribbonOutrosStops.length > 0 ? JSON.stringify(ribbonOutrosStops) : '',
       targetDailyM2: finalTargetDailyM2,
+      nominalBaseTargetM2: proportionalGoalsResult.nominalBaseTargetM2,
+      deductedStoppageTargetM2: proportionalGoalsResult.deductedStoppageTargetM2,
+      netWorkingHours: proportionalGoalsResult.netWorkingHours,
+      availabilityFactor: proportionalGoalsResult.availabilityFactor,
       isProportionalGoal: isProportional,
       proportionalBreakdown: isProportional ? proportionalGoalsResult.items : undefined,
       hasBonusOccurrence: ribbonHasBonusOccurrence,
@@ -6588,14 +6657,21 @@ Atenciosamente,
     }
     const dataToExport = filteredRibbonEntries.map(e => {
       const lostM2Value = e.wasteWeight > 0 && e.jumboType ? calculateLostM2(e.wasteWeight, e.jumboType) : 0;
+      const stops = (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
       return {
         'Data': e.date.split('-').reverse().join('/'),
         'Operador': e.operator,
         'Turno': e.shift,
+        'Máquina': e.machine || '',
         'Tipo de Jumbo': e.jumboType || '',
         'M² Produzido': e.producedM2,
+        'Meta Nominal (m²)': e.nominalBaseTargetM2 || e.targetDailyM2 || 0,
+        'Meta Ajustada c/ Paradas (m²)': e.targetDailyM2 || 0,
         'M² Não Conforme': e.rejectedM2,
         'Aproveitamento (%)': e.producedM2 > 0 ? (((e.producedM2 - e.rejectedM2) / e.producedM2) * 100).toFixed(2) + '%' : '0%',
+        'Tempo Parado (min)': stops,
+        'Tempo Parado (h)': parseFloat((stops / 60).toFixed(2)),
+        'Motivos Parada': e.stoppedReason || 'Nenhum',
         'Lixo peso (Kg)': e.wasteWeight,
         'Lixo Perdido (m² Perda)': lostM2Value > 0 ? parseFloat(lostM2Value.toFixed(1)) : 0,
         'Jumbos Metros Quadrados': e.jumboM2,
@@ -7919,6 +7995,10 @@ Atenciosamente,
             ecoBM: 0,
             borra: 0,
             prod: 0,
+            prodNoturno: 0,
+            prodDiurno: 0,
+            volsNoturno: 0,
+            volsDiurno: 0,
             totalVolumes: 0,
             volumesByShiftMachine: {}
           };
@@ -7930,11 +8010,23 @@ Atenciosamente,
         const machineUpper = (e.machine || '').trim().toUpperCase();
         const isErema = machineUpper.includes('EREMA');
         if (!isErema) {
-          dailyTrendMap[d].prod += (e.netWeight || 0);
-          const vol = e.volumes || 0;
+          const w = (e.netWeight || 0);
+          const vol = (e.volumes || 0);
+          dailyTrendMap[d].prod += w;
           dailyTrendMap[d].totalVolumes += vol;
+
+          const sUpper = (e.shift || '').trim().toUpperCase();
+          const isNoturno = sUpper.includes('NOTURNO') || sUpper === 'B' || sUpper === 'D';
+          if (isNoturno) {
+            dailyTrendMap[d].prodNoturno += w;
+            dailyTrendMap[d].volsNoturno += vol;
+          } else {
+            dailyTrendMap[d].prodDiurno += w;
+            dailyTrendMap[d].volsDiurno += vol;
+          }
+
           if (vol > 0) {
-            const s = (e.shift || '').trim().toUpperCase() || 'NÃO ESPECIFICADO';
+            const s = sUpper || 'NÃO ESPECIFICADO';
             const m = machineUpper || 'NÃO ESPECIFICADO';
             if (!dailyTrendMap[d].volumesByShiftMachine[s]) {
               dailyTrendMap[d].volumesByShiftMachine[s] = {};
@@ -7950,15 +8042,20 @@ Atenciosamente,
       biData.forEach((e, idx) => {
         const op = e.operator;
         if (!scatterMap[op]) {
-          scatterMap[op] = { name: op, prod: 0, wastes: 0, stopsProcess: 0, color: COLORS[idx % COLORS.length] };
+          scatterMap[op] = { name: op, prod: 0, wastes: 0, ecoB: 0, ecoBP: 0, ecoBM: 0, stopsProcess: 0, color: COLORS[idx % COLORS.length] };
         }
         if (!e.machine.toLowerCase().includes('erema')) {
           scatterMap[op].prod += (e.netWeight || 0);
         }
-        scatterMap[op].wastes += (e.ecoBP || 0) + (e.ecoBM || 0) + (e.borraTotal || 0);
+        // DIRETRIZ: Apenas Eco B (Eco B Prod + Eco B Manut). O Eco A NÃO conta aqui.
+        const opEcoB = (e.ecoBP || 0) + (e.ecoBM || 0);
+        scatterMap[op].ecoBP += (e.ecoBP || 0);
+        scatterMap[op].ecoBM += (e.ecoBM || 0);
+        scatterMap[op].ecoB += opEcoB;
+        scatterMap[op].wastes += opEcoB;
         scatterMap[op].stopsProcess += (e.processoMin || 0);
       });
-      dataForLegend = Object.values(scatterMap).filter(d => d.prod > 0 || d.wastes > 0);
+      dataForLegend = Object.values(scatterMap).filter(d => d.prod > 0 || d.ecoB > 0);
     } else if (id === 'bi-chart-stacked') {
       chartType = 'bi-chart-stacked';
       const stopsGroupMap: Record<string, any> = {};
@@ -8036,12 +8133,19 @@ Atenciosamente,
       dateRange: (biStartDate || biEndDate) ? `${biStartDate || 'Início'} até ${biEndDate || 'Fim'}` : dashboardMonth,
     };
 
+    const currentSector = id.startsWith('ribbon')
+      ? 'fita'
+      : (biMachineFilter.toLowerCase().includes('erema') ? 'reciclagem' : 'extrusao');
+
+    // REGRA DE NEGÓCIO: O PDF baixado NÃO contém o gráfico solto ou imagem do gráfico.
+    // O PDF contém exclusivamente as tabelas e dados estruturados no padrão industrial HUD.
     await downloadChartAsLandscapePDF({
       id,
       title,
       period: dashboardMonth,
       chartType,
       data: dataForLegend,
+      sector: currentSector,
       formatWeight,
       formatM2,
       formatMinutes,
@@ -8050,6 +8154,8 @@ Atenciosamente,
         filters: appliedFilters,
       },
       systemName: 'MANUPACKAGING FITAS & AMAZÔNIA',
+      systemLogo: systemLogo || localStorage.getItem('manupackaging_system_logo') || "https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png",
+      chartLogoImage: chartPdfLogo || localStorage.getItem('manupackaging_chart_pdf_logo') || systemLogo || null,
       loggedUser: loggedUser ? { name: loggedUser.name, role: loggedUser.role } : null,
     });
   };
@@ -8809,6 +8915,26 @@ Atenciosamente,
       doc,
       filename: `Quadro_Pessoal_Planilha_${now.replace(/\//g, '-')}.pdf`,
       title: `Espelho de Quadro — Gerado em: ${nowFull}`
+    });
+  };
+
+  const handleDownloadOeeReport = async () => {
+    if (isReadOnlyAccount) {
+      handleBlockedReadOnlyAction('Download Bloqueado', 'No Modo de Leitura não é permitido baixar relatórios.');
+      return;
+    }
+    await downloadOeeAnalyticsPDF({
+      productionData,
+      ribbonEntries,
+      period: dashboardMonth,
+      systemLogo: systemLogo || localStorage.getItem('manupackaging_system_logo') || "https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png",
+      systemName: 'MANUPACKAGING FITAS & AMAZÔNIA',
+      loggedUser: loggedUser ? { name: loggedUser.name, role: loggedUser.role } : null,
+      filters: {
+        startDate: biStartDate || undefined,
+        endDate: biEndDate || undefined,
+        machine: biMachineFilter !== 'all' ? biMachineFilter : undefined,
+      }
     });
   };
 
@@ -12829,17 +12955,6 @@ Atenciosamente,
                 )}
             </div>
 
-            {/* Botão de Acesso Modo Somente Leitura (Estilo Neon Glassmorphism idêntico à imagem) */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleGuestLogin}
-                className="w-full py-2.5 sm:py-3 px-4 bg-[#081829]/70 hover:bg-cyan-950/80 border border-cyan-400/80 hover:border-cyan-300 text-cyan-100 hover:text-white rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-95"
-              >
-                <Eye size={15} className="text-cyan-400" />
-                <span>Entrar em Modo Somente Leitura</span>
-              </button>
-            </div>
 
             <div className="mt-2.5 pt-2 border-t border-cyan-950/80 flex flex-col gap-0.5 items-center">
               <p className="text-[8px] sm:text-[8.5px] font-bold text-slate-300 uppercase tracking-wider text-center">
@@ -13105,7 +13220,6 @@ Atenciosamente,
               <Users size={14} className="text-emerald-600 shrink-0 hidden sm:inline" />
             </button>
           )}
-
 
           {/* Botão Baixar Sistema - Disponível para todas as funções (RH, Líder, Operador, etc.) que ainda não baixaram no computador/aparelho */}
           {!isStandalone && (
@@ -13973,6 +14087,30 @@ Atenciosamente,
                       </button>
                     )}
 
+                    {/* Atalho Direto: Sistema & Logo dos Gráficos (Exportação PDF) */}
+                    {canManageSettings && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveSettingsTab('system');
+                          setIsSettingsModalOpen(true);
+                          setIsMainMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-left cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Cpu size={18} className="text-blue-600 shrink-0" />
+                          <div>
+                            <span className="block">Sistema &amp; Logo dos Gráficos</span>
+                            <span className="block text-[9px] font-medium text-slate-400 group-hover:text-blue-500">Logotipo para exportação de PDFs</span>
+                          </div>
+                        </div>
+                        <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
+                          PDF
+                        </span>
+                      </button>
+                    )}
+
 
                     {/* Trilha de Auditoria (ISO 9001) - Apenas para Usuários Autorizados */}
                     {(isAdmin || userPerms.settings?.auditTrail) && (
@@ -14486,6 +14624,7 @@ Atenciosamente,
             onNavigateTab={handleCommandPaletteNavigate}
             onOpenModal={handleCommandPaletteOpenModal}
             onInstallClick={handleInstallClick}
+            onDownloadOeeReport={handleDownloadOeeReport}
             setMaintenanceSubTab={setMaintenanceSubTab}
             setMaintenanceInitialCreateOpen={setMaintenanceInitialCreateOpen}
           />
@@ -15226,24 +15365,48 @@ Atenciosamente,
 
               const availabilityPct = totalAvailableMinutes > 0 ? Math.max(0, Math.min(100, ((totalAvailableMinutes - totalDowntimeMinutes) / totalAvailableMinutes) * 100)) : 100;
 
-              // Scatter Plot Data: Operators vs Efficiency
-              const scatterMap: Record<string, { name: string, prod: number, wastes: number, stopsProcess: number, color: string }> = {};
+              // Scatter Plot & Bars Data: Desempenho por Operador (Produção vs Eco B - Sem Eco A)
+              const scatterMap: Record<string, { 
+                name: string; 
+                prod: number; 
+                wastes: number; 
+                ecoB: number; 
+                ecoBP: number; 
+                ecoBM: number; 
+                stopsProcess: number; 
+                color: string;
+              }> = {};
               biFilteredData.forEach((e, idx) => {
                 const op = e.operator;
                 if (!scatterMap[op]) {
-                  scatterMap[op] = { name: op, prod: 0, wastes: 0, stopsProcess: 0, color: COLORS[idx % COLORS.length] };
+                  scatterMap[op] = { 
+                    name: op, 
+                    prod: 0, 
+                    wastes: 0, 
+                    ecoB: 0, 
+                    ecoBP: 0, 
+                    ecoBM: 0, 
+                    stopsProcess: 0, 
+                    color: COLORS[idx % COLORS.length] 
+                  };
                 }
                 if (!e.machine.toLowerCase().includes('erema')) {
                   scatterMap[op].prod += (e.netWeight || 0);
                 }
-                scatterMap[op].wastes += (e.ecoBP || 0) + (e.ecoBM || 0) + (e.borraTotal || 0);
+                // REGRA OPERACIONAL: O Eco A NÃO conta aqui, somente o Eco B (Eco B Prod + Eco B Manut)!
+                const itemEcoB = (e.ecoBP || 0) + (e.ecoBM || 0);
+                scatterMap[op].ecoBP += (e.ecoBP || 0);
+                scatterMap[op].ecoBM += (e.ecoBM || 0);
+                scatterMap[op].ecoB += itemEcoB;
+                scatterMap[op].wastes += itemEcoB; // para compatibilidade de resíduo
                 scatterMap[op].stopsProcess += (e.processoMin || 0);
               });
-              const scatterData = Object.values(scatterMap).filter(d => d.prod > 0 || d.wastes > 0);
+              const scatterData = Object.values(scatterMap).filter(d => d.prod > 0 || d.ecoB > 0);
               const operatorBarsData = [...scatterData]
                 .map(d => ({
                   ...d,
-                  wasteRate: (d.prod + d.wastes) > 0 ? Number(((d.wastes / (d.prod + d.wastes)) * 100).toFixed(1)) : 0
+                  ecoBRate: (d.prod + d.ecoB) > 0 ? Number(((d.ecoB / (d.prod + d.ecoB)) * 100).toFixed(1)) : 0,
+                  wasteRate: (d.prod + d.ecoB) > 0 ? Number(((d.ecoB / (d.prod + d.ecoB)) * 100).toFixed(1)) : 0
                 }))
                 .sort((a, b) => b.prod - a.prod);
 
@@ -16041,7 +16204,17 @@ Atenciosamente,
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={handleDownloadOeeReport}
+                          className="px-4 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white border border-emerald-400/30 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                          title="Baixar Relatório Executivo Completo de OEE & Disponibilidade de Máquinas (PDF A4 Paisagem)"
+                        >
+                          <Activity size={13} className="text-emerald-200" />
+                          <span>Relatório OEE (PDF)</span>
+                        </button>
+
                         {canViewWeeklySummary && (
                           <button 
                             onClick={() => setIsWeeklySummaryOpen(true)}
@@ -16229,7 +16402,18 @@ Atenciosamente,
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Disponibilidade Ativa (OEE)</span>
-                          <span className="p-2 bg-violet-50 text-violet-500 rounded-xl"><Clock size={16} /></span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={handleDownloadOeeReport}
+                              className="px-2 py-1 bg-violet-100 hover:bg-violet-200 text-violet-800 rounded-lg text-[9px] font-black uppercase flex items-center gap-1 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                              title="Baixar Relatório Executivo de OEE e Disponibilidade em PDF"
+                            >
+                              <FileText size={11} />
+                              <span>Baixar OEE (PDF)</span>
+                            </button>
+                            <span className="p-2 bg-violet-50 text-violet-500 rounded-xl"><Clock size={16} /></span>
+                          </div>
                         </div>
                         <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-none pt-2">{availabilityPct.toFixed(1)}%</h4>
                       </div>
@@ -16243,7 +16427,7 @@ Atenciosamente,
                   {/* matrix of bi charts */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Chart 1: Composed Chart (Line + Stacked Bar) - Tempo vs Prod */}
-                    <div id="bi-chart-composed" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col min-h-[420px] hover:shadow-md transition-shadow">
+                    <div id="bi-chart-composed" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-50">
                         <div>
                           <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Evolução de Perdas vs Produção Líquida</h4>
@@ -16266,9 +16450,9 @@ Atenciosamente,
                           </button>
                         </div>
                       </div>
-                      <div className="flex-1 min-h-[300px]">
+                      <div className="w-full h-[320px]">
                         {dailyTrendData.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height={320}>
                             <ComposedChart data={dailyTrendData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                               <XAxis dataKey="label" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -16288,22 +16472,22 @@ Atenciosamente,
                       </div>
                     </div>
 
-                    {/* Chart 2: Comparative Bar Chart / Scatter - Operator vs Efficiency */}
-                    <div id="bi-chart-scatter" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col min-h-[420px] hover:shadow-md transition-shadow">
+                    {/* Chart 2: Comparative Bar Chart / Scatter - Operator vs Eco B */}
+                    <div id="bi-chart-scatter" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col hover:shadow-md transition-shadow">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-2 border-b border-slate-50">
                         <div>
                           <div className="flex items-center gap-2">
                             <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">
-                              {operatorChartViewMode === 'bars' ? 'Desempenho por Operador: Produção vs Resíduos' : 'Dispersão: Produção vs Resíduos Operador'}
+                              {operatorChartViewMode === 'bars' ? 'Desempenho por Operador: Produção vs Eco B' : 'Dispersão: Produção vs Eco B Operador'}
                             </h4>
-                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              Gestão à Vista
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                              Gestão à Vista • Eco B
                             </span>
                           </div>
                           <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
                             {operatorChartViewMode === 'bars'
-                              ? '🟢 Produção Líquida (kg) vs 🔴 Desperdício Total (kg) por Operador'
-                              : 'X = Produção (kg) | Y = Resíduos (kg) | Tamanho = Paradas de Processo (min)'}
+                              ? '🟢 Produção Líquida (kg) vs 🔵 Eco B Total (kg) por Operador (sem Eco A)'
+                              : 'X = Produção (kg) | Y = Eco B (kg) [Sem Eco A] | Tamanho = Paradas de Processo (min)'}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -16338,8 +16522,8 @@ Atenciosamente,
                           </div>
 
                           <button 
-                            onClick={() => downloadChartAsPNG('bi-chart-scatter', 'Desempenho Produção vs Resíduos Operador')}
-                            className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50/50 rounded-lg transition-all"
+                            onClick={() => downloadChartAsPNG('bi-chart-scatter', 'Desempenho Produção vs Eco B Operador')}
+                            className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50/50 rounded-lg transition-all"
                             title="Baixar PDF Paisagem (A4 Horizontal - Gestão à Vista)"
                           >
                             <Download size={15} />
@@ -16353,10 +16537,10 @@ Atenciosamente,
                           </button>
                         </div>
                       </div>
-                      <div className="flex-1 min-h-[300px]">
+                      <div className="w-full h-[320px]">
                         {operatorBarsData.length > 0 ? (
                           operatorChartViewMode === 'bars' ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height={320}>
                               <ComposedChart data={operatorBarsData} margin={{ top: 15, right: 15, bottom: 25, left: -10 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis 
@@ -16377,7 +16561,7 @@ Atenciosamente,
                                 <YAxis 
                                   yAxisId="right" 
                                   orientation="right" 
-                                  stroke="#f43f5e" 
+                                  stroke="#2563eb" 
                                   style={{ fontSize: 9, fontWeight: 'bold' }} 
                                   tickFormatter={(v) => formatWeight(v)} 
                                 />
@@ -16389,8 +16573,8 @@ Atenciosamente,
                                         <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1.5 font-semibold min-w-[220px]">
                                           <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5">
                                             <p className="font-extrabold uppercase tracking-wider text-emerald-400">{item.name}</p>
-                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                                              {item.wasteRate}% perda
+                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                              {item.ecoBRate ?? item.wasteRate}% Eco B
                                             </span>
                                           </div>
                                           <p className="flex justify-between">
@@ -16398,12 +16582,25 @@ Atenciosamente,
                                             <span className="font-black text-slate-100">{formatWeight(item.prod)}</span>
                                           </p>
                                           <p className="flex justify-between">
-                                            <span className="text-rose-400 font-bold">🔴 Desperdício Total:</span> 
-                                            <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span>
+                                            <span className="text-blue-400 font-bold">🔵 Eco B Total:</span> 
+                                            <span className="font-black text-slate-100">{formatWeight(item.ecoB ?? item.wastes)}</span>
                                           </p>
+                                          <div className="pl-2 border-l border-blue-500/30 text-[9px] space-y-0.5 text-slate-300">
+                                            <p className="flex justify-between">
+                                              <span>• Eco B Produção:</span>
+                                              <span className="font-bold text-blue-200">{formatWeight(item.ecoBP || 0)}</span>
+                                            </p>
+                                            <p className="flex justify-between">
+                                              <span>• Eco B Manutenção:</span>
+                                              <span className="font-bold text-indigo-200">{formatWeight(item.ecoBM || 0)}</span>
+                                            </p>
+                                          </div>
                                           <p className="flex justify-between border-t border-slate-800 pt-1 text-slate-400">
                                             <span>⏱️ Paradas Processo:</span> 
                                             <span className="font-black text-slate-200">{item.stopsProcess} min</span>
+                                          </p>
+                                          <p className="text-[8px] text-slate-500 italic">
+                                            * Eco A desconsiderado nesta análise conforme diretriz técnica.
                                           </p>
                                         </div>
                                       );
@@ -16424,9 +16621,9 @@ Atenciosamente,
                                 />
                                 <Bar 
                                   yAxisId="right" 
-                                  dataKey="wastes" 
-                                  name="Desperdício / Resíduos (kg)" 
-                                  fill="#f43f5e" 
+                                  dataKey="ecoB" 
+                                  name="Eco B Total (kg)" 
+                                  fill="#2563eb" 
                                   radius={[4, 4, 0, 0]} 
                                   maxBarSize={38}
                                   onClick={(entry) => handleOpenDrilldown('operator', entry.name)}
@@ -16435,11 +16632,11 @@ Atenciosamente,
                               </ComposedChart>
                             </ResponsiveContainer>
                           ) : (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height={320}>
                               <ScatterChart margin={{ top: 15, right: 15, bottom: 10, left: -25 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                 <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" kg" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
-                                <YAxis type="number" dataKey="wastes" name="Desperdício Total" unit=" kg" stroke="#475569" style={{ fontSize: 9, fontWeight: 'bold' }} />
+                                <YAxis type="number" dataKey="ecoB" name="Eco B Total" unit=" kg" stroke="#2563eb" style={{ fontSize: 9, fontWeight: 'bold' }} />
                                 <ZAxis type="number" dataKey="stopsProcess" range={[50, 450]} name="Ajuste Processo" unit=" min" />
                                 <RechartsTooltip 
                                   cursor={{ strokeDasharray: '3 3' }}
@@ -16450,8 +16647,9 @@ Atenciosamente,
                                         <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-[10px] space-y-1 font-semibold">
                                           <p className="font-extrabold uppercase tracking-wider text-emerald-400 border-b border-slate-800 pb-1.5 mb-1.5">{item.name}</p>
                                           <p>🏆 Produção: <span className="font-black text-slate-100">{formatWeight(item.prod)}</span></p>
-                                          <p>🗑️ Resíduos: <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span></p>
+                                          <p>🔵 Eco B Total: <span className="font-black text-blue-300">{formatWeight(item.ecoB ?? item.wastes)}</span></p>
                                           <p>⏱️ Paradas Processo: <span className="font-black text-slate-100">{item.stopsProcess} min</span></p>
+                                          <p className="text-[8px] text-slate-500 italic border-t border-slate-800 pt-1">Eco A não entra nesta análise.</p>
                                         </div>
                                       );
                                     }
@@ -16479,7 +16677,7 @@ Atenciosamente,
                     </div>
 
                     {/* Chart 3: Proportional 100% Stacked Bar (Timestops) */}
-                    <div id="bi-chart-stacked" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col min-h-[420px] hover:shadow-md transition-shadow">
+                    <div id="bi-chart-stacked" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-50">
                         <div>
                           <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Breakdown Proporcional de Paradas (100%)</h4>
@@ -16524,7 +16722,7 @@ Atenciosamente,
                       </div>
                       <div className="h-[300px] w-full">
                         {proportionalStopsData.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={proportionalStopsData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                               <XAxis dataKey="name" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -16543,7 +16741,7 @@ Atenciosamente,
                     </div>
 
                     {/* Chart 4: Mass Balance Donut (Eco B vs Recycled Output) */}
-                    <div id="bi-chart-donut" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col min-h-[420px] hover:shadow-md transition-shadow">
+                    <div id="bi-chart-donut" className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-150 flex flex-col hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-50">
                         <div>
                           <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Balanço de Massa: Resíduo vs Reciclado</h4>
@@ -16566,10 +16764,10 @@ Atenciosamente,
                           </button>
                         </div>
                       </div>
-                      <div className="flex-1 min-h-[300px] flex flex-col justify-between">
-                        <div className="flex-1 min-h-[240px]">
+                      <div className="w-full flex flex-col justify-between space-y-4">
+                        <div className="w-full h-[250px]">
                           {massBalanceData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height={250}>
                               <PieChart>
                                 <Pie 
                                   data={massBalanceData} 
@@ -16714,9 +16912,9 @@ Atenciosamente,
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="md:col-span-2 min-h-[300px]">
+                      <div className="md:col-span-2 h-[340px] w-full">
                         {dynamicChartData.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height={340}>
                             <BarChart data={dynamicChartData} layout="vertical" margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
                               <XAxis type="number" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -16958,14 +17156,14 @@ Atenciosamente,
                             <div>
                               <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
                                 {fullscreenChart === 'bi-chart-composed' && 'Evolução de Perdas vs Produção Líquida'}
-                                {fullscreenChart === 'bi-chart-scatter' && 'Dispersão: Produção vs Resíduos Operador'}
+                                {fullscreenChart === 'bi-chart-scatter' && 'Desempenho por Operador: Produção vs Eco B'}
                                 {fullscreenChart === 'bi-chart-stacked' && 'Distribuição Proporcional de Paradas'}
                                 {fullscreenChart === 'bi-chart-donut' && 'Balanço de Massa: Resíduo vs Reciclado'}
                                 {fullscreenChart === 'bi-chart-dynamic' && 'Ranking e Métricas Dinâmicas'}
                               </h3>
                               <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
                                 {fullscreenChart === 'bi-chart-composed' && 'Barras (Eco B P+M + Borra) vs Linha de Produção (Eixo Secundário)'}
-                                {fullscreenChart === 'bi-chart-scatter' && 'X = Produção (kg) | Y = Resíduos (kg) | Tamanho = Paradas de Processo (min)'}
+                                {fullscreenChart === 'bi-chart-scatter' && 'X = Produção (kg) | Y = Eco B Total (kg) [Sem Eco A] | Tamanho = Paradas de Processo (min)'}
                                 {fullscreenChart === 'bi-chart-stacked' && 'Exibe a porcentagem do tempo de inatividade dividido por motivos'}
                                 {fullscreenChart === 'bi-chart-donut' && 'Relação direta de matéria coletada na extrusora vs reprocessada no Erema'}
                                 {fullscreenChart === 'bi-chart-dynamic' && `Agrupado por: ${biDynamicGroup === 'operator' ? '👤 Operador' : biDynamicGroup === 'machine' ? '🎟️ Equipamento' : '🕒 Turno'} | Métrica: ${selectedMetricDef.label}`}
@@ -16991,7 +17189,7 @@ Atenciosamente,
 
                           {/* Content body */}
                           <div className="flex-1 p-8 overflow-y-auto">
-                            <div id="fullscreen-chart-modal-body" className="w-full h-full min-h-[450px]">
+                            <div id="fullscreen-chart-modal-body" className="w-full h-[520px]">
                               {fullscreenChart === 'bi-chart-composed' && (
                                 dailyTrendData.length > 0 ? (
                                   <ResponsiveContainer width="100%" height="100%">
@@ -17037,7 +17235,7 @@ Atenciosamente,
                                         <YAxis 
                                           yAxisId="right" 
                                           orientation="right" 
-                                          stroke="#f43f5e" 
+                                          stroke="#2563eb" 
                                           style={{ fontSize: 11, fontWeight: 'bold' }} 
                                           tickFormatter={(v) => formatWeight(v)} 
                                         />
@@ -17049,8 +17247,8 @@ Atenciosamente,
                                                 <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-700 text-xs space-y-2 font-semibold min-w-[260px]">
                                                   <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
                                                     <p className="font-extrabold uppercase tracking-wider text-emerald-400 text-sm">{item.name}</p>
-                                                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                                                      {item.wasteRate}% perda
+                                                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                                      {item.ecoBRate ?? item.wasteRate}% Eco B
                                                     </span>
                                                   </div>
                                                   <p className="flex justify-between text-sm">
@@ -17058,12 +17256,25 @@ Atenciosamente,
                                                     <span className="font-black text-slate-100">{formatWeight(item.prod)}</span>
                                                   </p>
                                                   <p className="flex justify-between text-sm">
-                                                    <span className="text-rose-400 font-bold">🔴 Desperdício Total:</span> 
-                                                    <span className="font-black text-slate-100">{formatWeight(item.wastes)}</span>
+                                                    <span className="text-blue-400 font-bold">🔵 Eco B Total:</span> 
+                                                    <span className="font-black text-slate-100">{formatWeight(item.ecoB ?? item.wastes)}</span>
                                                   </p>
+                                                  <div className="pl-2 border-l border-blue-500/30 text-xs space-y-1 text-slate-300">
+                                                    <p className="flex justify-between">
+                                                      <span>• Eco B Produção:</span>
+                                                      <span className="font-bold text-blue-200">{formatWeight(item.ecoBP || 0)}</span>
+                                                    </p>
+                                                    <p className="flex justify-between">
+                                                      <span>• Eco B Manutenção:</span>
+                                                      <span className="font-bold text-indigo-200">{formatWeight(item.ecoBM || 0)}</span>
+                                                    </p>
+                                                  </div>
                                                   <p className="flex justify-between border-t border-slate-800 pt-1.5 text-slate-400 text-xs">
                                                     <span>⏱️ Paradas de Processo:</span> 
                                                     <span className="font-black text-slate-200">{item.stopsProcess} min</span>
+                                                  </p>
+                                                  <p className="text-[9px] text-slate-500 italic">
+                                                    * Eco A desconsiderado nesta análise conforme diretriz técnica.
                                                   </p>
                                                 </div>
                                               );
@@ -17084,9 +17295,9 @@ Atenciosamente,
                                         />
                                         <Bar 
                                           yAxisId="right" 
-                                          dataKey="wastes" 
-                                          name="Desperdício / Resíduos (kg)" 
-                                          fill="#f43f5e" 
+                                          dataKey="ecoB" 
+                                          name="Eco B Total (kg)" 
+                                          fill="#2563eb" 
                                           radius={[6, 6, 0, 0]} 
                                           maxBarSize={55}
                                           onClick={(entry) => handleOpenDrilldown('operator', entry.name)}
@@ -17099,14 +17310,14 @@ Atenciosamente,
                                       <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -10 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                         <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" kg" stroke="#94a3b8" style={{ fontSize: 11, fontWeight: 'bold' }} />
-                                        <YAxis type="number" dataKey="wastes" name="Desperdício Total" unit=" kg" stroke="#475569" style={{ fontSize: 11, fontWeight: 'bold' }} />
+                                        <YAxis type="number" dataKey="ecoB" name="Eco B Total" unit=" kg" stroke="#2563eb" style={{ fontSize: 11, fontWeight: 'bold' }} />
                                         <ZAxis type="number" dataKey="stopsProcess" range={[100, 1000]} name="Ajuste Processo" unit=" min" />
                                         <RechartsTooltip 
                                           cursor={{ strokeDasharray: '3 3' }}
                                           formatter={(value: any, name: any) => [name === 'Ajuste Processo' ? `${value} min` : formatWeight(Number(value)), name]}
                                         />
                                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 'bold', paddingTop: 15 }} />
-                                        <Scatter name="Operadores" data={scatterData} fill="#4f46e5">
+                                        <Scatter name="Operadores" data={scatterData} fill="#2563eb">
                                           {scatterData.map((_entry, index) => (
                                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                           ))}
@@ -19264,9 +19475,15 @@ Atenciosamente,
                       const totalM2Processed = prodM2 + totalLossesM2;
                       const lossPct = totalM2Processed > 0 ? (totalLossesM2 / totalM2Processed) * 100 : 0;
 
-                      // Se há múltiplos jumbos/OPs rodadas no dia, usamos a Meta Proporcional Composta calculada
+                      // Se há múltiplos jumbos/OPs rodadas no dia ou paradas apontadas, usamos a Meta Líquida Justa
                       const isMultiOP = proportionalGoalsResult.isProportional;
-                      const effectiveTargetM2 = isMultiOP ? proportionalGoalsResult.totalCompositeTargetM2 : targetM2;
+                      const effectiveTargetM2 = proportionalGoalsResult.totalCompositeTargetM2 > 0 
+                        ? proportionalGoalsResult.totalCompositeTargetM2 
+                        : (targetM2 > 0 ? targetM2 : 0);
+                      const nominalBaseTargetM2 = proportionalGoalsResult.nominalBaseTargetM2 > 0 
+                        ? proportionalGoalsResult.nominalBaseTargetM2 
+                        : (targetM2 > 0 ? targetM2 : 0);
+                      const deductedStoppageM2 = proportionalGoalsResult.deductedStoppageTargetM2;
                       const effectiveProdM2 = prodM2 > 0 ? prodM2 : proportionalGoalsResult.totalProducedM2;
                       const netAttainment = effectiveTargetM2 > 0 ? (effectiveProdM2 / effectiveTargetM2) * 100 : 0;
                       const hasMetGoal = effectiveTargetM2 > 0 && effectiveProdM2 >= effectiveTargetM2;
@@ -19429,8 +19646,8 @@ Atenciosamente,
                                     setRibbonBonusOccurrenceType('meta_maquina_nao_atingida');
                                     setRibbonBonusOccurrenceDiscount(30);
                                     const reasonText = isMultiOP
-                                      ? `Meta composta de corte de fita (${ribbonMachine}) não atingida: ${effectiveProdM2.toLocaleString('pt-BR')} m² produzidos vs ${effectiveTargetM2.toLocaleString('pt-BR')} m² de meta proporcional ponderada (${netAttainment.toFixed(0)}% atingido em ${proportionalGoalsResult.itemCount} OPs).`
-                                      : `Meta de corte de fita (${ribbonMachine}) não atingida: ${effectiveProdM2.toLocaleString('pt-BR')} m² produzidos vs ${effectiveTargetM2.toLocaleString('pt-BR')} m² de meta (${netAttainment.toFixed(0)}% atingido).`;
+                                      ? `Meta composta de corte de fita (${ribbonMachine}) não atingida: ${effectiveProdM2.toLocaleString('pt-BR')} m² produzidos vs ${effectiveTargetM2.toLocaleString('pt-BR')} m² de meta proporcional ponderada (${netAttainment.toFixed(0)}% atingido em ${proportionalGoalsResult.itemCount} OPs, já considerando ${proportionalGoalsResult.stoppedMinutes}min parados).`
+                                      : `Meta de corte de fita (${ribbonMachine}) não atingida: ${effectiveProdM2.toLocaleString('pt-BR')} m² produzidos vs ${effectiveTargetM2.toLocaleString('pt-BR')} m² de meta ajustada (${netAttainment.toFixed(0)}% atingido, já considerando ${proportionalGoalsResult.stoppedMinutes}min parados).`;
                                     setRibbonBonusOccurrenceReason(reasonText);
                                   }}
                                   className="mt-1 w-full py-1.5 px-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
@@ -19463,6 +19680,25 @@ Atenciosamente,
                             </div>
 
                           </div>
+
+                          {/* Barra de impacto de paradas no horário e na meta (Almoço, Reunião, Intervalo, Manutenção) */}
+                          {proportionalGoalsResult.stoppedMinutes > 0 && (
+                            <div className="bg-amber-50/90 border border-amber-300 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px] animate-in fade-in duration-150">
+                              <div className="flex items-center gap-2 font-black text-amber-950">
+                                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                                <div>
+                                  <span>Abatimento de Paradas: <strong>{proportionalGoalsResult.stoppedMinutes} min ({proportionalGoalsResult.stoppedHours}h)</strong></span>
+                                  <span className="text-amber-800 font-semibold ml-1">• Tempo Útil de Máquina: <strong>{proportionalGoalsResult.netWorkingHours}h</strong> de {proportionalGoalsResult.grossShiftHours}h</span>
+                                </div>
+                              </div>
+                              <div className="font-bold text-amber-950 text-right">
+                                <span>Meta Nominal: <span className="line-through text-slate-400 font-mono">{nominalBaseTargetM2.toLocaleString('pt-BR')} m²</span></span>
+                                <span className="text-slate-400 mx-1">➔</span>
+                                <strong className="text-emerald-800 font-mono">Meta Justa Líquida: {effectiveTargetM2.toLocaleString('pt-BR')} m²</strong>
+                                <span className="text-amber-700 ml-1 text-[9px] font-extrabold">(-{deductedStoppageM2.toLocaleString('pt-BR')} m² abatidos)</span>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Se for Multi-OP, exibe grade visual de cada OP rodada com sua respectiva meta proporcional */}
                           {isMultiOP && (
@@ -20066,11 +20302,117 @@ Atenciosamente,
                       </div>
                     </div>
 
-                    {/* 3. Paradas de Máquina (Opcional) */}
+                    {/* 3. Paradas de Máquina (Abatimento no Horário & Meta) */}
                     <div className="bg-slate-50/70 border border-slate-200 rounded-2xl sm:rounded-3xl p-5 sm:p-7 space-y-5 sm:space-y-6 shadow-inner">
-                      <div className="flex items-center gap-2 text-slate-800 font-black text-xs sm:text-sm uppercase tracking-wider border-b border-slate-200 pb-3">
-                        <Clock size={16} /> 3. Paradas de Máquina (Opcional)
+                      <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-3">
+                        <div className="flex items-center gap-2 text-slate-800 font-black text-xs sm:text-sm uppercase tracking-wider">
+                          <Clock size={16} /> 3. Paradas de Máquina (Abatimento no Horário & Meta)
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-lg">
+                          Jornada Padrão: 8,8h (528 min)
+                        </span>
                       </div>
+
+                      {/* Botões Rápidos de Parada com 1 Clique (Almoço, Intervalo, Reunião, etc.) */}
+                      <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-black uppercase text-slate-700 block">
+                            ⚡ Paradas Frequentes com 1 Clique (Abatem da Jornada e da Meta):
+                          </span>
+                          <span className="text-[10px] text-indigo-700 font-black uppercase">
+                            Clique para Adicionar
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAddRibbonQuickStop('outros', 'Parada para Almoço / Refeição', 60, '12:00', '13:00')}
+                            className="px-2.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl text-left transition-all active:scale-95 shadow-2xs group cursor-pointer"
+                          >
+                            <div className="text-[11px] font-black text-amber-950 flex items-center gap-1">
+                              <span>🍽️</span> Almoço
+                            </div>
+                            <div className="text-[9px] text-amber-700 font-bold">60 min (12h às 13h)</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddRibbonQuickStop('outros', 'Parada para Intervalo / Lanche', 15, '15:00', '15:15')}
+                            className="px-2.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl text-left transition-all active:scale-95 shadow-2xs group cursor-pointer"
+                          >
+                            <div className="text-[11px] font-black text-amber-950 flex items-center gap-1">
+                              <span>☕</span> Intervalo
+                            </div>
+                            <div className="text-[9px] text-amber-700 font-bold">15 min (Lanche)</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddRibbonQuickStop('outros', 'Parada para Reunião / DDS / Treinamento', 30, '08:00', '08:30')}
+                            className="px-2.5 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded-xl text-left transition-all active:scale-95 shadow-2xs group cursor-pointer"
+                          >
+                            <div className="text-[11px] font-black text-purple-950 flex items-center gap-1">
+                              <span>🗣️</span> Reunião
+                            </div>
+                            <div className="text-[9px] text-purple-700 font-bold">30 min (DDS/Alinhamento)</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddRibbonQuickStop('processo', 'Troca de Lâminas / Facas de Corte', 20, '10:00', '10:20')}
+                            className="px-2.5 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-xl text-left transition-all active:scale-95 shadow-2xs group cursor-pointer"
+                          >
+                            <div className="text-[11px] font-black text-blue-950 flex items-center gap-1">
+                              <span>⚙️</span> Troca de Facas
+                            </div>
+                            <div className="text-[9px] text-blue-700 font-bold">20 min (Processo)</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddRibbonQuickStop('manutencao', 'Manutenção Mecânica / Elétrica', 30, '14:00', '14:30')}
+                            className="px-2.5 py-2 bg-orange-50 hover:bg-orange-100 border border-orange-300 rounded-xl text-left transition-all active:scale-95 shadow-2xs group cursor-pointer"
+                          >
+                            <div className="text-[11px] font-black text-orange-950 flex items-center gap-1">
+                              <span>🔧</span> Manutenção
+                            </div>
+                            <div className="text-[9px] text-orange-700 font-bold">30 min (Mec/Elétrica)</div>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Banner dinâmico com o impacto real do tempo de parada na produtividade e meta */}
+                      {totalRibbonStopsMinutes > 0 && (
+                        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-in fade-in duration-150">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shrink-0 shadow-xs">
+                              ⏱️
+                            </div>
+                            <div>
+                              <div className="font-black text-amber-950 uppercase tracking-tight flex items-center gap-2">
+                                <span>Abatimento Ativo no Horário Geral & Meta da Fita</span>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-black text-[9px] uppercase">
+                                  {totalRibbonStopsMinutes} min ({proportionalGoalsResult.stoppedHours}h) parados
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-amber-900 font-semibold mt-0.5">
+                                Jornada Bruta: <strong>8,8h (528 min)</strong> ➔ 
+                                Jornada Útil Real: <strong>{proportionalGoalsResult.netWorkingHours}h</strong> rodando máquina
+                              </div>
+                            </div>
+                          </div>
+                          <div className="bg-white border border-amber-300 rounded-xl px-3.5 py-2 text-right shadow-2xs">
+                            <div className="text-[9.5px] uppercase font-black text-slate-500">Abatimento na Meta Diária:</div>
+                            <div className="text-sm font-black text-amber-900">
+                              -{proportionalGoalsResult.deductedStoppageTargetM2.toLocaleString('pt-BR')} m²
+                              <span className="text-[10px] text-emerald-700 ml-1.5 font-bold">
+                                (Meta justa: {proportionalGoalsResult.totalCompositeTargetM2.toLocaleString('pt-BR')} m²)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="space-y-5">
                         
                         {/* Seção Manutenção */}
@@ -20235,11 +20577,11 @@ Atenciosamente,
                           </div>
                         </div>
 
-                        {/* Seção Outros */}
+                        {/* Seção Outros (Almoço, Intervalos, Reuniões e Gerais) */}
                         <div className="p-4 sm:p-5 bg-white border border-slate-100 rounded-2xl space-y-4 shadow-sm">
                           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                             <div className="flex items-center gap-2 text-slate-700 font-black text-xs sm:text-sm uppercase tracking-wider">
-                              <Package size={16} /> Outros
+                              <Package size={16} /> Outros (Almoço, Intervalos, Reuniões)
                             </div>
                             <button
                               type="button"
@@ -20311,16 +20653,30 @@ Atenciosamente,
                             </div>
                           )}
                           <div className="flex justify-between items-center pt-2.5 border-t border-slate-100 px-1 text-xs font-black text-slate-500 uppercase">
-                            <span>Subtotal Outros</span>
+                            <span>Subtotal Outros (Almoço / Intervalo / Reunião)</span>
                             <span className="text-slate-800 font-bold">{calcTotalMinutes(ribbonOutrosStops)} min</span>
                           </div>
                         </div>
 
-                        <div className="pt-3 border-t border-slate-200 flex justify-between items-center px-1">
-                          <span className="text-xs sm:text-sm font-black text-slate-500 uppercase tracking-wider">Total Parado Geral</span>
-                          <span className="text-base sm:text-lg font-black text-slate-900 font-mono">
-                            {calcTotalMinutes(ribbonManutencaoStops) + calcTotalMinutes(ribbonProcessoStops) + calcTotalMinutes(ribbonOutrosStops)} min
-                          </span>
+                        <div className="pt-3 border-t border-slate-200 flex flex-wrap justify-between items-center px-1 gap-2">
+                          <div className="space-y-0.5">
+                            <span className="text-xs sm:text-sm font-black text-slate-700 uppercase tracking-wider block">
+                              Total Parado Geral da Cortadora
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-semibold">
+                              Manutenção: {calcTotalMinutes(ribbonManutencaoStops)} min • Processo: {calcTotalMinutes(ribbonProcessoStops)} min • Outros: {calcTotalMinutes(ribbonOutrosStops)} min
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono block">
+                              {totalRibbonStopsMinutes} min ({proportionalGoalsResult.stoppedHours}h)
+                            </span>
+                            {totalRibbonStopsMinutes > 0 && (
+                              <span className="text-[10px] text-emerald-700 font-extrabold uppercase">
+                                ✓ Abatido da meta de produtividade
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -20553,6 +20909,14 @@ Atenciosamente,
                               <Sparkles size={14} className="text-sky-300" />
                               Relatório Geral (Extrusão + Fita)
                             </button>
+                            <button
+                              onClick={handleDownloadOeeReport}
+                              className="bg-emerald-550 hover:bg-emerald-600 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 border border-emerald-400 cursor-pointer"
+                              title="Baixar Relatório Executivo de OEE, Disponibilidade e Eficiência de Máquinas (PDF)"
+                            >
+                              <Activity size={14} className="text-emerald-200" />
+                              Relatório OEE (PDF)
+                            </button>
                           </div>
 
                           <div className="flex items-center gap-4">
@@ -20749,6 +21113,14 @@ Atenciosamente,
                           >
                             <Sparkles size={14} className="text-sky-300" />
                             Relatório Geral (Extrusão + Fita)
+                          </button>
+                          <button
+                            onClick={handleDownloadOeeReport}
+                            className="w-full sm:w-auto bg-emerald-550 hover:bg-emerald-600 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest px-4 py-3 sm:px-5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 border border-emerald-400 shrink-0 cursor-pointer"
+                            title="Baixar Relatório Executivo de OEE, Disponibilidade e Eficiência de Máquinas (PDF)"
+                          >
+                            <Activity size={14} className="text-emerald-200" />
+                            Relatório OEE & Disponibilidade (PDF)
                           </button>
                         </div>
                       </div>
@@ -21700,9 +22072,9 @@ Atenciosamente,
                           </div>
                         </div>
 
-                        <div className="h-72">
+                        <div className="w-full h-[300px]">
                           {ribbonDailyTrendData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height={300}>
                               <ComposedChart data={ribbonDailyTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="label" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -22019,9 +22391,9 @@ Atenciosamente,
                           </div>
                         </div>
 
-                        <div className="h-64">
+                        <div className="w-full h-[280px]">
                           {ribbonDailyByMachineData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height={280}>
                               <BarChart data={ribbonDailyByMachineData} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="label" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -22142,10 +22514,10 @@ Atenciosamente,
                           </div>
                         </div>
 
-                        <div className="h-72">
+                        <div className="w-full h-[300px]">
                           {ribbonOperatorBarsData.length > 0 ? (
                             ribbonOperatorChartViewMode === 'bars' ? (
-                              <ResponsiveContainer width="100%" height="100%">
+                              <ResponsiveContainer width="100%" height={300}>
                                 <ComposedChart data={ribbonOperatorBarsData} margin={{ top: 15, right: 15, bottom: 25, left: -10 }}>
                                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                   <XAxis 
@@ -22220,7 +22592,7 @@ Atenciosamente,
                                 </ComposedChart>
                               </ResponsiveContainer>
                             ) : (
-                              <ResponsiveContainer width="100%" height="100%">
+                              <ResponsiveContainer width="100%" height={300}>
                                 <ScatterChart margin={{ top: 15, right: 15, bottom: 10, left: -25 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                   <XAxis type="number" dataKey="prod" name="Produção Líquida" unit=" m²" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -22270,7 +22642,7 @@ Atenciosamente,
                       </div>
 
                       {/* Gráfico 5: Breakdown Proporcional de Paradas (100%) */}
-                      <div id="ribbon-chart-stacked" className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4 min-h-[420px]">
+                      <div id="ribbon-chart-stacked" className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
                         <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-50">
                           <div>
                             <h3 className="text-sm font-black uppercase text-indigo-950">Breakdown Proporcional de Paradas (100%)</h3>
@@ -22314,9 +22686,9 @@ Atenciosamente,
                           </div>
                         </div>
 
-                        <div className="h-72">
+                        <div className="w-full h-[300px]">
                           {ribbonProportionalStopsData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height={300}>
                               <BarChart data={ribbonProportionalStopsData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="name" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: 'bold' }} />
@@ -22366,7 +22738,7 @@ Atenciosamente,
             ) : (
               <>
                 {/*KPI Cards Grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
               {/* Card M² Produzidos */}
               <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2">
                 <div className="flex items-center justify-between text-slate-400">
@@ -22379,6 +22751,22 @@ Atenciosamente,
                   {ribbonStats.totProd.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²
                 </h4>
                 <p className="text-[9px] text-slate-400 font-medium">Metros finais entregues</p>
+              </div>
+
+              {/* Card Tempo Parado (Fita) */}
+              <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 border-l-4 border-l-amber-500">
+                <div className="flex items-center justify-between text-slate-400">
+                  <span className="text-[10px] font-black uppercase tracking-wider">Tempo Parado</span>
+                  <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+                    <Clock className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <h4 className="text-xl font-black text-slate-800 tracking-tight">
+                  {ribbonStats.totStopsMin} min
+                </h4>
+                <p className="text-[9px] text-slate-500 font-bold truncate">
+                  {(ribbonStats.totStopsMin / 60).toFixed(1)}h • M:{ribbonStats.totManutMin}m P:{ribbonStats.totProcMin}m O:{ribbonStats.totOutrosMin}m
+                </p>
               </div>
 
               {/* Card Não Conformidades */}
@@ -22423,15 +22811,15 @@ Atenciosamente,
                   {ribbonStats.jumboCount.toFixed(2)} jumbos
                 </h4>
                 <p className="text-[9px] text-slate-400 font-medium truncate">
-                  Total jumbo: {ribbonStats.totJumbo.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²
+                  Total: {ribbonStats.totJumbo.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} m²
                 </p>
               </div>
 
               {/* Card Resíduo Lixo */}
-              <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 col-span-2 lg:col-span-1 border-l-4 border-l-amber-500">
+              <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 col-span-2 lg:col-span-1 border-l-4 border-l-rose-500">
                 <div className="flex items-center justify-between text-slate-400">
                   <span className="text-[10px] font-black uppercase tracking-wider">Lixo Coletado</span>
-                  <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+                  <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
                     <Scale className="w-3.5 h-3.5" />
                   </div>
                 </div>
@@ -22571,6 +22959,7 @@ Atenciosamente,
                       <th className="py-3 px-4 text-right">Jumbos Eq.</th>
                       <th className="py-3 px-4 text-right">Rolos Prod.</th>
                       <th className="py-3 px-4 text-right">M² Produzido</th>
+                      <th className="py-3 px-4 text-center">Tempo Parado</th>
                       <th className="py-3 px-4 text-right">Fita Não Conforme</th>
                       <th className="py-3 px-4 text-right">Aproveitamento %</th>
                       <th className="py-3 px-4 text-right">Lixo Peso (Kg)</th>
@@ -22581,7 +22970,7 @@ Atenciosamente,
                   <tbody className="divide-y divide-slate-50 text-xs font-semibold text-slate-600">
                     {filteredRibbonEntries.length === 0 ? (
                       <tr>
-                        <td colSpan={canEditProduction ? 16 : 14} className="py-8 text-center text-slate-400 font-medium">
+                        <td colSpan={canEditProduction ? 17 : 15} className="py-8 text-center text-slate-400 font-medium">
                           Nenhum lançamento encontrado para os filtros selecionados.
                         </td>
                       </tr>
@@ -22705,8 +23094,39 @@ Atenciosamente,
                                     {entry.targetDailyM2.toLocaleString('pt-BR')} m²
                                     {entry.producedM2 >= entry.targetDailyM2 ? ' ✅' : ' ⚠️'}
                                   </span>
+                                  {entry.nominalBaseTargetM2 && entry.nominalBaseTargetM2 > entry.targetDailyM2 && (
+                                    <div className="text-[8px] text-indigo-600 font-semibold" title={`Meta nominal de ${entry.nominalBaseTargetM2.toLocaleString('pt-BR')} m² abatida proporcionalmente por paradas de máquina`}>
+                                      (Base {entry.nominalBaseTargetM2.toLocaleString('pt-BR')} m² • abatida)
+                                    </div>
+                                  )}
                                 </div>
                               )}
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-sans">
+                              {(() => {
+                                const stopsMin = (entry.stoppedMinutes || 0) || ((entry.manutencaoMin || 0) + (entry.processoMin || 0) + (entry.outrosMin || 0));
+                                if (stopsMin <= 0) {
+                                  return (
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md text-[10px] font-bold inline-flex items-center gap-1">
+                                      0 min <span className="text-[9px] font-normal text-emerald-600">(100% ativa)</span>
+                                    </span>
+                                  );
+                                }
+                                const stopsH = (stopsMin / 60).toFixed(1);
+                                return (
+                                  <div className="inline-flex flex-col items-center">
+                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-[10px] font-black inline-flex items-center gap-1 shadow-2xs">
+                                      <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                      {stopsMin} min ({stopsH}h)
+                                    </span>
+                                    {entry.stoppedReason && entry.stoppedReason !== 'Nenhum' && (
+                                      <span className="text-[9px] text-slate-400 font-medium max-w-[130px] truncate mt-0.5" title={entry.stoppedReason}>
+                                        {entry.stoppedReason}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="py-3.5 px-4 text-right text-red-500 font-medium">
                               {entry.rejectedM2 ? `${entry.rejectedM2.toLocaleString('pt-BR')} m²` : '0 m²'}
@@ -22766,8 +23186,8 @@ Atenciosamente,
                     <h4 className="text-sm font-black uppercase text-indigo-950">Histórico de Produção de Fita</h4>
                     <p className="text-[11px] text-slate-400 font-medium">M² Produzido vs Metros Não Conformes</p>
                   </div>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="w-full h-64">
+                    <ResponsiveContainer width="100%" height={256}>
                       <ComposedChart data={[...filteredRibbonEntries].reverse()}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis 
@@ -22794,8 +23214,8 @@ Atenciosamente,
                     <h4 className="text-sm font-black uppercase text-indigo-950">Descarte de Resíduos do Setor (Lixo)</h4>
                     <p className="text-[11px] text-slate-400 font-medium">Peso total de descarte ao longo do tempo (visualizado em Kg/T)</p>
                   </div>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="w-full h-64">
+                    <ResponsiveContainer width="100%" height={256}>
                       <BarChart data={[...filteredRibbonEntries].reverse()}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis 
@@ -24029,9 +24449,9 @@ Atenciosamente,
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Referência: {filterDay || dashboardMonth}</p>
               </div>
             </div>
-            <div className="h-[400px]">
+            <div className="w-full h-[400px]">
               {eremaOperatorStats.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={400}>
                   <PieChart>
                     <Pie data={eremaOperatorStats} cx="50%" cy="32%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value" label={renderCustomizedLabel}>
                       {eremaOperatorStats.map((_, idx: number) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} />)}
@@ -24102,6 +24522,8 @@ Atenciosamente,
         setSystemLogo={setSystemLogo}
         systemCoverImage={systemCoverImage}
         setSystemCoverImage={setSystemCoverImage}
+        chartPdfLogo={chartPdfLogo}
+        setChartPdfLogo={setChartPdfLogo}
         isAdminUser={loggedUser.registration === '1010' || loggedUser.role === 'Administrador'}
         isInstallable={isInstallable}
         isStandalone={isStandalone}
@@ -25343,7 +25765,7 @@ Atenciosamente,
 
               {/* Content body */}
               <div className="flex-1 p-8 overflow-y-auto">
-                <div id="ribbon-fullscreen-chart-modal-body" className="w-full h-full min-h-[450px]">
+                <div id="ribbon-fullscreen-chart-modal-body" className="w-full h-[520px]">
                   {fullscreenChart === 'stops-motifs-card' && (
                     <div className="space-y-4">
                       {/* Search bar inside Fullscreen Modal */}

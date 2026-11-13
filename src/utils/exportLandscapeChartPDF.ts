@@ -1,5 +1,4 @@
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
 export interface LandscapeChartExportDetails {
@@ -20,6 +19,10 @@ export interface LandscapeChartExportDetails {
     | 'ribbon-chart-waste'
     | 'generic';
   data?: any;
+  chartImageUri?: string;
+  sector?: 'extrusao' | 'fita' | 'reciclagem' | string;
+  customSlogan?: string;
+  parametersSummary?: string;
   formatWeight?: (val: number) => string;
   formatM2?: (val: number) => string;
   formatMinutes?: (val: number) => string;
@@ -36,6 +39,13 @@ export interface LandscapeChartExportDetails {
       dateRange?: string;
     };
   };
+  tableBlocks?: Array<{
+    title: string;
+    subtitle?: string;
+    headers: string[];
+    rows: string[][];
+  }>;
+  chartLogoImage?: string | null;
   systemLogo?: string;
   systemName?: string;
   loggedUser?: {
@@ -44,733 +54,1175 @@ export interface LandscapeChartExportDetails {
   } | null;
 }
 
-// Color palette for Gestão à Vista (High contrast, professional for shop floor display)
-const PALETTE = {
-  navyDark: [15, 23, 42] as [number, number, number],         // #0f172a
-  navyMedium: [30, 41, 59] as [number, number, number],       // #1e293b
-  emerald: [5, 150, 105] as [number, number, number],         // #059669
-  emeraldLight: [240, 253, 244] as [number, number, number],  // #f0fdf4
-  blueBrand: [2, 132, 199] as [number, number, number],       // #0284c7
-  blueLight: [240, 249, 255] as [number, number, number],     // #f0f9ff
-  amber: [217, 119, 6] as [number, number, number],           // #d97706
-  amberLight: [255, 251, 235] as [number, number, number],    // #fffbeb
-  rose: [225, 29, 72] as [number, number, number],            // #e11d48
-  roseLight: [255, 241, 242] as [number, number, number],     // #fff1f2
-  slateMuted: [100, 116, 139] as [number, number, number],    // #64748b
-  border: [226, 232, 240] as [number, number, number],        // #e2e8f0
-  bgCard: [248, 250, 252] as [number, number, number],        // #f8fafc
-  white: [255, 255, 255] as [number, number, number],
-};
-
 /**
- * Computes 4 prominent KPI badges for the landscape header bar
+ * Formatação de peso industrial padronizado (Kg ou Toneladas)
  */
-function computeHeaderKPIs(details: LandscapeChartExportDetails) {
-  const { chartType, data, formatWeight = (v) => `${Number(v).toLocaleString('pt-BR')} kg`, formatM2 = (v) => `${Number(v).toLocaleString('pt-BR')} m²`, formatMinutes = (m) => `${m} min`, extraInfo = {} } = details;
-
-  if (chartType === 'bi-chart-composed' && Array.isArray(data)) {
-    let totProd = 0, totEcoBP = 0, totEcoBM = 0, totBorra = 0, totVols = 0;
-    data.forEach((d) => {
-      totProd += d.prod || 0;
-      totEcoBP += d.ecoBP || 0;
-      totEcoBM += d.ecoBM || 0;
-      totBorra += d.borra || 0;
-      totVols += d.totalVolumes || 0;
-    });
-    const totLoss = totEcoBP + totEcoBM + totBorra;
-    const lossPct = totProd + totLoss > 0 ? ((totLoss / (totProd + totLoss)) * 100).toFixed(2) : '0,00';
-
-    return [
-      { label: 'PRODUÇÃO LÍQUIDA', value: formatWeight(totProd), sub: `${totVols.toLocaleString('pt-BR')} volumes`, color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'PERDAS TOTAIS', value: formatWeight(totLoss), sub: `${lossPct}% da massa total`, color: PALETTE.rose, bg: PALETTE.roseLight },
-      { label: 'RESÍDUO ECO B (P+M)', value: formatWeight(totEcoBP + totEcoBM), sub: `Prod: ${formatWeight(totEcoBP)} | Manut: ${formatWeight(totEcoBM)}`, color: PALETTE.amber, bg: PALETTE.amberLight },
-      { label: 'RESÍDUO BORRA TOTAL', value: formatWeight(totBorra), sub: 'Descarte físico de purga', color: PALETTE.navyMedium, bg: PALETTE.bgCard },
-    ];
+export function formatAnnexWeight(kg: number): string {
+  const val = Number(kg) || 0;
+  if (val === 0) return '0 Kg';
+  if (Math.abs(val) < 1000) {
+    return `${Math.round(val).toLocaleString('pt-BR')} Kg`;
   }
-
-  if (chartType === 'bi-chart-scatter' && Array.isArray(data)) {
-    let totProd = 0, totWaste = 0, totStops = 0, maxProd = 0, bestOp = '-';
-    data.forEach((op) => {
-      totProd += op.prod || 0;
-      totWaste += op.wastes || 0;
-      totStops += op.stopsProcess || 0;
-      if ((op.prod || 0) > maxProd) {
-        maxProd = op.prod;
-        bestOp = op.name;
-      }
-    });
-    const wastePct = totProd + totWaste > 0 ? ((totWaste / (totProd + totWaste)) * 100).toFixed(2) : '0,00';
-
-    return [
-      { label: 'PRODUÇÃO TOTAL OPERADORES', value: formatWeight(totProd), sub: `Líder: ${bestOp}`, color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'DESPERDÍCIO TOTAL', value: formatWeight(totWaste), sub: `Índice médio: ${wastePct}%`, color: PALETTE.rose, bg: PALETTE.roseLight },
-      { label: 'PARADAS DE PROCESSO', value: formatMinutes(totStops), sub: `${(totStops / 60).toFixed(1)} horas acumuladas`, color: PALETTE.amber, bg: PALETTE.amberLight },
-      { label: 'OPERADORES AVALIADOS', value: `${data.length} Operadores`, sub: 'Quadro ativo de extrusão', color: PALETTE.blueBrand, bg: PALETTE.blueLight },
-    ];
-  }
-
-  if (chartType === 'bi-chart-stacked' && Array.isArray(data)) {
-    let totMin = 0, totManut = 0, totProc = 0, totOutros = 0;
-    data.forEach((d) => {
-      const min = d.totalMin || 0;
-      totMin += min;
-      totManut += (d.manutPct || 0) * min / 100;
-      totProc += (d.procPct || 0) * min / 100;
-      totOutros += (d.outrosPct || 0) * min / 100;
-    });
-
-    return [
-      { label: 'TEMPO TOTAL PARADO', value: formatMinutes(totMin), sub: `${(totMin / 60).toFixed(1)} horas no período`, color: PALETTE.rose, bg: PALETTE.roseLight },
-      { label: 'MANUTENÇÃO', value: `${totMin > 0 ? ((totManut / totMin) * 100).toFixed(1) : 0}%`, sub: `${formatMinutes(Math.round(totManut))} de intervenção`, color: PALETTE.rose, bg: PALETTE.roseLight },
-      { label: 'PROCESSO', value: `${totMin > 0 ? ((totProc / totMin) * 100).toFixed(1) : 0}%`, sub: `${formatMinutes(Math.round(totProc))} de regulagem`, color: PALETTE.amber, bg: PALETTE.amberLight },
-      { label: 'OUTROS MOTIVOS', value: `${totMin > 0 ? ((totOutros / totMin) * 100).toFixed(1) : 0}%`, sub: `${formatMinutes(Math.round(totOutros))} paradas gerais`, color: PALETTE.navyMedium, bg: PALETTE.bgCard },
-    ];
-  }
-
-  if (chartType === 'bi-chart-donut') {
-    const extEcoB = extraInfo.extruderEcoB || 0;
-    const ereRec = extraInfo.eremaRecycled || 0;
-    const diff = Math.abs(extEcoB - ereRec);
-
-    return [
-      { label: 'ECO B GERADO (CAST)', value: formatWeight(extEcoB), sub: 'Descarte das extrusoras', color: PALETTE.amber, bg: PALETTE.amberLight },
-      { label: 'RECICLADO (EREMA)', value: formatWeight(ereRec), sub: 'Volume reprocessado', color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'BALANÇO LÍQUIDO', value: formatWeight(diff), sub: extEcoB >= ereRec ? 'Acúmulo de estoque' : 'Consumo de resíduo', color: extEcoB >= ereRec ? PALETTE.rose : PALETTE.emerald, bg: extEcoB >= ereRec ? PALETTE.roseLight : PALETTE.emeraldLight },
-      { label: 'TAXA DE REPROCESSAMENTO', value: extEcoB > 0 ? `${((ereRec / extEcoB) * 100).toFixed(1)}%` : '100%', sub: 'Eficiência de reclaiming', color: PALETTE.blueBrand, bg: PALETTE.blueLight },
-    ];
-  }
-
-  if (chartType === 'ribbon-chart-composed' && Array.isArray(data)) {
-    let totProd = 0, totRolls = 0, totTipo1 = 0, totTipo2 = 0, totWaste = 0;
-    data.forEach((d) => {
-      totProd += d.prod || 0;
-      totRolls += d.rollsCount || 0;
-      totTipo1 += d.tipo1 || 0;
-      totTipo2 += d.tipo2 || 0;
-      totWaste += d.residuoWeight || 0;
-    });
-
-    return [
-      { label: 'PRODUÇÃO LÍQUIDA (m²)', value: formatM2(totProd), sub: `${totRolls.toLocaleString('pt-BR')} rolos cortados`, color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'LIXO TOTAL DE FITA', value: formatWeight(totWaste), sub: 'Descarte físico acumulado', color: PALETTE.rose, bg: PALETTE.roseLight },
-      { label: 'NÃO CONFORME TIPO 1', value: formatM2(totTipo1), sub: 'Refugo de refilamento', color: PALETTE.amber, bg: PALETTE.amberLight },
-      { label: 'NÃO CONFORME TIPO 2', value: formatM2(totTipo2), sub: 'Descarte dimensional', color: PALETTE.navyMedium, bg: PALETTE.bgCard },
-    ];
-  }
-
-  if (chartType === 'ribbon-chart-prod' && Array.isArray(data)) {
-    let sumG = 0, sumL = 0, sumW = 0, sumT = 0;
-    data.forEach((d) => {
-      sumG += d.ghezzeProd || 0;
-      sumL += d.lintechProd || 0;
-      sumW += d.wutecProd || 0;
-      sumT += d.totalProd || 0;
-    });
-
-    return [
-      { label: 'PRODUÇÃO TOTAL (m²)', value: formatM2(sumT), sub: 'Consolidado das 3 máquinas', color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'CORTADEIRA GHEZZI', value: formatM2(sumG), sub: 'Fita 01', color: PALETTE.blueBrand, bg: PALETTE.blueLight },
-      { label: 'CORTADEIRA LINTECH', value: formatM2(sumL), sub: 'Fita 02', color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'CORTADEIRA WULTEC', value: formatM2(sumW), sub: 'Fita 03', color: PALETTE.amber, bg: PALETTE.amberLight },
-    ];
-  }
-
-  if (chartType === 'ribbon-chart-waste' && Array.isArray(data)) {
-    let sumG = 0, sumL = 0, sumW = 0, sumT = 0;
-    data.forEach((d) => {
-      sumG += d.ghezzeWaste || 0;
-      sumL += d.lintechWaste || 0;
-      sumW += d.wutecWaste || 0;
-      sumT += d.totalWaste || 0;
-    });
-
-    return [
-      { label: 'DESCARTE TOTAL (Kg)', value: formatWeight(sumT), sub: 'Lixo acumulado das 3 cortadeiras', color: PALETTE.rose, bg: PALETTE.roseLight },
-      { label: 'LIXO GHEZZI', value: formatWeight(sumG), sub: 'Fita 01', color: PALETTE.blueBrand, bg: PALETTE.blueLight },
-      { label: 'LIXO LINTECH', value: formatWeight(sumL), sub: 'Fita 02', color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-      { label: 'LIXO WULTEC', value: formatWeight(sumW), sub: 'Fita 03', color: PALETTE.amber, bg: PALETTE.amberLight },
-    ];
-  }
-
-  // Fallback
-  return [
-    { label: 'STATUS OPERACIONAL', value: 'CONFORME', sub: 'Gestão à Vista Ativa', color: PALETTE.emerald, bg: PALETTE.emeraldLight },
-    { label: 'REFERÊNCIA', value: details.period || 'Mês Vigente', sub: 'Período Operacional', color: PALETTE.blueBrand, bg: PALETTE.blueLight },
-    { label: 'AUDITORIA DE DADOS', value: '100% REGISTRADO', sub: 'Apontamento Oficial de Turno', color: PALETTE.amber, bg: PALETTE.amberLight },
-    { label: 'UNIDADE', value: 'MANUPACKAGING', sub: 'Fitas & Amazônia', color: PALETTE.navyDark, bg: PALETTE.bgCard },
-  ];
+  const tons = val / 1000;
+  return `${tons.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} T`;
 }
 
 /**
- * Builds table headers and data matrix for jspdf-autotable
+ * Formatação de m² padronizada
  */
-function buildAnalyticalTable(details: LandscapeChartExportDetails): { headers: string[]; rows: string[][]; totalsRow?: string[] } | null {
-  const { chartType, data, formatWeight = (v) => `${Number(v).toLocaleString('pt-BR')} kg`, formatM2 = (v) => `${Number(v).toLocaleString('pt-BR')} m²`, formatMinutes = (m) => `${m} min`, extraInfo = {} } = details;
+export function formatAnnexM2(m2: number): string {
+  const val = Number(m2) || 0;
+  return `${Math.round(val).toLocaleString('pt-BR')} m²`;
+}
 
-  if (!data || !Array.isArray(data) || data.length === 0) return null;
+/**
+ * Slogan por setor no rodapé do documento
+ */
+export function getSectorSlogan(sectorOrMachine?: string, customSlogan?: string): string {
+  if (customSlogan) return customSlogan;
+  const s = (sectorOrMachine || '').toLowerCase().trim();
+  if (s.includes('erema') || s.includes('recicla')) {
+    return `
+      <div style="display:flex; align-items:center; gap:6px;">
+        <svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:#6da83c;"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V17a1 1 0 0 1-2 0v-.07A7.003 7.003 0 0 1 5.07 11H5a1 1 0 0 1 0-2h.07A7.003 7.003 0 0 1 11 3.07V3a1 1 0 0 1 2 0v.07A7.003 7.003 0 0 1 18.93 9H19a1 1 0 0 1 0 2h-.07A7.003 7.003 0 0 1 13 16.93z"/></svg>
+        <span>A TRANSFORMAÇÃO QUE SUSTENTA.</span>
+      </div>
+    `;
+  }
+  if (s.includes('cast') || s.includes('extrus')) {
+    return 'QUALIDADE E ESTABILIDADE EM CADA BOBINA!';
+  }
+  return 'FOCO, EFICIÊNCIA E PRODUTIVIDADE EM CADA ROLO!';
+}
 
-  if (chartType === 'bi-chart-composed') {
-    let totEcoBP = 0, totEcoBM = 0, totBorra = 0, totProd = 0, totVols = 0;
-    const rows = data.map((item) => {
-      totEcoBP += item.ecoBP || 0;
-      totEcoBM += item.ecoBM || 0;
-      totBorra += item.borra || 0;
-      totProd += item.prod || 0;
-      totVols += item.totalVolumes || 0;
-      const dateStr = item.date ? item.date.split('-').reverse().join('/') : item.label || '';
-      return [
-        dateStr,
-        formatWeight(item.ecoBP || 0),
-        formatWeight(item.ecoBM || 0),
-        formatWeight(item.borra || 0),
-        formatWeight(item.prod || 0),
-        `${item.totalVolumes || 0} vols`,
-      ];
-    });
+/**
+ * Monta o HTML do logotipo oficial da Manu Packaging em SVG ou imagem customizada
+ */
+function buildCompanyLogoHtml(details: LandscapeChartExportDetails): string {
+  const customLogo =
+    details.chartLogoImage ||
+    details.systemLogo ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('manupackaging_chart_pdf_logo') : null);
 
-    return {
-      headers: ['Data', 'Eco B Prod. (Kg)', 'Eco B Manut. (Kg)', 'Resíduo Borra (Kg)', 'Produção Líquida (Kg)', 'Volumes'],
-      rows,
-      totalsRow: ['TOTAL DO PERÍODO', formatWeight(totEcoBP), formatWeight(totEcoBM), formatWeight(totBorra), formatWeight(totProd), `${totVols} vols`],
-    };
+  if (customLogo) {
+    return `
+      <div class="company-logo-wrap">
+        <img src="${customLogo}" alt="Logo" class="custom-brand-logo" />
+      </div>
+    `;
   }
 
+  return `
+    <div class="company-logo-wrap">
+      <div class="manu-logo-container">
+        <div class="manu-bars">
+          <div class="bar bar-1"></div>
+          <div class="bar bar-2"></div>
+          <div class="bar bar-3"></div>
+        </div>
+        <div class="manu-texts">
+          <div class="manu-row">
+            <span class="manu-name">manu</span>
+            <svg class="manu-leaf" viewBox="0 0 24 24">
+              <path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,8 17,8 17,8Z"/>
+            </svg>
+          </div>
+          <div class="packaging-name">packaging</div>
+          <div class="fitasa-subtitle">FITASA &amp; AMAZÔNIA</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Constrói o layout completo fiel à identidade visual da Manu Packaging
+ * baseado exatamente no design da imagem original enviada pelo usuário
+ */
+export function buildCompanyIndustrialPosterHtml(details: LandscapeChartExportDetails): string {
+  const { title, chartType, data, loggedUser } = details;
+  const rowsData = Array.isArray(data) ? data : [];
+  const sectorOrMachine = details.extraInfo?.filters?.machine || details.sector || title;
+  const sloganText = getSectorSlogan(sectorOrMachine, details.customSlogan);
+
+  // Parâmetros do banner
+  const filters = details.extraInfo?.filters;
+  const dateRange = filters?.dateRange || details.period || 'Mês Operacional';
+  const cleanRange = dateRange.replace(/(\d{4})-(\d{2})/g, '$2/$1');
+  const countDays = rowsData.length > 0 ? `${rowsData.length} DIAS REGISTRADOS` : 'DADOS CONSOLIDADOS';
+  const subtitleBanner = `PERÍODO: ${cleanRange.toUpperCase()} • ${countDays}`;
+
+  // Carimbo
+  const now = new Date();
+  const issueDate = now.toLocaleDateString('pt-BR');
+  const issueTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const userStamp = loggedUser?.name ? ` | Operador: ${loggedUser.name}` : '';
+  const metaStamp = `Período: ${cleanRange} | Emitido em: ${issueDate} às ${issueTime}${userStamp} | Manu Packaging Industrial`;
+
+  // =========================================================================
+  // RENDERIZADOR ESPECÍFICO POR TIPO DE GRÁFICO
+  // =========================================================================
+
+  // CASO 1: EVOLUÇÃO DE PERDAS VS PRODUÇÃO LÍQUIDA (bi-chart-composed)
+  // Layout idêntico ao anexo com barras azul (noturno) e verde (diurno)
+  if (chartType === 'bi-chart-composed' || (!chartType && rowsData.length > 0 && rowsData[0]?.ecoBP !== undefined)) {
+    let totEcoBP = 0;
+    let totEcoBM = 0;
+    let totBorra = 0;
+    let totProd = 0;
+    let totVols = 0;
+    let maxShiftProd = 1;
+
+    rowsData.forEach((r: any) => {
+      totEcoBP += Number(r.ecoBP) || 0;
+      totEcoBM += Number(r.ecoBM) || 0;
+      totBorra += Number(r.borra) || 0;
+      totProd += Number(r.prod) || 0;
+      totVols += Number(r.totalVolumes) || 0;
+      const nProd = Number(r.prodNoturno) || 0;
+      const dProd = Number(r.prodDiurno) || 0;
+      if (nProd > maxShiftProd) maxShiftProd = nProd;
+      if (dProd > maxShiftProd) maxShiftProd = dProd;
+    });
+
+    const totLosses = totEcoBP + totEcoBM + totBorra;
+
+    // Altura de linha dinâmica para caber 100% em uma folha A4
+    const rowCount = rowsData.length;
+    const isCompact = rowCount > 8;
+    const isUltraCompact = rowCount > 11;
+
+    const rowHeight = isUltraCompact ? '32px' : isCompact ? '38px' : '44px';
+    const barHeight = isUltraCompact ? '12px' : isCompact ? '15px' : '18px';
+    const fontSize = isUltraCompact ? '12px' : isCompact ? '13px' : '14px';
+
+    return `
+      <div id="company-pdf-root" class="company-pdf-canvas">
+        <div class="inner-company-panel">
+          
+          <!-- TOPO: LOGO + BANNER AZUL ESCURO -->
+          <header class="company-header-row">
+            ${buildCompanyLogoHtml(details)}
+            <div class="header-banner-block">
+              <h1 class="header-banner-title">${title.toUpperCase()}</h1>
+              <div class="header-banner-subtitle">${subtitleBanner}</div>
+            </div>
+          </header>
+
+          <!-- SUB-HEADER: LEGENDA CRONOLÓGICA -->
+          <div class="subheader-legend-row">
+            <div class="subheader-title">
+              <span class="icon">📋</span> LEGENDA E DETALHAMENTO CRONOLÓGICO POR DATA
+            </div>
+            <div class="legend-badges">
+              <span class="legend-badge noturno-badge"><span class="badge-dot"></span>NOTURNO</span>
+              <span class="legend-badge diurno-badge"><span class="badge-dot"></span>DIURNO</span>
+            </div>
+          </div>
+
+          <!-- TABELA PRINCIPAL DE DADOS CRONOLÓGICOS -->
+          <div class="table-container">
+            <table class="company-data-table" style="font-size: ${fontSize};">
+              <thead>
+                <tr>
+                  <th style="width: 13%;">DATA</th>
+                  <th style="width: 12%;">ECO B PROD.</th>
+                  <th style="width: 12%;">ECO B MANUT.</th>
+                  <th style="width: 12%;">RESÍDUO BORRA</th>
+                  <th style="width: 14%;">PRODUÇÃO LÍQUIDA</th>
+                  <th style="width: 9%;">VOLUMES</th>
+                  <th style="width: 28%;">DETALHAMENTO POR TURNO / LINHA</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsData
+                  .map((r: any) => {
+                    const dateStr = r.date ? r.date.split('-').reverse().join('/') : r.label || '-';
+                    const noturnoVal = Number(r.prodNoturno) || 0;
+                    const diurnoVal = Number(r.prodDiurno) || 0;
+                    const noturnoPct = Math.max(38, Math.min(100, Math.round((noturnoVal / maxShiftProd) * 100)));
+                    const diurnoPct = Math.max(38, Math.min(100, Math.round((diurnoVal / maxShiftProd) * 100)));
+
+                    return `
+                      <tr style="height: ${rowHeight};">
+                        <td class="cell-bold cell-dark">${dateStr}</td>
+                        <td class="cell-bold cell-blue">${formatAnnexWeight(r.ecoBP)}</td>
+                        <td class="cell-bold cell-purple">${formatAnnexWeight(r.ecoBM)}</td>
+                        <td class="cell-bold cell-amber">${formatAnnexWeight(r.borra)}</td>
+                        <td class="cell-bold cell-green">${formatAnnexWeight(r.prod)}</td>
+                        <td class="cell-bold cell-cyan">${r.totalVolumes || 0}</td>
+                        <td class="cell-shift-bars">
+                          <div class="shift-bars-stack">
+                            <div class="shift-bar noturno-bar" style="width: ${noturnoPct}%; height: ${barHeight};">
+                              <span class="shift-bar-text">NOTURNO: ${formatAnnexWeight(noturnoVal)}</span>
+                            </div>
+                            <div class="shift-bar diurno-bar" style="width: ${diurnoPct}%; height: ${barHeight};">
+                              <span class="shift-bar-text">DIURNO: ${formatAnnexWeight(diurnoVal)}</span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- FAIXA DE TOTAIS DO PERÍODO -->
+          <footer class="period-totals-ribbon">
+            <div class="total-block label-block">TOTAL DO PERÍODO</div>
+            <div class="total-block blue-block">${formatAnnexWeight(totEcoBP)}</div>
+            <div class="total-block purple-block">${formatAnnexWeight(totEcoBM)}</div>
+            <div class="total-block amber-block">${formatAnnexWeight(totBorra)}</div>
+            <div class="total-block green-block">${formatAnnexWeight(totProd)}</div>
+            <div class="total-block cyan-block">${totVols} vols</div>
+            <div class="total-block losses-block">Perdas Totais: ${formatAnnexWeight(totLosses)}</div>
+          </footer>
+
+          <!-- RODAPÉ FINAL COM CARIMBO E SLOGAN -->
+          <div class="footer-meta-row">
+            <div class="footer-stamp">${metaStamp}</div>
+            <div class="footer-slogan">${sloganText}</div>
+          </div>
+
+        </div>
+      </div>
+    `;
+  }
+
+  // CASO 2: DESEMPENHO POR OPERADOR (bi-chart-scatter)
   if (chartType === 'bi-chart-scatter') {
-    const rows = data.map((item) => {
-      const wasteRatio = item.prod + item.wastes > 0 ? ((item.wastes / (item.prod + item.wastes)) * 100).toFixed(2) : '0,00';
-      return [
-        item.name,
-        formatWeight(item.prod || 0),
-        formatWeight(item.wastes || 0),
-        `${wasteRatio}%`,
-        formatMinutes(item.stopsProcess || 0),
-      ];
+    let totProd = 0;
+    let totEcoB = 0;
+    let totEcoBP = 0;
+    let totEcoBM = 0;
+    let maxProd = 1;
+
+    rowsData.forEach((op: any) => {
+      totProd += Number(op.prod) || 0;
+      totEcoB += Number(op.ecoB) || Number(op.wastes) || 0;
+      totEcoBP += Number(op.ecoBP) || 0;
+      totEcoBM += Number(op.ecoBM) || 0;
+      if ((Number(op.prod) || 0) > maxProd) maxProd = Number(op.prod) || 0;
     });
 
-    return {
-      headers: ['Operador', 'Produção Líquida (Kg)', 'Desperdício Total (Kg)', 'Índice de Perda (%)', 'Paradas de Processo'],
-      rows,
-    };
+    const avgRate = totProd + totEcoB > 0 ? ((totEcoB / (totProd + totEcoB)) * 100).toFixed(1) + '%' : '0,0%';
+
+    return `
+      <div id="company-pdf-root" class="company-pdf-canvas">
+        <div class="inner-company-panel">
+          
+          <header class="company-header-row">
+            ${buildCompanyLogoHtml(details)}
+            <div class="header-banner-block">
+              <h1 class="header-banner-title">DESEMPENHO POR OPERADOR: PRODUÇÃO VS ECO B</h1>
+              <div class="header-banner-subtitle">${subtitleBanner}</div>
+            </div>
+          </header>
+
+          <div class="subheader-legend-row">
+            <div class="subheader-title">
+              <span class="icon">📋</span> CLASSIFICAÇÃO INDIVIDUAL DE OPERADORES (ECO A NÃO CONTABILIZADO)
+            </div>
+            <div class="legend-badges">
+              <span class="legend-badge diurno-badge"><span class="badge-dot"></span>PRODUÇÃO LÍQUIDA</span>
+              <span class="legend-badge noturno-badge"><span class="badge-dot"></span>ECO B TOTAL</span>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="company-data-table">
+              <thead>
+                <tr>
+                  <th style="width: 22%;">OPERADOR</th>
+                  <th style="width: 15%;">PRODUÇÃO LÍQUIDA</th>
+                  <th style="width: 14%;">ECO B PROD.</th>
+                  <th style="width: 14%;">ECO B MANUT.</th>
+                  <th style="width: 14%;">ECO B TOTAL</th>
+                  <th style="width: 11%;">TAXA PERDA</th>
+                  <th style="width: 10%;">STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsData
+                  .map((op: any) => {
+                    const prod = Number(op.prod) || 0;
+                    const ecoB = Number(op.ecoB) || Number(op.wastes) || 0;
+                    const rate = prod + ecoB > 0 ? ((ecoB / (prod + ecoB)) * 100).toFixed(1) + '%' : '0,0%';
+                    const statusClass = (prod + ecoB > 0 && ecoB / (prod + ecoB) <= 0.08) ? 'cell-green' : 'cell-amber';
+
+                    return `
+                      <tr>
+                        <td class="cell-bold cell-dark" style="text-align: left; padding-left: 14px;">${op.name || '-'}</td>
+                        <td class="cell-bold cell-green">${formatAnnexWeight(prod)}</td>
+                        <td class="cell-bold cell-blue">${formatAnnexWeight(op.ecoBP || 0)}</td>
+                        <td class="cell-bold cell-purple">${formatAnnexWeight(op.ecoBM || 0)}</td>
+                        <td class="cell-bold cell-dark">${formatAnnexWeight(ecoB)}</td>
+                        <td class="cell-bold ${statusClass}">${rate}</td>
+                        <td class="cell-bold ${statusClass}">${(prod + ecoB > 0 && ecoB / (prod + ecoB) <= 0.08) ? 'CONFORME' : 'ATENÇÃO'}</td>
+                      </tr>
+                    `;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <footer class="period-totals-ribbon">
+            <div class="total-block label-block">TOTAL CONSOLIDADO</div>
+            <div class="total-block green-block">${formatAnnexWeight(totProd)}</div>
+            <div class="total-block blue-block">${formatAnnexWeight(totEcoBP)}</div>
+            <div class="total-block purple-block">${formatAnnexWeight(totEcoBM)}</div>
+            <div class="total-block dark-block">${formatAnnexWeight(totEcoB)}</div>
+            <div class="total-block amber-block">Taxa Média: ${avgRate}</div>
+            <div class="total-block losses-block">Eco B Total: ${formatAnnexWeight(totEcoB)}</div>
+          </footer>
+
+          <div class="footer-meta-row">
+            <div class="footer-stamp">${metaStamp}</div>
+            <div class="footer-slogan">${sloganText}</div>
+          </div>
+
+        </div>
+      </div>
+    `;
   }
 
+  // CASO 3: DISTRIBUIÇÃO PROPORCIONAL DE PARADAS (bi-chart-stacked)
   if (chartType === 'bi-chart-stacked') {
-    const groupName = extraInfo.groupBy === 'operator' ? 'Operador' : 'Linha / Equipamento';
-    const rows = data.map((item) => [
-      item.name,
-      `${item.manutPct || 0}%`,
-      `${item.procPct || 0}%`,
-      `${item.outrosPct || 0}%`,
-      formatMinutes(item.totalMin || 0),
-    ]);
+    let totManut = 0;
+    let totProc = 0;
+    let totOutros = 0;
+    let totGeral = 0;
 
-    return {
-      headers: [groupName, 'Manutenção (%)', 'Processo (%)', 'Outros (%)', 'Tempo Total Parado'],
-      rows,
-    };
-  }
-
-  if (chartType === 'bi-chart-dynamic') {
-    const metricLabel = extraInfo.metricLabel || 'Valor';
-    const rows = data.map((item, idx) => [
-      `#${idx + 1}`,
-      item.name,
-      item.value !== undefined ? (typeof item.value === 'number' ? item.value.toLocaleString('pt-BR') : String(item.value)) : '-',
-    ]);
-
-    return {
-      headers: ['Posição', 'Entidade / Item', metricLabel],
-      rows,
-    };
-  }
-
-  if (chartType === 'ribbon-chart-composed') {
-    let totTipo1 = 0, totTipo2 = 0, totLixoKg = 0, totProd = 0, totRolls = 0;
-    const rows = data.map((item) => {
-      totTipo1 += item.tipo1 || 0;
-      totTipo2 += item.tipo2 || 0;
-      totLixoKg += item.residuoWeight || 0;
-      totProd += item.prod || 0;
-      totRolls += item.rollsCount || 0;
-      const dateStr = item.date ? item.date.split('-').reverse().join('/') : item.label || '';
-      return [
-        dateStr,
-        Number(item.rollsCount || 0).toLocaleString('pt-BR'),
-        formatM2(item.tipo1 || 0),
-        formatM2(item.tipo2 || 0),
-        formatWeight(item.residuoWeight || 0),
-        formatM2(item.prod || 0),
-      ];
+    rowsData.forEach((item: any) => {
+      totManut += Number(item.manut) || 0;
+      totProc += Number(item.proc) || 0;
+      totOutros += Number(item.outros) || 0;
+      totGeral += Number(item.totalMin) || 0;
     });
 
-    return {
-      headers: ['Data', 'Rolos Cortados', 'Não Conf. Tipo 1 (m²)', 'Não Conf. Tipo 2 (m²)', 'Lixo (Kg)', 'Produção Líquida (m²)'],
-      rows,
-      totalsRow: ['TOTAL DO PERÍODO', `${totRolls.toLocaleString('pt-BR')} un`, formatM2(totTipo1), formatM2(totTipo2), formatWeight(totLixoKg), formatM2(totProd)],
-    };
+    return `
+      <div id="company-pdf-root" class="company-pdf-canvas">
+        <div class="inner-company-panel">
+          
+          <header class="company-header-row">
+            ${buildCompanyLogoHtml(details)}
+            <div class="header-banner-block">
+              <h1 class="header-banner-title">DISTRIBUIÇÃO PROPORCIONAL DE PARADAS</h1>
+              <div class="header-banner-subtitle">${subtitleBanner}</div>
+            </div>
+          </header>
+
+          <div class="subheader-legend-row">
+            <div class="subheader-title">
+              <span class="icon">📋</span> ANÁLISE DE INDISPONIBILIDADE E PERDAS DE PROCESSO
+            </div>
+            <div class="legend-badges">
+              <span class="legend-badge purple-badge"><span class="badge-dot"></span>MANUTENÇÃO</span>
+              <span class="legend-badge amber-badge"><span class="badge-dot"></span>PROCESSO</span>
+              <span class="legend-badge cyan-badge"><span class="badge-dot"></span>OUTROS</span>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="company-data-table">
+              <thead>
+                <tr>
+                  <th style="width: 25%;">ENTIDADE / LINHA</th>
+                  <th style="width: 15%;">MANUTENÇÃO (%)</th>
+                  <th style="width: 15%;">PROCESSO (%)</th>
+                  <th style="width: 15%;">OUTROS (%)</th>
+                  <th style="width: 15%;">TEMPO TOTAL</th>
+                  <th style="width: 15%;">DISPONIBILIDADE</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsData
+                  .map((item: any) => {
+                    const totalMin = Number(item.totalMin) || 0;
+                    return `
+                      <tr>
+                        <td class="cell-bold cell-dark" style="text-align: left; padding-left: 14px;">${item.name || '-'}</td>
+                        <td class="cell-bold cell-purple">${item.manutPct || 0}%</td>
+                        <td class="cell-bold cell-amber">${item.procPct || 0}%</td>
+                        <td class="cell-bold cell-cyan">${item.outrosPct || 0}%</td>
+                        <td class="cell-bold cell-dark">${totalMin} min</td>
+                        <td class="cell-bold cell-green">${totalMin < 120 ? 'ALTA' : totalMin < 300 ? 'MÉDIA' : 'BAIXA'}</td>
+                      </tr>
+                    `;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <footer class="period-totals-ribbon">
+            <div class="total-block label-block">TOTAL DE PARADAS</div>
+            <div class="total-block purple-block">Manut: ${totManut} min</div>
+            <div class="total-block amber-block">Proc: ${totProc} min</div>
+            <div class="total-block cyan-block">Outros: ${totOutros} min</div>
+            <div class="total-block losses-block">Total Parado: ${totGeral} min</div>
+          </footer>
+
+          <div class="footer-meta-row">
+            <div class="footer-stamp">${metaStamp}</div>
+            <div class="footer-slogan">${sloganText}</div>
+          </div>
+
+        </div>
+      </div>
+    `;
   }
 
-  if (chartType === 'ribbon-chart-scatter') {
-    const rows = data.map((item: any) => [
-      item.name || '-',
-      item.machine || '-',
-      formatM2(item.prod || 0),
-      formatWeight(item.wastes || 0),
-      formatMinutes(item.stopsProcess || 0),
-    ]);
+  // CASO 4: CORTE DE FITA (ribbon-chart-composed, ribbon-chart-prod, ribbon-chart-waste)
+  if (chartType?.startsWith('ribbon')) {
+    let totProd = 0;
+    let totWaste = 0;
+    let totRolls = 0;
 
-    return {
-      headers: ['Operador', 'Máquina', 'Produção Líquida (m²)', 'Lixo Total (Kg)', 'Tempo Parado'],
-      rows,
-    };
-  }
-
-  if (chartType === 'ribbon-chart-stacked') {
-    const groupName = extraInfo.groupBy === 'operator' ? 'Operador' : 'Máquina';
-    const rows = data.map((item: any) => [
-      item.name || '-',
-      `${item.manutPct || 0}%`,
-      `${item.procPct || 0}%`,
-      `${item.outrosPct || 0}%`,
-    ]);
-
-    return {
-      headers: [groupName, 'Manutenção (%)', 'Processo (%)', 'Outros (%)'],
-      rows,
-    };
-  }
-
-  if (chartType === 'ribbon-chart-prod') {
-    let sumG = 0, sumL = 0, sumW = 0, sumT = 0;
-    const rows = data.map((item) => {
-      sumG += item.ghezzeProd || 0;
-      sumL += item.lintechProd || 0;
-      sumW += item.wutecProd || 0;
-      sumT += item.totalProd || 0;
-      const dateStr = item.date ? item.date.split('-').reverse().join('/') : item.label || '';
-      return [dateStr, formatM2(item.ghezzeProd || 0), formatM2(item.lintechProd || 0), formatM2(item.wutecProd || 0), formatM2(item.totalProd || 0)];
+    rowsData.forEach((r: any) => {
+      totProd += Number(r.prod) || Number(r.total) || 0;
+      totWaste += Number(r.residuoWeight) || Number(r.totalWaste) || 0;
+      totRolls += Number(r.rollsCount) || 0;
     });
 
-    return {
-      headers: ['Data', 'Ghezzi (m²)', 'Lintech (m²)', 'Wultec (m²)', 'Total Produzido (m²)'],
-      rows,
-      totalsRow: ['TOTAL', formatM2(sumG), formatM2(sumL), formatM2(sumW), formatM2(sumT)],
-    };
+    return `
+      <div id="company-pdf-root" class="company-pdf-canvas">
+        <div class="inner-company-panel">
+          
+          <header class="company-header-row">
+            ${buildCompanyLogoHtml(details)}
+            <div class="header-banner-block">
+              <h1 class="header-banner-title">${title.toUpperCase()}</h1>
+              <div class="header-banner-subtitle">${subtitleBanner}</div>
+            </div>
+          </header>
+
+          <div class="subheader-legend-row">
+            <div class="subheader-title">
+              <span class="icon">📋</span> DETALHAMENTO OPERACIONAL DE CORTE DE FITA
+            </div>
+            <div class="legend-badges">
+              <span class="legend-badge diurno-badge"><span class="badge-dot"></span>PRODUÇÃO (m²)</span>
+              <span class="legend-badge amber-badge"><span class="badge-dot"></span>LIXO (Kg)</span>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="company-data-table">
+              <thead>
+                <tr>
+                  <th style="width: 16%;">DATA / ITEM</th>
+                  <th style="width: 18%;">PRODUÇÃO (m²)</th>
+                  <th style="width: 14%;">ROLOS (un)</th>
+                  <th style="width: 16%;">NÃO CONF. 1</th>
+                  <th style="width: 16%;">NÃO CONF. 2</th>
+                  <th style="width: 20%;">LIXO ACUMULADO</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsData
+                  .map((r: any) => {
+                    const dateStr = r.date ? r.date.split('-').reverse().join('/') : r.label || r.name || '-';
+                    const prodM2 = Number(r.prod) || Number(r.total) || 0;
+                    const rolls = Number(r.rollsCount) || 0;
+                    const nc1 = Number(r.tipo1) || 0;
+                    const nc2 = Number(r.tipo2) || 0;
+                    const waste = Number(r.residuoWeight) || Number(r.totalWaste) || 0;
+
+                    return `
+                      <tr>
+                        <td class="cell-bold cell-dark">${dateStr}</td>
+                        <td class="cell-bold cell-green">${formatAnnexM2(prodM2)}</td>
+                        <td class="cell-bold cell-cyan">${rolls.toLocaleString('pt-BR')} un</td>
+                        <td class="cell-bold cell-amber">${formatAnnexM2(nc1)}</td>
+                        <td class="cell-bold cell-purple">${formatAnnexM2(nc2)}</td>
+                        <td class="cell-bold cell-red">${formatAnnexWeight(waste)}</td>
+                      </tr>
+                    `;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <footer class="period-totals-ribbon">
+            <div class="total-block label-block">TOTAL DO PERÍODO FITA</div>
+            <div class="total-block green-block">${formatAnnexM2(totProd)}</div>
+            <div class="total-block cyan-block">${totRolls.toLocaleString('pt-BR')} rolos</div>
+            <div class="total-block losses-block">Lixo Total: ${formatAnnexWeight(totWaste)}</div>
+          </footer>
+
+          <div class="footer-meta-row">
+            <div class="footer-stamp">${metaStamp}</div>
+            <div class="footer-slogan">${sloganText}</div>
+          </div>
+
+        </div>
+      </div>
+    `;
   }
 
-  if (chartType === 'ribbon-chart-waste') {
-    let sumG = 0, sumL = 0, sumW = 0, sumT = 0;
-    const rows = data.map((item) => {
-      sumG += item.ghezzeWaste || 0;
-      sumL += item.lintechWaste || 0;
-      sumW += item.wutecWaste || 0;
-      sumT += item.totalWaste || 0;
-      const dateStr = item.date ? item.date.split('-').reverse().join('/') : item.label || '';
-      return [dateStr, formatWeight(item.ghezzeWaste || 0), formatWeight(item.lintechWaste || 0), formatWeight(item.wutecWaste || 0), formatWeight(item.totalWaste || 0)];
-    });
+  // CASO GENÉRICO / OUTROS GRÁFICOS
+  return `
+    <div id="company-pdf-root" class="company-pdf-canvas">
+      <div class="inner-company-panel">
+        
+        <header class="company-header-row">
+          ${buildCompanyLogoHtml(details)}
+          <div class="header-banner-block">
+            <h1 class="header-banner-title">${title.toUpperCase()}</h1>
+            <div class="header-banner-subtitle">${subtitleBanner}</div>
+          </div>
+        </header>
 
-    return {
-      headers: ['Data', 'Ghezzi (Kg)', 'Lintech (Kg)', 'Wultec (Kg)', 'Total Descarte (Kg)'],
-      rows,
-      totalsRow: ['TOTAL', formatWeight(sumG), formatWeight(sumL), formatWeight(sumW), formatWeight(sumT)],
-    };
-  }
+        <div class="subheader-legend-row">
+          <div class="subheader-title">
+            <span class="icon">📋</span> RELATÓRIO ANALÍTICO INDUSTRIAL
+          </div>
+          <div class="legend-badges">
+            <span class="legend-badge noturno-badge"><span class="badge-dot"></span>INDICADORES</span>
+          </div>
+        </div>
 
-  if (chartType === 'stops-motifs-card') {
-    const rows: string[][] = [];
-    let grandTotalMin = 0;
-    data.forEach((entry: any) => {
-      const mach = Array.isArray(entry) ? entry[0] : entry?.machine || '-';
-      const info = Array.isArray(entry) ? entry[1] : entry;
-      const motifs = info?.motifs || [];
-      motifs.forEach((m: any) => {
-        grandTotalMin += m.min || 0;
-        const dateStr = m.date ? m.date.split('-').reverse().join('/') : '-';
-        rows.push([
-          String(mach),
-          dateStr,
-          m.type || 'Geral',
-          formatMinutes(m.min || 0),
-          m.reason ? (m.reason.length > 45 ? m.reason.substring(0, 42) + '...' : m.reason) : '-',
-          m.operator || '-',
-        ]);
-      });
-    });
+        <div class="table-container">
+          <table class="company-data-table">
+            <thead>
+              <tr>
+                <th style="width: 40%;">ITEM / PARÂMETRO</th>
+                <th style="width: 30%;">VALOR REGISTRADO</th>
+                <th style="width: 30%;">STATUS OPERACIONAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsData.length > 0 ? rowsData.map((d: any, idx: number) => `
+                <tr>
+                  <td class="cell-bold cell-dark" style="text-align: left; padding-left: 16px;">${d.name || d.label || d.date || `Item #${idx + 1}`}</td>
+                  <td class="cell-bold cell-blue">${d.value !== undefined ? String(d.value) : d.prod ? formatAnnexWeight(d.prod) : '-'}</td>
+                  <td class="cell-bold cell-green">CONFORME</td>
+                </tr>
+              `).join('') : `
+                <tr>
+                  <td class="cell-bold cell-dark">Operação Geral Fabril</td>
+                  <td class="cell-bold cell-blue">100% Ativa</td>
+                  <td class="cell-bold cell-green">ESTÁVEL</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
 
-    return {
-      headers: ['Máquina', 'Data', 'Tipo', 'Duração', 'Motivo da Parada', 'Operador'],
-      rows: rows.slice(0, 35),
-      totalsRow: ['TOTAL ACUMULADO', '-', '-', formatMinutes(grandTotalMin), `${rows.length} apontamentos`, '-'],
-    };
-  }
+        <footer class="period-totals-ribbon">
+          <div class="total-block label-block">SISTEMA INTEGRADO</div>
+          <div class="total-block blue-block">Manu Packaging Fitasa & Amazônia</div>
+          <div class="total-block losses-block">Excelência Industrial</div>
+        </footer>
 
-  return null;
+        <div class="footer-meta-row">
+          <div class="footer-stamp">${metaStamp}</div>
+          <div class="footer-slogan">${sloganText}</div>
+        </div>
+
+      </div>
+    </div>
+  `;
 }
 
 /**
- * Draws the official landscape header for Gestão à Vista (A4 Paisagem: 297 x 210 mm)
+ * CSS Exato da Empresa (Cores, Fontes e Layout das Imagens Manu Packaging)
  */
-function drawLandscapeHeader(doc: jsPDF, details: LandscapeChartExportDetails, pageNum: number, totalPages: number) {
-  const pageWidth = 297;
-  const startX = 10;
-  const contentWidth = pageWidth - startX * 2; // 277 mm
+export function getCompanyVisualStyles(): string {
+  return `
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
 
-  // Barra superior decorativa verde/azul
-  doc.setFillColor(...PALETTE.blueBrand);
-  doc.rect(startX, 8, contentWidth, 2.5, 'F');
+    /* Container exato em A4 Paisagem (1123px x 794px @ 96 DPI) */
+    .company-pdf-canvas {
+      position: relative;
+      width: 1123px !important;
+      height: 794px !important;
+      min-width: 1123px !important;
+      max-width: 1123px !important;
+      min-height: 794px !important;
+      max-height: 794px !important;
+      overflow: hidden !important;
+      background: linear-gradient(135deg, #0d2430 0%, #173e52 50%, #0d2430 100%);
+      padding: 20px 24px 22px 24px;
+      font-family: 'Barlow Condensed', -apple-system, sans-serif;
+      user-select: none;
+    }
 
-  // Logotipo / Título da Empresa
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(...PALETTE.navyDark);
-  doc.text('MANUPACKAGING', startX, 17.5);
+    /* Painel interno claro com cantos arredondados e borda industrial */
+    .inner-company-panel {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(180deg, #f0f5f8 0%, #e5eef3 100%);
+      border: 4px solid #164054;
+      border-radius: 20px;
+      padding: 16px 22px 14px 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: inset 0 0 0 2px #d3e1eb, 0 10px 25px rgba(0,0,0,0.35);
+    }
 
-  doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...PALETTE.slateMuted);
-  doc.text('QUADRO DE GESTÃO À VISTA DA PRODUÇÃO • FITAS & AMAZÔNIA', startX, 22);
+    /* ================= TOPO (LOGO + BANNER) ================= */
+    .company-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
 
-  // Título do Indicador em destaque
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(...PALETTE.blueBrand);
-  doc.text(details.title.toUpperCase(), pageWidth - startX, 17.5, { align: 'right' });
+    /* Logo da Manu Packaging */
+    .company-logo-wrap {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
 
-  // Metadados do período e filtros
-  const filters = details.extraInfo?.filters || {};
-  const metaParts = [
-    `📅 Ref: ${details.period || 'Mês Vigente'}`,
-    filters.machine ? `⚙️ Máq: ${filters.machine}` : null,
-    filters.operator ? `👤 Oper: ${filters.operator}` : null,
-    filters.shift ? `🕒 Turno: ${filters.shift}` : null,
-    `🕒 Emissão: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
-    `Pág ${pageNum}/${totalPages}`,
-  ].filter(Boolean);
+    .custom-brand-logo {
+      max-height: 64px;
+      max-width: 260px;
+      object-fit: contain;
+    }
 
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...PALETTE.slateMuted);
-  doc.text(metaParts.join('   |   '), pageWidth - startX, 22, { align: 'right' });
+    .manu-logo-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
 
-  // Linha divisória
-  doc.setDrawColor(...PALETTE.border);
-  doc.setLineWidth(0.3);
-  doc.line(startX, 25, startX + contentWidth, 25);
+    .manu-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .manu-bars .bar {
+      width: 13px;
+      height: 48px;
+      background-color: #1d5b73;
+      border-radius: 5px 2px 0 0;
+      position: relative;
+    }
+
+    .manu-bars .bar-1::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -5px;
+      width: 8px;
+      height: 8px;
+      background-color: #1d5b73;
+      border-radius: 3px 0 0 0;
+    }
+
+    .manu-bars .bar-3::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      right: -7px;
+      width: 9px;
+      height: 9px;
+      background-color: #1d5b73;
+      border-radius: 0 0 3px 0;
+    }
+
+    .manu-texts {
+      display: flex;
+      flex-direction: column;
+      line-height: 0.95;
+    }
+
+    .manu-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .manu-name {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 700;
+      font-size: 26px;
+      color: #1d5b73;
+      letter-spacing: -0.5px;
+    }
+
+    .manu-leaf {
+      width: 20px;
+      height: 18px;
+      fill: #a59338;
+    }
+
+    .packaging-name {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 600;
+      font-size: 28px;
+      color: #1d5b73;
+      letter-spacing: -0.5px;
+    }
+
+    .fitasa-subtitle {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: #1d5b73;
+      letter-spacing: 1.5px;
+      margin-top: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Banner azul escuro com cantos arredondados */
+    .header-banner-block {
+      background: linear-gradient(135deg, #123344 0%, #194a61 100%);
+      border-radius: 14px;
+      padding: 10px 24px;
+      color: #ffffff;
+      text-align: right;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.22);
+      flex: 1;
+      max-width: 720px;
+    }
+
+    .header-banner-title {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 25px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      line-height: 1.1;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .header-banner-subtitle {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: #9acd32;
+      margin-top: 3px;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ================= SUB-HEADER (LEGENDA) ================= */
+    .subheader-legend-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .subheader-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #13394b;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .subheader-title .icon {
+      font-size: 15px;
+    }
+
+    .legend-badges {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .legend-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      font-family: 'Montserrat', sans-serif;
+      letter-spacing: 0.4px;
+      color: #ffffff;
+    }
+
+    .noturno-badge {
+      background-color: #1a5068;
+    }
+
+    .diurno-badge {
+      background-color: #6da83c;
+    }
+
+    .purple-badge {
+      background-color: #6366f1;
+    }
+
+    .amber-badge {
+      background-color: #d97706;
+    }
+
+    .cyan-badge {
+      background-color: #0284c7;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      background-color: #ffffff;
+      border-radius: 50%;
+    }
+
+    /* ================= TABELA DE DADOS ================= */
+    .table-container {
+      flex: 1;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid #164054;
+      background-color: #ffffff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .company-data-table {
+      width: 100%;
+      height: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .company-data-table thead tr {
+      background-color: #164054;
+      color: #ffffff;
+      height: 36px;
+    }
+
+    .company-data-table th {
+      padding: 6px 4px;
+      text-align: center;
+      font-weight: 800;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.3px;
+      border-right: 1px solid rgba(255,255,255,0.22);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .company-data-table th:last-child {
+      border-right: none;
+    }
+
+    .company-data-table tbody tr {
+      border-bottom: 1px solid #d2e0e9;
+    }
+
+    .company-data-table tbody tr:nth-child(odd) {
+      background-color: #ffffff;
+    }
+
+    .company-data-table tbody tr:nth-child(even) {
+      background-color: #eef4f8;
+    }
+
+    .company-data-table td {
+      padding: 3px 6px;
+      text-align: center;
+      vertical-align: middle;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-right: 1px solid #e2ebf1;
+    }
+
+    .company-data-table td:last-child {
+      border-right: none;
+    }
+
+    /* Cores das métricas exatas do design */
+    .cell-bold {
+      font-weight: 800;
+      font-family: 'Montserrat', sans-serif;
+    }
+
+    .cell-dark {
+      color: #0f172a;
+    }
+
+    .cell-blue {
+      color: #0284c7;
+    }
+
+    .cell-purple {
+      color: #6366f1;
+    }
+
+    .cell-amber {
+      color: #d97706;
+    }
+
+    .cell-green {
+      color: #16a34a;
+    }
+
+    .cell-cyan {
+      color: #0891b2;
+    }
+
+    .cell-red {
+      color: #dc2626;
+    }
+
+    /* Barras de turnos Noturno / Diurno */
+    .cell-shift-bars {
+      padding: 3px 8px !important;
+    }
+
+    .shift-bars-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    .shift-bar {
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      min-width: 90px;
+      overflow: hidden;
+    }
+
+    .noturno-bar {
+      background: linear-gradient(90deg, #1a5068 0%, #206785 100%);
+    }
+
+    .diurno-bar {
+      background: linear-gradient(90deg, #5ea832 0%, #72be3c 100%);
+    }
+
+    .shift-bar-text {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 10.5px;
+      font-weight: 800;
+      color: #ffffff;
+      white-space: nowrap;
+      letter-spacing: 0.3px;
+    }
+
+    /* ================= FAIXA DE TOTAIS DO PERÍODO ================= */
+    .period-totals-ribbon {
+      display: flex;
+      align-items: stretch;
+      height: 44px;
+      background: #0d222d;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+      margin-top: 8px;
+      border: 1px solid #1a4b63;
+      flex-shrink: 0;
+    }
+
+    .total-block {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      color: #ffffff;
+      padding: 0 14px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .label-block {
+      background: #0f2736;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      padding: 0 18px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .blue-block {
+      background: #18526b;
+      font-size: 14.5px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .purple-block {
+      background: #4f46e5;
+      font-size: 14.5px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .amber-block {
+      background: #d97706;
+      font-size: 14.5px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .green-block {
+      background: #65a30d;
+      font-size: 14.5px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .cyan-block {
+      background: #0284c7;
+      font-size: 14.5px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .dark-block {
+      background: #1e293b;
+      font-size: 14.5px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .losses-block {
+      background: #091720;
+      margin-left: auto;
+      font-size: 14px;
+      padding: 0 20px;
+      color: #ffffff;
+      border-left: 2px solid #204e66;
+    }
+
+    /* ================= RODAPÉ FINAL ================= */
+    .footer-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+
+    .footer-stamp {
+      font-size: 12px;
+      font-weight: 700;
+      color: #2b5066;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    .footer-slogan {
+      font-size: 14px;
+      font-weight: 800;
+      color: #13394b;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+  `;
 }
 
 /**
- * Draws the official landscape footer
- */
-function drawLandscapeFooter(doc: jsPDF, pageNum: number, totalPages: number) {
-  const pageWidth = 297;
-  const pageHeight = 210;
-  const startX = 10;
-  const contentWidth = pageWidth - startX * 2;
-  const footerY = pageHeight - 7;
-
-  doc.setDrawColor(...PALETTE.border);
-  doc.setLineWidth(0.3);
-  doc.line(startX, footerY - 2.5, startX + contentWidth, footerY - 2.5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.setTextColor(...PALETTE.slateMuted);
-  doc.text('MANUPACKAGING FITAS & AMAZÔNIA • IMPRESSÃO PARA QUADRO DE GESTÃO À VISTA (A4 HORIZONTAL)', startX, footerY + 1);
-  doc.text(`Documento Operacional Oficial • Pág ${pageNum} de ${totalPages}`, pageWidth - startX, footerY + 1, { align: 'right' });
-}
-
-/**
- * Generates and downloads the Landscape / Horizontal PDF specifically designed
- * to be printed and inserted into acrylic holders on the Gestão à Vista wall board.
+ * Função de exportação para PDF em Formato A4 Paisagem (297 x 210 mm)
+ * com 100% de ocupação da folha e visual oficial da empresa
  */
 export async function downloadChartAsLandscapePDF(details: LandscapeChartExportDetails): Promise<boolean> {
-  const { id, title, period = new Date().toISOString().slice(0, 7) } = details;
+  const { title } = details;
 
-  // Prioritize active fullscreen chart container if visible
-  let targetElement = document.getElementById(id);
-  const fsModal = document.getElementById('fullscreen-chart-modal-body') || document.getElementById('ribbon-fullscreen-chart-modal-body');
-  if (fsModal && fsModal.offsetParent !== null) {
-    targetElement = fsModal;
+  // Container temporário fixo
+  const container = document.createElement('div');
+  container.id = 'company-pdf-render-canvas';
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  container.style.width = '1123px';
+  container.style.height = '794px';
+  container.style.zIndex = '-9999';
+  container.style.overflow = 'hidden';
+
+  // Injeta estilos da empresa
+  const styleEl = document.createElement('style');
+  styleEl.innerHTML = getCompanyVisualStyles();
+  container.appendChild(styleEl);
+
+  const innerWrapper = document.createElement('div');
+  innerWrapper.innerHTML = buildCompanyIndustrialPosterHtml(details);
+
+  while (innerWrapper.firstChild) {
+    container.appendChild(innerWrapper.firstChild);
   }
 
-  if (!targetElement) {
-    console.error(`[downloadChartAsLandscapePDF] Elemento com ID "${id}" não encontrado no DOM.`);
-    return false;
-  }
-
-  // Hide interactive buttons during capture
-  const actionButtons = targetElement.querySelectorAll<HTMLElement>(
-    '.chart-download-btn, [data-no-download="true"], button[title*="Baixar"], button[title*="Download"], button[title*="Visualizar em Tela Cheia"], button[title*="Fechar"], button[title*="Exclusivo"]'
-  );
-  const hiddenBtnPrevDisplay = new Map<HTMLElement, string>();
-  actionButtons.forEach((btn) => {
-    hiddenBtnPrevDisplay.set(btn, btn.style.display);
-    btn.style.display = 'none';
-  });
+  document.body.appendChild(container);
 
   try {
-    // 1. Capture the chart at high resolution (scale 2.5)
-    const canvas = await html2canvas(targetElement, {
-      backgroundColor: '#ffffff',
-      scale: 2.5,
-      logging: false,
+    // Aguarda fontes
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Captura com html2canvas em Ultra HD
+    const canvas = await html2canvas(container, {
+      scale: 2,
       useCORS: true,
       allowTaint: true,
-      onclone: (clonedDoc) => {
-        try {
-          const styleElements = clonedDoc.querySelectorAll('style');
-          styleElements.forEach((style) => {
-            if (style.textContent && (style.textContent.includes('oklch') || style.textContent.includes('color-mix'))) {
-              style.textContent = style.textContent
-                .replace(/oklch\([^)]+\)/g, 'rgb(100, 116, 139)')
-                .replace(/color-mix\([^)]+\)/g, 'rgb(100, 116, 139)');
-            }
-          });
-        } catch (e) {
-          // ignore
-        }
-
-        const clonedEl = clonedDoc.getElementById(id);
-        if (clonedEl) {
-          clonedEl.style.height = 'auto';
-          clonedEl.style.minHeight = 'auto';
-          clonedEl.style.maxHeight = 'none';
-          clonedEl.style.overflow = 'visible';
-          clonedEl.style.boxShadow = 'none';
-          clonedEl.style.border = 'none';
-          clonedEl.style.padding = '8px';
-        }
-      },
+      backgroundColor: '#0d2430',
+      width: 1123,
+      height: 794,
+      windowWidth: 1123,
+      windowHeight: 794,
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0
     });
 
-    const chartImgData = canvas.toDataURL('image/png');
-    if (!chartImgData || chartImgData === 'data:,') {
-      throw new Error('Canvas vazio retornado ao capturar o gráfico.');
-    }
-
-    // 2. CRITICAL: A4 LANDSCAPE (HORIZONTAL) = 297mm x 210mm
-    const doc = new jsPDF({
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+    const pdf = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
-      format: 'a4',
+      format: 'a4'
     });
 
-    const pageWidth = 297;
-    const startX = 10;
-    const contentWidth = pageWidth - startX * 2; // 277 mm wide!
+    // 100% da folha A4 Paisagem (297mm x 210mm)
+    pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210);
 
-    const kpiCards = computeHeaderKPIs(details);
-    const tableData = buildAnalyticalTable(details);
+    const cleanTitle = (title || 'Relatorio_Grafico_ManuPackaging')
+      .replace(/[^a-zA-Z0-9_\u00C0-\u00FF]/g, '_')
+      .replace(/__+/g, '_');
+    const fileName = `${cleanTitle}_${details.period || 'Periodo'}.pdf`;
 
-    const hasMultiPages = Boolean(tableData && tableData.rows.length > 5);
-    const totalPages = hasMultiPages ? 2 : 1;
-
-    // --- PÁGINA 1: QUADRO DE GESTÃO À VISTA ---
-    drawLandscapeHeader(doc, details, 1, totalPages);
-    drawLandscapeFooter(doc, 1, totalPages);
-
-    // 4 CARDS DE KPI EXECUTIVOS (Y: 28 a 43 mm, Altura: 15 mm)
-    const kpiY = 28;
-    const kpiH = 15;
-    const kpiGap = 3;
-    const numCards = kpiCards.length;
-    const cardW = (contentWidth - (numCards - 1) * kpiGap) / numCards;
-
-    kpiCards.forEach((kpi, idx) => {
-      const cX = startX + idx * (cardW + kpiGap);
-
-      // Card Background
-      doc.setFillColor(...kpi.bg);
-      doc.setDrawColor(...PALETTE.border);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(cX, kpiY, cardW, kpiH, 2, 2, 'FD');
-
-      // Top colored indicator bar
-      doc.setFillColor(...kpi.color);
-      doc.roundedRect(cX, kpiY, cardW, 1, 0.5, 0.5, 'F');
-
-      // Label
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5.8);
-      doc.setTextColor(...PALETTE.slateMuted);
-      doc.text(kpi.label, cX + 3, kpiY + 4.5);
-
-      // Big Bold Value (visível à distância no acrílico)
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(...kpi.color);
-      doc.text(kpi.value, cX + 3, kpiY + 9.5);
-
-      // Subtitle
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5);
-      doc.setTextColor(...PALETTE.navyMedium);
-      const truncatedSub = kpi.sub.length > 38 ? kpi.sub.substring(0, 36) + '...' : kpi.sub;
-      doc.text(truncatedSub, cX + 3, kpiY + 13);
-    });
-
-    // GRÁFICO GIGANTE EM FORMATO HORIZONTAL (Y: 46 a 148 mm, Altura: 102 mm!)
-    const chartY = 46;
-    const chartH = tableData && tableData.rows.length <= 5 ? 88 : 100;
-
-    // Moldura branca elegante para o gráfico
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...PALETTE.border);
-    doc.setLineWidth(0.4);
-    doc.roundedRect(startX, chartY, contentWidth, chartH, 2.5, 2.5, 'FD');
-
-    // Imagem do gráfico ocupando toda a largura horizontal útil
-    doc.addImage(chartImgData, 'PNG', startX + 2, chartY + 2, contentWidth - 4, chartH - 4);
-
-    // TABELA INFERIOR / MINI-RESUMO (Y: chartY + chartH + 3.5)
-    const tableStartY = chartY + chartH + 3.5;
-
-    if (tableData && tableData.rows.length <= 5) {
-      // Tabela cabe diretamente na Página 1
-      autoTable(doc, {
-        head: [tableData.headers],
-        body: tableData.totalsRow ? [...tableData.rows, tableData.totalsRow] : tableData.rows,
-        startY: tableStartY,
-        margin: { left: startX, right: startX },
-        theme: 'grid',
-        styles: {
-          font: 'helvetica',
-          fontSize: 6.8,
-          cellPadding: 1.6,
-          textColor: [15, 23, 42],
-          lineColor: [226, 232, 240],
-          lineWidth: 0.2,
-        },
-        headStyles: {
-          fillColor: PALETTE.navyMedium,
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          fontSize: 7.2,
-          halign: 'left',
-        },
-        alternateRowStyles: {
-          fillColor: [248, 250, 252],
-        },
-        didParseCell: (hookData) => {
-          if (tableData.totalsRow && hookData.section === 'body' && hookData.row.index === tableData.rows.length) {
-            hookData.cell.styles.fillColor = [240, 253, 244]; // Destaque verde suave
-            hookData.cell.styles.fontStyle = 'bold';
-            hookData.cell.styles.textColor = PALETTE.emerald;
-          }
-        },
-      });
-    } else if (tableData && tableData.rows.length > 5) {
-      // Mini-resumo na Página 1 (visível na folha principal)
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(...PALETTE.border);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(startX, tableStartY, contentWidth, 38, 2, 2, 'FD');
-
-      // Título da faixa
-      doc.setFillColor(...PALETTE.navyDark);
-      doc.roundedRect(startX, tableStartY, contentWidth, 6, 2, 2, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      doc.setTextColor(255, 255, 255);
-      doc.text('RESUMO CONSOLIDADO • LEGENDA ANALÍTICA COMPLETA NA PÁGINA 2', startX + 3.5, tableStartY + 4.2);
-
-      // Amostra dos 3 primeiros registros e totais
-      const sampleRows = tableData.rows.slice(0, 3);
-      if (tableData.totalsRow) sampleRows.push(tableData.totalsRow);
-
-      autoTable(doc, {
-        head: [tableData.headers],
-        body: sampleRows,
-        startY: tableStartY + 6,
-        margin: { left: startX, right: startX },
-        theme: 'plain',
-        styles: {
-          font: 'helvetica',
-          fontSize: 6.5,
-          cellPadding: 1.4,
-          textColor: [30, 41, 59],
-        },
-        headStyles: {
-          textColor: PALETTE.slateMuted,
-          fontStyle: 'bold',
-          fontSize: 6.5,
-        },
-        didParseCell: (hookData) => {
-          if (tableData.totalsRow && hookData.section === 'body' && hookData.row.index === sampleRows.length - 1) {
-            hookData.cell.styles.fontStyle = 'bold';
-            hookData.cell.styles.textColor = PALETTE.emerald;
-          }
-        },
-      });
-
-      // --- PÁGINA 2: TABELA ANALÍTICA DETALHADA EM FORMATO HORIZONTAL ---
-      doc.addPage('a4', 'landscape');
-      drawLandscapeHeader(doc, details, 2, totalPages);
-      drawLandscapeFooter(doc, 2, totalPages);
-
-      // Título da página 2
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(...PALETTE.navyDark);
-      doc.text(`DETALHAMENTO ANALÍTICO CRONOLÓGICO • ${title.toUpperCase()}`, startX, 32);
-
-      autoTable(doc, {
-        head: [tableData.headers],
-        body: tableData.totalsRow ? [...tableData.rows, tableData.totalsRow] : tableData.rows,
-        startY: 36,
-        margin: { left: startX, right: startX, bottom: 15 },
-        theme: 'grid',
-        styles: {
-          font: 'helvetica',
-          fontSize: 6.8,
-          cellPadding: 1.8,
-          textColor: [15, 23, 42],
-          lineColor: [226, 232, 240],
-          lineWidth: 0.2,
-        },
-        headStyles: {
-          fillColor: PALETTE.navyMedium,
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          fontSize: 7.2,
-          halign: 'left',
-        },
-        alternateRowStyles: {
-          fillColor: [248, 250, 252],
-        },
-        didParseCell: (hookData) => {
-          if (tableData.totalsRow && hookData.section === 'body' && hookData.row.index === tableData.rows.length) {
-            hookData.cell.styles.fillColor = [240, 253, 244];
-            hookData.cell.styles.fontStyle = 'bold';
-            hookData.cell.styles.textColor = PALETTE.emerald;
-          }
-        },
-        didDrawPage: (hookData) => {
-          if (hookData.pageNumber > 1) {
-            drawLandscapeHeader(doc, details, hookData.pageNumber, totalPages);
-            drawLandscapeFooter(doc, hookData.pageNumber, totalPages);
-          }
-        },
-      });
-    }
-
-    // 3. Salva com nome limpo e descritivo
-    const cleanTitle = title
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .replace(/_+/g, '_');
-    const fileName = `Gestao_a_Vista_${cleanTitle}_${period}.pdf`;
-
-    doc.save(fileName);
+    pdf.save(fileName);
     return true;
   } catch (err) {
-    console.error('[downloadChartAsLandscapePDF] Erro ao exportar PDF horizontal:', err);
-    alert('Não foi possível gerar o PDF em formato horizontal. Por favor, tente novamente.');
+    console.error('Erro ao gerar PDF da empresa:', err);
+    alert('Não foi possível gerar o PDF da empresa. Por favor, tente novamente.');
     return false;
   } finally {
-    // Restaura exibição dos botões na tela
-    actionButtons.forEach((btn) => {
-      btn.style.display = hiddenBtnPrevDisplay.get(btn) ?? '';
-    });
+    if (container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
   }
 }
+
+/**
+ * Alias de compatibilidade
+ */
+export const exportarGraficoParaPDF = downloadChartAsLandscapePDF;

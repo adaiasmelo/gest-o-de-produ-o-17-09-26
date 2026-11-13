@@ -555,8 +555,8 @@ export interface ProportionalItemCalculated {
   durationHours: number;
   sharePercent: number; // ex: 25.0%
   producedM2: number;
-  nominalTargetDailyM2: number;
-  proportionalTargetM2: number;
+  nominalTargetDailyM2: number; // Meta nominal de turno cheio (8,8h)
+  proportionalTargetM2: number; // Meta líquida ajustada após rateio e abatimento de paradas
   attainmentPercent: number;
   hasMetGoal: boolean;
 }
@@ -564,17 +564,47 @@ export interface ProportionalItemCalculated {
 export interface ProportionalCalculationResult {
   isProportional: boolean;
   itemCount: number;
-  totalCompositeTargetM2: number;
+  nominalBaseTargetM2: number; // Meta nominal sem abatimento de paradas
+  deductedStoppageTargetM2: number; // m² abatidos da meta devido às paradas registradas
+  totalCompositeTargetM2: number; // Meta líquida justa final após abater paradas
   totalProducedM2: number;
   overallAttainmentPercent: number;
   totalHours: number;
+  grossShiftHours: number; // Turno padrão (ex: 8.8h)
+  stoppedMinutes: number; // Minutos parados apontados (almoço, intervalo, reunião, manutenção, etc.)
+  stoppedHours: number; // Horas paradas
+  netWorkingHours: number; // Horas produtivas líquidas disponíveis
+  availabilityFactor: number; // Fator de disponibilidade OEE (netWorkingHours / grossShiftHours)
   hasMetOverallGoal: boolean;
   items: ProportionalItemCalculated[];
 }
 
 /**
+ * Calcula os minutos totais de um conjunto de paradas
+ */
+export function calcStopsTotalMinutes(stops?: Array<{ de?: string; ate?: string; durationMinutes?: number; isAvulso?: boolean }>): number {
+  if (!stops || !Array.isArray(stops)) return 0;
+  return stops.reduce((sum, item) => {
+    const manual = Number(item.durationMinutes);
+    if (item.isAvulso || (!item.de && !item.ate)) {
+      return sum + (isNaN(manual) ? 0 : manual);
+    }
+    if (item.de && item.ate) {
+      const [h1, m1] = item.de.split(':').map(Number);
+      const [h2, m2] = item.ate.split(':').map(Number);
+      if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
+        let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+        if (diff < 0) diff += 24 * 60;
+        return sum + (diff > 0 ? diff : (isNaN(manual) ? 0 : manual));
+      }
+    }
+    return sum + (isNaN(manual) ? 0 : manual);
+  }, 0);
+}
+
+/**
  * Calcula a meta composta proporcional do dia para cortes com múltiplos formatos/OPs/materiais
- * Exemplo real: 48x40m (meta nominal 31.623m²) até às 9h + 48x100m (meta nominal 71.386m²) no restante do dia
+ * com abatimento proporcional de paradas de máquina (almoço, intervalos, reuniões, manutenção, processo, etc.).
  */
 export function calculateProportionalRibbonGoals(params: {
   machine?: string;
@@ -595,23 +625,42 @@ export function calculateProportionalRibbonGoals(params: {
 }): ProportionalCalculationResult {
   const machine = params.machine || '';
   const rawItems = params.items || [];
-  const defaultShift = params.defaultShiftHours ?? 8.8;
+  const grossShiftHours = params.defaultShiftHours ?? 8.8;
   const fallback = params.fallbackTargetM2 || 50000;
 
+  // 1. Calcula o impacto das paradas no tempo disponível do turno
+  const stoppedMinutes = Math.max(0, Number(params.stoppedMinutes) || 0);
+  const stoppedHours = Number((stoppedMinutes / 60).toFixed(2));
+  const netWorkingHours = Math.max(0, Number((grossShiftHours - stoppedHours).toFixed(2)));
+  
+  // Fator de disponibilidade da máquina (entre 0 e 1)
+  const availabilityFactor = grossShiftHours > 0 
+    ? Math.min(1, Math.max(0, netWorkingHours / grossShiftHours)) 
+    : 1;
+
   if (rawItems.length === 0) {
+    const adjustedTarget = Math.round(fallback * availabilityFactor);
+    const deducted = Math.max(0, fallback - adjustedTarget);
     return {
       isProportional: false,
       itemCount: 0,
-      totalCompositeTargetM2: fallback,
+      nominalBaseTargetM2: fallback,
+      deductedStoppageTargetM2: deducted,
+      totalCompositeTargetM2: adjustedTarget,
       totalProducedM2: 0,
       overallAttainmentPercent: 0,
-      totalHours: defaultShift,
+      totalHours: netWorkingHours,
+      grossShiftHours,
+      stoppedMinutes,
+      stoppedHours,
+      netWorkingHours,
+      availabilityFactor: Number(availabilityFactor.toFixed(3)),
       hasMetOverallGoal: false,
       items: []
     };
   }
 
-  // 1. Mapeia dados nominais e durações de cada OP/item
+  // 2. Mapeia dados nominais e durações de cada OP/item
   const mapped = rawItems.map((it, idx) => {
     const id = it.id || `item_${idx}`;
     const preset = findTechnicalRibbonPreset({
@@ -648,11 +697,15 @@ export function calculateProportionalRibbonGoals(params: {
 
   const totalProd = mapped.reduce((acc, it) => acc + it.producedM2, 0);
 
-  // Se houver apenas 1 item/OP
+  // 3. Se houver apenas 1 item/OP
   if (mapped.length === 1) {
     const single = mapped[0];
-    const target = single.nominalTargetDailyM2;
-    const pct = target > 0 ? (single.producedM2 / target) * 100 : 0;
+    const nominal = single.nominalTargetDailyM2;
+    // Abate o tempo de paradas na meta (ex: almoço, reunião, intervalo)
+    const adjustedTarget = Math.round(nominal * availabilityFactor);
+    const deducted = Math.max(0, nominal - adjustedTarget);
+    const pct = adjustedTarget > 0 ? (single.producedM2 / adjustedTarget) * 100 : 0;
+    
     const itemCalc: ProportionalItemCalculated = {
       id: single.id,
       orderNumber: single.orderNumber,
@@ -662,65 +715,81 @@ export function calculateProportionalRibbonGoals(params: {
       formatLabel: single.formatLabel,
       startTime: single.startTime,
       endTime: single.endTime,
-      durationHours: single.specifiedHours || defaultShift,
+      durationHours: single.specifiedHours || netWorkingHours,
       sharePercent: 100,
       producedM2: single.producedM2,
-      nominalTargetDailyM2: target,
-      proportionalTargetM2: target,
+      nominalTargetDailyM2: nominal,
+      proportionalTargetM2: adjustedTarget,
       attainmentPercent: Number(pct.toFixed(1)),
-      hasMetGoal: single.producedM2 >= target && target > 0
+      hasMetGoal: single.producedM2 >= adjustedTarget && adjustedTarget > 0
     };
 
     return {
       isProportional: false,
       itemCount: 1,
-      totalCompositeTargetM2: target,
+      nominalBaseTargetM2: nominal,
+      deductedStoppageTargetM2: deducted,
+      totalCompositeTargetM2: adjustedTarget,
       totalProducedM2: single.producedM2,
       overallAttainmentPercent: Number(pct.toFixed(1)),
-      totalHours: single.specifiedHours || defaultShift,
-      hasMetOverallGoal: single.producedM2 >= target && target > 0,
+      totalHours: single.specifiedHours || netWorkingHours,
+      grossShiftHours,
+      stoppedMinutes,
+      stoppedHours,
+      netWorkingHours,
+      availabilityFactor: Number(availabilityFactor.toFixed(3)),
+      hasMetOverallGoal: single.producedM2 >= adjustedTarget && adjustedTarget > 0,
       items: [itemCalc]
     };
   }
 
-  // Múltiplos itens: cálculo proporcional
-  // Verifica se o usuário informou horários ou horas explícitas
+  // 4. Múltiplos itens: cálculo proporcional ponderado com abatimento de paradas
   const hasAnyHours = mapped.some(it => it.specifiedHours > 0);
   let totalCalculatedHours = 0;
   let shares: number[] = [];
 
+  const effectiveShiftToDistribute = netWorkingHours > 0 ? netWorkingHours : grossShiftHours;
+
   if (hasAnyHours) {
     const knownSum = mapped.reduce((acc, it) => acc + (it.specifiedHours > 0 ? it.specifiedHours : 0), 0);
     const unassignedCount = mapped.filter(it => !(it.specifiedHours > 0)).length;
-    const remainingTime = Math.max(0, defaultShift - knownSum);
+    const remainingTime = Math.max(0, effectiveShiftToDistribute - knownSum);
 
     const filledHours = mapped.map(it => {
       if (it.specifiedHours > 0) return it.specifiedHours;
       return unassignedCount > 0 ? remainingTime / unassignedCount : 0;
     });
 
-    totalCalculatedHours = filledHours.reduce((acc, h) => acc + h, 0) || defaultShift;
+    totalCalculatedHours = filledHours.reduce((acc, h) => acc + h, 0) || effectiveShiftToDistribute;
     shares = filledHours.map(h => (totalCalculatedHours > 0 ? h / totalCalculatedHours : 1 / mapped.length));
   } else {
     // Proporção baseada no tempo ideal de engenharia (produzido / ritmo nominal)
     const idealHours = mapped.map(it => {
       if (it.nominalTargetDailyM2 > 0 && it.producedM2 > 0) {
-        return (it.producedM2 / it.nominalTargetDailyM2) * defaultShift;
+        return (it.producedM2 / it.nominalTargetDailyM2) * effectiveShiftToDistribute;
       }
       return 1;
     });
 
     const sumIdeal = idealHours.reduce((acc, h) => acc + h, 0);
-    totalCalculatedHours = defaultShift;
+    totalCalculatedHours = effectiveShiftToDistribute;
     shares = idealHours.map(h => (sumIdeal > 0 ? h / sumIdeal : 1 / mapped.length));
   }
 
-  let compositeTargetSum = 0;
+  let nominalCompositeSum = 0;
+  let adjustedCompositeSum = 0;
+
   const itemsResult: ProportionalItemCalculated[] = mapped.map((it, idx) => {
     const share = shares[idx] || 0;
     const sharePct = Number((share * 100).toFixed(1));
-    const proportionalTarget = Math.round(it.nominalTargetDailyM2 * share);
-    compositeTargetSum += proportionalTarget;
+    
+    // Meta proporcional nominal da OP (sem abater parada)
+    const opNominalTarget = Math.round(it.nominalTargetDailyM2 * share);
+    nominalCompositeSum += opNominalTarget;
+
+    // Meta proporcional líquida justa (abatendo o tempo de paradas de máquina)
+    const proportionalTarget = Math.round(it.nominalTargetDailyM2 * share * availabilityFactor);
+    adjustedCompositeSum += proportionalTarget;
 
     const attainment = proportionalTarget > 0 ? (it.producedM2 / proportionalTarget) * 100 : 0;
     const itemHours = hasAnyHours
@@ -746,16 +815,24 @@ export function calculateProportionalRibbonGoals(params: {
     };
   });
 
-  const finalCompositeTarget = Math.max(1, compositeTargetSum);
+  const finalCompositeTarget = Math.max(1, adjustedCompositeSum);
+  const deductedTotal = Math.max(0, nominalCompositeSum - finalCompositeTarget);
   const overallAttainment = finalCompositeTarget > 0 ? (totalProd / finalCompositeTarget) * 100 : 0;
 
   return {
     isProportional: true,
     itemCount: itemsResult.length,
+    nominalBaseTargetM2: nominalCompositeSum,
+    deductedStoppageTargetM2: deductedTotal,
     totalCompositeTargetM2: finalCompositeTarget,
     totalProducedM2: totalProd,
     overallAttainmentPercent: Number(overallAttainment.toFixed(1)),
     totalHours: Number(totalCalculatedHours.toFixed(1)),
+    grossShiftHours,
+    stoppedMinutes,
+    stoppedHours,
+    netWorkingHours,
+    availabilityFactor: Number(availabilityFactor.toFixed(3)),
     hasMetOverallGoal: totalProd >= finalCompositeTarget && finalCompositeTarget > 0,
     items: itemsResult
   };
