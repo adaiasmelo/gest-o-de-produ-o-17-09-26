@@ -51,6 +51,7 @@
               localStorage.removeItem('manupackaging_tv_mode');
               sessionStorage.removeItem('manupackaging_tv_mode');
             } catch(e) {}
+          }
           // Se houver vídeo de abertura registrado e ainda não reproduzido nesta sessão,
           // inicializa o fundo como preto puro imediatamente para evitar qualquer piscar de tela
           var alreadyPlayed = sessionStorage.getItem('manupackaging_intro_played') === 'true';
@@ -63,6 +64,7 @@
           }
         } catch(e) {}
       })();
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Barlow+Condensed:wght@500;600;700;800&family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         html, body {
