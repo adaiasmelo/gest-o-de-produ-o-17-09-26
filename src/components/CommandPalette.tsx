@@ -486,17 +486,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       {
         id: 'nav-maintenance',
         category: 'navigation',
-        title: 'Manutenção > Ordens de Serviço & Intervenções',
-        subtitle: 'Chamados técnicos, corretivas, preventivas e status das máquinas',
+        title: 'Manutenção > Solicitações de Manutenção',
+        subtitle: 'Chamados técnicos, pendências, execução e resolução das máquinas',
         badge: 'Manutenção',
         badgeColor: 'bg-orange-100 text-orange-800 border-orange-200',
         icon: <Wrench size={18} />,
         iconBg: 'bg-orange-500/10 text-orange-600',
         iconColor: 'text-orange-600',
-        keywords: ['manutencao', 'ordem de servico', 'os', 'corretiva', 'preventiva', 'mecanica', 'eletrica'],
+        keywords: ['manutencao', 'solicitacao', 'causas', 'corretiva', 'preventiva', 'mecanica', 'eletrica'],
         action: () => {
           onClose();
-          onNavigateTab('maintenance');
+          onNavigateTab('maintenance', 'causes');
         }
       },
 

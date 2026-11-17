@@ -1128,6 +1128,8 @@ export const App: React.FC = () => {
       if (subSubTab) setRibbonDashboardSubTab(subSubTab as any);
     } else if (tab === 'personnel') {
       if (subTab) setPersonnelSubView(subTab as any);
+    } else if (tab === 'maintenance') {
+      if (subTab) setMaintenanceSubTab(subTab as any);
     } else if (tab === 'projection') {
       setIsTvProjectionActive(true);
       if (!document.fullscreenElement) {
@@ -1221,7 +1223,7 @@ export const App: React.FC = () => {
     }
   }, [activeTab]);
 
-  const [maintenanceSubTab, setMaintenanceSubTab] = useState<'requests' | 'causes'>('requests');
+  const [maintenanceSubTab, setMaintenanceSubTab] = useState<'causes' | 'analytics'>('causes');
   const [maintenanceInitialCreateOpen, setMaintenanceInitialCreateOpen] = useState<boolean>(false);
   // Protetor de Tela (Projeção TV após 2 minutos de inatividade no computador)
   const [isScreensaverActive, setIsScreensaverActive] = useState<boolean>(false);
@@ -3747,8 +3749,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         break;
       case 'maintenance':
         screen = 'Manutenção';
-        if (maintenanceSubTab === 'requests') subScreen = 'Ordens de Serviço';
-        else if (maintenanceSubTab === 'causes') subScreen = 'Causas & Paradas';
+        if (maintenanceSubTab === 'analytics') subScreen = 'Paradas & Disponibilidade';
+        else subScreen = 'Solicitações de Manutenção';
         break;
       case 'projection':
         screen = 'Projeção TV';
@@ -13983,34 +13985,34 @@ Atenciosamente,
                               type="button"
                               onClick={() => {
                                 setActiveTab('maintenance');
-                                setMaintenanceSubTab('requests');
+                                setMaintenanceSubTab('causes');
                                 setIsMainMenuOpen(false);
                               }}
                               className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'maintenance' && maintenanceSubTab === 'requests'
+                                activeTab === 'maintenance' && maintenanceSubTab !== 'analytics'
                                   ? 'bg-blue-100 text-blue-700 font-black'
                                   : 'text-slate-600 hover:text-blue-600 hover:bg-white'
                               }`}
                             >
                               <Wrench size={14} className="shrink-0 text-blue-600" />
-                              <span>Ordens de Serviço</span>
+                              <span>Solicitações de Manutenção</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => {
                                 setActiveTab('maintenance');
-                                setMaintenanceSubTab('causes');
+                                setMaintenanceSubTab('analytics');
                                 setIsMainMenuOpen(false);
                               }}
                               className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'maintenance' && maintenanceSubTab === 'causes'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                activeTab === 'maintenance' && maintenanceSubTab === 'analytics'
+                                  ? 'bg-slate-900 text-white font-black'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                               }`}
                             >
-                              <AlertCircle size={14} className="shrink-0 text-amber-600" />
-                              <span>Causas & Paradas</span>
+                              <BarChart3 size={14} className="shrink-0 text-emerald-600" />
+                              <span>Paradas &amp; Disponibilidade</span>
                             </button>
                           </div>
                         )}
@@ -24205,6 +24207,13 @@ Atenciosamente,
             onBlockedAction={handleBlockedReadOnlyAction}
             initialSubTab={maintenanceSubTab}
             initialCreateRequestOpen={maintenanceInitialCreateOpen}
+            onConsumeCreateRequestOpen={() => setMaintenanceInitialCreateOpen(false)}
+            productionData={productionData}
+            ribbonEntries={ribbonEntries}
+            availableShifts={availableShifts}
+            dashboardMonth={dashboardMonth}
+            systemLogo={systemLogo || undefined}
+            systemName={systemName}
           />
         )}
 

@@ -56,7 +56,7 @@ export interface IndustrialBentoGridProps {
   onOpenModal: (modalName: string, payload?: any) => void;
   onInstallClick?: () => void;
   onDownloadOeeReport?: () => void;
-  setMaintenanceSubTab: (subTab: 'requests' | 'causes') => void;
+  setMaintenanceSubTab: (subTab: 'causes' | 'analytics') => void;
   setMaintenanceInitialCreateOpen: (val: boolean) => void;
 }
 
@@ -884,13 +884,13 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setMaintenanceSubTab('requests');
-                        setMaintenanceInitialCreateOpen(false);
+                        setMaintenanceSubTab('causes');
+                        setMaintenanceInitialCreateOpen(true);
                         onNavigateTab('maintenance');
                       }}
                       className="flex-1 py-1.5 px-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 border border-orange-200"
                     >
-                      Abrir OS
+                      Nova Solicitação
                     </button>
                     <button
                       type="button"
@@ -1054,15 +1054,15 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               </button>
             )}
 
-            {(isAdmin || (userPerms.maintenance.enabled && (userPerms.maintenance.requests || userPerms.maintenance.newRequest))) && (
+            {(isAdmin || (userPerms.maintenance.enabled && (userPerms.maintenance.causes || userPerms.maintenance.requests || userPerms.maintenance.newRequest))) && (
               <button
                 onClick={() => {
-                  setMaintenanceSubTab('requests');
+                  setMaintenanceSubTab('causes');
                   setMaintenanceInitialCreateOpen(false);
                   onNavigateTab('maintenance');
                 }}
                 className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer hover:border-blue-200"
-                title="Abrir Novo Fluxo de Solicitação de Manutenção"
+                title="Abrir Solicitações de Manutenção"
               >
                 <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-blue-50 text-blue-600 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
                   <Wrench className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-blue-600" />

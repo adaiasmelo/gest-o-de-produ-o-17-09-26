@@ -28,11 +28,11 @@ import {
   Loader2,
   Mail,
   Wrench,
-  ListTodo
+  BarChart3
 } from 'lucide-react';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { MaintenanceIssue, MaintenancePriority, MaintenanceStatus, SystemUser, Employee } from '../types';
-import { MaintenanceRequestsManager } from './MaintenanceRequestsManager';
+import { MaintenanceIssue, MaintenancePriority, MaintenanceStatus, SystemUser, Employee, ProductionEntry, RibbonCuttingEntry, Shift } from '../types';
+import { MaintenanceDowntimeAnalyticsView } from './MaintenanceDowntimeAnalyticsView';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
@@ -56,8 +56,15 @@ interface MaintenanceTabProps {
   employees: Employee[];
   isReadOnly?: boolean;
   onBlockedAction?: (title?: string, message?: string) => void;
-  initialSubTab?: 'requests' | 'causes';
+  initialSubTab?: 'causes' | 'analytics';
   initialCreateRequestOpen?: boolean;
+  onConsumeCreateRequestOpen?: () => void;
+  productionData?: ProductionEntry[];
+  ribbonEntries?: RibbonCuttingEntry[];
+  availableShifts?: Shift[];
+  dashboardMonth?: string;
+  systemLogo?: string;
+  systemName?: string;
 }
 
 const priorityValue = {
@@ -105,16 +112,40 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   employees,
   isReadOnly = false,
   onBlockedAction,
-  initialSubTab = 'requests',
-  initialCreateRequestOpen = false
+  initialSubTab = 'causes',
+  initialCreateRequestOpen = false,
+  onConsumeCreateRequestOpen,
+  productionData = [],
+  ribbonEntries = [],
+  availableShifts = [],
+  dashboardMonth,
+  systemLogo,
+  systemName,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'requests' | 'causes'>(initialSubTab);
+  const [activeSubTab, setActiveSubTab] = useState<'causes' | 'analytics'>(
+    initialSubTab === 'analytics' ? 'analytics' : 'causes'
+  );
 
   useEffect(() => {
     if (initialSubTab) {
-      setActiveSubTab(initialSubTab);
+      setActiveSubTab(initialSubTab === 'analytics' ? 'analytics' : 'causes');
     }
   }, [initialSubTab]);
+
+  useEffect(() => {
+    if (initialCreateRequestOpen) {
+      setActiveSubTab('causes');
+      setEditingIssue(null);
+      setFormTitle('');
+      setFormCause('');
+      setFormPriority('Média');
+      setFormSector('');
+      setFormMachine('');
+      setFormReporter(loggedUser?.name || '');
+      setIsAddModalOpen(true);
+      onConsumeCreateRequestOpen?.();
+    }
+  }, [initialCreateRequestOpen, loggedUser, onConsumeCreateRequestOpen]);
 
   const [issues, setIssues] = useState<MaintenanceIssue[]>([]);
   const [isPrintingPdf, setIsPrintingPdf] = useState(false);
@@ -933,20 +964,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     <div id="maintenance-tab-content" className="space-y-6 animate-in fade-in duration-500 p-1">
       
       {/* Sub-navegação interna de Manutenção */}
-      <div className="bg-white p-2 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2 max-w-xl mx-auto">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('requests')}
-          className={`flex-1 py-2.5 px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeSubTab === 'requests'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Mail size={15} />
-          <span>Solicitações (Novo Fluxo)</span>
-        </button>
-
+      <div className="bg-white p-2 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 max-w-2xl mx-auto">
         <button
           type="button"
           onClick={() => setActiveSubTab('causes')}
@@ -956,19 +974,34 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <ListTodo size={15} />
-          <span>Quadro de Causas</span>
+          <Wrench size={15} />
+          <span>Solicitações de Manutenção</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('analytics')}
+          className={`flex-1 py-2.5 px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeSubTab === 'analytics'
+              ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <BarChart3 size={15} />
+          <span>Paradas &amp; Disponibilidade</span>
         </button>
       </div>
 
-      {activeSubTab === 'requests' ? (
-        <MaintenanceRequestsManager
-          loggedUser={loggedUser}
-          employees={employees}
-          isReadOnly={isReadOnly}
-          onBlockedAction={onBlockedAction}
-          onBackToMaintenanceOverview={() => setActiveSubTab('causes')}
-          initialCreateOpen={initialCreateRequestOpen}
+      {activeSubTab === 'analytics' ? (
+        <MaintenanceDowntimeAnalyticsView
+          productionData={productionData}
+          ribbonEntries={ribbonEntries}
+          availableShifts={availableShifts}
+          dashboardMonth={dashboardMonth}
+          systemLogo={systemLogo}
+          systemName={systemName}
+          loggedUserName={loggedUser?.name}
+          loggedUserRole={loggedUser?.role}
         />
       ) : (
         <>
@@ -977,10 +1010,10 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-3xl md:text-4xl font-black tracking-tight uppercase">
-              Controle de Causas da Manutenção
+              Solicitações de Manutenção
             </h1>
             <p className="text-slate-300 text-sm md:text-base max-w-2xl font-medium">
-              Gerenciamento de pendências, defeitos e problemas categorizados por prioridade de execução. Visualize, marque como resolvido e gere relatórios com checkboxes de controle.
+              Central única de abertura de solicitações, acompanhamento de execução (Pendente, Em Andamento, Concluído) e registro técnico das soluções aplicadas pela manutenção.
             </p>
           </div>
           <div className="flex flex-wrap gap-3 banner-actions-group">
@@ -998,7 +1031,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 shadow-lg shadow-blue-500/20 transition-all border border-blue-500"
             >
               <Plus size={16} />
-              <span>Nova Causa</span>
+              <span>Nova Solicitação</span>
             </button>
             <button
               onClick={() => setIsExportPdfModalOpen(true)}
@@ -1229,9 +1262,9 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         <div className="bg-slate-50 rounded-[2rem] p-12 text-center border border-slate-100 flex flex-col items-center justify-center gap-4">
           <HelpCircle size={48} className="text-slate-300" />
           <div className="space-y-1">
-            <h3 className="text-slate-700 font-black text-sm uppercase tracking-wider">Nenhuma causa encontrada</h3>
+            <h3 className="text-slate-700 font-black text-sm uppercase tracking-wider">Nenhuma solicitação encontrada</h3>
             <p className="text-slate-400 text-xs max-w-sm">
-              Não há causas correspondentes aos filtros selecionados. Tente ajustar os filtros ou crie uma nova causa.
+              Não há solicitações correspondentes aos filtros selecionados. Tente ajustar os filtros ou crie uma nova solicitação.
             </p>
           </div>
           <button
@@ -1247,7 +1280,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
             }}
             className="mt-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider px-5 py-3 rounded-2xl shadow-md transition-all"
           >
-            Adicionar Nova
+            Nova Solicitação
           </button>
         </div>
       ) : (
@@ -1371,7 +1404,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                                 
                                 {/* Status Dropdown Picker for direct transition (Pendente -> Em Andamento etc) */}
                                 {!isResolved && (
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap gap-2 justify-end">
                                     <button
                                       onClick={() => handleUpdateStatus(issue.id, 'Pendente')}
                                       className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${issue.status === 'Pendente' ? 'bg-slate-200 border-slate-300 text-slate-800 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
@@ -1384,13 +1417,20 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                                     >
                                       Em Andamento
                                     </button>
+                                    <button
+                                      onClick={() => toggleIssueStatus(issue)}
+                                      className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white"
+                                      title="Registrar solução e concluir solicitação"
+                                    >
+                                      Concluir
+                                    </button>
                                   </div>
                                 )}
 
                                 <div className="flex gap-2">
                                   <button
                                     onClick={() => handleStartEdit(issue)}
-                                    title="Editar Causa"
+                                    title="Editar Solicitação"
                                     className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-2xl hover:scale-105 transition-all border border-slate-200"
                                   >
                                     <Edit2 size={16} />
@@ -1398,7 +1438,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
                                   <button
                                     onClick={() => handleDeleteIssue(issue.id)}
-                                    title="Excluir Causa"
+                                    title="Excluir Solicitação"
                                     className="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl hover:scale-105 transition-all border border-red-100"
                                   >
                                     <Trash2 size={16} />
@@ -1430,10 +1470,10 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
             <div className="p-6 md:p-8 bg-slate-900 text-white flex justify-between items-center">
               <div className="space-y-1">
                 <h3 className="text-lg font-black uppercase tracking-wide">
-                  {editingIssue ? 'Editar Causa de Manutenção' : 'Lançar Nova Causa de Manutenção'}
+                  {editingIssue ? 'Editar Solicitação de Manutenção' : 'Nova Solicitação de Manutenção'}
                 </h3>
                 <p className="text-slate-400 text-xs">
-                  {editingIssue ? 'Edite os detalhes do problema ou falha técnica.' : 'Preencha os detalhes do problema ou falha técnica.'}
+                  {editingIssue ? 'Edite os detalhes da solicitação ou falha técnica.' : 'Preencha os detalhes do problema ou solicitação técnica.'}
                 </p>
               </div>
               <button
@@ -1459,13 +1499,13 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                   onChange={(e) => setFormTitle(e.target.value)}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-medium"
                 />
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-1">Se deixado em branco, o título será gerado a partir da causa abaixo.</p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-1">Se deixado em branco, o título será gerado a partir da descrição abaixo.</p>
               </div>
 
               {/* Description */}
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Causa / Descrição do Problema *</label>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Descrição do Problema / Solicitação *</label>
                   <button
                     type="button"
                     onClick={handleImproveTextWithAI}

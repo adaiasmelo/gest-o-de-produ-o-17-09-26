@@ -46,7 +46,7 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
   ribbonSubTab = 'dashboard',
   ribbonDashboardSubTab = 'summary',
   personnelSubView = 'board',
-  maintenanceSubTab = 'requests',
+  maintenanceSubTab = 'causes',
   onNavigateTab
 }) => {
   const crumbs: CrumbItem[] = [
@@ -152,14 +152,20 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
     crumbs.push({
       label: 'Manutenção',
       icon: <Wrench size={13} className="text-orange-600" />,
-      onClick: () => onNavigateTab('maintenance', 'requests'),
-      isCurrent: maintenanceSubTab === 'requests'
+      onClick: () => onNavigateTab('maintenance', 'causes'),
+      isCurrent: false
     });
 
-    if (maintenanceSubTab === 'causes') {
+    if (maintenanceSubTab === 'analytics') {
       crumbs.push({
-        label: 'Causas & Indicadores de Quebra',
-        icon: <Activity size={13} />,
+        label: 'Paradas & Disponibilidade',
+        icon: <BarChart3 size={13} />,
+        isCurrent: true
+      });
+    } else {
+      crumbs.push({
+        label: 'Solicitações de Manutenção',
+        icon: <Wrench size={13} />,
         isCurrent: true
       });
     }

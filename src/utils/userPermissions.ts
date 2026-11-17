@@ -743,7 +743,7 @@ export interface UserLandingTarget {
   ribbonSubTab?: 'dashboard' | 'reports' | 'productivity';
   ribbonDashboardSubTab?: 'summary' | 'charts' | 'comparison';
   personnelSubView?: 'board' | 'vacations' | 'training' | 'lunch' | 'overtime' | 'overtime_entries' | 'evaluations' | 'bonus';
-  maintenanceSubTab?: 'requests' | 'causes';
+  maintenanceSubTab?: 'causes' | 'analytics';
 }
 
 /**
@@ -821,7 +821,7 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
 
   // 6. Se o usuário tem acesso à Manutenção
   if (hasMaintenance) {
-    return { tab: 'maintenance', maintenanceSubTab: perms.maintenance.requests ? 'requests' : 'causes' };
+    return { tab: 'maintenance', maintenanceSubTab: 'causes' };
   }
 
   // 7. Se o usuário tem acesso à Projeção

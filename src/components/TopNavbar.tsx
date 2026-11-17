@@ -936,51 +936,51 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               </div>
 
               <div className="space-y-1">
-                {(isAdmin || !!userPerms.maintenance?.requests) && (
+                {(isAdmin || !!userPerms.maintenance?.causes || !!userPerms.maintenance?.requests) && (
                   <button
                     type="button"
-                    onClick={() => handleSelectOption(() => onNavigateMaintenance('requests'))}
+                    onClick={() => handleSelectOption(() => onNavigateMaintenance('causes'))}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
-                      activeTab === 'maintenance' && maintenanceSubTab === 'requests'
+                      activeTab === 'maintenance' && maintenanceSubTab !== 'analytics'
                         ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
                         : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeTab === 'maintenance' && maintenanceSubTab === 'requests'
+                        activeTab === 'maintenance' && maintenanceSubTab !== 'analytics'
                           ? 'bg-white/20 text-white'
                           : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
                       }`}>
                         <Wrench size={14} />
                       </div>
-                      <span>Ordens de Serviço</span>
+                      <span>Solicitações de Manutenção</span>
                     </div>
                     <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-600" />
                   </button>
                 )}
 
-                {(isAdmin || !!userPerms.maintenance?.causes) && (
+                {(isAdmin || !!userPerms.maintenance?.causes || !!userPerms.maintenance?.requests) && (
                   <button
                     type="button"
-                    onClick={() => handleSelectOption(() => onNavigateMaintenance('causes'))}
+                    onClick={() => handleSelectOption(() => onNavigateMaintenance('analytics'))}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer group ${
-                      activeTab === 'maintenance' && maintenanceSubTab === 'causes'
-                        ? 'bg-blue-600 text-white font-black shadow-sm shadow-blue-500/30'
-                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50/50 hover:text-blue-600 hover:translate-x-1'
+                      activeTab === 'maintenance' && maintenanceSubTab === 'analytics'
+                        ? 'bg-slate-900 text-white font-black shadow-sm'
+                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-slate-50 hover:to-blue-50/50 hover:text-slate-900 hover:translate-x-1'
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeTab === 'maintenance' && maintenanceSubTab === 'causes'
+                        activeTab === 'maintenance' && maintenanceSubTab === 'analytics'
                           ? 'bg-white/20 text-white'
-                          : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
+                          : 'bg-emerald-50 text-emerald-600 group-hover:bg-slate-900 group-hover:text-white'
                       }`}>
-                        <AlertCircle size={14} />
+                        <BarChart3 size={14} />
                       </div>
-                      <span>Causas & Paradas</span>
+                      <span>Paradas &amp; Disponibilidade</span>
                     </div>
-                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-amber-600" />
+                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-700" />
                   </button>
                 )}
               </div>
