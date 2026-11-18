@@ -575,7 +575,11 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
     processedDataFiltered.forEach(e => {
       if (!e.operator || (e.machine || '').toLowerCase().includes('erema')) return;
       const m = e.date.substring(0, 7);
-      if (m < minMonth || m > maxMonth) return;
+      if (isBonusManagerView && activeRefMonth) {
+        if (m !== activeRefMonth) return;
+      } else {
+        if (m < minMonth || m > maxMonth) return;
+      }
       if (!acc[e.operator]) {
         acc[e.operator] = {};
       }
@@ -708,7 +712,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
     }
 
     return list.sort((a,b) => b.totalProd - a.totalProd);
-  }, [processedDataFiltered, periodA, periodB, activeRefMonth]);
+  }, [processedDataFiltered, periodA, periodB, activeRefMonth, isBonusManagerView]);
 
   const filteredOperators = useMemo(() => {
     if (!operatorSearch.trim()) return operatorMetrics;
@@ -1639,6 +1643,11 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                   <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
                     <Users className="text-blue-600" size={16} /> Evolução Histórica de Desempenho e Consistência de Operadores
                   </h3>
+                  {isBonusManagerView && activeRefMonth && (
+                    <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wider mt-1">
+                      Base exclusiva do mês atual de bônus: {translateMonthYear(activeRefMonth)} ({activeRefMonth.split('-').reverse().join('/')})
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Meta Mensal Única de R$ 250 com bolinha explicativa da regra */}
@@ -1815,19 +1824,21 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                     {filteredOperators.length > 0 ? (
                       filteredOperators.map((op) => {
                         // Classify operator consistency profile
+                        const evalProd = activeRefMonth ? op.monthProd : op.totalProd;
+                        const evalWasteIdx = activeRefMonth ? op.monthWasteIdx : op.averageWasteIdx;
                         let badgeColor = 'bg-slate-100 text-slate-500';
                         let label = 'Médio Produtor';
 
-                        if (op.totalProd > 25000 && op.averageWasteIdx <= 4.0) {
+                        if (evalProd > 25000 && evalWasteIdx <= 4.0) {
                           badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200';
                           label = 'Alta Performance e Baixa Perda';
-                        } else if (op.volatility > 15 && op.averageWasteIdx > 5.5) {
+                        } else if (op.volatility > 15 && evalWasteIdx > 5.5) {
                           badgeColor = 'bg-rose-100 text-rose-800 border-rose-200';
                           label = 'Forte Instabilidade / Alta Perda';
-                        } else if (op.averageWasteIdx <= 3.5) {
+                        } else if (evalWasteIdx <= 3.5) {
                           badgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
                           label = 'Operação Limpa e Consistente';
-                        } else if (op.totalProd > 30000) {
+                        } else if (evalProd > 30000) {
                           badgeColor = 'bg-purple-100 text-purple-800 border-purple-200';
                           label = 'Alto Volume Gerado';
                         }
@@ -1838,7 +1849,7 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                               <div>
                                 <div className="flex items-center gap-2">
                                   {op.operator}
-                                  {op.totalProd > 35000 && (
+                                  {evalProd > 35000 && (
                                     <Zap className="text-amber-500 fill-amber-500" size={13} title="Destaque de Produtividade" />
                                   )}
                                 </div>
@@ -1944,7 +1955,11 @@ export const BiAnalyticsView: React.FC<BiAnalyticsViewProps> = ({
                                 {op.volatility === 0 ? 'Estável' : `± ${op.volatility.toFixed(1)}%`}
                               </span>
                             </td>
-                            <td className="px-4 py-4 text-right text-slate-500">{op.monthsActive} {op.monthsActive === 1 ? 'Mês' : 'Meses'}</td>
+                            <td className="px-4 py-4 text-right text-slate-500">
+                              {isBonusManagerView && activeRefMonth
+                                ? `${op.monthsActive} Mês (${activeRefMonth.split('-').reverse().join('/')})`
+                                : `${op.monthsActive} ${op.monthsActive === 1 ? 'Mês' : 'Meses'}`}
+                            </td>
                             <td className="px-5 py-4">
                               <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${badgeColor}`}>
                                 {label}

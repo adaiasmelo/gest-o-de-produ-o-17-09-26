@@ -185,8 +185,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'teams_evolution' | 'payroll' | 'incidents'>('overview');
 
   // O Gestão de Bônus de Produção é diretamente vinculado ao Mês de Referência das Configurações Gerais
-  const selectedCycle = dashboardMonth || '2026-10';
-  const [cycleYear, cycleMonth] = (selectedCycle || '2026-10').split('-').map(Number);
+  const fallbackMonth = new Date().toISOString().substring(0, 7);
+  const selectedCycle = dashboardMonth || fallbackMonth;
+  const [cycleYear, cycleMonth] = (selectedCycle || fallbackMonth).split('-').map(Number);
 
   // Base bonus configurations by role
   const [baseBonusValues, setBaseBonusValues] = useState<Record<string, number>>(() => {
@@ -1761,6 +1762,7 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
             dashboardMonth={selectedCycle}
             targetMonth={selectedCycle}
             isBonusManagerView={true}
+            wasteLimit={effectiveWasteLimit}
           />
         </motion.div>
       )}
