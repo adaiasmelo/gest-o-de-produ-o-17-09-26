@@ -986,6 +986,26 @@ export const App: React.FC = () => {
   };
 
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+
+  // Sincroniza em tempo real as permissões/dados do usuário logado quando atualizado no Firestore (ex: Cadastro de Usuários)
+  useEffect(() => {
+    if (!loggedUser || loggedUser.id === 'admin_1010' || systemUsers.length === 0) return;
+    const freshUser = systemUsers.find(
+      (u) => (loggedUser.id && u.id === loggedUser.id) || u.registration === loggedUser.registration
+    );
+    if (!freshUser) return;
+    const changed =
+      JSON.stringify(freshUser.permissions || null) !== JSON.stringify(loggedUser.permissions || null) ||
+      freshUser.role !== loggedUser.role ||
+      freshUser.name !== loggedUser.name ||
+      freshUser.registration !== loggedUser.registration;
+    if (changed) {
+      setLoggedUser(freshUser);
+      try {
+        localStorage.setItem('manupackaging_user', JSON.stringify(freshUser));
+      } catch {}
+    }
+  }, [systemUsers, loggedUser]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
   const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(() => loadActivityLogsFromCache());
@@ -4158,7 +4178,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       return;
     }
 
-    const user = discoveredUser || systemUsers.find(u => u.registration === matricula);
+    const user = systemUsers.find(u => u.registration === matricula) || discoveredUser;
     if (!user) {
       alert('Matrícula não encontrada.');
       return;
@@ -26773,7 +26793,7 @@ const UserManagementModal: React.FC<{
     setName(u.name);
     setRegistration(u.registration);
     setRole(u.role);
-    setPermissions(normalizeUserPermissions(u.permissions));
+    setPermissions(normalizeUserPermissions(u.permissions, u.role, u.registration));
     formTopRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -26791,7 +26811,7 @@ const UserManagementModal: React.FC<{
       return;
     }
 
-    const normalizedPermissions = normalizeUserPermissions(permissions);
+    const normalizedPermissions = normalizeUserPermissions(permissions, role.trim(), registration.trim());
 
     if (editingUser) {
       if (users.some(u => u.id !== editingUser.id && u.registration === registration.trim())) {
@@ -26810,8 +26830,11 @@ const UserManagementModal: React.FC<{
       try {
         await setDoc(doc(db, 'system_users', editingUser.id), updatedUser, { merge: true });
         onUpdateUsers(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
-        if (loggedUser && loggedUser.id === editingUser.id && setLoggedUser) {
+        if (loggedUser && (loggedUser.id === editingUser.id || loggedUser.registration === updatedUser.registration) && setLoggedUser) {
           setLoggedUser(updatedUser);
+          try {
+            localStorage.setItem('manupackaging_user', JSON.stringify(updatedUser));
+          } catch {}
         }
         setSuccessToast(`Usuário e permissões de "${updatedUser.name}" atualizados com sucesso!`);
         resetForm();
@@ -26853,7 +26876,7 @@ const UserManagementModal: React.FC<{
       setExpandedUserId(u.id);
       setInlinePerms(prev => ({
         ...prev,
-        [u.id]: normalizeUserPermissions(u.permissions)
+        [u.id]: normalizeUserPermissions(u.permissions, u.role, u.registration)
       }));
     }
   };
@@ -26867,7 +26890,11 @@ const UserManagementModal: React.FC<{
       alert('Ação bloqueada: o Modo de Leitura é exclusivo para consulta. Não é permitido alterar permissões.');
       return;
     }
-    const updatedPerms = normalizeUserPermissions(inlinePerms[targetUser.id] || targetUser.permissions || defaultPermissions);
+    const updatedPerms = normalizeUserPermissions(
+      inlinePerms[targetUser.id] || targetUser.permissions || defaultPermissions,
+      targetUser.role,
+      targetUser.registration
+    );
     setSavingInlineId(targetUser.id);
     try {
       await setDoc(doc(db, 'system_users', targetUser.id), { permissions: updatedPerms }, { merge: true });
@@ -26876,8 +26903,11 @@ const UserManagementModal: React.FC<{
         permissions: updatedPerms
       };
       onUpdateUsers(prev => prev.map(u => u.id === targetUser.id ? updatedUser : u));
-      if (loggedUser && loggedUser.id === targetUser.id && setLoggedUser) {
+      if (loggedUser && (loggedUser.id === targetUser.id || loggedUser.registration === targetUser.registration) && setLoggedUser) {
         setLoggedUser(updatedUser);
+        try {
+          localStorage.setItem('manupackaging_user', JSON.stringify(updatedUser));
+        } catch {}
       }
       setSuccessToast(`Permissões de "${targetUser.name}" atualizadas e salvas com sucesso!`);
       setExpandedUserId(null);

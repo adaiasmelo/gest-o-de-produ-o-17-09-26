@@ -216,15 +216,18 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   }, [initialCreateRequestOpen, allowCreateButton, loggedUser, onConsumeCreateRequestOpen]);
 
   const [issues, setIssues] = useState<MaintenanceIssue[]>([]);
-  const [isPrintingPdf, setIsPrintingPdf] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingIssue, setEditingIssue] = useState<MaintenanceIssue | null>(null);
   const [selectedIssueForNotes, setSelectedIssueForNotes] = useState<MaintenanceIssue | null>(null);
 
-  // PDF Export Modal State
+  // PDF Export Modal & Multi-Selection State
+  const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [isExportPdfModalOpen, setIsExportPdfModalOpen] = useState(false);
+  const [pdfScopeMode, setPdfScopeMode] = useState<'general' | 'selected'>('general');
+  const [pdfModalSearch, setPdfModalSearch] = useState('');
+  const [pdfModalError, setPdfModalError] = useState<string | null>(null);
   const [isOutlookShareModalOpen, setIsOutlookShareModalOpen] = useState(false);
   const [isProportionalStopsModalOpen, setIsProportionalStopsModalOpen] = useState(false);
   const [stopsModalMonth, setStopsModalMonth] = useState<string>(dashboardMonth || 'Todos');
@@ -474,6 +477,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         data.push({ id: doc.id, ...doc.data() } as MaintenanceIssue);
       });
       setIssues(data);
+      setSelectedIssueIds((prev) => prev.filter((id) => data.some((d) => d.id === id)));
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'maintenance_issues');
@@ -481,6 +485,23 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
     return () => unsubscribe();
   }, []);
+
+  const toggleIssueSelection = (id: string) => {
+    setSelectedIssueIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const clearIssueSelection = () => {
+    setSelectedIssueIds([]);
+  };
+
+  const openExportPdfModal = () => {
+    setPdfScopeMode(selectedIssueIds.length > 0 ? 'selected' : 'general');
+    setPdfModalSearch('');
+    setPdfModalError(null);
+    setIsExportPdfModalOpen(true);
+  };
 
   // Auto-migrate old machine names and generate missing titles in Firestore based on the cause
   useEffect(() => {
@@ -524,41 +545,9 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   // Filter & Sort Issues
   const filteredAndSortedIssues = useMemo(() => {
     let list = [...issues];
-    
-    // If printing PDF, we apply the PDF export modal filters instead of screen status filter
-    if (isPrintingPdf) {
-      // 1. Status Filter for PDF
-      if (pdfStatusOption !== 'Todos') {
-        list = list.filter(i => i.status === pdfStatusOption);
-      }
-      
-      // 2. Date Filter for PDF
-      if (pdfDateFilterType === 'Dia' && pdfSelectedDay) {
-        list = list.filter(i => {
-          const localDate = new Date(i.createdAt);
-          const y = localDate.getFullYear();
-          const m = String(localDate.getMonth() + 1).padStart(2, '0');
-          const d = String(localDate.getDate()).padStart(2, '0');
-          return `${y}-${m}-${d}` === pdfSelectedDay;
-        });
-      } else if (pdfDateFilterType === 'Mês' && pdfSelectedMonth) {
-        list = list.filter(i => {
-          const localDate = new Date(i.createdAt);
-          const y = localDate.getFullYear();
-          const m = String(localDate.getMonth() + 1).padStart(2, '0');
-          return `${y}-${m}` === pdfSelectedMonth;
-        });
-      } else if (pdfDateFilterType === 'Ano' && pdfSelectedYear) {
-        list = list.filter(i => {
-          const localDate = new Date(i.createdAt);
-          return String(localDate.getFullYear()) === pdfSelectedYear;
-        });
-      }
-    } else {
-      // Standard screen status filter
-      if (statusFilter !== 'Todos') {
-        list = list.filter(i => i.status === statusFilter);
-      }
+
+    if (statusFilter !== 'Todos') {
+      list = list.filter(i => i.status === statusFilter);
     }
 
     return list
@@ -588,12 +577,11 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         // If same priority, sort by createdAt date descending (newest first)
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-  }, [issues, statusFilter, priorityFilter, sectorFilter, search, isPrintingPdf, pdfStatusOption, pdfDateFilterType, pdfSelectedDay, pdfSelectedMonth, pdfSelectedYear]);
+  }, [issues, statusFilter, priorityFilter, sectorFilter, search]);
 
   // Stats Calculations
   const stats = useMemo(() => {
-    // If printing PDF, show statistics for printed issues; otherwise, show statistics for all issues
-    const baseIssues = isPrintingPdf ? filteredAndSortedIssues : issues;
+    const baseIssues = issues;
     const total = baseIssues.length;
     const pending = baseIssues.filter(i => i.status === 'Pendente').length;
     const inProgress = baseIssues.filter(i => i.status === 'Em Andamento').length;
@@ -619,7 +607,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       resolvedPct,
       chartData
     };
-  }, [issues, isPrintingPdf, filteredAndSortedIssues]);
+  }, [issues]);
 
   // Group issues by Sector and Machine
   const groupedIssues = useMemo(() => {
@@ -1197,182 +1185,328 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     }
   };
 
-  // PDF Export directly using jsPDF and jspdf-autotable (No html2canvas or screenshotting)
-  const exportPDFWithSettings = async () => {
+  const sortIssuesForReport = (list: MaintenanceIssue[]) => {
+    return [...list].sort((a, b) => {
+      const aIsResolved = a.status === 'Resolvido' ? 1 : 0;
+      const bIsResolved = b.status === 'Resolvido' ? 1 : 0;
+      if (aIsResolved !== bIsResolved) return aIsResolved - bIsResolved;
+      const diff = (priorityValue[b.priority] || 0) - (priorityValue[a.priority] || 0);
+      if (diff !== 0) return diff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  };
+
+  const getFilteredGeneralIssuesForPdf = (): MaintenanceIssue[] => {
+    let list = [...issues];
+    if (pdfStatusOption !== 'Todos') {
+      list = list.filter((i) => i.status === pdfStatusOption);
+    }
+    if (pdfDateFilterType === 'Dia' && pdfSelectedDay) {
+      list = list.filter((i) => {
+        const localDate = new Date(i.createdAt);
+        const y = localDate.getFullYear();
+        const m = String(localDate.getMonth() + 1).padStart(2, '0');
+        const d = String(localDate.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}` === pdfSelectedDay;
+      });
+    } else if (pdfDateFilterType === 'Mês' && pdfSelectedMonth) {
+      list = list.filter((i) => {
+        const localDate = new Date(i.createdAt);
+        const y = localDate.getFullYear();
+        const m = String(localDate.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}` === pdfSelectedMonth;
+      });
+    } else if (pdfDateFilterType === 'Ano' && pdfSelectedYear) {
+      list = list.filter((i) => {
+        const localDate = new Date(i.createdAt);
+        return String(localDate.getFullYear()) === pdfSelectedYear;
+      });
+    }
+
+    list = list.filter((issue) => {
+      const matchesPriority = priorityFilter === 'Todos' || issue.priority === priorityFilter;
+      const matchesSector = sectorFilter === 'Todos' || issue.sector === sectorFilter;
+      const matchesSearch =
+        (issue.title || '').toLowerCase().includes(search.toLowerCase()) ||
+        issue.cause.toLowerCase().includes(search.toLowerCase()) ||
+        issue.machine.toLowerCase().includes(search.toLowerCase()) ||
+        issue.reporter.toLowerCase().includes(search.toLowerCase());
+      return matchesPriority && matchesSector && matchesSearch;
+    });
+
+    return sortIssuesForReport(list);
+  };
+
+  // Geração completa do PDF (PDF Geral ou Solicitações Selecionadas) incluindo todas as informações e etapas do andamento
+  const generateMaintenancePDF = async (targetIssues: MaintenanceIssue[], scopeLabel: string) => {
+    if (!targetIssues || targetIssues.length === 0) {
+      return;
+    }
+
     try {
       setIsGeneratingPdf(true);
-      setIsPrintingPdf(true);
-
-      // Wait briefly for React to apply PDF-specific filters in useMemo
-      await new Promise(resolve => setTimeout(resolve, 150));
-
       const doc = new jsPDF('p', 'mm', 'a4');
 
-      // 1. Header Banner with Navy/Slate Background
+      // 1. Cabeçalho
       doc.setFillColor(15, 23, 42); // slate-900
-      doc.rect(0, 0, 210, 40, 'F');
+      doc.rect(0, 0, 210, 38, 'F');
 
-      // Header Text in UPPERCASE
       doc.setTextColor(255, 255, 255);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text('RELATÓRIO DE CONTROLE DE MANUTENÇÃO', 15, 18);
+      doc.setFontSize(15);
+      doc.text('RELATÓRIO DE SOLICITAÇÕES DE MANUTENÇÃO', 15, 16);
 
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(203, 213, 225); // slate-300
-      doc.text(`GERADO EM: ${new Date().toLocaleDateString('pt-BR')} ÀS ${new Date().toLocaleTimeString('pt-BR')}`, 15, 26);
-      doc.text(`STATUS SELECIONADO: ${pdfStatusOption.toUpperCase()} | PERÍODO DE ABERTURA: ${pdfDateFilterType.toUpperCase()}`, 15, 32);
+      doc.setTextColor(203, 213, 225);
+      doc.text(
+        `GERADO EM: ${new Date().toLocaleDateString('pt-BR')} ÀS ${new Date().toLocaleTimeString('pt-BR')}`,
+        15,
+        24
+      );
+      doc.text(scopeLabel.toUpperCase(), 15, 30);
 
-      // Decorative Accent Line
-      doc.setFillColor(59, 130, 246); // blue-500
-      doc.rect(0, 40, 210, 1.5, 'F');
+      doc.setFillColor(59, 130, 246);
+      doc.rect(0, 38, 210, 1.5, 'F');
 
-      let currentY = 52;
+      let currentY = 48;
 
-      // Section Title in UPPERCASE
-      doc.setTextColor(15, 23, 42); // slate-900
+      // 2. Resumo estatístico do conjunto exportado
+      const totalIssues = targetIssues.length;
+      const criticalCount = targetIssues.filter((i) => i.priority === 'Crítica').length;
+      const pendingCount = targetIssues.filter((i) => i.status === 'Pendente').length;
+      const inProgressCount = targetIssues.filter((i) => i.status === 'Em Andamento').length;
+      const resolvedCount = targetIssues.filter((i) => i.status === 'Resolvido').length;
+
+      doc.setTextColor(15, 23, 42);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('RESUMO DE ESTATÍSTICAS', 15, currentY);
-
-      // Calculate statistics for the printed set of issues
-      const totalIssues = filteredAndSortedIssues.length;
-      const pendingCount = filteredAndSortedIssues.filter(i => i.status === 'Pendente').length;
-      const inProgressCount = filteredAndSortedIssues.filter(i => i.status === 'Em Andamento').length;
-      const resolvedCount = filteredAndSortedIssues.filter(i => i.status === 'Resolvido').length;
+      doc.setFontSize(10.5);
+      doc.text('RESUMO DAS SOLICITAÇÕES EXPORTADAS', 15, currentY);
 
       currentY += 6;
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(71, 85, 105); // slate-600
-
-      doc.text(`TOTAL DE OCORRÊNCIAS: ${totalIssues}`, 15, currentY);
-      doc.text(`PENDENTES: ${pendingCount}`, 65, currentY);
-      doc.text(`EM ANDAMENTO: ${inProgressCount}`, 110, currentY);
-      doc.text(`RESOLVIDOS: ${resolvedCount}`, 155, currentY);
-
-      currentY += 8;
-      // Draw a thin horizontal separator line
-      doc.setDrawColor(226, 232, 240); // slate-200
-      doc.setLineWidth(0.2);
-      doc.line(15, currentY, 195, currentY);
-
-      currentY += 8;
-      doc.setTextColor(15, 23, 42); // slate-900
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('LISTA DETALHADA DE OCORRÊNCIAS', 15, currentY);
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`TOTAL: ${totalIssues}`, 15, currentY);
+      doc.setTextColor(220, 38, 38);
+      doc.text(`CRÍTICAS: ${criticalCount}`, 45, currentY);
+      doc.setTextColor(234, 88, 12);
+      doc.text(`PENDENTES: ${pendingCount}`, 78, currentY);
+      doc.setTextColor(37, 99, 235);
+      doc.text(`EM ANDAMENTO: ${inProgressCount}`, 115, currentY);
+      doc.setTextColor(5, 150, 105);
+      doc.text(`CONCLUÍDAS: ${resolvedCount}`, 158, currentY);
+
       currentY += 5;
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(15, currentY, 195, currentY);
+      currentY += 7;
 
-      // Build table headers and body with UPPERCASE for headings, normal casing for descriptions
-      const headers = [
-        ['DATA / LOCAL', 'OCORRÊNCIA E CAUSA', 'PRIORIDADE / STATUS', 'DETALHES DE RESOLUÇÃO']
-      ];
+      // 3. Ficha detalhada de cada solicitação + todas as etapas de andamento
+      targetIssues.forEach((issue, idx) => {
+        if (currentY > 245) {
+          doc.addPage();
+          currentY = 18;
+        }
 
-      const rows = filteredAndSortedIssues.map(issue => {
-        const formattedDate = new Date(issue.createdAt).toLocaleDateString('pt-BR');
-        const sectorUpper = (issue.sector || 'GERAL').toUpperCase();
-        const machineUpper = (issue.machine || 'GERAL / NENHUMA').toUpperCase();
-        
-        const col1 = `${formattedDate}\nSETOR: ${sectorUpper}\nMÁQ: ${machineUpper}`;
-        
-        const titleUpper = (issue.title || '').toUpperCase();
-        const causeNormal = issue.cause || '';
-        const col2 = `TÍTULO: ${titleUpper}\n\nDESCRIÇÃO:\n${causeNormal}`;
-        
+        const titleUpper = (issue.title || generateTitleFromCause(issue.cause) || 'SOLICITAÇÃO').toUpperCase();
         const priorityUpper = (issue.priority || 'MÉDIA').toUpperCase();
         const statusUpper = (issue.status || 'PENDENTE').toUpperCase();
-        const col3 = `PRIORIDADE: ${priorityUpper}\nSTATUS: ${statusUpper}`;
-        
-        const reporterNormal = issue.reporter || 'Não especificado';
-        const sortedStepsPdf = getSortedProgressUpdates(issue);
-        const timelineBlock =
-          sortedStepsPdf.length > 0
-            ? `\n\nANDAMENTO:\n${sortedStepsPdf
-                .map((st, sIdx) => `${sIdx + 1}. (${formatBrDateTime(st.date)}) ${st.text}`)
-                .join('\n')}`
-            : '';
-        const solutionNormal = issue.solution || 'Nenhuma nota de solução registrada.';
-        const col4 = `RELATADO POR: ${reporterNormal}${timelineBlock}\n\nSOLUÇÃO / RESOLUÇÃO:\n${solutionNormal}`;
-        
-        return [col1, col2, col3, col4];
-      });
+        const sectorUpper = (issue.sector || 'GERAL').toUpperCase();
+        const machineUpper = (issue.machine || 'GERAL / NENHUMA').toUpperCase();
+        const openedStr = formatBrDateTime(issue.createdAt);
+        const resolvedStr = issue.resolvedAt ? formatBrDateTime(issue.resolvedAt) : '';
+        const sortedSteps = getSortedProgressUpdates(issue);
 
-      autoTable(doc, {
-        startY: currentY,
-        head: headers,
-        body: rows,
-        theme: 'grid',
-        headStyles: {
-          fillColor: [15, 23, 42], // slate-900
-          textColor: [255, 255, 255],
-          fontSize: 8,
-          fontStyle: 'bold',
-          halign: 'left',
-          valign: 'middle'
-        },
-        bodyStyles: {
-          fontSize: 8,
-          textColor: [51, 65, 85], // slate-700
-          valign: 'top',
-          cellPadding: 4
-        },
-        columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 65 },
-          2: { cellWidth: 35 },
-          3: { cellWidth: 45 }
-        },
-        styles: {
-          overflow: 'linebreak',
-          font: 'Helvetica'
-        },
-        margin: { left: 15, right: 15 },
-        didDrawPage: (data) => {
-          // Add page footer with page numbers
-          const totalPages = doc.getNumberOfPages();
-          const currentPage = data.pageNumber;
-          doc.setFont('Helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(148, 163, 184); // slate-400
-          
-          // Draw footer line
-          doc.setDrawColor(241, 245, 249); // slate-100
-          doc.line(15, 282, 195, 282);
+        const headerFill: [number, number, number] =
+          issue.priority === 'Crítica'
+            ? [185, 28, 28]
+            : issue.priority === 'Alta'
+            ? [194, 65, 12]
+            : issue.status === 'Resolvido'
+            ? [5, 150, 105]
+            : [15, 23, 42];
 
-          doc.text(
-            `Página ${currentPage} de ${totalPages}`,
-            195,
-            288,
-            { align: 'right' }
-          );
-          doc.text(
-            `SISTEMA DE GESTÃO DE PRODUÇÃO E MANUTENÇÃO`,
-            15,
-            288
-          );
+        const priorityTextColor: [number, number, number] =
+          issue.priority === 'Crítica'
+            ? [185, 28, 28]
+            : issue.priority === 'Alta'
+            ? [194, 65, 12]
+            : issue.priority === 'Média'
+            ? [37, 99, 235]
+            : [5, 150, 105];
+
+        const stepsContent =
+          sortedSteps.length > 0
+            ? sortedSteps
+                .map(
+                  (st, sIdx) =>
+                    `Etapa ${sIdx + 1} (${formatBrDateTime(st.date)} • ${st.author}):\n${st.text}`
+                )
+                .join('\n\n')
+            : 'Nenhuma etapa de andamento registrada.';
+
+        const bodyRows: any[] = [
+          [
+            { content: 'PRIORIDADE / STATUS', styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+            {
+              content: `Prioridade: ${priorityUpper}   |   Status: ${statusUpper}`,
+              styles: {
+                fontStyle: 'bold',
+                textColor: priorityTextColor,
+                fillColor: issue.priority === 'Crítica' ? [254, 242, 242] : [255, 255, 255]
+              }
+            }
+          ],
+          [
+            { content: 'SETOR / EQUIPAMENTO', styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+            `Setor: ${sectorUpper}   |   Máquina/Equipamento: ${machineUpper}`
+          ],
+          [
+            { content: 'SOLICITANTE / DATAS', styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+            `Solicitante: ${issue.reporter || 'Não especificado'}   |   Abertura: ${openedStr}${
+              resolvedStr ? `   |   Conclusão: ${resolvedStr}` : ''
+            }`
+          ],
+          [
+            { content: 'DESCRIÇÃO / CAUSA', styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+            `${issue.cause || 'Sem descrição informada.'}${
+              issue.notes ? `\n\nObservações adicionais: ${issue.notes}` : ''
+            }`
+          ],
+          [
+            {
+              content: `ANDAMENTO\n(${sortedSteps.length} ${sortedSteps.length === 1 ? 'etapa' : 'etapas'})`,
+              styles: { fontStyle: 'bold', fillColor: [239, 246, 255], textColor: [30, 64, 175] }
+            },
+            {
+              content: stepsContent,
+              styles: {
+                fillColor: sortedSteps.length > 0 ? [248, 250, 252] : [255, 255, 255],
+                textColor: sortedSteps.length > 0 ? [30, 41, 59] : [148, 163, 184]
+              }
+            }
+          ]
+        ];
+
+        if (issue.status === 'Resolvido' || issue.solution) {
+          bodyRows.push([
+            {
+              content: 'NOTA DE RESOLUÇÃO',
+              styles: { fontStyle: 'bold', fillColor: [236, 253, 245], textColor: [6, 95, 70] }
+            },
+            {
+              content: issue.solution || 'Solicitação concluída sem notas adicionais.',
+              styles: { fillColor: [240, 253, 244], textColor: [6, 95, 70] }
+            }
+          ]);
         }
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [
+            [
+              {
+                content: `#${idx + 1} — ${titleUpper}`,
+                colSpan: 2,
+                styles: {
+                  fillColor: headerFill,
+                  textColor: [255, 255, 255],
+                  fontSize: 9,
+                  fontStyle: 'bold',
+                  cellPadding: 3.5
+                }
+              }
+            ]
+          ],
+          body: bodyRows,
+          theme: 'grid',
+          columnStyles: {
+            0: { cellWidth: 42, fontSize: 7.5, textColor: [71, 85, 105] },
+            1: { cellWidth: 138, fontSize: 8.2, textColor: [30, 41, 59] }
+          },
+          styles: {
+            overflow: 'linebreak',
+            font: 'Helvetica',
+            cellPadding: 3,
+            lineColor: [226, 232, 240],
+            lineWidth: 0.25,
+            valign: 'top'
+          },
+          margin: { left: 15, right: 15, bottom: 20 }
+        });
+
+        currentY = ((doc as any).lastAutoTable?.finalY || currentY) + 6;
       });
 
-      // Restore standard screen state
-      setIsPrintingPdf(false);
+      // Rodapé em todas as páginas
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.setDrawColor(241, 245, 249);
+        doc.line(15, 282, 195, 282);
+        doc.text('SISTEMA DE GESTÃO DE PRODUÇÃO E MANUTENÇÃO', 15, 288);
+        doc.text(`Página ${p} de ${totalPages}`, 195, 288, { align: 'right' });
+      }
 
       setPdfModal({
         isOpen: true,
         doc,
-        filename: `Relatorio_Manutencao_Estatistica_${new Date().toISOString().split('T')[0]}.pdf`,
-        title: 'Relatório de Manutenção'
+        filename: `Relatorio_Manutencao_${new Date().toISOString().split('T')[0]}.pdf`,
+        title: totalIssues === 1 ? 'Relatório da Solicitação de Manutenção' : 'Relatório de Manutenção'
       });
 
+      setPdfModalError(null);
       setIsExportPdfModalOpen(false);
     } catch (err) {
-      console.error("Erro ao gerar PDF:", err);
-      alert("Houve um erro ao gerar o PDF. Por favor, tente novamente.");
-      setIsPrintingPdf(false);
+      console.error('Erro ao gerar PDF:', err);
+      setPdfModalError('Houve um erro ao gerar o PDF. Por favor, tente novamente.');
     } finally {
       setIsGeneratingPdf(false);
     }
+  };
+
+  const handleExportSelectedNow = () => {
+    const selectedList = sortIssuesForReport(
+      issues.filter((i) => selectedIssueIds.includes(i.id))
+    );
+    if (selectedList.length === 0) return;
+    generateMaintenancePDF(
+      selectedList,
+      `MODO: SOLICITAÇÕES SELECIONADAS (${selectedList.length})`
+    );
+  };
+
+  const exportPDFWithSettings = async () => {
+    setPdfModalError(null);
+    if (pdfScopeMode === 'selected') {
+      const selectedList = sortIssuesForReport(
+        issues.filter((i) => selectedIssueIds.includes(i.id))
+      );
+      if (selectedList.length === 0) {
+        setPdfModalError('Selecione pelo menos uma solicitação para gerar o PDF.');
+        return;
+      }
+      await generateMaintenancePDF(
+        selectedList,
+        `MODO: SOLICITAÇÕES SELECIONADAS (${selectedList.length})`
+      );
+      return;
+    }
+
+    const generalList = getFilteredGeneralIssuesForPdf();
+    if (generalList.length === 0) {
+      setPdfModalError('Nenhuma solicitação encontrada para os filtros selecionados.');
+      return;
+    }
+    await generateMaintenancePDF(
+      generalList,
+      `MODO: PDF GERAL | STATUS: ${pdfStatusOption.toUpperCase()} | PERÍODO: ${pdfDateFilterType.toUpperCase()}`
+    );
   };
 
   const renderVerticalTimeline = (issue: MaintenanceIssue, inModal = false) => {
@@ -1753,9 +1887,22 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                 <span>Paradas de Máquina (100%)</span>
               </button>
             )}
+            {allowExportPdfButton && selectedIssueIds.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExportSelectedNow}
+                disabled={isGeneratingPdf}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 transition-all border border-emerald-500 shadow-lg shadow-emerald-500/20 cursor-pointer"
+                title="Gerar PDF imediatamente com as solicitações marcadas"
+              >
+                <Download size={16} />
+                <span>Gerar PDF das Selecionadas ({selectedIssueIds.length})</span>
+              </button>
+            )}
             {allowExportPdfButton && (
               <button
-                onClick={() => setIsExportPdfModalOpen(true)}
+                type="button"
+                onClick={openExportPdfModal}
                 className="bg-slate-700 hover:bg-slate-600 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 transition-all border border-slate-600 cursor-pointer"
               >
                 <Download size={16} />
@@ -2005,6 +2152,52 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         })}
       </div>
 
+      {/* Barra de Seleção Múltipla para PDF (aparece assim que selecionar uma ou mais solicitações) */}
+      {allowExportPdfButton && selectedIssueIds.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 md:p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="px-2.5 py-1 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider">
+              {selectedIssueIds.length} {selectedIssueIds.length === 1 ? 'selecionada' : 'selecionadas'}
+            </span>
+            <span className="text-xs font-bold text-blue-950">
+              Solicitações marcadas para exportar em PDF com todas as informações e etapas do andamento
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {filteredAndSortedIssues.some((i) => !selectedIssueIds.includes(i.id)) && (
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedIssueIds((prev) =>
+                    Array.from(new Set([...prev, ...filteredAndSortedIssues.map((i) => i.id)]))
+                  )
+                }
+                className="px-3 py-2 bg-white hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Selecionar Todas Visíveis ({filteredAndSortedIssues.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={clearIssueSelection}
+              className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Limpar Seleção
+            </button>
+            <button
+              type="button"
+              onClick={handleExportSelectedNow}
+              disabled={isGeneratingPdf}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            >
+              <Download size={13} />
+              <span>Gerar PDF das Selecionadas ({selectedIssueIds.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Table / Grid of Causes */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -2080,6 +2273,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                           const resolvedDateStr = issue.resolvedAt ? new Date(issue.resolvedAt).toLocaleDateString('pt-BR') : '';
                           const StatusIcon = statusColors[issue.status]?.icon || Clock;
                           const isResolved = issue.status === 'Resolvido';
+                          const isSelectedForPdf = selectedIssueIds.includes(issue.id);
 
                           return (
                             <motion.div
@@ -2088,22 +2282,34 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95 }}
-                              className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 ${isResolved ? 'border-emerald-100 bg-emerald-50/20 opacity-85' : 'border-slate-100 hover:shadow-md'}`}
+                              className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 ${
+                                isSelectedForPdf
+                                  ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/15'
+                                  : isResolved
+                                  ? 'border-emerald-100 bg-emerald-50/20 opacity-85'
+                                  : 'border-slate-100 hover:shadow-md'
+                              }`}
                             >
-                              {/* Top Content: Checkbox + Info */}
+                              {/* Top Content: Checkbox (para PDF) + Info */}
                               <div className="flex items-start gap-4 w-full">
-                                {/* Quick Resolve Checkbox Checkmark */}
-                                <button
-                                  onClick={() => toggleIssueStatus(issue)}
-                                  title={isResolved ? "Marcar como Pendente" : "Marcar como Resolvido"}
-                                  className="mt-1 shrink-0 text-slate-400 hover:text-blue-500 transition-all focus:outline-none cursor-pointer"
-                                >
-                                  {isResolved ? (
-                                    <CheckSquare className="w-6 h-6 text-emerald-500" />
-                                  ) : (
-                                    <Square className="w-6 h-6 hover:scale-105" />
-                                  )}
-                                </button>
+                                {allowExportPdfButton && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleIssueSelection(issue.id)}
+                                    title={
+                                      isSelectedForPdf
+                                        ? 'Desmarcar solicitação'
+                                        : 'Selecionar solicitação para exportar em PDF'
+                                    }
+                                    className="mt-1 shrink-0 text-slate-400 hover:text-blue-600 transition-all focus:outline-none cursor-pointer"
+                                  >
+                                    {isSelectedForPdf ? (
+                                      <CheckSquare className="w-6 h-6 text-blue-600" />
+                                    ) : (
+                                      <Square className="w-6 h-6 hover:scale-105" />
+                                    )}
+                                  </button>
+                                )}
 
                                 <div className="space-y-2.5 flex-1 min-w-0">
                                   {/* Priority and Area Tags */}
@@ -2455,135 +2661,309 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         </div>
       )}
 
-      {/* PDF Export Options Modal */}
+      {/* PDF Export Options Modal (PDF Geral + Selecionar Solicitações) */}
       {isExportPdfModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100] flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100] flex items-center justify-center p-4"
+          onClick={() => setIsExportPdfModalOpen(false)}
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]"
           >
             {/* Header */}
             <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
               <div>
                 <h3 className="font-black uppercase tracking-wide text-sm md:text-base">Exportar Relatório PDF</h3>
-                <p className="text-slate-400 text-[11px]">Configure os filtros específicos para o documento PDF</p>
+                <p className="text-slate-400 text-[11px]">
+                  Escolha entre PDF Geral ou selecionar solicitações específicas (inclui todas as informações e etapas)
+                </p>
               </div>
               <button
+                type="button"
                 onClick={() => setIsExportPdfModalOpen(false)}
-                className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-white transition-all"
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-white transition-all cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-5">
-              {/* Status Filter */}
+            <div className="p-6 space-y-5 overflow-y-auto">
+              {/* Escopo: PDF Geral vs Selecionar Opções */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Status das Ocorrências</label>
-                <div className="grid grid-cols-2 gap-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                  Tipo de Exportação
+                </label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
                   <button
                     type="button"
-                    onClick={() => setPdfStatusOption('Todos')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all border ${pdfStatusOption === 'Todos' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                    onClick={() => setPdfScopeMode('general')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      pdfScopeMode === 'general'
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    Todos (Pendentes + Resolvidos)
+                    PDF Geral (Todas)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPdfStatusOption('Resolvido')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all border ${pdfStatusOption === 'Resolvido' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                    onClick={() => setPdfScopeMode('selected')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      pdfScopeMode === 'selected'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    Apenas Resolvidos
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPdfStatusOption('Pendente')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all border col-span-2 ${pdfStatusOption === 'Pendente' ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                  >
-                    Apenas Pendentes
+                    Selecionadas ({selectedIssueIds.length})
                   </button>
                 </div>
               </div>
 
-              {/* Date Filter Selection */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Filtrar Período de Abertura</label>
-                <select
-                  value={pdfDateFilterType}
-                  onChange={(e) => setPdfDateFilterType(e.target.value as any)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                >
-                  <option value="Todos">Todo o Período (Sem Filtro de Data)</option>
-                  <option value="Dia">Selecionar Dia Específico</option>
-                  <option value="Mês">Selecionar Mês Específico</option>
-                  <option value="Ano">Selecionar Ano Específico</option>
-                </select>
-              </div>
+              {pdfScopeMode === 'general' ? (
+                <>
+                  {/* Status Filter */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                      Status das Ocorrências
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPdfStatusOption('Todos')}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          pdfStatusOption === 'Todos'
+                            ? 'bg-blue-50 border-blue-200 text-blue-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        Todos (Geral Completo)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPdfStatusOption('Pendente')}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          pdfStatusOption === 'Pendente'
+                            ? 'bg-orange-50 border-orange-200 text-orange-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        Apenas Pendentes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPdfStatusOption('Em Andamento')}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          pdfStatusOption === 'Em Andamento'
+                            ? 'bg-blue-50 border-blue-200 text-blue-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        Apenas Em Andamento
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPdfStatusOption('Resolvido')}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          pdfStatusOption === 'Resolvido'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        Apenas Concluídas
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Day Selector */}
-              {pdfDateFilterType === 'Dia' && (
-                <div className="space-y-1.5 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Dia</label>
-                  <input
-                    type="date"
-                    value={pdfSelectedDay}
-                    onChange={(e) => setPdfSelectedDay(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                  />
+                  {/* Date Filter Selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                      Filtrar Período de Abertura
+                    </label>
+                    <select
+                      value={pdfDateFilterType}
+                      onChange={(e) => setPdfDateFilterType(e.target.value as any)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
+                    >
+                      <option value="Todos">Todo o Período (Sem Filtro de Data)</option>
+                      <option value="Dia">Selecionar Dia Específico</option>
+                      <option value="Mês">Selecionar Mês Específico</option>
+                      <option value="Ano">Selecionar Ano Específico</option>
+                    </select>
+                  </div>
+
+                  {/* Day Selector */}
+                  {pdfDateFilterType === 'Dia' && (
+                    <div className="space-y-1.5 animate-in fade-in duration-200">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Dia</label>
+                      <input
+                        type="date"
+                        value={pdfSelectedDay}
+                        onChange={(e) => setPdfSelectedDay(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
+                      />
+                    </div>
+                  )}
+
+                  {/* Month Selector */}
+                  {pdfDateFilterType === 'Mês' && (
+                    <div className="space-y-1.5 animate-in fade-in duration-200">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Mês</label>
+                      <input
+                        type="month"
+                        value={pdfSelectedMonth}
+                        onChange={(e) => setPdfSelectedMonth(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
+                      />
+                    </div>
+                  )}
+
+                  {/* Year Selector */}
+                  {pdfDateFilterType === 'Ano' && (
+                    <div className="space-y-1.5 animate-in fade-in duration-200">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Ano</label>
+                      <select
+                        value={pdfSelectedYear}
+                        onChange={(e) => setPdfSelectedYear(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
+                      >
+                        {Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - 2 + i)).map((y) => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Info Alert */}
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-[11px] text-slate-500 flex gap-2">
+                    <span className="text-blue-500 font-black">ℹ</span>
+                    <span>
+                      Serão incluídas <strong>{getFilteredGeneralIssuesForPdf().length}</strong> solicitações com prioridade, setor, máquina, solicitante, causa, todas as etapas do andamento e resolução.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      Marque uma, duas ou várias solicitações ({selectedIssueIds.length} selecionadas)
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedIssueIds(issues.map((i) => i.id))}
+                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                      >
+                        Marcar Todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearIssueSelection}
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={pdfModalSearch}
+                      onChange={(e) => setPdfModalSearch(e.target.value)}
+                      placeholder="Filtrar solicitações para selecionar..."
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700"
+                    />
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                    {sortIssuesForReport(issues)
+                      .filter((i) => {
+                        const q = pdfModalSearch.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          (i.title || '').toLowerCase().includes(q) ||
+                          i.cause.toLowerCase().includes(q) ||
+                          i.machine.toLowerCase().includes(q) ||
+                          i.sector.toLowerCase().includes(q) ||
+                          i.reporter.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((item) => {
+                        const checked = selectedIssueIds.includes(item.id);
+                        const stepsCount = getSortedProgressUpdates(item).length;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => toggleIssueSelection(item.id)}
+                            className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
+                              checked
+                                ? 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-200'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {checked ? (
+                              <CheckSquare size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                            ) : (
+                              <Square size={18} className="text-slate-300 shrink-0 mt-0.5" />
+                            )}
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ${priorityColors[item.priority]?.bg}`}>
+                                  {item.priority}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[8px] font-bold uppercase">
+                                  {item.machine}
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${statusColors[item.status]?.bg} ${statusColors[item.status]?.text}`}>
+                                  {item.status}
+                                </span>
+                                {stepsCount > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[8px] font-black uppercase">
+                                    {stepsCount} {stepsCount === 1 ? 'etapa' : 'etapas'}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-bold text-slate-800 line-clamp-1">
+                                {item.title || generateTitleFromCause(item.cause)}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
                 </div>
               )}
 
-              {/* Month Selector */}
-              {pdfDateFilterType === 'Mês' && (
-                <div className="space-y-1.5 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Mês</label>
-                  <input
-                    type="month"
-                    value={pdfSelectedMonth}
-                    onChange={(e) => setPdfSelectedMonth(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                  />
+              {pdfModalError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3.5 py-2.5 text-xs font-bold">
+                  {pdfModalError}
                 </div>
               )}
-
-              {/* Year Selector */}
-              {pdfDateFilterType === 'Ano' && (
-                <div className="space-y-1.5 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Ano</label>
-                  <select
-                    value={pdfSelectedYear}
-                    onChange={(e) => setPdfSelectedYear(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                  >
-                    {Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - 2 + i)).map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Info Alert */}
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-[11px] text-slate-500 flex gap-2">
-                <span className="text-blue-500 font-black">ℹ</span>
-                <span>O PDF respeitará também a busca e filtros de Setor/Prioridade selecionados na tela se estiverem ativos.</span>
-              </div>
 
               {/* Footer Actions */}
               <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsExportPdfModalOpen(false)}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-black uppercase text-slate-600 transition-all"
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-black uppercase text-slate-600 transition-all cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={exportPDFWithSettings}
-                  disabled={isGeneratingPdf}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black uppercase text-white transition-all shadow-md shadow-slate-950/10 flex items-center gap-1.5"
+                  disabled={
+                    isGeneratingPdf ||
+                    (pdfScopeMode === 'selected' && selectedIssueIds.length === 0) ||
+                    (pdfScopeMode === 'general' && getFilteredGeneralIssuesForPdf().length === 0)
+                  }
+                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black uppercase text-white transition-all shadow-md shadow-slate-950/10 flex items-center gap-1.5 cursor-pointer"
                 >
                   {isGeneratingPdf ? (
                     <>
@@ -2593,7 +2973,11 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                   ) : (
                     <>
                       <Download size={14} />
-                      <span>Gerar Relatório PDF</span>
+                      <span>
+                        {pdfScopeMode === 'selected'
+                          ? `Gerar PDF das Selecionadas (${selectedIssueIds.length})`
+                          : 'Gerar PDF Geral'}
+                      </span>
                     </>
                   )}
                 </button>
