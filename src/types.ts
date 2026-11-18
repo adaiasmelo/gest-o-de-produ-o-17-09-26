@@ -523,6 +523,9 @@ export interface RibbonCuttingEntry {
     reason: string;
     description?: string;
   };
+  isMaintenanceEntry?: boolean;
+  isNoWorkDay?: boolean;
+  noWorkReason?: string;
 }
 
 export type DowntimeNature = 'Manutenção' | 'Processo' | 'Outros' | string;

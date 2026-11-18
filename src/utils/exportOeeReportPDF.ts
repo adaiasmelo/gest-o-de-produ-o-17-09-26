@@ -169,6 +169,13 @@ export function calculateOeeMetrics(params: OeeReportParams): {
         actualProd += Number(e.producedM2) || 0;
         lossVal += Number(e.rejectedM2) || 0;
 
+        if (e.isNoWorkDay) {
+          const nwStop = Number(e.stoppedMinutes) || 528;
+          stoppedMin += nwStop;
+          outrosMin += nwStop;
+          return;
+        }
+
         const mMin = Number(e.manutencaoMin) || 0;
         const pMin = Number(e.processoMin) || 0;
         const oMin = Number(e.outrosMin) || 0;

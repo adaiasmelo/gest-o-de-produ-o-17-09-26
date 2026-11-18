@@ -772,6 +772,24 @@ export const MaintenanceDowntimeAnalyticsView: React.FC<MaintenanceDowntimeAnaly
       const shift = e.shift || 'Comercial';
       const operator = e.operator || 'Sem Operador';
 
+      if (e.isNoWorkDay) {
+        const dur = Number(e.stoppedMinutes || 0) > 0
+          ? Number(e.stoppedMinutes)
+          : getShiftPlannedMinutes(shift, 'Corte de Fita');
+        list.push({
+          id: `rib-${e.id}-nowork`,
+          date: e.date,
+          machine: mId,
+          sector: 'Corte de Fita',
+          shift,
+          operator,
+          category: 'Outros',
+          reason: e.noWorkReason || e.stoppedReason || 'Máquina Parada (Período Completo)',
+          minutes: Math.round(dur),
+        });
+        return;
+      }
+
       const mMin = Number(e.manutencaoMin || 0);
       const pMin = Number(e.processoMin || 0);
       const oMin = Number(e.outrosMin || 0);
@@ -952,20 +970,25 @@ export const MaintenanceDowntimeAnalyticsView: React.FC<MaintenanceDowntimeAnaly
           if (!shiftSlotMinutes.has(slotKey)) {
             shiftSlotMinutes.set(slotKey, slotDur);
           }
-          const mMin = Number(e.manutencaoMin || 0);
-          const pMin = Number(e.processoMin || 0);
-          const oMin = Number(e.outrosMin || 0);
-          const catSum = mMin + pMin + oMin;
-          const legacyExtra = Math.max(0, Number(e.stoppedMinutes || 0) - catSum);
+          if (e.isNoWorkDay) {
+            const customNoWork = Number(e.stoppedMinutes || 0);
+            noWorkMin += customNoWork > 0 ? Math.min(slotDur, customNoWork) : slotDur;
+          } else {
+            const mMin = Number(e.manutencaoMin || 0);
+            const pMin = Number(e.processoMin || 0);
+            const oMin = Number(e.outrosMin || 0);
+            const catSum = mMin + pMin + oMin;
+            const legacyExtra = Math.max(0, Number(e.stoppedMinutes || 0) - catSum);
 
-          manutMin += mMin;
-          procMin += pMin;
-          outrosMin += oMin;
-          if (legacyExtra > 0) {
-            const inf = inferStopCategoryFromReason(e.stoppedReason || '');
-            if (inf === 'Manutenção') manutMin += legacyExtra;
-            else if (inf === 'Processo') procMin += legacyExtra;
-            else outrosMin += legacyExtra;
+            manutMin += mMin;
+            procMin += pMin;
+            outrosMin += oMin;
+            if (legacyExtra > 0) {
+              const inf = inferStopCategoryFromReason(e.stoppedReason || '');
+              if (inf === 'Manutenção') manutMin += legacyExtra;
+              else if (inf === 'Processo') procMin += legacyExtra;
+              else outrosMin += legacyExtra;
+            }
           }
 
           actualProduction += Number(e.producedM2 || 0);

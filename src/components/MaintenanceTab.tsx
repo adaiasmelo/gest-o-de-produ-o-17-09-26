@@ -225,18 +225,12 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   // PDF Export Modal & Multi-Selection State
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [isExportPdfModalOpen, setIsExportPdfModalOpen] = useState(false);
-  const [pdfScopeMode, setPdfScopeMode] = useState<'general' | 'selected'>('general');
   const [pdfModalSearch, setPdfModalSearch] = useState('');
   const [pdfModalError, setPdfModalError] = useState<string | null>(null);
   const [isOutlookShareModalOpen, setIsOutlookShareModalOpen] = useState(false);
   const [isProportionalStopsModalOpen, setIsProportionalStopsModalOpen] = useState(false);
   const [stopsModalMonth, setStopsModalMonth] = useState<string>(dashboardMonth || 'Todos');
   const [stopsModalGroupBy, setStopsModalGroupBy] = useState<'machine' | 'operator'>('machine');
-  const [pdfStatusOption, setPdfStatusOption] = useState<'Todos' | 'Pendente' | 'Em Andamento' | 'Resolvido'>('Todos');
-  const [pdfDateFilterType, setPdfDateFilterType] = useState<'Todos' | 'Dia' | 'Mês' | 'Ano'>('Todos');
-  const [pdfSelectedDay, setPdfSelectedDay] = useState(new Date().toISOString().split('T')[0]);
-  const [pdfSelectedMonth, setPdfSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
-  const [pdfSelectedYear, setPdfSelectedYear] = useState(String(new Date().getFullYear()));
 
   // Filters State
   const [statusFilter, setStatusFilter] = useState<'Todos' | MaintenanceStatus>('Todos');
@@ -497,7 +491,6 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   };
 
   const openExportPdfModal = () => {
-    setPdfScopeMode(selectedIssueIds.length > 0 ? 'selected' : 'general');
     setPdfModalSearch('');
     setPdfModalError(null);
     setIsExportPdfModalOpen(true);
@@ -1196,49 +1189,41 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     });
   };
 
-  const getFilteredGeneralIssuesForPdf = (): MaintenanceIssue[] => {
-    let list = [...issues];
-    if (pdfStatusOption !== 'Todos') {
-      list = list.filter((i) => i.status === pdfStatusOption);
-    }
-    if (pdfDateFilterType === 'Dia' && pdfSelectedDay) {
-      list = list.filter((i) => {
-        const localDate = new Date(i.createdAt);
-        const y = localDate.getFullYear();
-        const m = String(localDate.getMonth() + 1).padStart(2, '0');
-        const d = String(localDate.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}` === pdfSelectedDay;
-      });
-    } else if (pdfDateFilterType === 'Mês' && pdfSelectedMonth) {
-      list = list.filter((i) => {
-        const localDate = new Date(i.createdAt);
-        const y = localDate.getFullYear();
-        const m = String(localDate.getMonth() + 1).padStart(2, '0');
-        return `${y}-${m}` === pdfSelectedMonth;
-      });
-    } else if (pdfDateFilterType === 'Ano' && pdfSelectedYear) {
-      list = list.filter((i) => {
-        const localDate = new Date(i.createdAt);
-        return String(localDate.getFullYear()) === pdfSelectedYear;
-      });
-    }
-
-    list = list.filter((issue) => {
-      const matchesPriority = priorityFilter === 'Todos' || issue.priority === priorityFilter;
-      const matchesSector = sectorFilter === 'Todos' || issue.sector === sectorFilter;
-      const matchesSearch =
-        (issue.title || '').toLowerCase().includes(search.toLowerCase()) ||
-        issue.cause.toLowerCase().includes(search.toLowerCase()) ||
-        issue.machine.toLowerCase().includes(search.toLowerCase()) ||
-        issue.reporter.toLowerCase().includes(search.toLowerCase());
-      return matchesPriority && matchesSector && matchesSearch;
+  const resolveLogoForPdf = (src: string): Promise<{ dataUrl: string; width: number; height: number } | null> => {
+    return new Promise((resolve) => {
+      if (!src) {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      if (!src.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || img.width || 120;
+          const h = img.naturalHeight || img.height || 120;
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(null);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve({ dataUrl: canvas.toDataURL('image/png'), width: w, height: h });
+        } catch {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
     });
-
-    return sortIssuesForReport(list);
   };
 
-  // Geração completa do PDF (PDF Geral ou Solicitações Selecionadas) incluindo todas as informações e etapas do andamento
-  const generateMaintenancePDF = async (targetIssues: MaintenanceIssue[], scopeLabel: string) => {
+  // Geração completa do PDF das solicitações selecionadas, incluindo logo da empresa e todas as etapas do andamento
+  const generateMaintenancePDF = async (targetIssues: MaintenanceIssue[]) => {
     if (!targetIssues || targetIssues.length === 0) {
       return;
     }
@@ -1247,14 +1232,27 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       setIsGeneratingPdf(true);
       const doc = new jsPDF('p', 'mm', 'a4');
 
-      // 1. Cabeçalho
+      const fallbackLogo = 'https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png';
+      const logoSrc =
+        systemLogo ||
+        (typeof window !== 'undefined' ? localStorage.getItem('manupackaging_system_logo') : null) ||
+        fallbackLogo;
+      const loadedLogo = await resolveLogoForPdf(logoSrc);
+      const companyLabel = (systemName || 'MANUPACKAGING').trim().toUpperCase();
+
+      // 1. Cabeçalho com Logo da Empresa
       doc.setFillColor(15, 23, 42); // slate-900
       doc.rect(0, 0, 210, 38, 'F');
 
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(147, 197, 253); // blue-300
+      doc.text(companyLabel, 15, 11.5);
+
       doc.setTextColor(255, 255, 255);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(15);
-      doc.text('RELATÓRIO DE SOLICITAÇÕES DE MANUTENÇÃO', 15, 16);
+      doc.setFontSize(14);
+      doc.text('RELATÓRIO DE SOLICITAÇÕES DE MANUTENÇÃO', 15, 19);
 
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(8.5);
@@ -1262,9 +1260,38 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       doc.text(
         `GERADO EM: ${new Date().toLocaleDateString('pt-BR')} ÀS ${new Date().toLocaleTimeString('pt-BR')}`,
         15,
-        24
+        26
       );
-      doc.text(scopeLabel.toUpperCase(), 15, 30);
+      doc.text(
+        `SOLICITAÇÕES EXPORTADAS: ${targetIssues.length} ${targetIssues.length === 1 ? 'SOLICITAÇÃO' : 'SOLICITAÇÕES'}`,
+        15,
+        31.5
+      );
+
+      // Moldura branca para destacar o logo da empresa no cabeçalho
+      const boxX = 166;
+      const boxY = 6;
+      const boxW = 29;
+      const boxH = 26;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(boxX, boxY, boxW, boxH, 3, 3, 'F');
+
+      if (loadedLogo) {
+        const maxW = boxW - 4;
+        const maxH = boxH - 4;
+        const ratio = Math.min(maxW / loadedLogo.width, maxH / loadedLogo.height);
+        const drawW = loadedLogo.width * ratio;
+        const drawH = loadedLogo.height * ratio;
+        const drawX = boxX + (boxW - drawW) / 2;
+        const drawY = boxY + (boxH - drawH) / 2;
+        doc.addImage(loadedLogo.dataUrl, 'PNG', drawX, drawY, drawW, drawH);
+      } else if (logoSrc) {
+        try {
+          doc.addImage(logoSrc, 'PNG', boxX + 2.5, boxY + 2, boxW - 5, boxH - 4);
+        } catch (logoErr) {
+          console.warn('Não foi possível renderizar o logo no PDF:', logoErr);
+        }
+      }
 
       doc.setFillColor(59, 130, 246);
       doc.rect(0, 38, 210, 1.5, 'F');
@@ -1475,38 +1502,19 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       issues.filter((i) => selectedIssueIds.includes(i.id))
     );
     if (selectedList.length === 0) return;
-    generateMaintenancePDF(
-      selectedList,
-      `MODO: SOLICITAÇÕES SELECIONADAS (${selectedList.length})`
-    );
+    generateMaintenancePDF(selectedList);
   };
 
   const exportPDFWithSettings = async () => {
     setPdfModalError(null);
-    if (pdfScopeMode === 'selected') {
-      const selectedList = sortIssuesForReport(
-        issues.filter((i) => selectedIssueIds.includes(i.id))
-      );
-      if (selectedList.length === 0) {
-        setPdfModalError('Selecione pelo menos uma solicitação para gerar o PDF.');
-        return;
-      }
-      await generateMaintenancePDF(
-        selectedList,
-        `MODO: SOLICITAÇÕES SELECIONADAS (${selectedList.length})`
-      );
-      return;
-    }
-
-    const generalList = getFilteredGeneralIssuesForPdf();
-    if (generalList.length === 0) {
-      setPdfModalError('Nenhuma solicitação encontrada para os filtros selecionados.');
-      return;
-    }
-    await generateMaintenancePDF(
-      generalList,
-      `MODO: PDF GERAL | STATUS: ${pdfStatusOption.toUpperCase()} | PERÍODO: ${pdfDateFilterType.toUpperCase()}`
+    const selectedList = sortIssuesForReport(
+      issues.filter((i) => selectedIssueIds.includes(i.id))
     );
+    if (selectedList.length === 0) {
+      setPdfModalError('Selecione pelo menos uma solicitação para gerar o PDF.');
+      return;
+    }
+    await generateMaintenancePDF(selectedList);
   };
 
   const renderVerticalTimeline = (issue: MaintenanceIssue, inModal = false) => {
@@ -2661,7 +2669,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         </div>
       )}
 
-      {/* PDF Export Options Modal (PDF Geral + Selecionar Solicitações) */}
+      {/* PDF Export Options Modal (Selecionar Solicitações) */}
       {isExportPdfModalOpen && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100] flex items-center justify-center p-4"
@@ -2678,7 +2686,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               <div>
                 <h3 className="font-black uppercase tracking-wide text-sm md:text-base">Exportar Relatório PDF</h3>
                 <p className="text-slate-400 text-[11px]">
-                  Escolha entre PDF Geral ou selecionar solicitações específicas (inclui todas as informações e etapas)
+                  Selecione uma ou várias solicitações para incluir no PDF (com todas as informações e etapas)
                 </p>
               </div>
               <button
@@ -2691,254 +2699,99 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-5 overflow-y-auto">
-              {/* Escopo: PDF Geral vs Selecionar Opções */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                  Tipo de Exportação
-                </label>
-                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setPdfScopeMode('general')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      pdfScopeMode === 'general'
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    PDF Geral (Todas)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPdfScopeMode('selected')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      pdfScopeMode === 'selected'
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Selecionadas ({selectedIssueIds.length})
-                  </button>
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Marque uma, duas ou várias solicitações ({selectedIssueIds.length} selecionadas)
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIssueIds(issues.map((i) => i.id))}
+                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                    >
+                      Marcar Todas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearIssueSelection}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={pdfModalSearch}
+                    onChange={(e) => setPdfModalSearch(e.target.value)}
+                    placeholder="Filtrar solicitações para selecionar..."
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700"
+                  />
+                </div>
+
+                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                  {sortIssuesForReport(issues)
+                    .filter((i) => {
+                      const q = pdfModalSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (
+                        (i.title || '').toLowerCase().includes(q) ||
+                        i.cause.toLowerCase().includes(q) ||
+                        i.machine.toLowerCase().includes(q) ||
+                        i.sector.toLowerCase().includes(q) ||
+                        i.reporter.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((item) => {
+                      const checked = selectedIssueIds.includes(item.id);
+                      const stepsCount = getSortedProgressUpdates(item).length;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => toggleIssueSelection(item.id)}
+                          className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
+                            checked
+                              ? 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-200'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          {checked ? (
+                            <CheckSquare size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                          ) : (
+                            <Square size={18} className="text-slate-300 shrink-0 mt-0.5" />
+                          )}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ${priorityColors[item.priority]?.bg}`}>
+                                {item.priority}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[8px] font-bold uppercase">
+                                {item.machine}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${statusColors[item.status]?.bg} ${statusColors[item.status]?.text}`}>
+                                {item.status}
+                              </span>
+                              {stepsCount > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[8px] font-black uppercase">
+                                  {stepsCount} {stepsCount === 1 ? 'etapa' : 'etapas'}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-bold text-slate-800 line-clamp-1">
+                              {item.title || generateTitleFromCause(item.cause)}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
                 </div>
               </div>
-
-              {pdfScopeMode === 'general' ? (
-                <>
-                  {/* Status Filter */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                      Status das Ocorrências
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPdfStatusOption('Todos')}
-                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                          pdfStatusOption === 'Todos'
-                            ? 'bg-blue-50 border-blue-200 text-blue-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
-                      >
-                        Todos (Geral Completo)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPdfStatusOption('Pendente')}
-                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                          pdfStatusOption === 'Pendente'
-                            ? 'bg-orange-50 border-orange-200 text-orange-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
-                      >
-                        Apenas Pendentes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPdfStatusOption('Em Andamento')}
-                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                          pdfStatusOption === 'Em Andamento'
-                            ? 'bg-blue-50 border-blue-200 text-blue-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
-                      >
-                        Apenas Em Andamento
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPdfStatusOption('Resolvido')}
-                        className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                          pdfStatusOption === 'Resolvido'
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
-                      >
-                        Apenas Concluídas
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Date Filter Selection */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                      Filtrar Período de Abertura
-                    </label>
-                    <select
-                      value={pdfDateFilterType}
-                      onChange={(e) => setPdfDateFilterType(e.target.value as any)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                    >
-                      <option value="Todos">Todo o Período (Sem Filtro de Data)</option>
-                      <option value="Dia">Selecionar Dia Específico</option>
-                      <option value="Mês">Selecionar Mês Específico</option>
-                      <option value="Ano">Selecionar Ano Específico</option>
-                    </select>
-                  </div>
-
-                  {/* Day Selector */}
-                  {pdfDateFilterType === 'Dia' && (
-                    <div className="space-y-1.5 animate-in fade-in duration-200">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Dia</label>
-                      <input
-                        type="date"
-                        value={pdfSelectedDay}
-                        onChange={(e) => setPdfSelectedDay(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                      />
-                    </div>
-                  )}
-
-                  {/* Month Selector */}
-                  {pdfDateFilterType === 'Mês' && (
-                    <div className="space-y-1.5 animate-in fade-in duration-200">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Mês</label>
-                      <input
-                        type="month"
-                        value={pdfSelectedMonth}
-                        onChange={(e) => setPdfSelectedMonth(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                      />
-                    </div>
-                  )}
-
-                  {/* Year Selector */}
-                  {pdfDateFilterType === 'Ano' && (
-                    <div className="space-y-1.5 animate-in fade-in duration-200">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Escolha o Ano</label>
-                      <select
-                        value={pdfSelectedYear}
-                        onChange={(e) => setPdfSelectedYear(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
-                      >
-                        {Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - 2 + i)).map((y) => (
-                          <option key={y} value={y}>{y}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Info Alert */}
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-[11px] text-slate-500 flex gap-2">
-                    <span className="text-blue-500 font-black">ℹ</span>
-                    <span>
-                      Serão incluídas <strong>{getFilteredGeneralIssuesForPdf().length}</strong> solicitações com prioridade, setor, máquina, solicitante, causa, todas as etapas do andamento e resolução.
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                      Marque uma, duas ou várias solicitações ({selectedIssueIds.length} selecionadas)
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedIssueIds(issues.map((i) => i.id))}
-                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase cursor-pointer"
-                      >
-                        Marcar Todas
-                      </button>
-                      <button
-                        type="button"
-                        onClick={clearIssueSelection}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase cursor-pointer"
-                      >
-                        Limpar
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={pdfModalSearch}
-                      onChange={(e) => setPdfModalSearch(e.target.value)}
-                      placeholder="Filtrar solicitações para selecionar..."
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700"
-                    />
-                  </div>
-
-                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-                    {sortIssuesForReport(issues)
-                      .filter((i) => {
-                        const q = pdfModalSearch.trim().toLowerCase();
-                        if (!q) return true;
-                        return (
-                          (i.title || '').toLowerCase().includes(q) ||
-                          i.cause.toLowerCase().includes(q) ||
-                          i.machine.toLowerCase().includes(q) ||
-                          i.sector.toLowerCase().includes(q) ||
-                          i.reporter.toLowerCase().includes(q)
-                        );
-                      })
-                      .map((item) => {
-                        const checked = selectedIssueIds.includes(item.id);
-                        const stepsCount = getSortedProgressUpdates(item).length;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => toggleIssueSelection(item.id)}
-                            className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
-                              checked
-                                ? 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-200'
-                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {checked ? (
-                              <CheckSquare size={18} className="text-blue-600 shrink-0 mt-0.5" />
-                            ) : (
-                              <Square size={18} className="text-slate-300 shrink-0 mt-0.5" />
-                            )}
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ${priorityColors[item.priority]?.bg}`}>
-                                  {item.priority}
-                                </span>
-                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[8px] font-bold uppercase">
-                                  {item.machine}
-                                </span>
-                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${statusColors[item.status]?.bg} ${statusColors[item.status]?.text}`}>
-                                  {item.status}
-                                </span>
-                                {stepsCount > 0 && (
-                                  <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[8px] font-black uppercase">
-                                    {stepsCount} {stepsCount === 1 ? 'etapa' : 'etapas'}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs font-bold text-slate-800 line-clamp-1">
-                                {item.title || generateTitleFromCause(item.cause)}
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
 
               {pdfModalError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3.5 py-2.5 text-xs font-bold">
@@ -2958,11 +2811,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                 <button
                   type="button"
                   onClick={exportPDFWithSettings}
-                  disabled={
-                    isGeneratingPdf ||
-                    (pdfScopeMode === 'selected' && selectedIssueIds.length === 0) ||
-                    (pdfScopeMode === 'general' && getFilteredGeneralIssuesForPdf().length === 0)
-                  }
+                  disabled={isGeneratingPdf || selectedIssueIds.length === 0}
                   className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black uppercase text-white transition-all shadow-md shadow-slate-950/10 flex items-center gap-1.5 cursor-pointer"
                 >
                   {isGeneratingPdf ? (
@@ -2973,11 +2822,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                   ) : (
                     <>
                       <Download size={14} />
-                      <span>
-                        {pdfScopeMode === 'selected'
-                          ? `Gerar PDF das Selecionadas (${selectedIssueIds.length})`
-                          : 'Gerar PDF Geral'}
-                      </span>
+                      <span>Gerar PDF ({selectedIssueIds.length})</span>
                     </>
                   )}
                 </button>

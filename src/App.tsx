@@ -10,7 +10,7 @@ import {
   Home as HomeIcon, WifiOff, Image as ImageIcon, LayoutDashboard, BarChart3, ChevronDown,
   Eye, Calculator, Sparkles, Layers, Wrench, Award, Maximize2, Minimize2, Calendar, Utensils, Tv, Presentation, Languages, Zap,
   MoreVertical, ChevronLeft, Gauge, Check, Sliders, Shield, RefreshCw, Palmtree, UserX, UserCheck, FolderPlus, Scissors, Video, Play,
-  Camera, Pause
+  Camera, Pause, CalendarX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -1375,6 +1375,12 @@ export const App: React.FC = () => {
   const [ribbonBonusOccurrenceDiscount, setRibbonBonusOccurrenceDiscount] = useState(30);
   const [ribbonBonusOccurrenceReason, setRibbonBonusOccurrenceReason] = useState('');
   const [selectedRibbonPresetId, setSelectedRibbonPresetId] = useState<string>('');
+  const [ribbonIsMaintenanceEntry, setRibbonIsMaintenanceEntry] = useState(false);
+  const [ribbonIsNoWorkDay, setRibbonIsNoWorkDay] = useState(false);
+  const [ribbonNoWorkReason, setRibbonNoWorkReason] = useState('');
+  const [ribbonNoWorkFullPeriod, setRibbonNoWorkFullPeriod] = useState(true);
+  const [ribbonNoWorkStartTime, setRibbonNoWorkStartTime] = useState('07:30');
+  const [ribbonNoWorkEndTime, setRibbonNoWorkEndTime] = useState('17:18');
 
   const totalRibbonDeductibleStopsMinutes = useMemo(() => {
     // REGRA DE METAS: Paradas por manutenção e outros (queda de energia, externos, intervalos) abatem da meta.
@@ -4485,6 +4491,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const calcTotalMinutes = (stops: StopItem[]): number => {
     return stops.reduce((sum, item) => {
       const manual = Number(item.durationMinutes);
+      if (item.de === '07:30' && item.ate === '17:18' && manual === 528) {
+        return sum + 528;
+      }
       if (item.isAvulso || (!item.de && !item.ate)) {
         return sum + (isNaN(manual) ? 0 : manual);
       }
@@ -5790,6 +5799,18 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       let totalStops = 0;
 
       entriesList.forEach(e => {
+        if (e.isNoWorkDay) {
+          const nwMin = Number(e.stoppedMinutes || 528);
+          totalStops += nwMin;
+          allStopsList.push({
+            de: '07:30',
+            ate: '17:18',
+            motivo: (e.noWorkReason || e.stoppedReason || 'Máquina Parada (Período Completo)').trim(),
+            min: nwMin,
+          });
+          return;
+        }
+
         const mMin = Number(e.manutencaoMin || 0);
         const pMin = Number(e.processoMin || 0);
         const oMin = Number(e.outrosMin || 0);
@@ -6257,8 +6278,53 @@ Atenciosamente,
     }
   };
 
+  const resetRibbonForm = () => {
+    setRibbonOperator('');
+    setRibbonShift('Comercial');
+    setRibbonProducedM2('');
+    setRibbonRejectedM2('');
+    setRibbonWasteWeight('');
+    setRibbonJumboM2('');
+    setRibbonJumboType('');
+    setRibbonMachine('');
+    setRibbonTargetDailyM2('');
+    setRibbonRollsCount('');
+    setRibbonRollWidth('');
+    setRibbonRollLength('');
+    setRibbonOrderNumber('');
+    setRibbonRollsTipo1('');
+    setRibbonRollsTipo2('');
+    setRibbonM2Tipo1('');
+    setRibbonM2Tipo2('');
+    setRibbonStoppedMinutes('');
+    setRibbonStoppedReason('');
+    setRibbonManutencaoStops([]);
+    setRibbonProcessoStops([]);
+    setRibbonOutrosStops([]);
+    setRibbonJumboItems([]);
+    setRibbonHasBonusOccurrence(false);
+    setRibbonBonusOccurrenceType('meta_maquina_nao_atingida');
+    setRibbonBonusOccurrenceDiscount(30);
+    setRibbonBonusOccurrenceReason('');
+    setSelectedRibbonPresetId('');
+    setRibbonIsMaintenanceEntry(false);
+    setRibbonIsNoWorkDay(false);
+    setRibbonNoWorkReason('');
+    setRibbonNoWorkFullPeriod(true);
+    setRibbonNoWorkStartTime('07:30');
+    setRibbonNoWorkEndTime('17:18');
+    setEditingRibbonId(null);
+  };
+
   const handleUpdateRibbonStop = (type: 'manutencao' | 'processo' | 'outros', id: string, field: keyof StopItem, value: string) => {
-    const updateFn = (prev: StopItem[]) => prev.map(item => item.id === id ? { ...item, [field]: value } : item);
+    const updateFn = (prev: StopItem[]) => prev.map(item => {
+      if (item.id !== id) return item;
+      const updated: StopItem = { ...item, [field]: value };
+      if ((field === 'de' || field === 'ate') && !(updated.de === '07:30' && updated.ate === '17:18')) {
+        updated.durationMinutes = undefined;
+      }
+      return updated;
+    });
     if (type === 'manutencao') {
       setRibbonManutencaoStops(updateFn);
     } else if (type === 'processo') {
@@ -6287,100 +6353,198 @@ Atenciosamente,
       return;
     }
 
-    if (!ribbonOperator || !ribbonShift) {
+    if (!ribbonDate || !ribbonMachine) {
       triggerHaptic('warning');
-      alert('Por favor, preencha todos os campos obrigatórios!');
+      alert('Por favor, selecione a Data e a Máquina!');
       return;
     }
 
-    const prodVal = parseFloat(ribbonProducedM2) || 0;
-    const rejVal = parseFloat(ribbonRejectedM2) || 0;
-    const wasteVal = parseFloat(ribbonWasteWeight) || 0;
-    const jumboVal = parseFloat(ribbonJumboM2) || 0;
+    if (!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry && !ribbonOperator) {
+      triggerHaptic('warning');
+      alert('Por favor, selecione o Operador!');
+      return;
+    }
 
-    const manutencaoMinCalculado = calcTotalMinutes(ribbonManutencaoStops);
-    const processoMinCalculado = calcTotalMinutes(ribbonProcessoStops);
-    const outrosMinCalculado = calcTotalMinutes(ribbonOutrosStops);
-    const totalStoppedMinutes = manutencaoMinCalculado + processoMinCalculado + outrosMinCalculado;
+    if (ribbonIsNoWorkDay && !ribbonNoWorkReason.trim()) {
+      triggerHaptic('warning');
+      alert('Por favor, informe o motivo / justificativa da máquina parada!');
+      return;
+    }
 
-    let parts: string[] = [];
-    if (manutencaoMinCalculado > 0) parts.push(`Manutenção: ${manutencaoMinCalculado}min`);
-    if (processoMinCalculado > 0) parts.push(`Processo: ${processoMinCalculado}min`);
-    if (outrosMinCalculado > 0) parts.push(`Outros: ${outrosMinCalculado}min`);
-    const ribbonStoppedReasonCombined = parts.join(', ') || 'Nenhum';
+    const maintStopMins = calcTotalMinutes(ribbonManutencaoStops);
+    if (ribbonIsMaintenanceEntry && (ribbonManutencaoStops.length === 0 || maintStopMins <= 0)) {
+      triggerHaptic('warning');
+      alert('Por favor, informe o horário ou selecione Período Completo para a manutenção!');
+      return;
+    }
+    if (ribbonIsMaintenanceEntry && !ribbonManutencaoStops.some(s => (s.explicacao || s.motivo || '').trim().length > 0)) {
+      triggerHaptic('warning');
+      alert('Por favor, informe o motivo / observação da manutenção!');
+      return;
+    }
 
+    const effectiveShift = ribbonShift || 'Comercial';
     const entryId = editingRibbonId || `ribbon_${Date.now()}`;
-    const isProportional = proportionalGoalsResult.isProportional;
-    const finalTargetDailyM2 = isProportional 
-      ? proportionalGoalsResult.totalCompositeTargetM2 
-      : (ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) || undefined : undefined);
 
-    const enrichedJumboItems = ribbonJumboItems.length > 0 ? ribbonJumboItems.map((it, idx) => {
-      const calc = proportionalGoalsResult.items.find(c => c.id === it.id) || proportionalGoalsResult.items[idx];
-      return {
-        ...it,
-        nominalTargetDailyM2: calc?.nominalTargetDailyM2 ?? it.nominalTargetDailyM2,
-        proportionalTargetM2: calc?.proportionalTargetM2 ?? it.proportionalTargetM2,
-        attainmentPercent: calc?.attainmentPercent ?? it.attainmentPercent,
-        durationHours: calc?.durationHours ?? it.durationHours,
-        formatLabel: calc?.formatLabel ?? it.formatLabel
+    let payload: RibbonCuttingEntry;
+
+    if (ribbonIsNoWorkDay) {
+      const noWorkReasonClean = ribbonNoWorkReason.trim();
+      const customNoWorkMin = getDiffMinutes(ribbonNoWorkStartTime, ribbonNoWorkEndTime);
+      const noWorkStopMin = ribbonNoWorkFullPeriod ? 528 : (customNoWorkMin > 0 ? customNoWorkMin : 528);
+
+      payload = {
+        id: entryId,
+        date: ribbonDate,
+        operator: '',
+        shift: effectiveShift,
+        producedM2: 0,
+        rejectedM2: 0,
+        wasteWeight: 0,
+        jumboM2: 0,
+        jumboType: '',
+        updatedAt: new Date().toISOString(),
+        userId: currentUser?.uid || 'anonymous',
+        machine: ribbonMachine,
+        stoppedMinutes: noWorkStopMin,
+        stoppedReason: noWorkReasonClean,
+        manutencaoMin: 0,
+        manutencaoMotivo: '',
+        processoMin: 0,
+        processoMotivo: '',
+        outrosMin: 0,
+        outrosMotivo: '',
+        isMaintenanceEntry: false,
+        isNoWorkDay: true,
+        noWorkReason: noWorkReasonClean,
+        hasBonusOccurrence: false,
       };
-    }) : undefined;
+      saveReasonToLibrary('paradas_fita', noWorkReasonClean, loggedUser?.name || 'Sistema');
+    } else if (ribbonIsMaintenanceEntry) {
+      payload = {
+        id: entryId,
+        date: ribbonDate,
+        operator: ribbonOperator || '',
+        shift: effectiveShift,
+        producedM2: 0,
+        rejectedM2: 0,
+        wasteWeight: 0,
+        jumboM2: 0,
+        jumboType: '',
+        updatedAt: new Date().toISOString(),
+        userId: currentUser?.uid || 'anonymous',
+        machine: ribbonMachine,
+        stoppedMinutes: maintStopMins,
+        stoppedReason: `Manutenção: ${maintStopMins}min`,
+        manutencaoMin: maintStopMins,
+        manutencaoMotivo: JSON.stringify(ribbonManutencaoStops),
+        processoMin: 0,
+        processoMotivo: '',
+        outrosMin: 0,
+        outrosMotivo: '',
+        isMaintenanceEntry: true,
+        isNoWorkDay: false,
+        noWorkReason: '',
+        hasBonusOccurrence: false,
+      };
+      ribbonManutencaoStops.forEach((stop) => {
+        const text = (stop.explicacao || stop.motivo || '').trim();
+        if (text) {
+          saveReasonToLibrary('paradas_fita', text, ribbonOperator || loggedUser?.name || 'Sistema');
+        }
+      });
+    } else {
+      const prodVal = parseFloat(ribbonProducedM2) || 0;
+      const rejVal = parseFloat(ribbonRejectedM2) || 0;
+      const wasteVal = parseFloat(ribbonWasteWeight) || 0;
+      const jumboVal = parseFloat(ribbonJumboM2) || 0;
 
-    const payload: RibbonCuttingEntry = {
-      id: entryId,
-      date: ribbonDate,
-      operator: ribbonOperator,
-      shift: 'Comercial',
-      producedM2: prodVal,
-      rejectedM2: rejVal,
-      wasteWeight: wasteVal,
-      jumboM2: jumboVal,
-      jumboType: ribbonJumboType,
-      updatedAt: new Date().toISOString(),
-      userId: currentUser?.uid || 'anonymous',
-      machine: ribbonMachine || undefined,
-      rollsCount: ribbonRollsCount ? parseInt(ribbonRollsCount) || 0 : undefined,
-      rollWidth: ribbonRollWidth ? parseFloat(ribbonRollWidth) || 0 : undefined,
-      rollLength: ribbonRollLength ? parseFloat(ribbonRollLength) || 0 : undefined,
-      orderNumber: ribbonOrderNumber || undefined,
-      rollsTipo1: ribbonRollsTipo1 ? parseInt(ribbonRollsTipo1) || 0 : undefined,
-      rollsTipo2: ribbonRollsTipo2 ? parseInt(ribbonRollsTipo2) || 0 : undefined,
-      m2Tipo1: ribbonM2Tipo1 ? parseFloat(ribbonM2Tipo1) || 0 : undefined,
-      m2Tipo2: ribbonM2Tipo2 ? parseFloat(ribbonM2Tipo2) || 0 : undefined,
-      jumboItems: enrichedJumboItems,
-      stoppedMinutes: totalStoppedMinutes,
-      stoppedReason: ribbonStoppedReasonCombined,
-      manutencaoMin: manutencaoMinCalculado,
-      manutencaoMotivo: ribbonManutencaoStops.length > 0 ? JSON.stringify(ribbonManutencaoStops) : '',
-      processoMin: processoMinCalculado,
-      processoMotivo: ribbonProcessoStops.length > 0 ? JSON.stringify(ribbonProcessoStops) : '',
-      outrosMin: outrosMinCalculado,
-      outrosMotivo: ribbonOutrosStops.length > 0 ? JSON.stringify(ribbonOutrosStops) : '',
-      targetDailyM2: finalTargetDailyM2,
-      nominalBaseTargetM2: proportionalGoalsResult.nominalBaseTargetM2,
-      deductedStoppageTargetM2: proportionalGoalsResult.deductedStoppageTargetM2,
-      netWorkingHours: proportionalGoalsResult.netWorkingHours,
-      availabilityFactor: proportionalGoalsResult.availabilityFactor,
-      isProportionalGoal: isProportional,
-      proportionalBreakdown: isProportional ? proportionalGoalsResult.items : undefined,
-      hasBonusOccurrence: ribbonHasBonusOccurrence,
-      bonusOccurrence: ribbonHasBonusOccurrence ? {
-        enabled: true,
-        type: ribbonBonusOccurrenceType || 'meta_maquina_nao_atingida',
-        penaltyRatePercent: Number(ribbonBonusOccurrenceDiscount) || 30,
-        reason: ribbonBonusOccurrenceReason || `Meta de corte de fita não atingida (${ribbonMachine})`,
-        description: ribbonBonusOccurrenceReason || `Meta de corte de fita (${ribbonMachine}): ${prodVal} m² vs meta ${finalTargetDailyM2} m²`
-      } : undefined,
-    };
+      const manutencaoMinCalculado = calcTotalMinutes(ribbonManutencaoStops);
+      const processoMinCalculado = calcTotalMinutes(ribbonProcessoStops);
+      const outrosMinCalculado = calcTotalMinutes(ribbonOutrosStops);
+      const totalStoppedMinutes = manutencaoMinCalculado + processoMinCalculado + outrosMinCalculado;
 
-    // Grava motivos preenchidos na biblioteca de motivos de fita
-    [...ribbonManutencaoStops, ...ribbonProcessoStops, ...ribbonOutrosStops].forEach((stop) => {
-      const text = (stop.explicacao || stop.motivo || '').trim();
-      if (text) {
-        saveReasonToLibrary('paradas_fita', text, ribbonOperator || loggedUser?.name || 'Sistema');
-      }
-    });
+      const parts: string[] = [];
+      if (manutencaoMinCalculado > 0) parts.push(`Manutenção: ${manutencaoMinCalculado}min`);
+      if (processoMinCalculado > 0) parts.push(`Processo: ${processoMinCalculado}min`);
+      if (outrosMinCalculado > 0) parts.push(`Outros: ${outrosMinCalculado}min`);
+      const ribbonStoppedReasonCombined = parts.join(', ') || 'Nenhum';
+
+      const isProportional = proportionalGoalsResult.isProportional;
+      const finalTargetDailyM2 = isProportional
+        ? proportionalGoalsResult.totalCompositeTargetM2
+        : (ribbonTargetDailyM2 ? parseFloat(ribbonTargetDailyM2) || undefined : undefined);
+
+      const enrichedJumboItems = ribbonJumboItems.length > 0 ? ribbonJumboItems.map((it, idx) => {
+        const calc = proportionalGoalsResult.items.find(c => c.id === it.id) || proportionalGoalsResult.items[idx];
+        return {
+          ...it,
+          nominalTargetDailyM2: calc?.nominalTargetDailyM2 ?? it.nominalTargetDailyM2,
+          proportionalTargetM2: calc?.proportionalTargetM2 ?? it.proportionalTargetM2,
+          attainmentPercent: calc?.attainmentPercent ?? it.attainmentPercent,
+          durationHours: calc?.durationHours ?? it.durationHours,
+          formatLabel: calc?.formatLabel ?? it.formatLabel
+        };
+      }) : undefined;
+
+      payload = {
+        id: entryId,
+        date: ribbonDate,
+        operator: ribbonOperator,
+        shift: effectiveShift,
+        producedM2: prodVal,
+        rejectedM2: rejVal,
+        wasteWeight: wasteVal,
+        jumboM2: jumboVal,
+        jumboType: ribbonJumboType,
+        updatedAt: new Date().toISOString(),
+        userId: currentUser?.uid || 'anonymous',
+        machine: ribbonMachine || undefined,
+        rollsCount: ribbonRollsCount ? parseInt(ribbonRollsCount) || 0 : undefined,
+        rollWidth: ribbonRollWidth ? parseFloat(ribbonRollWidth) || 0 : undefined,
+        rollLength: ribbonRollLength ? parseFloat(ribbonRollLength) || 0 : undefined,
+        orderNumber: ribbonOrderNumber || undefined,
+        rollsTipo1: ribbonRollsTipo1 ? parseInt(ribbonRollsTipo1) || 0 : undefined,
+        rollsTipo2: ribbonRollsTipo2 ? parseInt(ribbonRollsTipo2) || 0 : undefined,
+        m2Tipo1: ribbonM2Tipo1 ? parseFloat(ribbonM2Tipo1) || 0 : undefined,
+        m2Tipo2: ribbonM2Tipo2 ? parseFloat(ribbonM2Tipo2) || 0 : undefined,
+        jumboItems: enrichedJumboItems,
+        stoppedMinutes: totalStoppedMinutes,
+        stoppedReason: ribbonStoppedReasonCombined,
+        manutencaoMin: manutencaoMinCalculado,
+        manutencaoMotivo: ribbonManutencaoStops.length > 0 ? JSON.stringify(ribbonManutencaoStops) : '',
+        processoMin: processoMinCalculado,
+        processoMotivo: ribbonProcessoStops.length > 0 ? JSON.stringify(ribbonProcessoStops) : '',
+        outrosMin: outrosMinCalculado,
+        outrosMotivo: ribbonOutrosStops.length > 0 ? JSON.stringify(ribbonOutrosStops) : '',
+        targetDailyM2: finalTargetDailyM2,
+        nominalBaseTargetM2: proportionalGoalsResult.nominalBaseTargetM2,
+        deductedStoppageTargetM2: proportionalGoalsResult.deductedStoppageTargetM2,
+        netWorkingHours: proportionalGoalsResult.netWorkingHours,
+        availabilityFactor: proportionalGoalsResult.availabilityFactor,
+        isProportionalGoal: isProportional,
+        proportionalBreakdown: isProportional ? proportionalGoalsResult.items : undefined,
+        isMaintenanceEntry: false,
+        isNoWorkDay: false,
+        noWorkReason: '',
+        hasBonusOccurrence: ribbonHasBonusOccurrence,
+        bonusOccurrence: ribbonHasBonusOccurrence ? {
+          enabled: true,
+          type: ribbonBonusOccurrenceType || 'meta_maquina_nao_atingida',
+          penaltyRatePercent: Number(ribbonBonusOccurrenceDiscount) || 30,
+          reason: ribbonBonusOccurrenceReason || `Meta de corte de fita não atingida (${ribbonMachine})`,
+          description: ribbonBonusOccurrenceReason || `Meta de corte de fita (${ribbonMachine}): ${prodVal} m² vs meta ${finalTargetDailyM2} m²`
+        } : undefined,
+      };
+
+      // Grava motivos preenchidos na biblioteca de motivos de fita
+      [...ribbonManutencaoStops, ...ribbonProcessoStops, ...ribbonOutrosStops].forEach((stop) => {
+        const text = (stop.explicacao || stop.motivo || '').trim();
+        if (text) {
+          saveReasonToLibrary('paradas_fita', text, ribbonOperator || loggedUser?.name || 'Sistema');
+        }
+      });
+    }
 
     try {
       const oldEntry = editingRibbonId ? ribbonEntries.find(r => r.id === editingRibbonId) : null;
@@ -6388,11 +6552,14 @@ Atenciosamente,
 
       // Sincroniza ocorrência de desconto de bônus (Meta não atingida ou outras)
       const incidentId = `inc_${entryId}`;
-      if (ribbonHasBonusOccurrence) {
+      const isSpecialStopMode = ribbonIsNoWorkDay || ribbonIsMaintenanceEntry;
+      if (!isSpecialStopMode && ribbonHasBonusOccurrence) {
         const opName = (ribbonOperator || '').trim();
         const matchedEmp = employees.find(emp => 
           emp.name.toLowerCase().trim() === opName.toLowerCase()
         );
+        const finalTargetDailyM2 = payload.targetDailyM2;
+        const prodVal = payload.producedM2;
         const bonusIncident = {
           id: incidentId,
           productionEntryId: entryId,
@@ -6436,7 +6603,7 @@ Atenciosamente,
       logAuditEvent({
         action: editingRibbonId ? 'UPDATE' : 'CREATE',
         module: 'Corte de Fita',
-        targetTitle: `Corte de Fita - ${payload.machine || 'Máquina'} - ${payload.date} (${payload.operator})`,
+        targetTitle: `Corte de Fita - ${payload.machine || 'Máquina'} - ${payload.date} (${payload.isNoWorkDay ? 'MÁQUINA PARADA' : payload.isMaintenanceEntry ? 'EM MANUTENÇÃO' : payload.operator})`,
         targetId: entryId,
         userName: loggedUser?.name || 'Operador',
         userId: currentUser?.uid,
@@ -6451,37 +6618,10 @@ Atenciosamente,
         screen: 'Corte de Fita',
         subScreen: 'Lançamentos',
         action: editingRibbonId ? 'Atualizou lançamento de corte de fita' : 'Novo lançamento de corte de fita',
-        details: `${payload.machine} - Op: ${payload.operator} (${payload.producedM2} m²)`
+        details: `${payload.machine} - ${payload.isNoWorkDay ? `Parado (${payload.stoppedMinutes || 528} min)` : payload.isMaintenanceEntry ? `Manutenção (${payload.manutencaoMin || 0} min)` : `Op: ${payload.operator} (${payload.producedM2} m²)`}`
       });
       alert(editingRibbonId ? 'Lançamento de Corte de Fita atualizado!' : 'Lançamento de Corte de Fita cadastrado!');
-      setRibbonOperator('');
-      setRibbonShift('Comercial');
-      setRibbonProducedM2('');
-      setRibbonRejectedM2('');
-      setRibbonWasteWeight('');
-      setRibbonJumboM2('');
-      setRibbonJumboType('');
-      setRibbonMachine('');
-      setRibbonRollsCount('');
-      setRibbonRollWidth('');
-      setRibbonRollLength('');
-      setRibbonOrderNumber('');
-      setRibbonRollsTipo1('');
-      setRibbonRollsTipo2('');
-      setRibbonM2Tipo1('');
-      setRibbonM2Tipo2('');
-      setRibbonStoppedMinutes('');
-      setRibbonStoppedReason('');
-      setRibbonManutencaoStops([]);
-      setRibbonProcessoStops([]);
-      setRibbonOutrosStops([]);
-      setRibbonJumboItems([]);
-      setRibbonHasBonusOccurrence(false);
-      setRibbonBonusOccurrenceType('meta_maquina_nao_atingida');
-      setRibbonBonusOccurrenceDiscount(30);
-      setRibbonBonusOccurrenceReason('');
-      setSelectedRibbonPresetId('');
-      setEditingRibbonId(null);
+      resetRibbonForm();
       setShowRibbonForm(false);
     } catch (err) {
       console.error('Erro ao salvar no Firestore:', err);
@@ -6682,6 +6822,12 @@ Atenciosamente,
     setRibbonBonusOccurrenceType(entry.bonusOccurrence?.type || 'meta_maquina_nao_atingida');
     setRibbonBonusOccurrenceDiscount(entry.bonusOccurrence?.penaltyRatePercent ?? 30);
     setRibbonBonusOccurrenceReason(entry.bonusOccurrence?.reason || '');
+    setRibbonIsMaintenanceEntry(Boolean(entry.isMaintenanceEntry));
+    setRibbonIsNoWorkDay(Boolean(entry.isNoWorkDay));
+    setRibbonNoWorkReason(entry.noWorkReason || '');
+    setRibbonNoWorkFullPeriod(!entry.stoppedMinutes || entry.stoppedMinutes === 528);
+    setRibbonNoWorkStartTime('07:30');
+    setRibbonNoWorkEndTime('17:18');
     setShowRibbonForm(true);
     window.scrollTo({ top: 300, behavior: 'smooth' });
   };
@@ -6700,7 +6846,7 @@ Atenciosamente,
       const stops = (e.stoppedMinutes || 0) || ((e.manutencaoMin || 0) + (e.processoMin || 0) + (e.outrosMin || 0));
       return {
         'Data': e.date.split('-').reverse().join('/'),
-        'Operador': e.operator,
+        'Operador': e.isNoWorkDay ? '(MÁQUINA PARADA)' : e.isMaintenanceEntry ? (e.operator ? `${e.operator} (EM MANUTENÇÃO)` : '(EM MANUTENÇÃO)') : e.operator,
         'Turno': e.shift,
         'Máquina': e.machine || '',
         'Tipo de Jumbo': e.jumboType || '',
@@ -6711,7 +6857,7 @@ Atenciosamente,
         'Aproveitamento (%)': e.producedM2 > 0 ? (((e.producedM2 - e.rejectedM2) / e.producedM2) * 100).toFixed(2) + '%' : '0%',
         'Tempo Parado (min)': stops,
         'Tempo Parado (h)': parseFloat((stops / 60).toFixed(2)),
-        'Motivos Parada': e.stoppedReason || 'Nenhum',
+        'Motivos Parada': e.isNoWorkDay ? (e.noWorkReason || e.stoppedReason || 'Máquina Parada') : (e.stoppedReason || 'Nenhum'),
         'Lixo peso (Kg)': e.wasteWeight,
         'Lixo Perdido (m² Perda)': lostM2Value > 0 ? parseFloat(lostM2Value.toFixed(1)) : 0,
         'Jumbos Metros Quadrados': e.jumboM2,
@@ -19327,14 +19473,7 @@ Atenciosamente,
                   type="button"
                   onClick={() => {
                     if (editingRibbonId) {
-                      setEditingRibbonId(null);
-                      setRibbonOperator('');
-                      setRibbonShift('Comercial');
-                      setRibbonProducedM2('');
-                      setRibbonRejectedM2('');
-                      setRibbonWasteWeight('');
-                      setRibbonJumboM2('');
-                      setRibbonJumboType('');
+                      resetRibbonForm();
                     }
                     setShowRibbonForm(!showRibbonForm);
                   }}
@@ -19356,14 +19495,7 @@ Atenciosamente,
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={() => {
-                      setEditingRibbonId(null);
-                      setRibbonOperator('');
-                      setRibbonShift('Comercial');
-                      setRibbonProducedM2('');
-                      setRibbonRejectedM2('');
-                      setRibbonWasteWeight('');
-                      setRibbonJumboM2('');
-                      setRibbonJumboType('');
+                      resetRibbonForm();
                       setShowRibbonForm(false);
                     }}
                     className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs cursor-pointer"
@@ -19386,14 +19518,7 @@ Atenciosamente,
                         <button
                           type="button"
                           onClick={() => {
-                            setEditingRibbonId(null);
-                            setRibbonOperator('');
-                            setRibbonShift('Comercial');
-                            setRibbonProducedM2('');
-                            setRibbonRejectedM2('');
-                            setRibbonWasteWeight('');
-                            setRibbonJumboM2('');
-                            setRibbonJumboType('');
+                            resetRibbonForm();
                             setShowRibbonForm(false);
                           }}
                           className="rounded-xl p-2 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all font-black text-base cursor-pointer"
@@ -19403,12 +19528,77 @@ Atenciosamente,
                         </button>
                       </div>
 
-                    {/* 1. Informações Gerais */}
+                    {/* 1. Informações Gerais + Toggles Manutenção / Parado */}
                     <div className="bg-slate-50/70 rounded-2xl sm:rounded-3xl p-5 sm:p-7 border border-slate-200/80 space-y-5 sm:space-y-6 shadow-xs">
-                      <h5 className="text-sm sm:text-base font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                        1. Informações Gerais
-                      </h5>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h5 className="text-sm sm:text-base font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                          1. Informações Gerais
+                        </h5>
+
+                        {/* Toggles idênticos ao setor de Extrusão: Manutenção e Parado */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Manutenção */}
+                          <div className={`px-3 py-1.5 rounded-xl flex items-center justify-between gap-3 transition-colors border shadow-2xs ${ribbonIsMaintenanceEntry ? 'bg-orange-50 border-orange-300' : 'bg-white border-slate-200'}`}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Wrench size={14} className={ribbonIsMaintenanceEntry ? 'text-orange-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                              <span className="text-[11px] font-black text-slate-800 uppercase">Manutenção</span>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                              <input
+                                type="checkbox"
+                                checked={ribbonIsMaintenanceEntry}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setRibbonIsMaintenanceEntry(checked);
+                                  if (checked) {
+                                    setRibbonIsNoWorkDay(false);
+                                    if (ribbonManutencaoStops.length === 0) {
+                                      setRibbonManutencaoStops([{
+                                        id: `stop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                        de: '07:30',
+                                        ate: '17:18',
+                                        motivo: '',
+                                        explicacao: '',
+                                        durationMinutes: 528,
+                                      }]);
+                                    }
+                                  }
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-600"></div>
+                            </label>
+                          </div>
+
+                          {/* Parado */}
+                          <div className={`px-3 py-1.5 rounded-xl flex items-center justify-between gap-3 transition-colors border shadow-2xs ${ribbonIsNoWorkDay ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200'}`}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <CalendarX size={14} className={ribbonIsNoWorkDay ? 'text-red-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                              <span className="text-[11px] font-black text-slate-800 uppercase">Parado</span>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                              <input
+                                type="checkbox"
+                                checked={ribbonIsNoWorkDay}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setRibbonIsNoWorkDay(checked);
+                                  if (checked) {
+                                    setRibbonIsMaintenanceEntry(false);
+                                    setRibbonNoWorkFullPeriod(true);
+                                    setRibbonNoWorkStartTime('07:30');
+                                    setRibbonNoWorkEndTime('17:18');
+                                  }
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-600"></div>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
                         {/* Data */}
                         <div className="space-y-2">
@@ -19462,35 +19652,47 @@ Atenciosamente,
                           </select>
                         </div>
 
-                        {/* Operador */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">Operador</label>
-                            {ribbonMachine && (
-                              <span className="text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md">
-                                {ribbonMachine}
-                              </span>
-                            )}
+                        {/* Operador (oculto se Parado; opcional se Manutenção) */}
+                        {!ribbonIsNoWorkDay ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs sm:text-sm font-black uppercase text-slate-600 block">
+                                {ribbonIsMaintenanceEntry ? 'Operador (Opcional)' : 'Operador'}
+                              </label>
+                              {ribbonMachine && (
+                                <span className="text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md">
+                                  {ribbonMachine}
+                                </span>
+                              )}
+                            </div>
+                            <select
+                              value={ribbonOperator}
+                              onChange={(e) => {
+                                setRibbonOperator(e.target.value);
+                                setRibbonShift('Comercial');
+                              }}
+                              required={!ribbonIsMaintenanceEntry}
+                              className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
+                            >
+                              <option value="">
+                                {ribbonModalOperators.length === 0 
+                                  ? (ribbonMachine ? `Nenhum operador na ${ribbonMachine}` : 'Nenhum operador de fita encontrado') 
+                                  : ribbonIsMaintenanceEntry ? 'Sem operador / Opcional' : 'Selecione o Operador...'}
+                              </option>
+                              {ribbonModalOperators.map(op => (
+                                <option key={op} value={op}>{op} (Comercial)</option>
+                              ))}
+                            </select>
                           </div>
-                          <select
-                            value={ribbonOperator}
-                            onChange={(e) => {
-                              setRibbonOperator(e.target.value);
-                              setRibbonShift('Comercial');
-                            }}
-                            required
-                            className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
-                          >
-                            <option value="">
-                              {ribbonModalOperators.length === 0 
-                                ? (ribbonMachine ? `Nenhum operador na ${ribbonMachine}` : 'Nenhum operador de fita encontrado') 
-                                : 'Selecione o Operador...'}
-                            </option>
-                            {ribbonModalOperators.map(op => (
-                              <option key={op} value={op}>{op} (Comercial)</option>
-                            ))}
-                          </select>
-                        </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <label className="text-xs sm:text-sm font-black uppercase text-red-600 block">Status da Máquina</label>
+                            <div className="w-full px-4 py-3 sm:py-3.5 border border-red-200 rounded-xl text-sm font-black uppercase text-red-700 bg-red-50 flex items-center gap-2">
+                              <CalendarX size={16} className="shrink-0" />
+                              <span>Máquina Parada</span>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Turno */}
                         <div className="space-y-2">
@@ -19498,7 +19700,6 @@ Atenciosamente,
                           <select
                             value={ribbonShift || 'Comercial'}
                             onChange={(e) => setRibbonShift(e.target.value)}
-                            required
                             className="w-full px-4 py-3 sm:py-3.5 border border-slate-200 rounded-xl text-sm sm:text-base font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs transition-all"
                           >
                             <option value="Comercial">Comercial</option>
@@ -19507,8 +19708,199 @@ Atenciosamente,
                       </div>
                     </div>
 
+                    {/* Painel Dedicado: Máquina Parada (Parado = true) */}
+                    {ribbonIsNoWorkDay && (
+                      <div className="p-5 sm:p-7 bg-red-50/90 border-2 border-red-200 rounded-2xl sm:rounded-3xl space-y-5 animate-in fade-in duration-200 shadow-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-red-200/80 pb-3.5">
+                          <div className="flex items-center gap-2.5 text-red-800 font-black text-xs sm:text-sm uppercase tracking-wider">
+                            <CalendarX size={18} className="text-red-600 shrink-0" />
+                            <span>Máquina Parada — Período &amp; Justificativa</span>
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider">
+                            {ribbonNoWorkFullPeriod
+                              ? 'Período Completo: 07:30 às 17:18 (528 min / 8,8h)'
+                              : `Parada Parcial: ${ribbonNoWorkStartTime} às ${ribbonNoWorkEndTime} (${getDiffMinutes(ribbonNoWorkStartTime, ribbonNoWorkEndTime)} min)`}
+                          </span>
+                        </div>
+
+                        <div className="bg-white border border-red-200/80 rounded-2xl p-4 space-y-4">
+                          <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={ribbonNoWorkFullPeriod}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setRibbonNoWorkFullPeriod(checked);
+                                if (checked) {
+                                  setRibbonNoWorkStartTime('07:30');
+                                  setRibbonNoWorkEndTime('17:18');
+                                }
+                              }}
+                              className="w-4 h-4 text-red-600 rounded border-red-300 focus:ring-red-500 cursor-pointer"
+                            />
+                            <div>
+                              <span className="text-xs sm:text-sm font-black text-red-900 uppercase block">
+                                Período Completo (07:30 às 17:18 • 528 min)
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-500">
+                                Registra a máquina parada durante toda a jornada útil padrão (8,8 horas) sem exigir produção ou operador.
+                              </span>
+                            </div>
+                          </label>
+
+                          {!ribbonNoWorkFullPeriod && (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-red-100">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-red-700 block">Início da Parada (De)</label>
+                                <input
+                                  type="time"
+                                  value={ribbonNoWorkStartTime}
+                                  onChange={(e) => setRibbonNoWorkStartTime(e.target.value)}
+                                  className="w-full px-3 py-2 border border-red-200 rounded-xl text-sm font-bold text-slate-800 bg-white"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-red-700 block">Término da Parada (Até)</label>
+                                <input
+                                  type="time"
+                                  value={ribbonNoWorkEndTime}
+                                  onChange={(e) => setRibbonNoWorkEndTime(e.target.value)}
+                                  className="w-full px-3 py-2 border border-red-200 rounded-xl text-sm font-bold text-slate-800 bg-white"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-red-700 block">Duração Calculada</label>
+                                <div className="w-full px-3 py-2 border border-red-200 rounded-xl text-sm font-black text-red-800 bg-red-50">
+                                  {getDiffMinutes(ribbonNoWorkStartTime, ribbonNoWorkEndTime)} min
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <ReasonInputWithSave
+                            label="Observações / Motivo da Máquina Parada *"
+                            value={ribbonNoWorkReason}
+                            onChange={(val) => setRibbonNoWorkReason(val)}
+                            category="paradas_fita"
+                            placeholder="Ex: Falta de material (Jumbo), falta de energia, feriado, sem demanda..."
+                            multiline={false}
+                            inputClassName="!py-3.5 !text-sm sm:!text-base font-semibold rounded-xl !border-red-200"
+                            loggedUserName={loggedUser?.name || 'Sistema'}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Painel Dedicado: Máquina em Manutenção (Manutenção = true) */}
+                    {ribbonIsMaintenanceEntry && !ribbonIsNoWorkDay && (
+                      <div className="p-5 sm:p-7 bg-orange-50/80 border-2 border-orange-200 rounded-2xl sm:rounded-3xl space-y-5 animate-in fade-in duration-200 shadow-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-orange-200 pb-3.5">
+                          <div className="flex items-center gap-2.5 text-orange-800 font-black text-xs sm:text-sm uppercase tracking-wider">
+                            <Wrench size={18} className="text-orange-600 shrink-0" />
+                            <span>Máquina em Manutenção — Horários &amp; Observações</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRibbonManutencaoStops([{
+                                  id: `stop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                  de: '07:30',
+                                  ate: '17:18',
+                                  motivo: ribbonManutencaoStops[0]?.motivo || '',
+                                  explicacao: ribbonManutencaoStops[0]?.explicacao || ribbonManutencaoStops[0]?.motivo || '',
+                                  durationMinutes: 528,
+                                }]);
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs font-black text-orange-800 hover:text-orange-950 uppercase bg-orange-100 hover:bg-orange-200 border border-orange-300 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                            >
+                              <Clock size={13} /> Período Completo (07:30 às 17:18 • 528 min)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddRibbonStop('manutencao')}
+                              className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 uppercase bg-white hover:bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                            >
+                              <Plus size={13} /> Add Horário
+                            </button>
+                          </div>
+                        </div>
+
+                        {ribbonManutencaoStops.length === 0 ? (
+                          <p className="text-xs font-bold text-orange-700/70 italic text-center py-4 bg-white rounded-2xl border border-orange-100">
+                            Clique em &quot;Período Completo&quot; ou &quot;Add Horário&quot; para informar a manutenção.
+                          </p>
+                        ) : (
+                          <div className="space-y-3.5">
+                            {ribbonManutencaoStops.map((stop) => {
+                              const isFullPeriod = stop.de === '07:30' && stop.ate === '17:18' && Number(stop.durationMinutes) === 528;
+                              const min = isFullPeriod ? 528 : getDiffMinutes(stop.de, stop.ate);
+                              return (
+                                <div key={stop.id} className="p-4 bg-white border border-orange-200/80 rounded-2xl space-y-3 shadow-2xs">
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-black text-slate-500 uppercase">Horário:</span>
+                                      <input
+                                        type="time"
+                                        value={stop.de}
+                                        onChange={(e) => handleUpdateRibbonStop('manutencao', stop.id, 'de', e.target.value)}
+                                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                                      />
+                                      <span className="text-xs font-black text-slate-400">às</span>
+                                      <input
+                                        type="time"
+                                        value={stop.ate}
+                                        onChange={(e) => handleUpdateRibbonStop('manutencao', stop.id, 'ate', e.target.value)}
+                                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2.5">
+                                      <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${isFullPeriod ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-slate-200/80 text-slate-700'}`}>
+                                        {min > 0 ? `${min} min${isFullPeriod ? ' (Período Completo)' : ''}` : '0 min'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveRibbonStop('manutencao', stop.id)}
+                                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                        title="Remover parada"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1.5 pt-1">
+                                    <ReasonInputWithSave
+                                      label="Motivo / Observações da Manutenção *"
+                                      value={stop.explicacao || stop.motivo || ''}
+                                      onChange={(val) => {
+                                        handleUpdateRibbonStop('manutencao', stop.id, 'motivo', val);
+                                        handleUpdateRibbonStop('manutencao', stop.id, 'explicacao', val);
+                                      }}
+                                      category="paradas_fita"
+                                      placeholder="Descreva a manutenção preventiva/corretiva ou selecione da relação..."
+                                      multiline={false}
+                                      inputClassName="!py-3 sm:!py-3.5 !text-sm sm:!text-base font-semibold rounded-xl"
+                                      loggedUserName={loggedUser?.name || 'Sistema'}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center pt-2 border-t border-orange-200/80 px-1 text-xs font-black text-orange-900 uppercase">
+                          <span>Total em Manutenção</span>
+                          <span className="text-sm font-mono">{calcTotalMinutes(ribbonManutencaoStops)} min</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Slot Horizontal: Meta Diária (m²) e Produtividade com Abatimento de Perdas */}
-                    {Boolean(ribbonMachine) && (() => {
+                    {Boolean(ribbonMachine) && !ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry && (() => {
                       const targetM2 = parseFloat(ribbonTargetDailyM2) || 0;
                       const prodM2 = parseFloat(ribbonProducedM2) || 0;
                       const lossTipo1M2 = parseFloat(ribbonM2Tipo1) || ribbonJumboItems.reduce((acc, it) => acc + (it.m2Tipo1 || 0), 0);
@@ -19789,6 +20181,7 @@ Atenciosamente,
                     })()}
 
                     {/* 2. Jumbos Processados */}
+                    {!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry && (
                     <div className="bg-slate-50/70 rounded-2xl sm:rounded-3xl p-5 sm:p-7 border border-slate-200/80 space-y-5 sm:space-y-6 shadow-xs">
                       <div className="space-y-1">
                         <h5 className="text-sm sm:text-base font-black uppercase text-slate-800 tracking-tight flex items-center gap-2">
@@ -20268,7 +20661,7 @@ Atenciosamente,
                               step="0.01"
                               value={ribbonJumboM2}
                               onChange={(e) => setRibbonJumboM2(e.target.value)}
-                              required
+                              required={!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry}
                               disabled={ribbonJumboItems.length > 0}
                               className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
@@ -20281,7 +20674,7 @@ Atenciosamente,
                             <select
                               value={ribbonJumboType}
                               onChange={(e) => setRibbonJumboType(e.target.value)}
-                              required
+                              required={!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry}
                               disabled={ribbonJumboItems.length > 0}
                               className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
@@ -20302,7 +20695,7 @@ Atenciosamente,
                               step="0.01"
                               value={ribbonProducedM2}
                               onChange={(e) => setRibbonProducedM2(e.target.value)}
-                              required
+                              required={!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry}
                               disabled={ribbonJumboItems.length > 0}
                               className={`w-full px-4 py-3 sm:py-3.5 border rounded-xl text-sm sm:text-base font-bold focus:outline-none focus:border-blue-500 shadow-2xs ${
                                 ribbonJumboItems.length > 0 ? 'bg-indigo-50 border-indigo-100/70 text-indigo-700 font-extrabold cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800'
@@ -20345,8 +20738,10 @@ Atenciosamente,
                         </div>
                       </div>
                     </div>
+                    )}
 
                     {/* 3. Paradas de Máquina (Abatimento no Horário & Meta) */}
+                    {!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry && (
                     <div className="bg-slate-50/70 border border-slate-200 rounded-2xl sm:rounded-3xl p-5 sm:p-7 space-y-5 sm:space-y-6 shadow-inner">
                       <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-3">
                         <div className="flex items-center gap-2 text-slate-800 font-black text-xs sm:text-sm uppercase tracking-wider">
@@ -20724,8 +21119,10 @@ Atenciosamente,
                         </div>
                       </div>
                     </div>
+                    )}
 
                     {/* 4. Ocorrência de Desconto no Bônus do Operador (Opcional) */}
+                    {!ribbonIsNoWorkDay && !ribbonIsMaintenanceEntry && (
                     <div className="bg-amber-50/70 border border-amber-200 rounded-2xl sm:rounded-3xl p-5 sm:p-7 space-y-4 shadow-xs">
                       <div className="flex items-center justify-between flex-wrap gap-2 border-b border-amber-200/80 pb-3">
                         <div className="flex items-center gap-2.5">
@@ -20857,34 +21254,13 @@ Atenciosamente,
                         </div>
                       )}
                     </div>
+                    )}
 
                     <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-slate-100 pt-5 mt-auto">
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingRibbonId(null);
-                          setRibbonOperator('');
-                          setRibbonShift('Comercial');
-                          setRibbonProducedM2('');
-                          setRibbonRejectedM2('');
-                          setRibbonWasteWeight('');
-                          setRibbonJumboM2('');
-                          setRibbonJumboType('');
-                          setRibbonMachine('');
-                          setRibbonRollsCount('');
-                          setRibbonRollWidth('');
-                          setRibbonRollLength('');
-                          setRibbonOrderNumber('');
-                          setRibbonRollsTipo1('');
-                          setRibbonRollsTipo2('');
-                          setRibbonM2Tipo1('');
-                          setRibbonM2Tipo2('');
-                          setRibbonStoppedMinutes('');
-                          setRibbonStoppedReason('');
-                          setRibbonManutencaoStops([]);
-                          setRibbonProcessoStops([]);
-                          setRibbonOutrosStops([]);
-                          setRibbonJumboItems([]);
+                          resetRibbonForm();
                           setShowRibbonForm(false);
                         }}
                         className="w-full sm:w-auto px-6 py-3.5 border border-slate-200 text-slate-600 text-sm font-bold uppercase rounded-xl transition-all hover:bg-slate-50 text-center cursor-pointer"
@@ -23057,7 +23433,22 @@ Atenciosamente,
                               {entry.date.split('-').reverse().join('/')}
                             </td>
                             <td className="py-3.5 px-4 font-sans font-medium text-slate-700">
-                              {entry.operator}
+                              {entry.isNoWorkDay ? (
+                                <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-[10px] font-black border border-red-200 uppercase">
+                                  (MÁQUINA PARADA)
+                                </span>
+                              ) : entry.isMaintenanceEntry ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded text-[10px] font-black border border-orange-200 uppercase w-fit">
+                                    (EM MANUTENÇÃO)
+                                  </span>
+                                  {entry.operator && (
+                                    <span className="text-[10px] text-slate-500 font-bold">{entry.operator}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                entry.operator
+                              )}
                             </td>
                             <td className="py-3.5 px-4 text-center font-sans col-span-1">
                               <span className="px-2 py-0.5 bg-slate-100 border border-slate-200/50 text-slate-600 rounded-md font-black text-[10px]">
@@ -23157,15 +23548,24 @@ Atenciosamente,
                                   );
                                 }
                                 const stopsH = (stopsMin / 60).toFixed(1);
+                                const stopDesc = entry.isNoWorkDay ? (entry.noWorkReason || entry.stoppedReason) : entry.stoppedReason;
                                 return (
                                   <div className="inline-flex flex-col items-center">
-                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-[10px] font-black inline-flex items-center gap-1 shadow-2xs">
-                                      <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black inline-flex items-center gap-1 shadow-2xs border ${
+                                      entry.isNoWorkDay
+                                        ? 'bg-red-50 text-red-700 border-red-200'
+                                        : entry.isMaintenanceEntry
+                                        ? 'bg-orange-50 text-orange-800 border-orange-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                    }`}>
+                                      <Clock className={`w-3 h-3 shrink-0 ${
+                                        entry.isNoWorkDay ? 'text-red-600' : entry.isMaintenanceEntry ? 'text-orange-600' : 'text-amber-600'
+                                      }`} />
                                       {stopsMin} min ({stopsH}h)
                                     </span>
-                                    {entry.stoppedReason && entry.stoppedReason !== 'Nenhum' && (
-                                      <span className="text-[9px] text-slate-400 font-medium max-w-[130px] truncate mt-0.5" title={entry.stoppedReason}>
-                                        {entry.stoppedReason}
+                                    {stopDesc && stopDesc !== 'Nenhum' && (
+                                      <span className="text-[9px] text-slate-500 font-medium max-w-[150px] truncate mt-0.5" title={stopDesc}>
+                                        {stopDesc}
                                       </span>
                                     )}
                                   </div>
