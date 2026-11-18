@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Sparkles, ChevronDown, Check, X, Trash2, Plus } from 'lucide-react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import {
+  fetchReasonsByCategoryFromSupabase,
+  saveReasonToSupabase,
+  deleteReasonFromSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 
 export interface ReasonInputWithSaveProps {
   value: string;
@@ -93,8 +97,8 @@ const DEFAULT_PRESETS_BY_CATEGORY: Record<string, string[]> = {
   ]
 };
 
-// Função auxiliar reutilizável em qualquer componente para salvar motivos na relação
-export const saveReasonToLibrary = async (category: string, reasonText: string, userName = 'Sistema') => {
+// Função auxiliar reutilizável em qualquer componente para salvar motivos na relação (100% Supabase)
+export const saveReasonToLibrary = async (category: string, reasonText: string, _userName = 'Sistema') => {
   const trimmed = reasonText.trim();
   if (!trimmed || !category) return;
   try {
@@ -104,21 +108,9 @@ export const saveReasonToLibrary = async (category: string, reasonText: string, 
       const next = [{ reason: trimmed }, ...cached];
       localStorage.setItem(`reasons_cache_${category}`, JSON.stringify(next));
     }
-    await addDoc(collection(db, 'reasons_library'), {
-      reason: trimmed,
-      category,
-      createdAt: new Date().toISOString(),
-      createdBy: userName
-    });
-    if (category === 'overtime') {
-      await addDoc(collection(db, 'overtime_reasons'), {
-        reason: trimmed,
-        createdAt: new Date().toISOString(),
-        createdBy: userName
-      });
-    }
+    await saveReasonToSupabase(category, trimmed);
   } catch (err) {
-    console.warn(`Erro ao salvar motivo (${category}) na biblioteca:`, err);
+    console.warn(`Erro ao salvar motivo (${category}) no Supabase:`, err);
   }
 };
 
@@ -155,42 +147,49 @@ export const ReasonInputWithSave: React.FC<ReasonInputWithSaveProps> = ({
   const [justSaved, setJustSaved] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Escuta em tempo real no Firestore para a categoria
+  // Escuta em tempo real no Supabase para a categoria
   useEffect(() => {
     if (!category) return;
-    try {
-      const q = query(collection(db, 'reasons_library'), where('category', '==', category));
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          const list = snap.docs.map((d) => ({
-            id: d.id,
-            reason: (d.data().reason || '').trim()
-          })).filter(item => item.reason.length > 0);
+    let mounted = true;
 
-          // Remove duplicatas
+    const loadReasons = async () => {
+      try {
+        const list = await fetchReasonsByCategoryFromSupabase(category);
+        if (!mounted) return;
+
+        // Se o banco ainda tiver registros para essa categoria, sincroniza e deduplica
+        if (list.length > 0) {
           const uniqueMap = new Map<string, { id?: string; reason: string }>();
           list.forEach((item) => {
             const key = item.reason.toLowerCase();
             if (!uniqueMap.has(key)) {
-              uniqueMap.set(key, item);
+              uniqueMap.set(key, { id: item.id, reason: item.reason });
             }
           });
-
           const uniqueList = Array.from(uniqueMap.values());
           setSavedReasons(uniqueList);
           try {
             localStorage.setItem(`reasons_cache_${category}`, JSON.stringify(uniqueList));
-          } catch (e) {}
-        },
-        (err) => {
-          console.warn(`Erro ao sincronizar reasons_library (${category}):`, err);
+          } catch {}
         }
-      );
-      return () => unsub();
-    } catch (err) {
-      console.warn('Erro ao configurar listener reasons_library:', err);
-    }
+      } catch (err) {
+        console.warn(`Erro ao sincronizar reasons_library (${category}) no Supabase:`, err);
+      }
+    };
+
+    loadReasons();
+    const unsub = subscribeSupabaseTableChanges(
+      `reasons_library_${category}_${Math.random().toString(36).slice(2, 7)}`,
+      ['reasons_library'],
+      () => {
+        loadReasons();
+      }
+    );
+
+    return () => {
+      mounted = false;
+      if (unsub) unsub();
+    };
   }, [category]);
 
   // Fechar dropdown ao clicar fora
@@ -225,39 +224,20 @@ export const ReasonInputWithSave: React.FC<ReasonInputWithSaveProps> = ({
     if (!trimmedValue || isSaving) return;
     setIsSaving(true);
     try {
-      // Salva localmente primeiro
-      const newItem = { reason: trimmedValue };
+      const savedId = await saveReasonToSupabase(category, trimmedValue);
+      const newItem = { id: savedId || undefined, reason: trimmedValue };
       setSavedReasons((prev) => {
         const next = [newItem, ...prev.filter((i) => i.reason.toLowerCase() !== trimmedValue.toLowerCase())];
         try {
           localStorage.setItem(`reasons_cache_${category}`, JSON.stringify(next));
-        } catch (e) {}
+        } catch {}
         return next;
       });
-
-      // Salva no Firestore
-      const docRef = await addDoc(collection(db, 'reasons_library'), {
-        reason: trimmedValue,
-        category,
-        createdAt: new Date().toISOString(),
-        createdBy: loggedUserName
-      });
-
-      // Se for overtime, sincroniza também em overtime_reasons
-      if (category === 'overtime') {
-        try {
-          await addDoc(collection(db, 'overtime_reasons'), {
-            reason: trimmedValue,
-            createdAt: new Date().toISOString(),
-            createdBy: loggedUserName
-          });
-        } catch (e) {}
-      }
 
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2500);
     } catch (err) {
-      console.error('Erro ao salvar motivo na biblioteca:', err);
+      console.error('Erro ao salvar motivo na biblioteca (Supabase):', err);
     } finally {
       setIsSaving(false);
     }
@@ -271,15 +251,15 @@ export const ReasonInputWithSave: React.FC<ReasonInputWithSaveProps> = ({
         const next = prev.filter((i) => i.reason.toLowerCase() !== item.reason.toLowerCase());
         try {
           localStorage.setItem(`reasons_cache_${category}`, JSON.stringify(next));
-        } catch (err) {}
+        } catch {}
         return next;
       });
 
       if (item.id) {
-        await deleteDoc(doc(db, 'reasons_library', item.id));
+        await deleteReasonFromSupabase(item.id);
       }
     } catch (err) {
-      console.warn('Erro ao deletar motivo:', err);
+      console.warn('Erro ao deletar motivo (Supabase):', err);
     }
   };
 

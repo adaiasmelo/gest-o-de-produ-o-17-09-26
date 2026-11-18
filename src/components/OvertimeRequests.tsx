@@ -6,10 +6,16 @@ import {
   Download, Eye, AlertTriangle, ShieldCheck, History, Info, HelpCircle,
   Share2, Mail, MessageCircle, Copy, ExternalLink
 } from 'lucide-react';
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { db } from '../lib/firebase';
+import {
+  generateSupabaseId,
+  fetchAllFromSupabase,
+  mapRawRow,
+  saveOvertimeRequestToSupabase,
+  deleteOvertimeRequestFromSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 import { Employee, OvertimeRequest, SystemUser } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { ReasonInputWithSave } from './ReasonInputWithSave';
@@ -158,20 +164,17 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     }
   }, [shareToastMessage]);
 
-  // Sincronização em tempo real com o Firestore
+  // Sincronização em tempo real com o Supabase
   useEffect(() => {
-    setIsLoading(true);
-    const unsub = onSnapshot(
-      collection(db, 'overtime_requests'),
-      (snapshot) => {
-        const rawList = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data()
-        })) as any[];
+    let mounted = true;
+    const loadRequests = async () => {
+      try {
+        const rows = await fetchAllFromSupabase('overtime_requests', 'date', false);
+        if (!mounted) return;
+        const list = rows
+          .map((row) => mapRawRow<any>(row))
+          .filter((r) => r && !r.isDeleted) as OvertimeRequest[];
 
-        const list = rawList.filter((r) => r && !r.isDeleted) as OvertimeRequest[];
-
-        // Ordenar por data (decrescente) e criação
         list.sort((a, b) => {
           const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
           if (dateDiff !== 0) return dateDiff;
@@ -179,15 +182,50 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
         });
 
         setRequests(list);
-        setIsLoading(false);
-      },
-      (err) => {
-        console.error('Erro ao escutar overtime_requests:', err);
-        setIsLoading(false);
+      } catch (err) {
+        console.error('Erro ao carregar overtime_requests do Supabase:', err);
+      } finally {
+        if (mounted) setIsLoading(false);
       }
-    );
+    };
 
-    return () => unsub();
+    setIsLoading(true);
+    loadRequests();
+    const unsub = subscribeSupabaseTableChanges('overtime_requests_rt', ['overtime_requests'], (_tbl, payload) => {
+      if (!mounted) return;
+      const ev = payload?.eventType;
+      const newRow = payload?.new;
+      const oldRow = payload?.old;
+
+      if (ev === 'DELETE' && oldRow?.id) {
+        setRequests(prev => prev.filter(item => item.id !== oldRow.id));
+        return;
+      }
+      if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+        const mapped = mapRawRow<any>(newRow) as OvertimeRequest | null;
+        if (!mapped || (mapped as any).isDeleted) {
+          setRequests(prev => prev.filter(item => item.id !== newRow.id));
+          return;
+        }
+        const item = { ...mapped, id: newRow.id } as OvertimeRequest;
+        setRequests(prev => {
+          const next = [item, ...prev.filter(x => x.id !== item.id)];
+          next.sort((a, b) => {
+            const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+          });
+          return next;
+        });
+        return;
+      }
+      loadRequests();
+    });
+
+    return () => {
+      mounted = false;
+      if (unsub) unsub();
+    };
   }, []);
 
   // Ciclos da Folha de Ponto disponíveis (com fechamento no dia 24)
@@ -1454,24 +1492,25 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
         userId: loggedUser?.id || loggedUser?.registration || 'admin'
       };
 
-      // Garantir que nenhum campo undefined seja enviado ao Firestore
-      const firestorePayload = Object.fromEntries(
+      // Garantir que nenhum campo undefined seja enviado
+      const cleanPayload = Object.fromEntries(
         Object.entries(payload).filter(([_, val]) => val !== undefined)
       );
 
-      let docId = editingRequest?.id;
-
-      if (editingRequest?.id) {
-        await updateDoc(doc(db, 'overtime_requests', editingRequest.id), firestorePayload);
-      } else {
-        const newRef = await addDoc(collection(db, 'overtime_requests'), firestorePayload);
-        docId = newRef.id;
-      }
-
+      const docId = editingRequest?.id || generateSupabaseId('otreq');
       const fullRequestObject: OvertimeRequest = {
-        ...payload,
-        id: docId || 'he-' + Date.now()
+        ...(cleanPayload as any),
+        id: docId
       };
+
+      await saveOvertimeRequestToSupabase(fullRequestObject);
+      setRequests((prev) => {
+        const exists = prev.some((r) => r.id === docId);
+        const next = exists
+          ? prev.map((r) => (r.id === docId ? fullRequestObject : r))
+          : [fullRequestObject, ...prev];
+        return next;
+      });
 
       // Se estiver filtrando por um ciclo específico que não seja o da data salva,
       // ajustar o filtro para o ciclo da folha correspondente para exibição imediata
@@ -1514,13 +1553,7 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
     try {
       setRequests((prev) => prev.filter((r) => r.id !== id));
       setDeleteConfirmId(null);
-      try {
-        await updateDoc(doc(db, 'overtime_requests', id), {
-          isDeleted: true,
-          deletedAt: new Date().toISOString()
-        });
-      } catch {}
-      await deleteDoc(doc(db, 'overtime_requests', id));
+      await deleteOvertimeRequestFromSupabase(id);
     } catch (err) {
       console.error('Erro ao excluir solicitação:', err);
     }
@@ -1551,10 +1584,13 @@ export const OvertimeRequests: React.FC<OvertimeRequestsProps> = ({
       return;
     }
     try {
-      await updateDoc(doc(db, 'overtime_requests', req.id), {
+      const updated = {
+        ...req,
         approvalStatus: newStatus,
         updatedAt: new Date().toISOString()
-      });
+      };
+      setRequests((prev) => prev.map((r) => (r.id === req.id ? updated : r)));
+      await saveOvertimeRequestToSupabase(updated);
     } catch (err) {
       console.error('Erro ao atualizar status:', err);
     }

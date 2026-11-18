@@ -1,5 +1,12 @@
-import { DocumentChange, DocumentData } from 'firebase/firestore';
 import { ProductionEntry, RibbonCuttingEntry } from '../types';
+
+export interface GenericDocChange<T = Record<string, any>> {
+  type: 'added' | 'modified' | 'removed';
+  doc: {
+    id: string;
+    data: () => T;
+  };
+}
 
 export const PROD_CACHE_KEY = 'manupackaging_production_v2';
 export const PROD_CACHE_LEGACY_KEY = 'manupackaging_production';
@@ -218,7 +225,7 @@ export function saveProductionCache(entries: ProductionEntry[], lastSyncTime?: s
  */
 export function mergeProductionDocChanges(
   currentEntries: ProductionEntry[],
-  docChanges: DocumentChange<DocumentData>[],
+  docChanges: GenericDocChange[],
   options?: {
     sanitizeShift?: (shift: string, machine: string) => string;
     upgradeName?: (name: string) => string;
@@ -431,7 +438,7 @@ export function saveRibbonCache(entries: RibbonCuttingEntry[], lastSyncTime?: st
 
 export function mergeRibbonDocChanges(
   currentEntries: RibbonCuttingEntry[],
-  docChanges: DocumentChange<DocumentData>[]
+  docChanges: GenericDocChange[]
 ): {
   updatedEntries: RibbonCuttingEntry[];
   hasChanges: boolean;

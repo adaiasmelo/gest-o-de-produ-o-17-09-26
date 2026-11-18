@@ -1,5 +1,9 @@
-import { collection, doc, setDoc, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import {
+  fetchAuditLogsFromSupabase,
+  saveAuditLogToSupabase,
+  subscribeSupabaseTableChanges,
+  mapRawRow
+} from '../lib/supabase';
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'STATUS_CHANGE';
 
@@ -218,63 +222,81 @@ export async function logAuditEvent(params: {
     window.dispatchEvent(new CustomEvent('audit_entry_added', { detail: entry }));
   }
 
-  // 3. Persiste no Firestore em segundo plano
-  try {
-    const docRef = doc(db, 'audit_trail', id);
-    setDoc(docRef, entry).catch((err) => {
-      console.warn('[AuditLogger] Erro ao sincronizar auditoria com Firestore:', err);
-    });
-  } catch (err) {
-    console.warn('[AuditLogger] Falha na gravação remota do Firestore:', err);
-  }
+  // 3. Persiste no Supabase (tabela audit_trail) em segundo plano
+  saveAuditLogToSupabase(entry).catch((err) => {
+    console.warn('[AuditLogger] Erro ao sincronizar auditoria com Supabase:', err);
+  });
 
   return entry;
 }
 
 /**
- * Assina atualizações em tempo real da trilha de auditoria
+ * Assina atualizações em tempo real da trilha de auditoria no Supabase
  */
 export function subscribeAuditLogs(
   onUpdate: (logs: AuditLogEntry[]) => void,
   maxEntries = 150
 ): () => void {
-  // Retorna cache local inicial imediatamente
   const localInitial = getLocalAuditLogs();
   onUpdate(localInitial.slice(0, maxEntries));
 
-  let unsubscribeFirestore = () => {};
+  let isMounted = true;
+  let currentList: AuditLogEntry[] = [];
+  let lastFetchMs = 0;
 
-  try {
-    const q = query(collection(db, 'audit_trail'), orderBy('timestamp', 'desc'), limit(maxEntries));
-    unsubscribeFirestore = onSnapshot(
-      q,
-      (snapshot) => {
-        const remoteLogs: AuditLogEntry[] = [];
-        snapshot.forEach((d) => {
-          remoteLogs.push(d.data() as AuditLogEntry);
-        });
+  const fetchAndMerge = async () => {
+    lastFetchMs = Date.now();
+    try {
+      const remoteLogs = await fetchAuditLogsFromSupabase(maxEntries);
+      if (!isMounted) return;
+      const mergedMap = new Map<string, AuditLogEntry>();
+      remoteLogs.forEach((l: AuditLogEntry) => mergedMap.set(l.id, l));
+      getLocalAuditLogs().forEach((l) => {
+        if (!mergedMap.has(l.id)) mergedMap.set(l.id, l);
+      });
 
-        // Mescla com logs locais recentes para garantir exibição imediata
-        const mergedMap = new Map<string, AuditLogEntry>();
-        remoteLogs.forEach((l) => mergedMap.set(l.id, l));
-        getLocalAuditLogs().forEach((l) => {
-          if (!mergedMap.has(l.id)) mergedMap.set(l.id, l);
-        });
+      const sorted = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      currentList = sorted.slice(0, maxEntries);
+      onUpdate(currentList);
+    } catch (error) {
+      console.warn('[AuditLogger] Fallback para logs locais devido a erro do Supabase:', error);
+      currentList = getLocalAuditLogs().slice(0, maxEntries);
+      onUpdate(currentList);
+    }
+  };
 
-        const sorted = Array.from(mergedMap.values()).sort(
-          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
+  fetchAndMerge();
 
-        onUpdate(sorted.slice(0, maxEntries));
-      },
-      (error) => {
-        console.warn('[AuditLogger] Fallback para logs locais devido a erro do Firestore:', error);
-        onUpdate(getLocalAuditLogs().slice(0, maxEntries));
+  const unsubRealtime = subscribeSupabaseTableChanges('audit_trail_realtime', ['audit_trail'], (_tbl, payload) => {
+    if (!isMounted) return;
+    const ev = payload?.eventType;
+    const newRow = payload?.new;
+    const oldRow = payload?.old;
+
+    if (ev === 'DELETE' && oldRow?.id) {
+      currentList = currentList.filter(item => item.id !== oldRow.id);
+      onUpdate(currentList);
+      return;
+    }
+
+    if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+      const raw = mapRawRow<any>(newRow);
+      if (raw) {
+        const entry = (raw.raw_data && typeof raw.raw_data === 'object' ? { ...raw.raw_data, id: newRow.id } : { ...raw, id: newRow.id }) as AuditLogEntry;
+        currentList = [entry, ...currentList.filter(x => x.id !== entry.id)]
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          .slice(0, maxEntries);
+        onUpdate(currentList);
+        return;
       }
-    );
-  } catch (err) {
-    console.warn('[AuditLogger] Erro ao assinar Firestore:', err);
-  }
+    }
+
+    if (Date.now() - lastFetchMs > 30000) {
+      fetchAndMerge();
+    }
+  });
 
   // Ouve eventos locais disparados na mesma aba
   const handleLocalEvent = (e: Event) => {
@@ -289,7 +311,8 @@ export function subscribeAuditLogs(
   }
 
   return () => {
-    unsubscribeFirestore();
+    isMounted = false;
+    if (unsubRealtime) unsubRealtime();
     if (typeof window !== 'undefined') {
       window.removeEventListener('audit_entry_added', handleLocalEvent);
     }

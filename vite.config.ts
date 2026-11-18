@@ -105,7 +105,6 @@ export default defineConfig({
         ]
       },
       workbox: {
-        importScripts: ['/firebase-messaging-sw.js'],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -160,9 +159,6 @@ export default defineConfig({
             }
             if (id.includes('pptxgenjs')) {
               return 'vendor-pptx';
-            }
-            if (id.includes('firebase')) {
-              return 'vendor-firebase';
             }
             if (id.includes('chart.js') || id.includes('react-chartjs-2') || id.includes('recharts')) {
               return 'vendor-charts';

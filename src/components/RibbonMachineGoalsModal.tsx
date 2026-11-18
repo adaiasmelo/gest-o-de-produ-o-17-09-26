@@ -8,7 +8,7 @@ import {
   formatJumboUnits,
   JUMBO_AVG_M2 
 } from '../utils/ribbonGoalsUtils';
-import { doc, setDoc } from 'firebase/firestore';
+import { mergeSettingsInSupabase } from '../lib/supabase';
 
 interface RibbonMachineGoalsModalProps {
   isOpen: boolean;
@@ -80,11 +80,9 @@ export const RibbonMachineGoalsModal: React.FC<RibbonMachineGoalsModalProps> = (
         const updated = { ...prev, [selectedMonth]: goalsToSave };
         try {
           localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-          if (db) {
-            setDoc(doc(db, 'settings', 'global'), { ribbonGoals: updated }, { merge: true }).catch(err => {
-              console.error("Erro ao salvar metas no Firestore:", err);
-            });
-          }
+          mergeSettingsInSupabase('global', { ribbonGoals: updated }).catch(err => {
+            console.error("Erro ao salvar metas no Supabase:", err);
+          });
         } catch (err) {
           console.error("Erro ao salvar metas:", err);
         }

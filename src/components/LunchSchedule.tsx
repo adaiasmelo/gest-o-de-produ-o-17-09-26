@@ -5,8 +5,14 @@ import {
   FileDown
 } from 'lucide-react';
 import { Employee } from '../types';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import {
+  fetchAllFromSupabase,
+  mapRawRow,
+  saveLunchScheduleToSupabase,
+  saveLunchSchedulesBatchToSupabase,
+  deleteLunchScheduleFromSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -89,22 +95,49 @@ export function LunchSchedule({
   } | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Sincronizar alocações de almoço com o Firestore
+  // Sincronizar alocações de almoço com o Supabase
   useEffect(() => {
+    let mounted = true;
+    const loadSchedules = async () => {
+      try {
+        const rows = await fetchAllFromSupabase('lunch_schedules', 'id', true);
+        if (!mounted) return;
+        const data = rows.map(r => mapRawRow<LunchAllocation>(r));
+        setAllocations(data);
+      } catch (err) {
+        console.error('Erro ao buscar escalas de almoço no Supabase:', err);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
     setIsLoading(true);
-    const unsub = onSnapshot(collection(db, 'lunch_schedules'), (snap) => {
-      const data = snap.docs.map(docRef => ({
-        ...docRef.data(),
-        id: docRef.id
-      })) as LunchAllocation[];
-      setAllocations(data);
-      setIsLoading(false);
-    }, (err) => {
-      console.error('Erro ao buscar escalas de almoço:', err);
-      setIsLoading(false);
+    loadSchedules();
+    const unsub = subscribeSupabaseTableChanges('lunch_schedules_rt', ['lunch_schedules'], (_tbl, payload) => {
+      if (!mounted) return;
+      const ev = payload?.eventType;
+      const newRow = payload?.new;
+      const oldRow = payload?.old;
+
+      if (ev === 'DELETE' && oldRow?.id) {
+        setAllocations(prev => prev.filter(item => item.id !== oldRow.id));
+        return;
+      }
+      if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+        const item = { ...mapRawRow<LunchAllocation>(newRow), id: newRow.id };
+        setAllocations(prev => {
+          const exists = prev.some(x => x.id === item.id);
+          return exists ? prev.map(x => (x.id === item.id ? item : x)) : [...prev, item];
+        });
+        return;
+      }
+      loadSchedules();
     });
 
-    return () => unsub();
+    return () => {
+      mounted = false;
+      if (unsub) unsub();
+    };
   }, []);
 
   const getDocId = (day: string, sector: string, machine: string, shift: string, slot: string) => {
@@ -189,43 +222,47 @@ export function LunchSchedule({
 
     // Remover de qualquer outro slot do MESMO dia para manter consistência (um almoço por dia)
     const existingAllocations = allocations.filter(a => a.dayOfWeek === activeDay && a.employeeIds.includes(employeeId));
-    
-    const batch = writeBatch(db);
+    const upserts: LunchAllocation[] = [];
+    const deletes: string[] = [];
 
     for (const oldAlloc of existingAllocations) {
       const updatedIds = oldAlloc.employeeIds.filter(id => id !== employeeId);
-      const oldDocRef = doc(db, 'lunch_schedules', oldAlloc.id);
       if (updatedIds.length === 0) {
-        batch.delete(oldDocRef);
+        deletes.push(oldAlloc.id);
       } else {
-        batch.update(oldDocRef, { employeeIds: updatedIds, updatedAt: new Date().toISOString() });
+        upserts.push({ ...oldAlloc, employeeIds: updatedIds });
       }
     }
 
-    // Adicionar ao novo slot
     const docId = getDocId(activeDay, sector, machine, shift, slot);
     const targetAlloc = allocations.find(a => a.id === docId);
-    const targetDocRef = doc(db, 'lunch_schedules', docId);
-
     const newEmployeeIds = targetAlloc 
       ? [...new Set([...targetAlloc.employeeIds, employeeId])]
       : [employeeId];
 
-    batch.set(targetDocRef, {
+    const newAlloc: LunchAllocation = {
       id: docId,
       dayOfWeek: activeDay,
       sector,
       machine,
       shift,
       timeSlot: slot,
-      employeeIds: newEmployeeIds,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
+      employeeIds: newEmployeeIds
+    };
+    upserts.push(newAlloc);
+
+    setAllocations(prev => {
+      const delSet = new Set(deletes);
+      const map = new Map<string, LunchAllocation>();
+      prev.forEach(a => { if (!delSet.has(a.id)) map.set(a.id, a); });
+      upserts.forEach(a => map.set(a.id, a));
+      return Array.from(map.values());
+    });
 
     try {
-      await batch.commit();
+      await saveLunchSchedulesBatchToSupabase(upserts, deletes);
     } catch (err) {
-      console.error('Erro ao salvar escala de almoço:', err);
+      console.error('Erro ao salvar escala de almoço no Supabase:', err);
     }
   };
 
@@ -242,17 +279,15 @@ export function LunchSchedule({
     if (!targetAlloc) return;
 
     const updatedIds = targetAlloc.employeeIds.filter(id => id !== employeeId);
-    const targetDocRef = doc(db, 'lunch_schedules', docId);
 
     try {
       if (updatedIds.length === 0) {
-        await deleteDoc(targetDocRef);
+        setAllocations(prev => prev.filter(a => a.id !== docId));
+        await deleteLunchScheduleFromSupabase(docId);
       } else {
-        await setDoc(targetDocRef, {
-          ...targetAlloc,
-          employeeIds: updatedIds,
-          updatedAt: new Date().toISOString()
-        });
+        const updatedAlloc = { ...targetAlloc, employeeIds: updatedIds };
+        setAllocations(prev => prev.map(a => a.id === docId ? updatedAlloc : a));
+        await saveLunchScheduleToSupabase(updatedAlloc);
       }
     } catch (err) {
       console.error('Erro ao remover funcionário do almoço:', err);
@@ -273,31 +308,27 @@ export function LunchSchedule({
       return;
     }
 
-    const batch = writeBatch(db);
-
-    // Primeiro apaga todas as escalas antigas do dia destino para substituir completamente
-    const targetDayAllocations = allocations.filter(a => a.dayOfWeek === targetDay);
-    targetDayAllocations.forEach(a => {
-      batch.delete(doc(db, 'lunch_schedules', a.id));
-    });
-
-    // Copia as escalas do dia ativo com novos IDs para o dia destino
-    activeDayAllocations.forEach(a => {
+    const deletes = allocations.filter(a => a.dayOfWeek === targetDay).map(a => a.id);
+    const upserts: LunchAllocation[] = activeDayAllocations.map(a => {
       const newDocId = getDocId(targetDay, a.sector, a.machine, a.shift, a.timeSlot);
-      batch.set(doc(db, 'lunch_schedules', newDocId), {
+      return {
         id: newDocId,
         dayOfWeek: targetDay,
         sector: a.sector,
         machine: a.machine,
         shift: a.shift,
         timeSlot: a.timeSlot,
-        employeeIds: a.employeeIds,
-        updatedAt: new Date().toISOString()
-      });
+        employeeIds: a.employeeIds
+      };
+    });
+
+    setAllocations(prev => {
+      const delSet = new Set(deletes);
+      return [...prev.filter(a => !delSet.has(a.id)), ...upserts];
     });
 
     try {
-      await batch.commit();
+      await saveLunchSchedulesBatchToSupabase(upserts, deletes);
       setCopySuccess(`Escala de ${activeDay} copiada com sucesso para ${targetDay}!`);
       setIsCopyModalOpen(false);
       setTimeout(() => setCopySuccess(null), 4000);
@@ -321,32 +352,29 @@ export function LunchSchedule({
     }
 
     const otherDays = DAYS_OF_WEEK.filter(d => d !== activeDay);
-    const batch = writeBatch(db);
+    const deletes: string[] = [];
+    const upserts: LunchAllocation[] = [];
 
-    // Limpar e criar para todos os outros dias
     otherDays.forEach(day => {
-      const targetDayAllocations = allocations.filter(a => a.dayOfWeek === day);
-      targetDayAllocations.forEach(a => {
-        batch.delete(doc(db, 'lunch_schedules', a.id));
-      });
-
+      allocations.filter(a => a.dayOfWeek === day).forEach(a => deletes.push(a.id));
       activeDayAllocations.forEach(a => {
         const newDocId = getDocId(day, a.sector, a.machine, a.shift, a.timeSlot);
-        batch.set(doc(db, 'lunch_schedules', newDocId), {
+        upserts.push({
           id: newDocId,
           dayOfWeek: day,
           sector: a.sector,
           machine: a.machine,
           shift: a.shift,
           timeSlot: a.timeSlot,
-          employeeIds: a.employeeIds,
-          updatedAt: new Date().toISOString()
+          employeeIds: a.employeeIds
         });
       });
     });
 
+    setAllocations([...activeDayAllocations, ...upserts]);
+
     try {
-      await batch.commit();
+      await saveLunchSchedulesBatchToSupabase(upserts, deletes);
       setCopySuccess(`Escala de ${activeDay} replicada para todos os dias da semana!`);
       setIsCopyModalOpen(false);
       setTimeout(() => setCopySuccess(null), 4000);
@@ -517,68 +545,37 @@ export function LunchSchedule({
         groups[key].push(emp);
       });
 
-      // We will collect all set/delete write operations
-      const operations: { type: 'set' | 'delete'; ref: any; data?: any }[] = [];
-
-      // 1. Delete all existing allocations
-      allocations.forEach(alloc => {
-        operations.push({
-          type: 'delete',
-          ref: doc(db, 'lunch_schedules', alloc.id)
-        });
-      });
+      const deletes = allocations.map(alloc => alloc.id);
+      const upserts: LunchAllocation[] = [];
 
       // 2. Generate new allocations for all days
       DAYS_OF_WEEK.forEach(day => {
         const activeShiftsForDay = getActiveShiftsForDay(day);
         Object.entries(groups).forEach(([key, emps]) => {
           const [sector, machine, shift] = key.split('|');
-          
-          // Skip if the shift is not active on this day of the week
-          if (!activeShiftsForDay.includes(shift)) {
-            return;
-          }
+          if (!activeShiftsForDay.includes(shift)) return;
 
           const assignments = getSlotAssignments(sector, machine, shift, emps, day);
 
           Object.entries(assignments).forEach(([slot, ids]) => {
             if (ids.length > 0) {
               const docId = getDocId(day, sector, machine, shift, slot);
-              operations.push({
-                type: 'set',
-                ref: doc(db, 'lunch_schedules', docId),
-                data: {
-                  id: docId,
-                  dayOfWeek: day,
-                  sector,
-                  machine,
-                  shift,
-                  timeSlot: slot,
-                  employeeIds: ids,
-                  updatedAt: new Date().toISOString()
-                }
+              upserts.push({
+                id: docId,
+                dayOfWeek: day,
+                sector,
+                machine,
+                shift,
+                timeSlot: slot,
+                employeeIds: ids
               });
             }
           });
         });
       });
 
-      // 3. Execute in batches of 400 to prevent Firestore limit errors
-      const batchSize = 400;
-      for (let i = 0; i < operations.length; i += batchSize) {
-        const chunk = operations.slice(i, i + batchSize);
-        const batch = writeBatch(db);
-        
-        chunk.forEach(op => {
-          if (op.type === 'delete') {
-            batch.delete(op.ref);
-          } else {
-            batch.set(op.ref, op.data, { merge: true });
-          }
-        });
-
-        await batch.commit();
-      }
+      await saveLunchSchedulesBatchToSupabase(upserts, deletes);
+      setAllocations(upserts);
 
       setCopySuccess('Escala de almoço preenchida automaticamente para toda a semana!');
       setTimeout(() => setCopySuccess(null), 5000);

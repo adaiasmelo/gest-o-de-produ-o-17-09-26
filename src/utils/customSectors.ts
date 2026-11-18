@@ -15,8 +15,7 @@ import {
   CheckCircle,
   HelpCircle
 } from 'lucide-react';
-import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { saveCustomSectorToSupabase, deleteCustomSectorFromSupabase } from '../lib/supabase';
 import { CustomSector } from '../types';
 
 export const STANDARD_SECTORS = ['Liderança', 'Extrusão', 'Reciclagem', 'Fita'] as const;
@@ -258,11 +257,11 @@ export const saveCustomSectorToFirestore = async (sectorData: Partial<CustomSect
     updatedAt: now
   };
 
-  // Salva no Firestore
+  // Salva no Supabase
   try {
-    await setDoc(doc(db, 'custom_sectors', id), cleanSector);
+    await saveCustomSectorToSupabase(cleanSector);
   } catch (err) {
-    console.warn('Erro ao salvar no Firestore, salvando apenas local:', err);
+    console.warn('Erro ao salvar setor no Supabase, mantendo cache local:', err);
   }
 
   // Atualiza cache local
@@ -282,9 +281,9 @@ export const saveCustomSectorToFirestore = async (sectorData: Partial<CustomSect
 
 export const deleteCustomSectorFromFirestore = async (sectorId: string): Promise<void> => {
   try {
-    await deleteDoc(doc(db, 'custom_sectors', sectorId));
+    await deleteCustomSectorFromSupabase(sectorId);
   } catch (err) {
-    console.warn('Erro ao deletar do Firestore:', err);
+    console.warn('Erro ao deletar setor do Supabase:', err);
   }
 
   const current = getStoredCustomSectors();

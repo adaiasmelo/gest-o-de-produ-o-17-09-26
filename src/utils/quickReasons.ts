@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, query, where } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import {
+  fetchReasonsByCategoryFromSupabase,
+  saveReasonToSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 
 // Presets padrão industriais de motivos rápidos de perda
 export const DEFAULT_QUICK_LOSS_REASONS: Record<string, string[]> = {
@@ -70,7 +73,7 @@ export const DEFAULT_QUICK_DOWNTIME_REASONS: Record<string, string[]> = {
 };
 
 /**
- * Salva novo motivo rápido de perda no Firestore e em cache local
+ * Salva novo motivo rápido de perda no Supabase e em cache local
  */
 export const saveQuickLossReason = async (category: string, reasonText: string) => {
   const trimmed = reasonText.trim();
@@ -85,18 +88,14 @@ export const saveQuickLossReason = async (category: string, reasonText: string) 
       localStorage.setItem(storageKey, JSON.stringify(next));
     }
 
-    await addDoc(collection(db, 'quick_loss_reasons'), {
-      category,
-      reason: trimmed,
-      createdAt: new Date().toISOString()
-    });
+    await saveReasonToSupabase(`quick_loss_${category}`, trimmed, 'Extrusão');
   } catch (err) {
     console.warn(`Erro ao salvar motivo rápido de perda (${category}):`, err);
   }
 };
 
 /**
- * Salva novo motivo rápido de parada no Firestore e em cache local
+ * Salva novo motivo rápido de parada no Supabase e em cache local
  */
 export const saveQuickDowntimeReason = async (type: string, reasonText: string) => {
   const trimmed = reasonText.trim();
@@ -111,11 +110,7 @@ export const saveQuickDowntimeReason = async (type: string, reasonText: string) 
       localStorage.setItem(storageKey, JSON.stringify(next));
     }
 
-    await addDoc(collection(db, 'quick_downtime_reasons'), {
-      type,
-      reason: trimmed,
-      createdAt: new Date().toISOString()
-    });
+    await saveReasonToSupabase(`quick_downtime_${type}`, trimmed, 'Extrusão');
   } catch (err) {
     console.warn(`Erro ao salvar motivo rápido de parada (${type}):`, err);
   }
@@ -158,53 +153,46 @@ export const useQuickReasons = (category: string, kind: 'loss' | 'downtime') => 
   useEffect(() => {
     if (!category) return;
 
-    const collectionName = kind === 'loss' ? 'quick_loss_reasons' : 'quick_downtime_reasons';
-    const fieldName = kind === 'loss' ? 'category' : 'type';
+    const supabaseCategory = kind === 'loss' ? `quick_loss_${category}` : `quick_downtime_${category}`;
+    let isMounted = true;
 
-    try {
-      const q = query(collection(db, collectionName), where(fieldName, '==', category));
-      const unsubscribe = onSnapshot(
-        q,
-        (snap) => {
-          const remoteList: string[] = [];
-          snap.forEach((doc) => {
-            const data = doc.data();
-            if (data?.reason && typeof data.reason === 'string') {
-              remoteList.push(data.reason.trim());
+    const loadRemote = async () => {
+      try {
+        const rows = await fetchReasonsByCategoryFromSupabase(supabaseCategory);
+        if (!isMounted) return;
+        const remoteList = rows.map((r) => r.reason).filter(Boolean);
+
+        setReasons((prev) => {
+          const nextList = [...defaults];
+          remoteList.forEach((r) => {
+            if (!nextList.some((existing) => existing.toLowerCase() === r.toLowerCase())) {
+              nextList.push(r);
             }
           });
-
-          setReasons((prev) => {
-            const nextList = [...defaults];
-            // Adiciona remotos que não estão na lista
-            remoteList.forEach((r) => {
-              if (!nextList.some((existing) => existing.toLowerCase() === r.toLowerCase())) {
-                nextList.push(r);
-              }
-            });
-            // Mantém os que já estavam no estado local
-            prev.forEach((p) => {
-              if (!nextList.some((existing) => existing.toLowerCase() === p.toLowerCase())) {
-                nextList.push(p);
-              }
-            });
-            try {
-              localStorage.setItem(storageKey, JSON.stringify(nextList));
-            } catch (err) {
-              // ignore
+          prev.forEach((p) => {
+            if (!nextList.some((existing) => existing.toLowerCase() === p.toLowerCase())) {
+              nextList.push(p);
             }
-            return nextList;
           });
-        },
-        (err) => {
-          console.warn(`Firestore snapshot aviso em ${collectionName}:`, err);
-        }
-      );
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(nextList));
+          } catch {}
+          return nextList;
+        });
+      } catch (err) {
+        console.warn(`Supabase aviso em reasons_library (${supabaseCategory}):`, err);
+      }
+    };
 
-      return () => unsubscribe();
-    } catch (err) {
-      console.warn(`Erro ao subscrever em ${collectionName}:`, err);
-    }
+    loadRemote();
+    const unsub = subscribeSupabaseTableChanges(`quick_reasons_${supabaseCategory}`, ['reasons_library'], () => {
+      loadRemote();
+    });
+
+    return () => {
+      isMounted = false;
+      if (unsub) unsub();
+    };
   }, [category, kind, storageKey]);
 
   const addReason = async (newReason: string) => {

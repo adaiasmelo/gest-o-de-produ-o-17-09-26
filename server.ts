@@ -3,7 +3,6 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import * as admin from 'firebase-admin';
 import { GoogleGenAI, Type } from "@google/genai";
 
 let aiClient: GoogleGenAI | null = null;
@@ -54,63 +53,7 @@ async function startServer() {
     next();
   });
 
-  // Initialize Firebase Admin if configuration exists
-  try {
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      let serviceAccount: any = null;
-      const rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
-
-      // Attempt 1: direct JSON parse
-      try {
-        serviceAccount = JSON.parse(rawEnv);
-      } catch {}
-
-      // Attempt 2: base64 decode if string
-      if (!serviceAccount) {
-        try {
-          const decoded = Buffer.from(rawEnv, 'base64').toString('utf-8');
-          if (decoded.trim().startsWith('{')) {
-            serviceAccount = JSON.parse(decoded);
-          }
-        } catch {}
-      }
-
-      // Attempt 3: unwrap wrapping quotes
-      if (!serviceAccount && ((rawEnv.startsWith('"') && rawEnv.endsWith('"')) || (rawEnv.startsWith("'") && rawEnv.endsWith("'")))) {
-        try {
-          const inner = rawEnv.slice(1, -1);
-          serviceAccount = JSON.parse(inner);
-        } catch {}
-      }
-
-      // Attempt 4: replace unescaped newlines in JSON string
-      if (!serviceAccount) {
-        try {
-          const fixedNewlines = rawEnv.replace(/\r?\n/g, '\\n');
-          serviceAccount = JSON.parse(fixedNewlines);
-        } catch {}
-      }
-
-      if (serviceAccount && typeof serviceAccount === 'object') {
-        if (typeof serviceAccount.private_key === 'string') {
-          serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-        }
-
-        if (admin.apps.length === 0) {
-          admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-          });
-          console.log("Firebase Admin initialized successfully");
-        }
-      } else {
-        console.warn("FIREBASE_SERVICE_ACCOUNT exists but could not be parsed as a valid JSON object.");
-      }
-    } else {
-      console.warn("FIREBASE_SERVICE_ACCOUNT not found.");
-    }
-  } catch (error) {
-    console.warn("Firebase Admin setup warning:", error instanceof Error ? error.message : String(error));
-  }
+  // Persistência e sincronização gerenciadas via Supabase + cache local do servidor
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -1052,87 +995,9 @@ Texto original:
   });
 
   app.post("/api/send-notification", async (req, res) => {
-    const { token, title, body } = req.body;
-
-    if (!token) {
-       return res.status(400).json({ error: "Token is required" });
-    }
-
-    try {
-      if (admin.apps.length > 0) {
-        await admin.messaging().send({
-          token,
-          notification: {
-            title,
-            body,
-          },
-          data: {
-            id: Math.random().toString(36).substring(7),
-            title,
-            body,
-          },
-          android: {
-            priority: 'high',
-            notification: {
-              sound: 'default',
-              clickAction: 'FLUTTER_NOTIFICATION_CLICK',
-              priority: 'high',
-              visibility: 'public',
-              channelId: 'high_importance_channel',
-              color: '#1e3a8a',
-            },
-          },
-          apns: {
-            payload: {
-              aps: {
-                sound: 'default',
-                badge: 1,
-                'content-available': 1,
-                alert: {
-                  title,
-                  body
-                }
-              },
-            },
-          },
-          webpush: {
-            headers: {
-              Urgency: 'high'
-            },
-            notification: {
-              title,
-              body,
-              icon: 'https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png',
-              badge: 'https://static.wixstatic.com/media/765089_472b535780514937a09c07be49495392~mv2.png',
-              vibrate: [200, 100, 200, 100, 200],
-              requireInteraction: true,
-              silent: false,
-              actions: [
-                {
-                  action: 'open',
-                  title: 'Ver Produção'
-                },
-                {
-                  action: 'dismiss',
-                  title: 'Ignorar'
-                }
-              ]
-            },
-            fcmOptions: {
-              link: '/'
-            }
-          }
-        });
-        res.json({ success: true });
-      } else {
-        // Fallback for when admin is not fully configured - log for debugging
-        console.log("Push notification simulation:", { title, body });
-        res.json({ success: true, simulated: true });
-      }
-    } catch (error) {
-      console.error("Error sending notification:", error);
-      res.status(500).json({ error: "Failed to send notification" });
-    }
+    const { title, body } = req.body || {};
+    console.log("Notification event received (Supabase Realtime active):", { title, body });
+    res.json({ success: true, mode: "supabase-realtime" });
   });
 
   // Vite middleware for development

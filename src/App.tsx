@@ -23,10 +23,6 @@ import { downloadChartAsImageWithLegend } from './utils/exportChartImage';
 import { downloadChartAsLandscapePDF } from './utils/exportLandscapeChartPDF';
 import { downloadOeeAnalyticsPDF } from './utils/exportOeeReportPDF';
 import { copyRichAndPlainText, downloadOutlookEml, getFormattedFileDate } from './utils/outlookEml';
-import { db, auth, messaging, OperationType, handleFirestoreError, seedInitialData } from './lib/firebase';
-import { getToken, onMessage } from 'firebase/messaging';
-import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { ProductionEntry, Shift, Employee, Collaborator, PersonnelLog, SystemUser, UserPermissions, TrainingRecord, TrainingTemplate, StockItem, StockEntry, RibbonCuttingEntry, StopItem, OperatorTrainingSheet, Vacation, ActiveSession, AccessLog, UserActivityLog, OperatorPenalty, CompanyNotice, EcoBalanceSettings, CustomSector } from './types';
 import { recordUserActivity, subscribeUserActivities, clearUserActivities, loadActivityLogsFromCache } from './services/activityService';
 import { DEFAULT_COMPANY_NOTICES } from './data/defaultNotices';
@@ -178,6 +174,10 @@ const ProductionBonusManager = React.lazy(() =>
 );
 import { SupabaseModal } from './components/SupabaseModal';
 import { 
+  generateSupabaseId,
+  mapRawRow,
+  mapSupabaseRowToProductionEntry,
+  fetchAllFromSupabase,
   saveProductionEntryToSupabase, 
   deleteProductionEntryFromSupabase,
   deleteProductionEntriesFromSupabase,
@@ -185,15 +185,49 @@ import {
   checkSupabaseConnection,
   isSupabaseConfigured,
   saveCollaboratorToSupabase,
+  updateCollaboratorInSupabase,
   deleteCollaboratorFromSupabase,
+  deleteCollaboratorsBatchFromSupabase,
   saveEmployeeToSupabase,
+  updateEmployeeInSupabase,
   deleteEmployeeFromSupabase,
   saveSettingsToSupabase,
+  mergeSettingsInSupabase,
+  fetchSettingsKeyFromSupabase,
   saveVacationToSupabase,
+  saveVacationsBatchToSupabase,
   deleteVacationFromSupabase,
-  savePersonnelLogToSupabase
+  deleteVacationsBatchFromSupabase,
+  savePersonnelLogToSupabase,
+  saveCompanyNoticeToSupabase,
+  deleteCompanyNoticeFromSupabase,
+  saveOperatorPenaltyToSupabase,
+  deleteOperatorPenaltyFromSupabase,
+  saveStockEntryToSupabase,
+  deleteStockEntryFromSupabase,
+  saveRibbonEntryToSupabase,
+  saveRibbonEntriesBatchToSupabase,
+  deleteRibbonEntryFromSupabase,
+  deleteRibbonEntriesBatchFromSupabase,
+  saveTrainingRecordToSupabase,
+  deleteTrainingRecordFromSupabase,
+  saveOperatorTrainingSheetToSupabase,
+  deleteOperatorTrainingSheetFromSupabase,
+  saveShiftToSupabase,
+  fetchSystemUsersFromSupabase,
+  saveSystemUserToSupabase,
+  deleteSystemUserFromSupabase,
+  fetchCollectionSmartFromSupabase,
+  upsertCollectionItemSmartToSupabase,
+  deleteCollectionItemSmartFromSupabase,
+  saveKvCollectionToSupabase,
+  fetchDeletedProductionIdsFromSupabase,
+  recordDeletedProductionIdsInSupabase,
+  removeDeletedProductionIdFromSupabase,
+  subscribeSupabaseTableChanges,
+  seedInitialDataToSupabase,
+  mapSupabaseRowToSystemUser
 } from './lib/supabase';
-import { subscribeToSupabaseProduction } from './services/supabaseSyncService';
 
 const MANUAL_MAP: Record<string, { registration: string; name: string }> = {
   "marcelo": { registration: "1611", name: "MARCELO DA SILVA CASTRO" },
@@ -1498,30 +1532,61 @@ export const App: React.FC = () => {
     return currentMonthStr;
   };
 
-  const [dashboardMonth, setDashboardMonth] = useState(() => {
+  const lastLocalMonthChangeRef = useRef<number>(0);
+
+  const [dashboardMonth, setDashboardMonthState] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
         const urlMonth = urlParams.get('mes') || urlParams.get('month') || urlParams.get('m');
         if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) return urlMonth;
 
+        const now = new Date();
+        const realCurrentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         const saved = localStorage.getItem('manupackaging_dashboard_month');
-        return getAutoReferenceMonth(saved);
+        const lastAutoMonth = localStorage.getItem('manupackaging_last_auto_month');
+
+        if (!saved || !/^\d{4}-\d{2}$/.test(saved)) {
+          const auto = getAutoReferenceMonth(saved);
+          localStorage.setItem('manupackaging_last_auto_month', realCurrentMonth);
+          return auto;
+        }
+
+        if (lastAutoMonth !== realCurrentMonth && saved < realCurrentMonth) {
+          const auto = getAutoReferenceMonth(saved);
+          localStorage.setItem('manupackaging_last_auto_month', realCurrentMonth);
+          return auto;
+        }
+
+        return saved;
       }
     } catch {}
     return getAutoReferenceMonth();
   });
+
+  const setDashboardMonth = useCallback((next: React.SetStateAction<string>) => {
+    lastLocalMonthChangeRef.current = Date.now();
+    setDashboardMonthState((prev) => {
+      const resolved = typeof next === 'function' ? next(prev) : next;
+      if (!resolved || !/^\d{4}-\d{2}$/.test(resolved)) return prev;
+      try {
+        const now = new Date();
+        const realCurrentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        localStorage.setItem('manupackaging_dashboard_month', resolved);
+        localStorage.setItem('manupackaging_last_auto_month', realCurrentMonth);
+      } catch {}
+      mergeSettingsInSupabase('global', { dashboardMonth: resolved }).catch(() => {});
+      return resolved;
+    });
+  }, []);
 
   useEffect(() => {
     if (dashboardMonth) {
       try {
         localStorage.setItem('manupackaging_dashboard_month', dashboardMonth);
       } catch {}
-      if (currentUser || loggedUser) {
-        setDoc(doc(db, 'settings', 'global'), { dashboardMonth }, { merge: true }).catch(() => {});
-      }
     }
-  }, [dashboardMonth, currentUser, loggedUser]);
+  }, [dashboardMonth]);
 
   const downtimeSuggestions = useMemo(() => {
     return extractDowntimeMotives(productionData, ribbonEntries);
@@ -1640,11 +1705,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     setEcoBalanceSettings(newSettings);
     localStorage.setItem('manupackaging_eco_balance_settings', JSON.stringify(newSettings));
     try {
-      await setDoc(doc(db, 'settings', 'global'), {
-        ecoBalanceSettings: newSettings
-      }, { merge: true });
+      await mergeSettingsInSupabase('global', { ecoBalanceSettings: newSettings });
     } catch (err) {
-      console.error('Erro ao salvar ecoBalanceSettings no Firestore:', err);
+      console.error('Erro ao salvar ecoBalanceSettings no Supabase:', err);
     }
   };
   const [operators, setOperators] = useState<string[]>(() => {
@@ -1735,11 +1798,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       handleBlockedReadOnlyAction('Gravação Bloqueada', 'A gravação de comunicados não é permitida no Modo de Leitura.');
       return;
     }
-    try {
-      await setDoc(doc(db, 'company_notices', notice.id), notice);
-    } catch (e) {
-      console.warn('Firestore offline, saving notice locally', e);
-    }
+    saveCompanyNoticeToSupabase(notice).catch((e) => {
+      console.warn('Supabase notice save warning, mantendo estado local:', e);
+    });
     setCompanyNotices((prev) => {
       const idx = prev.findIndex((n) => n.id === notice.id);
       let updated: CompanyNotice[];
@@ -1762,11 +1823,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       handleBlockedReadOnlyAction('Exclusão Bloqueada', 'A exclusão de comunicados não é permitida no Modo de Leitura.');
       return;
     }
-    try {
-      await deleteDoc(doc(db, 'company_notices', id));
-    } catch (e) {
-      console.warn('Firestore offline, deleting notice locally', e);
-    }
+    deleteCompanyNoticeFromSupabase(id).catch((e) => {
+      console.warn('Supabase notice delete warning:', e);
+    });
     setCompanyNotices((prev) => {
       const updated = prev.filter((n) => n.id !== id);
       try {
@@ -1788,11 +1847,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       id,
       createdAt: new Date().toISOString(),
     };
-    try {
-      await setDoc(doc(db, 'operator_penalties', id), newPen);
-    } catch (e) {
-      console.warn('Firestore offline, saving penalty locally', e);
-    }
+    saveOperatorPenaltyToSupabase(newPen).catch((e) => {
+      console.warn('Supabase penalty save warning:', e);
+    });
     setOperatorPenalties((prev) => {
       const updated = [...prev, newPen];
       try { localStorage.setItem('manupackaging_operator_penalties', JSON.stringify(updated)); } catch {}
@@ -1805,11 +1862,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       handleBlockedReadOnlyAction('Exclusão Bloqueada', 'A exclusão de penalidades não é permitida no Modo de Leitura.');
       return;
     }
-    try {
-      await deleteDoc(doc(db, 'operator_penalties', id));
-    } catch (e) {
-      console.warn('Firestore offline, deleting penalty locally', e);
-    }
+    deleteOperatorPenaltyFromSupabase(id).catch((e) => {
+      console.warn('Supabase penalty delete warning:', e);
+    });
     setOperatorPenalties((prev) => {
       const updated = prev.filter((p) => p.id !== id);
       try { localStorage.setItem('manupackaging_operator_penalties', JSON.stringify(updated)); } catch {}
@@ -2173,63 +2228,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   }, [isAuthenticated, loggedUser]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setCurrentUser(user);
-        setIsAuthenticated(true);
-        // Register for push notifications
-        if (messaging) {
-          onMessage(messaging, (payload) => {
-            console.log('PWA: Notificação recebida em primeiro plano:', payload);
-            if (payload.notification) {
-              addNotification(`${payload.notification.title}: ${payload.notification.body}`);
-            }
-          });
-
-          const setupPush = async () => {
-            try {
-              const permission = await Notification.requestPermission();
-              if (permission === 'granted') {
-                const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-                if (!vapidKey) return;
-
-                // Primeiro, garante que o Service Worker está registrado
-                let registration;
-                if ('serviceWorker' in navigator) {
-                  // Como estamos usando VitePWA, o SW principal é /sw.js ou o que o plugin gera.
-                  // Mas o Firebase quer o que tem o messaging.
-                  // Na configuração do vite.config.ts, estamos injetando o firebase-messaging-sw.js no sw.js.
-                  registration = await navigator.serviceWorker.getRegistration();
-                  if (!registration) {
-                    registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-                  }
-                }
-
-                const token = await getToken(messaging, { 
-                  vapidKey,
-                  serviceWorkerRegistration: registration 
-                });
-                
-                if (token) {
-                  await setDoc(doc(db, 'fcm_tokens', user.uid), {
-                    userId: user.uid,
-                    token: token,
-                    updatedAt: new Date().toISOString()
-                  });
-                  console.log('PWA: FCM Token registrado com sucesso');
-                }
-              }
-            } catch (error) {
-              console.warn('PWA: Erro ao registrar notificações push:', error);
-            }
-          };
-          setupPush();
-        }
-      } else {
-        signInAnonymously(auth).catch(console.error);
-      }
-    });
-    return () => unsubscribe();
+    setCurrentUser({ uid: 'supabase-client', displayName: 'Sistema', email: 'sistema@local' });
+    setIsAuthenticated(true);
   }, []);
 
   const handleInstallClick = async () => {
@@ -2388,10 +2388,17 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   }, [systemLogo, settingsLoaded, loggedUser]);
 
-  // Sincronização contínua bi-direcional automática via servidor e Supabase para todos os aparelhos
+  // Sincronização contínua bi-direcional automática via servidor e Supabase (modo delta econômico)
   const [isCrossDeviceSyncing, setIsCrossDeviceSyncing] = useState(false);
+  const lastAutoSyncMsRef = useRef<number>(0);
+  const hasSyncedLocalServerRef = useRef<boolean>(false);
 
   const syncProductionBetweenDevices = useCallback(async (showToast = false) => {
+    if (!showToast) {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (Date.now() - lastAutoSyncMsRef.current < 300000) return; // Cooldown de 5 minutos entre syncs automáticos
+    }
+    lastAutoSyncMsRef.current = Date.now();
     setIsCrossDeviceSyncing(true);
     try {
       // 1. Carrega o cache local deste aparelho e IDs deletados
@@ -2399,50 +2406,79 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       const localEntries = localCache.entries || [];
       const localDeletedIds = getLocalDeletedProductionIds();
 
-      // 2. Se este aparelho possui lançamentos no cache local, envia para unificar no servidor junto com IDs deletados
-      try {
-        await fetch('/api/sync/production', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-          body: JSON.stringify({ entries: localEntries, deletedIds: localDeletedIds })
-        });
-      } catch (_) {}
-
-      // 3. Obtém o estado unificado consolidado no servidor
-      const res = await fetch('/api/sync/production', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Array.isArray(data.deletedIds) && data.deletedIds.length > 0) {
-          recordLocalDeletedProductionIds(data.deletedIds);
-        }
-        if (data && Array.isArray(data.entries)) {
-          const currentDeleted = new Set(getLocalDeletedProductionIds());
-          const cleanEntries = data.entries.filter((e: any) => !currentDeleted.has(e.id));
-          setProductionData(prev => {
-            const cleanPrev = prev.filter(e => !currentDeleted.has(e.id));
-            const merged = deduplicateProductionEntries([...cleanEntries, ...cleanPrev]);
-            saveProductionCache(merged);
-            return merged;
+      // 2. Sincroniza com servidor local apenas no início ou quando solicitado manualmente
+      if (showToast || !hasSyncedLocalServerRef.current) {
+        hasSyncedLocalServerRef.current = true;
+        try {
+          await fetch('/api/sync/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ entries: localEntries, deletedIds: localDeletedIds })
           });
-          if (showToast) {
-            addNotification(`Sincronização concluída: ${cleanEntries.length} lançamentos consolidados.`);
+        } catch (_) {}
+
+        const res = await fetch('/api/sync/production', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.deletedIds) && data.deletedIds.length > 0) {
+            recordLocalDeletedProductionIds(data.deletedIds);
+          }
+          if (data && Array.isArray(data.entries)) {
+            const currentDeleted = new Set(getLocalDeletedProductionIds());
+            const cleanEntries = data.entries.filter((e: any) => !currentDeleted.has(e.id));
+            setProductionData(prev => {
+              const cleanPrev = prev.filter(e => !currentDeleted.has(e.id));
+              const merged = deduplicateProductionEntries([...cleanEntries, ...cleanPrev]);
+              saveProductionCache(merged);
+              return merged;
+            });
+            if (showToast) {
+              addNotification(`Sincronização concluída: ${cleanEntries.length} lançamentos consolidados.`);
+            }
           }
         }
       }
 
-      // 4. Sincroniza também com o Supabase (PostgreSQL) com paginação completa
+      // 3. Sincronização incremental (delta por updated_at) com Supabase para economizar saída de dados
       if (isSupabaseConfigured()) {
         try {
-          const supabaseRows = await fetchAllProductionFromSupabase();
+          const hasValidCache = localEntries.length > 0 && localCache.lastSyncTime && !isNaN(Date.parse(localCache.lastSyncTime));
+          const sinceIso = hasValidCache && !showToast
+            ? new Date(Date.parse(localCache.lastSyncTime!) - 120000).toISOString()
+            : null;
+
+          const [supabaseRows, remoteDeleted] = await Promise.all([
+            fetchAllProductionFromSupabase(sinceIso ? { sinceUpdatedAt: sinceIso } : undefined),
+            fetchDeletedProductionIdsFromSupabase()
+          ]);
+
+          if (remoteDeleted.length > 0) {
+            recordLocalDeletedProductionIds(remoteDeleted);
+          }
+
+          const syncTs = new Date().toISOString();
+          const currentDeleted = new Set(getLocalDeletedProductionIds());
+
           if (supabaseRows && supabaseRows.length > 0) {
-            const currentDeleted = new Set(getLocalDeletedProductionIds());
-            const cleanSupabaseRows = supabaseRows.filter((e: any) => !currentDeleted.has(e.id));
+            const cleanSupabaseRows = supabaseRows
+              .filter((e: any) => e && e.id && !currentDeleted.has(e.id))
+              .map((e: any) => ({
+                ...e,
+                shift: sanitizeShift(e.shift, e.machine),
+                operator: upgradeName(e.operator)
+              }));
             setProductionData(prev => {
               const cleanPrev = prev.filter(e => !currentDeleted.has(e.id));
               const merged = deduplicateProductionEntries([...cleanSupabaseRows, ...cleanPrev]);
-              saveProductionCache(merged);
+              saveProductionCache(merged, syncTs);
               return merged;
+            });
+          } else if (localEntries.length > 0) {
+            setProductionData(prev => {
+              const cleanPrev = prev.filter(e => !currentDeleted.has(e.id));
+              saveProductionCache(cleanPrev, syncTs);
+              return cleanPrev;
             });
           }
         } catch (supErr) {
@@ -2456,15 +2492,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   }, []);
 
-  // Sincronismo 100% automático e contínuo sem intervenção do usuário
+  // Fallback de segurança em baixa frequência (Realtime já entrega alterações instantaneamente)
   useEffect(() => {
-    // Sincronização inicial
-    syncProductionBetweenDevices(false);
+    const timer = setInterval(() => syncProductionBetweenDevices(false), 600000); // 10 minutos, modo delta
 
-    // Polling periódico em segundo plano a cada 20 segundos
-    const timer = setInterval(() => syncProductionBetweenDevices(false), 20000);
-
-    // Sincroniza automaticamente quando o usuário volta para a aba ou desbloqueia o aparelho
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         syncProductionBetweenDevices(false);
@@ -2485,513 +2516,346 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     };
   }, [syncProductionBetweenDevices]);
 
-  // Sincronização em tempo real e carga automática com Supabase (PostgreSQL)
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-
-    // Realtime listener com sub-segundo de latência para múltiplos aparelhos
-    const unsub = subscribeToSupabaseProduction(
-      (entry) => {
-        const currentDeleted = new Set(getLocalDeletedProductionIds());
-        if (currentDeleted.has(entry.id)) return;
-        setProductionData(prev => {
-          const filtered = prev.filter(p => p.id !== entry.id && !currentDeleted.has(p.id));
-          const updated = deduplicateProductionEntries([entry, ...filtered]);
-          saveProductionCache(updated);
-          return updated;
-        });
-      },
-      (deletedId) => {
-        recordLocalDeletedProductionIds([deletedId]);
-        setProductionData(prev => {
-          const updated = prev.filter(p => p.id !== deletedId);
-          saveProductionCache(updated);
-          return updated;
-        });
-        fetch('/api/sync/production/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: [deletedId] })
-        }).catch(() => {});
-      }
-    );
-
-    return () => {
-      if (unsub) unsub();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Permite sincronização contínua de dados em tempo real para Smart TVs (/tv), telões e acessos externos sem login
+    // Permite sincronização contínua de dados em tempo real (100% Supabase, sem Firebase)
     if (!currentUser && !isExternalTvView && !isExternalTvRoute() && !isExternalCalculatorRoute() && !isExternalOperatorRoute()) return;
 
+    let isDisposed = false;
     const audioRef = { current: new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') };
     audioRef.current.volume = 0.5;
-
     const sessionStartTime = new Date().toISOString();
-    let isInitialLoad = true;
-    setProductionSyncStatus(prev => ({ ...prev, isSyncing: true }));
 
-    const unsubProduction = onSnapshot(collection(db, 'productionEntries'), (snap) => {
-      // 1. Higienização apenas em memória (sem writes desnecessários ao Firestore para não estourar a cota)
-      const allLiveDocIds = isInitialLoad ? new Set(snap.docs.map(d => d.id)) : undefined;
+    const applyGlobalSettingsData = (data: any) => {
+      if (!data || typeof data !== 'object') return;
+      if (data.systemLogo) {
+        setSystemLogo(data.systemLogo);
+        localStorage.setItem('manupackaging_system_logo', data.systemLogo);
+      }
+      if (data.systemCoverImage) {
+        setSystemCoverImage(data.systemCoverImage);
+        localStorage.setItem('manupackaging_system_cover', data.systemCoverImage);
+      }
+      if (data.chartPdfLogo !== undefined) {
+        setChartPdfLogo(data.chartPdfLogo);
+        if (data.chartPdfLogo) {
+          localStorage.setItem('manupackaging_chart_pdf_logo', data.chartPdfLogo);
+        } else {
+          localStorage.removeItem('manupackaging_chart_pdf_logo');
+        }
+      }
+      if (data.systemName) {
+        setSystemName(data.systemName);
+        localStorage.setItem('manupackaging_system_name', data.systemName);
+      }
+      if (data.loginSystemName) {
+        setLoginSystemName(data.loginSystemName);
+        localStorage.setItem('manupackaging_login_name', data.loginSystemName);
+      }
+      if (data.loginSystemSubtitle) {
+        setLoginSystemSubtitle(data.loginSystemSubtitle);
+        localStorage.setItem('manupackaging_login_subtitle', data.loginSystemSubtitle);
+      }
+      if (data.operators) {
+        const silencedNamesSet = getSilencedNamesSet(collaboratorsRef.current, employeesRef.current);
+        const rawOps = Array.from(new Set((data.operators as string[]).map(op => upgradeName(op))));
+        const upgradedOps = rawOps.filter(op => !silencedNamesSet.has(normalizeText(op)));
+        setOperators(upgradedOps);
+        localStorage.setItem('manupackaging_operators', JSON.stringify(upgradedOps));
+      }
+      if (data.goals) {
+        setGoals(data.goals);
+        localStorage.setItem('manupackaging_goals', JSON.stringify(data.goals));
+      }
+      if (data.ribbonGoals) {
+        setRibbonGoals(data.ribbonGoals);
+        localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(data.ribbonGoals));
+      }
+      if (data.eremaGoals) {
+        setEremaGoals(data.eremaGoals);
+        localStorage.setItem('manupackaging_erema_goals', JSON.stringify(data.eremaGoals));
+      }
+      if (data.extrusionWasteLimits) {
+        setExtrusionWasteLimits(data.extrusionWasteLimits);
+        localStorage.setItem('manupackaging_extrusion_waste_limits', JSON.stringify(data.extrusionWasteLimits));
+      }
+      if (data.extrusionWasteLimit !== undefined && data.extrusionWasteLimit !== null) {
+        const parsed = Number(data.extrusionWasteLimit);
+        if (!isNaN(parsed) && parsed > 0) {
+          setExtrusionWasteLimit(parsed);
+          localStorage.setItem('manupackaging_extrusion_waste_limit', String(parsed));
+        }
+      }
+      if (data.ecoBalanceSettings) {
+        const mergedSettings = { ...DEFAULT_ECO_BALANCE_SETTINGS, ...data.ecoBalanceSettings };
+        if (!mergedSettings.initialMatrizStock && !mergedSettings.initialGalpaoStock) {
+          mergedSettings.initialMatrizStock = 18071;
+          mergedSettings.initialGalpaoStock = 111991;
+          mergedSettings.initialEcoBStock = 130062;
+          mergedSettings.physicalMatrizStock = 20385;
+          mergedSettings.physicalGalpaoStock = 111991;
+          mergedSettings.physicalEcoBStock = 132376;
+          mergedSettings.calculationPeriodDays = ['2026-09-25', '2026-09-26', '2026-09-27'];
+        }
+        setEcoBalanceSettings(mergedSettings);
+        localStorage.setItem('manupackaging_eco_balance_settings', JSON.stringify(mergedSettings));
+      }
+      if (data.availableRoles) {
+        const rolesList = [...data.availableRoles];
+        if (!rolesList.includes('Em Experiência')) rolesList.push('Em Experiência');
+        if (!rolesList.includes('Operador 3')) rolesList.push('Operador 3');
+        setAvailableRoles(rolesList);
+      }
+      if (data.dashboardMonth && typeof data.dashboardMonth === 'string' && /^\d{4}-\d{2}$/.test(data.dashboardMonth)) {
+        const isRecentLocalChange = Date.now() - lastLocalMonthChangeRef.current < 5000;
+        if (!isRecentLocalChange) {
+          setDashboardMonthState(data.dashboardMonth);
+          try {
+            const now = new Date();
+            const realCurrentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            localStorage.setItem('manupackaging_dashboard_month', data.dashboardMonth);
+            localStorage.setItem('manupackaging_last_auto_month', realCurrentMonth);
+          } catch {}
+        }
+      }
+      const remoteVersion = data.appBuildTime || data.systemVersion;
+      if (remoteVersion) {
+        if (!sessionLoadedBuildTimeRef.current) {
+          sessionLoadedBuildTimeRef.current = remoteVersion;
+        } else if (remoteVersion !== sessionLoadedBuildTimeRef.current) {
+          setIsUpdateAvailable(true);
+          if (data.updateNotes) setUpdateNotes(data.updateNotes);
+        }
+      }
+    };
 
-      setProductionData(prevEntries => {
-        const { updatedEntries, hasChanges } = mergeProductionDocChanges(
-          prevEntries,
-          snap.docChanges(),
-          {
-            sanitizeShift,
-            upgradeName,
-            isInitialSnapshot: isInitialLoad,
-            allLiveDocIds
-          }
-        );
+    const loadProductionAndDeleted = async () => {
+      lastAutoSyncMsRef.current = Date.now();
+      try {
+        const cached = loadProductionCache();
+        const hasValidCache = cached.entries.length > 0 && cached.lastSyncTime && !isNaN(Date.parse(cached.lastSyncTime));
+        const sinceIso = hasValidCache
+          ? new Date(Date.parse(cached.lastSyncTime!) - 120000).toISOString()
+          : null;
 
-        if (hasChanges) {
-          const syncTimestamp = new Date().toISOString();
+        const [supEntries, remoteDeleted] = await Promise.all([
+          fetchAllProductionFromSupabase(sinceIso ? { sinceUpdatedAt: sinceIso } : undefined),
+          fetchDeletedProductionIdsFromSupabase()
+        ]);
+        if (isDisposed) return;
+
+        if (remoteDeleted.length > 0) {
+          recordLocalDeletedProductionIds(remoteDeleted);
+        }
+        const delSet = new Set(getLocalDeletedProductionIds());
+
+        const sanitizedDelta = supEntries
+          .filter((e: any) => e && e.id && !delSet.has(e.id))
+          .map((e: any) => ({
+            ...e,
+            shift: sanitizeShift(e.shift, e.machine),
+            operator: upgradeName(e.operator)
+          }));
+
+        const syncTimestamp = new Date().toISOString();
+        const baseEntries = hasValidCache
+          ? cached.entries.filter((e: any) => e && e.id && !delSet.has(e.id))
+          : [];
+        const updatedEntries = deduplicateProductionEntries([...sanitizedDelta, ...baseEntries]);
+
+        if (updatedEntries.length > 0) {
           saveProductionCache(updatedEntries, syncTimestamp);
+          setProductionData(updatedEntries);
           setProductionSyncStatus({
             lastSyncTime: syncTimestamp,
             isLoadedFromCache: false,
             isSyncing: false
           });
-
-          // Envia em segundo plano para o servidor unificar entre todos os aparelhos
-          fetch('/api/sync/production', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries: updatedEntries, deletedIds: getLocalDeletedProductionIds() })
-          }).catch(() => {});
-
-          return updatedEntries;
+          if (!hasValidCache || sanitizedDelta.length > 0) {
+            fetch('/api/sync/production', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ entries: updatedEntries, deletedIds: getLocalDeletedProductionIds() })
+            }).catch(() => {});
+          }
+        } else {
+          setProductionSyncStatus(prev => ({
+            ...prev,
+            lastSyncTime: prev.lastSyncTime || syncTimestamp,
+            isSyncing: false
+          }));
         }
-
-        setProductionSyncStatus(prev => ({
-          ...prev,
-          lastSyncTime: prev.lastSyncTime || new Date().toISOString(),
-          isSyncing: false
-        }));
-        return prevEntries;
-      });
-
-      // 2. Notificações sonoras e visuais para novos lançamentos recebidos em tempo real
-      snap.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const newEntry = change.doc.data() as ProductionEntry;
-          const entryTime = newEntry.updatedAt || '';
-          
-          if (entryTime >= sessionStartTime && !isExternalTvRoute()) {
-            const id = Math.random().toString(36).substring(7);
-            audioRef.current.play().catch(e => console.log('Autoplay bloqueado ou erro de áudio:', e));
-
-            setNotifications(prev => [
-              { 
-                id, 
-                message: `Novo lançamento: ${formatWeight(newEntry.netWeight)} na máquina ${newEntry.machine}`, 
-                type: 'success',
-                operator: upgradeName(newEntry.operator)
-              },
-              ...prev
-            ]);
-            setUnreadCount(prev => prev + 1);
-
-            setTimeout(() => {
-              setNotifications(prev => prev.filter(n => n.id !== id));
-            }, 5000);
-          }
-        }
-      });
-      isInitialLoad = false;
-    }, (err) => {
-      console.warn('Aviso: Firestore em modo restrito ou cota diária excedida. Ativando sincronização via servidor local/nuvem.', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'productionEntries'); } catch (_) {}
-      setProductionSyncStatus(prev => ({ ...prev, isSyncing: false }));
-      setIsInitializing(false);
-
-      // Fallback Inteligente: Busca lançamentos consolidados no servidor
-      fetch('/api/sync/production')
-        .then(res => res.json())
-        .then(data => {
-          if (data && Array.isArray(data.entries) && data.entries.length > 0) {
-            setProductionData(prev => {
-              const merged = deduplicateProductionEntries([...data.entries, ...prev]);
-              saveProductionCache(merged);
-              return merged;
-            });
-          }
-        })
-        .catch(e => console.warn('Falha no fallback de sync do servidor:', e));
-    });
-
-    const unsubDeletedProduction = onSnapshot(collection(db, 'deletedProductionEntries'), (snap) => {
-      const remoteDeleted = snap.docs.map(d => d.id).filter(Boolean);
-      if (remoteDeleted.length > 0) {
-        recordLocalDeletedProductionIds(remoteDeleted);
-        const delSet = new Set(getLocalDeletedProductionIds());
-        setProductionData(prev => {
-          const filtered = prev.filter(e => !delSet.has(e.id));
-          if (filtered.length !== prev.length) {
-            saveProductionCache(filtered);
-            return filtered;
-          }
-          return prev;
-        });
+      } catch (err) {
+        console.warn('Erro ao carregar produção do Supabase, usando servidor/cache:', err);
+        setProductionSyncStatus(prev => ({ ...prev, isSyncing: false }));
+        fetch('/api/sync/production')
+          .then(res => res.json())
+          .then(data => {
+            if (!isDisposed && data && Array.isArray(data.entries) && data.entries.length > 0) {
+              setProductionData(prev => {
+                const merged = deduplicateProductionEntries([...data.entries, ...prev]);
+                saveProductionCache(merged);
+                return merged;
+              });
+            }
+          })
+          .catch(() => {});
       }
-    }, (err) => {
-      console.warn('Aviso: Firestore deletedProductionEntries:', err);
-    });
+    };
 
-    const unsubEmployees = onSnapshot(collection(db, 'employees'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as Employee;
-        const cleaned = { ...raw, shift: sanitizeShift(raw.shift, raw.sector || raw.machine), id: docRef.id };
+    const loadEmployees = async () => {
+      const rows = await fetchAllFromSupabase('employees', 'name', true);
+      if (isDisposed) return;
+      const data = rows.map(row => {
+        const raw = mapRawRow<Employee>(row);
+        const cleaned = { ...raw, shift: sanitizeShift(raw.shift, raw.sector || raw.machine), id: row.id };
         return upgradeEmployee(cleaned);
       });
       setEmployees(data);
       if (data.length > 0) {
         localStorage.setItem('manupackaging_employees', JSON.stringify(data));
       }
-    }, (err) => {
-      console.warn('Erro ao escutar employees, carregando dados locais.', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'employees'); } catch (_) {}
-      setIsInitializing(false);
-    });
+    };
 
-    const unsubCollaborators = onSnapshot(collection(db, 'collaborators'), (snap) => {
+    const loadCollaborators = async () => {
+      const rows = await fetchAllFromSupabase('collaborators', 'name', true);
+      if (isDisposed) return;
       const seenRegs = new Set<string>();
       const validCollaborators: Collaborator[] = [];
-
-      for (const docRef of snap.docs) {
-        const raw = docRef.data() as Collaborator;
+      for (const row of rows) {
+        const raw = mapRawRow<Collaborator>(row);
         const reg = String(raw.registration || '').trim();
-        // Não pode sem matrícula
         if (!reg) continue;
-        
-        // Matrícula duplicada: manter apenas o primeiro
         const regKey = reg.toLowerCase();
         if (seenRegs.has(regKey)) continue;
         seenRegs.add(regKey);
-
-        const cleaned = { ...raw, id: docRef.id, registration: reg };
-        validCollaborators.push(upgradeCollaborator(cleaned));
+        validCollaborators.push(upgradeCollaborator({ ...raw, id: row.id, registration: reg }));
       }
-
       setCollaborators(validCollaborators);
-    }, (err) => {
-      console.warn('Erro ao carregar colaboradores do banco.', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'collaborators'); } catch (_) {}
-    });
+    };
 
-    const unsubTraining = onSnapshot(collection(db, 'training_records'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as TrainingRecord;
-        const cleaned = { ...raw, id: docRef.id };
-        
-        let changed = false;
-        const upgradedParticipants = (cleaned.participants || []).map(p => {
-          const upgradedP = upgradeParticipant(p);
-          if (upgradedP.name !== p.name || upgradedP.registration !== p.registration) {
-            changed = true;
-          }
-          return upgradedP;
-        });
-        
+    const loadTrainingRecords = async () => {
+      const rows = await fetchAllFromSupabase('training_records', 'id', true);
+      if (isDisposed) return;
+      const data = rows.map(row => {
+        const raw = mapRawRow<TrainingRecord>(row);
+        const cleaned = { ...raw, id: row.id };
+        const upgradedParticipants = (cleaned.participants || []).map(p => upgradeParticipant(p));
         const upgradedName = upgradeName(cleaned.instructor);
-        if (upgradedName !== cleaned.instructor) {
-          cleaned.instructor = upgradedName;
-          changed = true;
-        }
-        
+        if (upgradedName !== cleaned.instructor) cleaned.instructor = upgradedName;
         return { ...cleaned, participants: upgradedParticipants };
       });
       setTrainingRecords(data.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')));
-    }, (err) => {
-      console.warn('Erro ao escutar training_records.', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'training_records'); } catch (_) {}
-    });
+    };
 
-    const unsubOperatorTraining = onSnapshot(collection(db, 'operator_training_sheets'), (snap) => {
-      const data = snap.docs.map(docRef => ({
-        ...docRef.data(),
-        id: docRef.id
-      })) as OperatorTrainingSheet[];
-      setOperatorTrainingSheets(data.sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated)));
-    }, (err) => {
-      console.warn('Erro ao escutar operator_training_sheets.', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'operator_training_sheets'); } catch (_) {}
-    });
+    const loadOperatorTrainingSheets = async () => {
+      const rows = await fetchAllFromSupabase('operator_training_sheets', 'id', true);
+      if (isDisposed) return;
+      const data = rows.map(row => ({ ...mapRawRow<OperatorTrainingSheet>(row), id: row.id }));
+      setOperatorTrainingSheets(data.sort((a, b) => (b.lastUpdated || '').localeCompare(a.lastUpdated || '')));
+    };
 
-    const unsubTemplate = onSnapshot(doc(db, 'settings', 'training_template'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as TrainingTemplate;
-        // Forced Migration: If footer is still the old one, update it automatically
-        const newFooter = 'Revisão: 004 Data emissão: 08/01/2016 Data revisão: 22/01/2024 Elaboração: Leila Silva Aprovação: Lara Andrade';
-        
-        setTrainingTemplate(data);
-      }
-    }, (err) => {
-      console.warn('Settings/training_template em modo offline/cache.');
-      try { handleFirestoreError(err, OperationType.GET, 'settings/training_template'); } catch (_) {}
-    });
+    const loadTrainingTemplate = async () => {
+      const data = await fetchSettingsKeyFromSupabase<TrainingTemplate>('training_template');
+      if (!isDisposed && data) setTrainingTemplate(data);
+    };
 
-    const unsubLogs = onSnapshot(collection(db, 'personnelLogs'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as PersonnelLog;
-        const cleaned = { ...raw, id: docRef.id };
+    const loadPersonnelLogs = async () => {
+      const rows = await fetchAllFromSupabase('personnel_logs', 'date', false);
+      if (isDisposed) return;
+      const data = rows.map(row => {
+        const raw = mapRawRow<PersonnelLog>(row);
+        const cleaned = { ...raw, id: row.id };
         const upgradedName = upgradeName(cleaned.employeeName);
         return upgradedName ? { ...cleaned, employeeName: upgradedName } : cleaned;
       });
       setPersonnelLogs(data.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
-    }, (err) => {
-      console.warn('PersonnelLogs em modo offline/cache.');
-      try { handleFirestoreError(err, OperationType.LIST, 'personnelLogs'); } catch (_) {}
-    });
+    };
 
-    const unsubShifts = onSnapshot(collection(db, 'shifts'), (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Shift));
-      if (data.length > 0) {
-        setAvailableShifts(data);
-      }
-    }, (err) => {
-      console.warn('Shifts em modo offline/cache.');
-    });
+    const loadShifts = async () => {
+      const rows = await fetchAllFromSupabase('shifts', 'id', true);
+      if (isDisposed) return;
+      const data = rows.map(row => ({ ...mapRawRow<Shift>(row), id: row.id }));
+      if (data.length > 0) setAvailableShifts(data);
+    };
 
-    const unsubCustomSectors = onSnapshot(collection(db, 'custom_sectors'), (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomSector));
+    const loadCustomSectors = async () => {
+      const rows = await fetchAllFromSupabase('custom_sectors', 'name', true);
+      if (isDisposed) return;
+      const data = rows.map(row => ({ ...mapRawRow<CustomSector>(row), id: row.id }));
       if (data.length > 0) {
         setCustomSectors(data);
         persistCustomSectorsLocal(data);
       }
-    }, (err) => {
-      console.warn('Custom sectors em modo offline/cache.');
-    });
+    };
 
-    const unsubUsers = onSnapshot(collection(db, 'system_users'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as SystemUser;
-        const cleaned = { ...raw, id: docRef.id };
-        const normName = cleaned.name.trim().toLowerCase();
+    const loadSystemUsers = async () => {
+      const rows = await fetchSystemUsersFromSupabase();
+      if (isDisposed) return;
+      const data = rows.map((raw: SystemUser) => {
+        const normName = (raw.name || '').trim().toLowerCase();
         const foundKey = findManualMapKey(normName);
         if (foundKey) {
           const updated = MANUAL_MAP[foundKey];
-          return { ...cleaned, name: updated.name, registration: updated.registration };
+          return { ...raw, name: updated.name, registration: updated.registration };
         }
-        return cleaned;
+        return raw;
       });
       setSystemUsers(data);
       setIsInitializing(false);
-    }, (err) => {
-      console.warn('Users em modo offline/cache.');
-      try { handleFirestoreError(err, OperationType.LIST, 'system_users'); } catch (_) {}
-      setIsInitializing(false);
-    });
+    };
 
-    const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.systemLogo) {
-          setSystemLogo(data.systemLogo);
-          localStorage.setItem('manupackaging_system_logo', data.systemLogo);
-        }
-        if (data.systemCoverImage) {
-          setSystemCoverImage(data.systemCoverImage);
-          localStorage.setItem('manupackaging_system_cover', data.systemCoverImage);
-        }
-        if (data.chartPdfLogo !== undefined) {
-          setChartPdfLogo(data.chartPdfLogo);
-          if (data.chartPdfLogo) {
-            localStorage.setItem('manupackaging_chart_pdf_logo', data.chartPdfLogo);
-          } else {
-            localStorage.removeItem('manupackaging_chart_pdf_logo');
-          }
-        }
-        if (data.systemName) {
-          setSystemName(data.systemName);
-          localStorage.setItem('manupackaging_system_name', data.systemName);
-        }
-        if (data.loginSystemName) {
-          setLoginSystemName(data.loginSystemName);
-          localStorage.setItem('manupackaging_login_name', data.loginSystemName);
-        }
-        if (data.loginSystemSubtitle) {
-          setLoginSystemSubtitle(data.loginSystemSubtitle);
-          localStorage.setItem('manupackaging_login_subtitle', data.loginSystemSubtitle);
-        }
-        if (data.operators) {
-          const silencedNamesSet = getSilencedNamesSet(collaboratorsRef.current, employeesRef.current);
-          const rawOps = Array.from(new Set((data.operators as string[]).map(op => upgradeName(op))));
-          const upgradedOps = rawOps.filter(op => !silencedNamesSet.has(normalizeText(op)));
-          
-          let changed = false;
-          if (upgradedOps.length !== data.operators.length) {
-            changed = true;
-          } else {
-            for (let i = 0; i < upgradedOps.length; i++) {
-              if (upgradedOps[i] !== data.operators[i]) {
-                changed = true;
-                break;
-              }
-            }
-          }
-          
-          setOperators(upgradedOps);
-          localStorage.setItem('manupackaging_operators', JSON.stringify(upgradedOps));
-        }
-        if (data.goals) {
-          setGoals(data.goals);
-          localStorage.setItem('manupackaging_goals', JSON.stringify(data.goals));
-        }
-        if (data.ribbonGoals) {
-          setRibbonGoals(data.ribbonGoals);
-          localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(data.ribbonGoals));
-        }
-        if (data.eremaGoals) {
-          setEremaGoals(data.eremaGoals);
-          localStorage.setItem('manupackaging_erema_goals', JSON.stringify(data.eremaGoals));
-        }
-        if (data.extrusionWasteLimits) {
-          setExtrusionWasteLimits(data.extrusionWasteLimits);
-          localStorage.setItem('manupackaging_extrusion_waste_limits', JSON.stringify(data.extrusionWasteLimits));
-        }
-        if (data.extrusionWasteLimit !== undefined && data.extrusionWasteLimit !== null) {
-          const parsed = Number(data.extrusionWasteLimit);
-          if (!isNaN(parsed) && parsed > 0) {
-            setExtrusionWasteLimit(parsed);
-            localStorage.setItem('manupackaging_extrusion_waste_limit', String(parsed));
-          }
-        }
-        if (data.ecoBalanceSettings) {
-          const mergedSettings = { ...DEFAULT_ECO_BALANCE_SETTINGS, ...data.ecoBalanceSettings };
-          if (!mergedSettings.initialMatrizStock && !mergedSettings.initialGalpaoStock) {
-            mergedSettings.initialMatrizStock = 18071;
-            mergedSettings.initialGalpaoStock = 111991;
-            mergedSettings.initialEcoBStock = 130062;
-            mergedSettings.physicalMatrizStock = 20385;
-            mergedSettings.physicalGalpaoStock = 111991;
-            mergedSettings.physicalEcoBStock = 132376;
-            mergedSettings.calculationPeriodDays = ['2026-09-25', '2026-09-26', '2026-09-27'];
-          }
-          setEcoBalanceSettings(mergedSettings);
-          localStorage.setItem('manupackaging_eco_balance_settings', JSON.stringify(mergedSettings));
-        }
-        if (data.availableRoles) {
-          const rolesList = [...data.availableRoles];
-          if (!rolesList.includes('Em Experiência')) {
-            rolesList.push('Em Experiência');
-          }
-          if (!rolesList.includes('Operador 3')) {
-            rolesList.push('Operador 3');
-          }
-          setAvailableRoles(rolesList);
-        }
-        if (data.dashboardMonth && typeof data.dashboardMonth === 'string') {
-          const autoMonth = getAutoReferenceMonth(data.dashboardMonth);
-          setDashboardMonth(autoMonth);
-          try {
-            localStorage.setItem('manupackaging_dashboard_month', autoMonth);
-          } catch {}
-        }
-
-        // Detector de Atualizações e Edições do Sistema em Tempo Real (PC e Mobile)
-        const remoteVersion = data.appBuildTime || data.systemVersion;
-        
-        if (remoteVersion) {
-          if (!sessionLoadedBuildTimeRef.current) {
-            sessionLoadedBuildTimeRef.current = remoteVersion;
-          } else if (remoteVersion !== sessionLoadedBuildTimeRef.current) {
-            console.log('App: Nova versão de sistema transmitida:', remoteVersion);
-            setIsUpdateAvailable(true);
-            if (data.updateNotes) {
-              setUpdateNotes(data.updateNotes);
-            }
-          }
-        }
-      }
+    const loadGlobalSettings = async () => {
+      const data = await fetchSettingsKeyFromSupabase<any>('global');
+      if (isDisposed) return;
+      if (data) applyGlobalSettingsData(data);
       setSettingsLoaded(true);
-    }, (err) => {
-      console.warn('Erro ao carregar settings/global.', err);
-      try { handleFirestoreError(err, OperationType.GET, 'settings/global'); } catch (_) {}
-      setSettingsLoaded(true);
-      setIsInitializing(false);
-    });
+    };
 
-    const unsubStock = onSnapshot(collection(db, 'stock_entries'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as StockEntry;
-        return { ...raw, id: docRef.id };
-      });
-      setStockEntries(data.sort((a, b) => b.date.localeCompare(a.date)));
-    }, (err) => {
-      console.warn('Erro ao escutar stock_entries:', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'stock_entries'); } catch (_) {}
-    });
+    const loadStockEntries = async () => {
+      const rows = await fetchAllFromSupabase('stock_entries', 'date', false);
+      if (isDisposed) return;
+      const data = rows.map(row => ({ ...mapRawRow<StockEntry>(row), id: row.id }));
+      setStockEntries(data.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+    };
 
-    const unsubRibbon = onSnapshot(collection(db, 'ribbon_cutting_entries'), (snap) => {
-      setRibbonEntries(prev => {
-        const { updatedEntries, hasChanges } = mergeRibbonDocChanges(prev, snap.docChanges());
-        if (hasChanges) {
-          saveRibbonCache(updatedEntries);
-          return updatedEntries;
-        }
-        return prev;
-      });
-    }, (err) => {
-      console.warn('Erro ao escutar ribbon_cutting_entries, operando com cache local.', err);
-      try { handleFirestoreError(err, OperationType.LIST, 'ribbon_cutting_entries'); } catch (_) {}
-    });
+    const loadRibbonEntries = async () => {
+      const rows = await fetchAllFromSupabase('ribbon_cutting_entries', 'date', false);
+      if (isDisposed) return;
+      const data = rows.map(row => ({ ...mapRawRow<RibbonCuttingEntry>(row), id: row.id }));
+      const sorted = data.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      setRibbonEntries(sorted);
+      saveRibbonCache(sorted);
+    };
 
-    const unsubVacations = onSnapshot(collection(db, 'vacations'), (snap) => {
-      const data = snap.docs.map(docRef => {
-        const raw = docRef.data() as Vacation;
-        return { ...raw, id: docRef.id };
-      });
-      setVacations(data);
-    }, (err) => {
-      console.warn('Erro ao escutar vacations:', err);
-    });
+    const loadVacations = async () => {
+      const rows = await fetchAllFromSupabase('vacations', 'id', true);
+      if (isDisposed) return;
+      setVacations(rows.map(row => ({ ...mapRawRow<Vacation>(row), id: row.id })));
+    };
 
-    const unsubActiveSessions = onSnapshot(collection(db, 'active_sessions'), (snap) => {
-      const data = snap.docs.map(docRef => ({
-        ...docRef.data(),
-        id: docRef.id
-      })) as ActiveSession[];
-      setActiveSessions(data);
-    }, (err) => {
-      console.warn('Erro ao escutar active_sessions:', err);
-    });
+    const loadActiveSessions = async () => {
+      const data = await fetchCollectionSmartFromSupabase<ActiveSession>('active_sessions');
+      if (!isDisposed) setActiveSessions(data);
+    };
 
-    const unsubAccessLogs = onSnapshot(collection(db, 'access_logs'), (snap) => {
-      const data = snap.docs.map(docRef => ({
-        ...docRef.data(),
-        id: docRef.id
-      })) as AccessLog[];
-      setAccessLogs(data);
-    }, (err) => {
-      console.warn('Erro ao escutar access_logs:', err);
-    });
+    const loadAccessLogs = async () => {
+      const data = await fetchCollectionSmartFromSupabase<AccessLog>('access_logs');
+      if (!isDisposed) setAccessLogs(data);
+    };
 
-    const unsubActivities = subscribeUserActivities((data) => {
-      setActivityLogs(data);
-    });
-
-    const unsubPenalties = onSnapshot(collection(db, 'operator_penalties'), (snap) => {
-      const data = snap.docs.map(docRef => ({
-        ...docRef.data(),
-        id: docRef.id
-      })) as OperatorPenalty[];
+    const loadOperatorPenalties = async () => {
+      const rows = await fetchAllFromSupabase('operator_penalties', 'date', false);
+      if (isDisposed) return;
+      const data = rows.map(row => ({ ...mapRawRow<OperatorPenalty>(row), id: row.id }));
       setOperatorPenalties(data);
       try { localStorage.setItem('manupackaging_operator_penalties', JSON.stringify(data)); } catch {}
-    }, (err) => {
-      console.warn('Erro ao escutar operator_penalties:', err);
-    });
+    };
 
-    const unsubNotices = onSnapshot(collection(db, 'company_notices'), (snap) => {
-      if (snap.docs.length > 0) {
-        const data = snap.docs.map(docRef => ({
-          ...docRef.data(),
-          id: docRef.id
-        })) as CompanyNotice[];
+    const loadCompanyNotices = async () => {
+      const rows = await fetchAllFromSupabase('company_notices', 'date', false);
+      if (isDisposed) return;
+      if (rows.length > 0) {
+        const data = rows.map(row => ({ ...mapRawRow<CompanyNotice>(row), id: row.id }));
         setCompanyNotices(data);
         try { localStorage.setItem('manupackaging_company_notices', JSON.stringify(data)); } catch {}
       } else {
@@ -3004,167 +2868,515 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           try { localStorage.setItem('manupackaging_company_notices', JSON.stringify(DEFAULT_COMPANY_NOTICES)); } catch {}
         }
       }
-    }, (err) => {
-      console.warn('Erro ao escutar company_notices:', err);
+    };
+
+    const isTvOrCalcOnly = isExternalTvView || isExternalTvRoute() || isExternalCalculatorRoute();
+    const isOperatorOnly = isExternalOperatorRoute();
+    const isLightweightExternal = isTvOrCalcOnly || isOperatorOnly;
+
+    const initialLoadTasks: Promise<any>[] = [
+      loadGlobalSettings(),
+      loadProductionAndDeleted(),
+      loadEmployees(),
+      loadCollaborators(),
+      loadShifts(),
+      loadRibbonEntries(),
+      loadCompanyNotices(),
+      loadOperatorPenalties()
+    ];
+
+    if (!isTvOrCalcOnly) {
+      initialLoadTasks.push(loadSystemUsers(), loadVacations(), loadCustomSectors());
+    }
+    if (!isLightweightExternal) {
+      initialLoadTasks.push(
+        loadTrainingRecords(),
+        loadOperatorTrainingSheets(),
+        loadTrainingTemplate(),
+        loadPersonnelLogs(),
+        loadStockEntries(),
+        loadActiveSessions(),
+        loadAccessLogs()
+      );
+    }
+
+    setProductionSyncStatus(prev => ({ ...prev, isSyncing: true }));
+    Promise.allSettled(initialLoadTasks).finally(() => {
+      if (!isDisposed) {
+        setSettingsLoaded(true);
+        setIsInitializing(false);
+      }
     });
 
+    const unsubActivities = !isLightweightExternal
+      ? subscribeUserActivities((data) => {
+          setActivityLogs(data);
+        })
+      : null;
+
+    const subscribedTables = isTvOrCalcOnly
+      ? ['production_entries', 'employees', 'collaborators', 'settings', 'shifts', 'ribbon_cutting_entries', 'operator_penalties', 'company_notices']
+      : [
+          'production_entries',
+          'employees',
+          'collaborators',
+          'training_records',
+          'operator_training_sheets',
+          'settings',
+          'personnel_logs',
+          'shifts',
+          'custom_sectors',
+          'system_users',
+          'stock_entries',
+          'ribbon_cutting_entries',
+          'vacations',
+          'operator_penalties',
+          'company_notices'
+        ];
+
+    const unsubRealtime = subscribeSupabaseTableChanges(
+      'app_global_realtime',
+      subscribedTables,
+      (table, payload) => {
+        if (isDisposed) return;
+        const ev = payload?.eventType;
+        const newRow = payload?.new;
+        const oldRow = payload?.old;
+
+        switch (table) {
+          case 'production_entries': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              const deletedId = String(oldRow.id);
+              recordLocalDeletedProductionIds([deletedId]);
+              setProductionData(prev => {
+                const updated = prev.filter(p => p.id !== deletedId);
+                saveProductionCache(updated, new Date().toISOString());
+                return updated;
+              });
+              break;
+            }
+            if ((ev === 'INSERT' || ev === 'UPDATE') && newRow) {
+              const mapped = mapSupabaseRowToProductionEntry(newRow) as ProductionEntry | null;
+              if (mapped && mapped.id) {
+                const delSet = new Set(getLocalDeletedProductionIds());
+                if (delSet.has(mapped.id)) break;
+                const cleanEntry: ProductionEntry = {
+                  ...mapped,
+                  shift: sanitizeShift(mapped.shift, mapped.machine),
+                  operator: upgradeName(mapped.operator)
+                };
+                if (ev === 'INSERT') {
+                  const entryTime = cleanEntry.updatedAt || '';
+                  if (entryTime >= sessionStartTime && !isExternalTvRoute()) {
+                    const nid = Math.random().toString(36).substring(7);
+                    audioRef.current.play().catch(() => {});
+                    setNotifications(prev => [
+                      {
+                        id: nid,
+                        message: `Novo lançamento: ${formatWeight(cleanEntry.netWeight)} na máquina ${cleanEntry.machine}`,
+                        type: 'success',
+                        operator: cleanEntry.operator
+                      },
+                      ...prev
+                    ]);
+                    setUnreadCount(prev => prev + 1);
+                    setTimeout(() => {
+                      setNotifications(prev => prev.filter(n => n.id !== nid));
+                    }, 5000);
+                  }
+                }
+                setProductionData(prev => {
+                  const filtered = prev.filter(p => p.id !== cleanEntry.id && !delSet.has(p.id));
+                  const updated = deduplicateProductionEntries([cleanEntry, ...filtered]);
+                  saveProductionCache(updated, new Date().toISOString());
+                  return updated;
+                });
+                break;
+              }
+            }
+            loadProductionAndDeleted();
+            break;
+          }
+          case 'employees': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setEmployees(prev => {
+                const next = prev.filter(item => item.id !== oldRow.id);
+                try { localStorage.setItem('manupackaging_employees', JSON.stringify(next)); } catch {}
+                return next;
+              });
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const raw = mapRawRow<Employee>(newRow);
+              const cleaned = upgradeEmployee({ ...raw, shift: sanitizeShift(raw.shift, raw.sector || raw.machine), id: newRow.id });
+              setEmployees(prev => {
+                const exists = prev.some(item => item.id === cleaned.id);
+                const next = exists
+                  ? prev.map(item => (item.id === cleaned.id ? cleaned : item))
+                  : [...prev, cleaned].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                try { localStorage.setItem('manupackaging_employees', JSON.stringify(next)); } catch {}
+                return next;
+              });
+            } else {
+              loadEmployees();
+            }
+            break;
+          }
+          case 'collaborators': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setCollaborators(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const raw = mapRawRow<Collaborator>(newRow);
+              const reg = String(raw.registration || '').trim();
+              if (reg) {
+                const upgraded = upgradeCollaborator({ ...raw, id: newRow.id, registration: reg });
+                setCollaborators(prev => {
+                  const exists = prev.some(item => item.id === upgraded.id);
+                  return exists
+                    ? prev.map(item => (item.id === upgraded.id ? upgraded : item))
+                    : [...prev, upgraded].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                });
+              }
+            } else {
+              loadCollaborators();
+            }
+            break;
+          }
+          case 'training_records': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setTrainingRecords(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const raw = mapRawRow<TrainingRecord>(newRow);
+              const cleaned: TrainingRecord = {
+                ...raw,
+                id: newRow.id,
+                participants: (raw.participants || []).map(p => upgradeParticipant(p)),
+                instructor: upgradeName(raw.instructor) || raw.instructor
+              };
+              setTrainingRecords(prev => {
+                const next = [cleaned, ...prev.filter(item => item.id !== cleaned.id)];
+                return next.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+              });
+            } else {
+              loadTrainingRecords();
+            }
+            break;
+          }
+          case 'operator_training_sheets': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setOperatorTrainingSheets(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<OperatorTrainingSheet>(newRow), id: newRow.id };
+              setOperatorTrainingSheets(prev =>
+                [item, ...prev.filter(x => x.id !== item.id)].sort((a, b) => (b.lastUpdated || '').localeCompare(a.lastUpdated || ''))
+              );
+            } else {
+              loadOperatorTrainingSheets();
+            }
+            break;
+          }
+          case 'personnel_logs': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setPersonnelLogs(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const raw = mapRawRow<PersonnelLog>(newRow);
+              const upgradedName = upgradeName(raw.employeeName);
+              const item = upgradedName ? { ...raw, id: newRow.id, employeeName: upgradedName } : { ...raw, id: newRow.id };
+              setPersonnelLogs(prev =>
+                [item, ...prev.filter(x => x.id !== item.id)].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+              );
+            } else {
+              loadPersonnelLogs();
+            }
+            break;
+          }
+          case 'shifts': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setAvailableShifts(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<Shift>(newRow), id: newRow.id };
+              setAvailableShifts(prev => {
+                const exists = prev.some(x => x.id === item.id);
+                return exists ? prev.map(x => (x.id === item.id ? item : x)) : [...prev, item];
+              });
+            } else {
+              loadShifts();
+            }
+            break;
+          }
+          case 'custom_sectors': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setCustomSectors(prev => {
+                const next = prev.filter(item => item.id !== oldRow.id);
+                persistCustomSectorsLocal(next);
+                return next;
+              });
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<CustomSector>(newRow), id: newRow.id };
+              setCustomSectors(prev => {
+                const exists = prev.some(x => x.id === item.id);
+                const next = exists
+                  ? prev.map(x => (x.id === item.id ? item : x))
+                  : [...prev, item].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                persistCustomSectorsLocal(next);
+                return next;
+              });
+            } else {
+              loadCustomSectors();
+            }
+            break;
+          }
+          case 'system_users': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setSystemUsers(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const mapped = mapSupabaseRowToSystemUser(newRow) as SystemUser | null;
+              if (mapped) {
+                const normName = (mapped.name || '').trim().toLowerCase();
+                const foundKey = findManualMapKey(normName);
+                const normalizedUser = foundKey
+                  ? { ...mapped, name: MANUAL_MAP[foundKey].name, registration: MANUAL_MAP[foundKey].registration }
+                  : mapped;
+                setSystemUsers(prev => {
+                  const exists = prev.some(x => x.id === normalizedUser.id);
+                  return exists
+                    ? prev.map(x => (x.id === normalizedUser.id ? normalizedUser : x))
+                    : [...prev, normalizedUser].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                });
+              }
+            } else {
+              loadSystemUsers();
+            }
+            break;
+          }
+          case 'stock_entries': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setStockEntries(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<StockEntry>(newRow), id: newRow.id };
+              setStockEntries(prev =>
+                [item, ...prev.filter(x => x.id !== item.id)].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+              );
+            } else {
+              loadStockEntries();
+            }
+            break;
+          }
+          case 'ribbon_cutting_entries': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setRibbonEntries(prev => {
+                const next = prev.filter(item => item.id !== oldRow.id);
+                saveRibbonCache(next);
+                return next;
+              });
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<RibbonCuttingEntry>(newRow), id: newRow.id };
+              setRibbonEntries(prev => {
+                const next = [item, ...prev.filter(x => x.id !== item.id)].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                saveRibbonCache(next);
+                return next;
+              });
+            } else {
+              loadRibbonEntries();
+            }
+            break;
+          }
+          case 'vacations': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setVacations(prev => prev.filter(item => item.id !== oldRow.id));
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<Vacation>(newRow), id: newRow.id };
+              setVacations(prev => {
+                const exists = prev.some(x => x.id === item.id);
+                return exists ? prev.map(x => (x.id === item.id ? item : x)) : [...prev, item];
+              });
+            } else {
+              loadVacations();
+            }
+            break;
+          }
+          case 'operator_penalties': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setOperatorPenalties(prev => {
+                const next = prev.filter(item => item.id !== oldRow.id);
+                try { localStorage.setItem('manupackaging_operator_penalties', JSON.stringify(next)); } catch {}
+                return next;
+              });
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<OperatorPenalty>(newRow), id: newRow.id };
+              setOperatorPenalties(prev => {
+                const next = [item, ...prev.filter(x => x.id !== item.id)].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                try { localStorage.setItem('manupackaging_operator_penalties', JSON.stringify(next)); } catch {}
+                return next;
+              });
+            } else {
+              loadOperatorPenalties();
+            }
+            break;
+          }
+          case 'company_notices': {
+            if (ev === 'DELETE' && oldRow?.id) {
+              setCompanyNotices(prev => {
+                const next = prev.filter(item => item.id !== oldRow.id);
+                try { localStorage.setItem('manupackaging_company_notices', JSON.stringify(next)); } catch {}
+                return next;
+              });
+            } else if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+              const item = { ...mapRawRow<CompanyNotice>(newRow), id: newRow.id };
+              setCompanyNotices(prev => {
+                const next = [item, ...prev.filter(x => x.id !== item.id)].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                try { localStorage.setItem('manupackaging_company_notices', JSON.stringify(next)); } catch {}
+                return next;
+              });
+            } else {
+              loadCompanyNotices();
+            }
+            break;
+          }
+          case 'settings': {
+            const changedId = newRow?.id || oldRow?.id;
+            const changedData = newRow?.data;
+            if (changedId === 'global') {
+              if (changedData) applyGlobalSettingsData(changedData);
+              else loadGlobalSettings();
+            } else if (changedId === 'training_template') {
+              if (changedData) setTrainingTemplate(changedData);
+              else loadTrainingTemplate();
+            } else if (changedId === 'kv_active_sessions') {
+              if (Array.isArray(changedData?.items)) setActiveSessions(changedData.items);
+            } else if (changedId === 'kv_access_logs') {
+              if (Array.isArray(changedData?.items)) setAccessLogs(changedData.items);
+            } else if (changedId === 'kv_deletedProductionEntries') {
+              if (Array.isArray(changedData?.items)) {
+                const deletedItems = changedData.items.map(String);
+                recordLocalDeletedProductionIds(deletedItems);
+                const delSet = new Set(deletedItems);
+                setProductionData(prev => {
+                  const next = prev.filter(p => !delSet.has(p.id));
+                  saveProductionCache(next, new Date().toISOString());
+                  return next;
+                });
+              } else {
+                loadProductionAndDeleted();
+              }
+            }
+            break;
+          }
+        }
+      }
+    );
+
     return () => {
-      unsubProduction();
-      if (unsubDeletedProduction) unsubDeletedProduction();
-      unsubEmployees();
-      unsubCollaborators();
-      unsubTraining();
-      unsubOperatorTraining();
-      unsubLogs();
-      unsubShifts();
-      unsubUsers();
-      unsubSettings();
-      unsubStock();
-      unsubRibbon();
-      unsubVacations();
-      unsubActiveSessions();
-      unsubAccessLogs();
-      unsubActivities();
-      unsubPenalties();
-      unsubNotices();
-      unsubCustomSectors();
+      isDisposed = true;
+      if (unsubActivities) unsubActivities();
+      if (unsubRealtime) unsubRealtime();
     };
   }, [currentUser, isExternalTvView]);
 
-  // Auto-migrar funcionários existentes para colaboradores se não existirem
+  // Auto-migrar funcionários existentes para colaboradores se não existirem (Supabase)
   const migrationRef = useRef(false);
   useEffect(() => {
     if (!settingsLoaded || employees.length === 0 || isInitializing || migrationRef.current) return;
 
     const migration = async () => {
       migrationRef.current = true;
-      const currentCollaborators = [...collaborators].filter(c => c && c.id); // snapshot of current state with valid IDs
-      
-      // Initial sync only if database is completely blank, otherwise respect user deletions and transfers
-      // Se a base de colaboradores estiver completamente vazia (primeira execução), semeia os colaboradores iniciais
+      const currentCollaborators = [...collaborators].filter(c => c && c.id);
+
       if (currentCollaborators.length === 0) {
         for (const initialEmp of INITIAL_EMPLOYEES) {
           if (!initialEmp.name || initialEmp.name === 'VAGA DISPONÍVEL' || initialEmp.name === 'Em Contratação') continue;
           try {
             const colId = `col_${initialEmp.registration || initialEmp.id}`;
-            const colRef = doc(db, 'collaborators', colId);
-            await setDoc(colRef, {
+            const newCol: Collaborator = {
               id: colId,
               name: initialEmp.name,
               registration: initialEmp.registration || '',
               role: initialEmp.role || 'Operador 1',
               updatedAt: new Date().toISOString()
-            });
-            currentCollaborators.push({
-              id: colId,
-              name: initialEmp.name,
-              registration: initialEmp.registration || '',
-              role: initialEmp.role || 'Operador 1',
-              updatedAt: new Date().toISOString()
-            });
+            };
+            await saveCollaboratorToSupabase(newCol);
+            currentCollaborators.push(newCol);
           } catch (err) {
             console.error(`Erro ao semear cadastro inicial ${initialEmp.name}:`, err);
           }
         }
       }
 
-      // Auto-marcar membros iniciais da brigada de incêndio homologados apenas se ainda não definido
       const BRIGADE_REGS = ['1575', '1834', '1695', '1807', '1544', '1792', '1702', '1694', '1758', '1829', '1840', '1850', '1854', '1844', '1808'];
       for (const col of currentCollaborators) {
         if (col.registration && BRIGADE_REGS.includes(col.registration) && col.isBrigadista === undefined) {
           try {
-            await setDoc(doc(db, 'collaborators', col.id), { isBrigadista: true }, { merge: true });
+            await saveCollaboratorToSupabase({ ...col, isBrigadista: true });
             col.isBrigadista = true;
           } catch (err) {
             console.error('Erro ao marcar brigadista inicial', col.name, err);
           }
         }
       }
-      // Sincronizar funcionários com colaboradores (apenas se possuir matrícula válida)
+
       for (const emp of employees) {
         if (!emp.name || emp.name === 'VAGA DISPONÍVEL' || emp.name === 'Em Contratação') continue;
-        
-        // Auto-heal/migrate Lintech employees to Comercial shift
+
         if ((emp.registration === "1702" || emp.registration === "1840") && emp.machine === "Lintech" && emp.shift !== "Comercial") {
           try {
-            await setDoc(doc(db, 'employees', emp.id), { shift: "Comercial" }, { merge: true });
+            await saveEmployeeToSupabase({ ...emp, shift: "Comercial" });
           } catch (err) {
             console.error('Erro ao migrar turno de Lintech', emp.name, err);
           }
         }
 
-        // Auto-heal/migrate Supervisor role to Supervisor de Produção
         if (emp.role === "Supervisor") {
           try {
-            await setDoc(doc(db, 'employees', emp.id), { role: "Supervisor de Produção" }, { merge: true });
+            await saveEmployeeToSupabase({ ...emp, role: "Supervisor de Produção" });
           } catch (err) {
             console.error('Erro ao migrar função Supervisor', emp.name, err);
           }
         }
 
         const cleanEmpReg = (emp.registration || '').trim();
-        // Não cadastrar colaborador global se o funcionário estiver sem matrícula
         if (!cleanEmpReg) continue;
-        
-        let existingCol = currentCollaborators.find(c => 
-          (c.registration && c.registration.trim().toLowerCase() === cleanEmpReg.toLowerCase())
+
+        const existingCol = currentCollaborators.find(c =>
+          c.registration && c.registration.trim().toLowerCase() === cleanEmpReg.toLowerCase()
         );
 
         if (!existingCol) {
           try {
             const colId = `col_${cleanEmpReg}`;
-            const colRef = doc(db, 'collaborators', colId);
-            
-            await setDoc(colRef, {
+            const newCol: Collaborator = {
               id: colId,
               name: emp.name,
               registration: cleanEmpReg,
               role: emp.role || 'Auxiliar de Produção',
               updatedAt: new Date().toISOString()
-            }, { merge: true });
-
-            currentCollaborators.push({
-              id: colId,
-              name: emp.name,
-              registration: cleanEmpReg,
-              role: emp.role || 'Auxiliar de Produção',
-              updatedAt: new Date().toISOString()
-            });
-            
+            };
+            await saveCollaboratorToSupabase(newCol);
+            currentCollaborators.push(newCol);
             if (emp.id) {
-              await setDoc(doc(db, 'employees', emp.id), { 
-                collaboratorId: colId,
-                registration: cleanEmpReg 
-              }, { merge: true });
+              await saveEmployeeToSupabase({ ...emp, collaboratorId: colId, registration: cleanEmpReg });
             }
           } catch (err) {
             console.error('Migration error for', emp.name, err);
           }
-        } else if (existingCol) {
-          // Ensure sync: employee should have the same registration as collaborator
+        } else {
           const updates: any = {};
           if (!emp.collaboratorId && existingCol.id) updates.collaboratorId = existingCol.id;
           if (emp.registration !== existingCol.registration && existingCol.registration) {
             updates.registration = existingCol.registration;
           }
-          
           if (Object.keys(updates).length > 0 && emp.id) {
-            await setDoc(doc(db, 'employees', emp.id), updates, { merge: true });
+            await saveEmployeeToSupabase({ ...emp, ...updates });
           }
-          
-          // Se o colaborador não possuir matrícula, usar a do funcionário ou remover
           if (!existingCol.registration && existingCol.id) {
             if (emp.registration && emp.registration.trim()) {
-              await setDoc(doc(db, 'collaborators', existingCol.id), { registration: emp.registration.trim() }, { merge: true });
+              await saveCollaboratorToSupabase({ ...existingCol, registration: emp.registration.trim() });
               existingCol.registration = emp.registration.trim();
             } else {
-              await deleteDoc(doc(db, 'collaborators', existingCol.id)).catch(() => {});
+              await deleteCollaboratorFromSupabase(existingCol.id).catch(() => {});
             }
           }
         }
       }
     };
-    
+
     migration().catch(console.error);
   }, [settingsLoaded, employees.length > 0, isInitializing]);
 
@@ -3178,20 +3390,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const handleSyncLocalToCloud = async () => {
     try {
       setIsInitializing(true);
-      
-      const dataToSeed = {
+      await seedInitialDataToSupabase({
         productionEntries: productionData,
-        employees: employees,
+        employees,
         logs: personnelLogs,
-        operators: operators,
+        operators,
         roles: availableRoles,
-        goals: goals
-      };
+        goals
+      });
 
-      await seedInitialData(dataToSeed);
-      
-      // Also sync specific settings
-      await setDoc(doc(db, 'settings', 'global'), {
+      await mergeSettingsInSupabase('global', {
         operators,
         availableRoles,
         goals,
@@ -3202,9 +3410,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         systemCoverImage,
         chartPdfLogo,
         lastSynced: new Date().toISOString()
-      }, { merge: true });
+      });
 
-      openConfirm('Sincronização Concluída', 'Todos os seus dados locais foram enviados para o banco de dados na nuvem com sucesso.', () => {}, 'info');
+      openConfirm('Sincronização Concluída', 'Todos os seus dados locais foram enviados para o Supabase com sucesso.', () => {}, 'info');
     } catch (error) {
       console.error('Sync error:', error);
       alert('Erro ao sincronizar dados. Verifique sua conexão.');
@@ -3224,7 +3432,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       return updated;
     });
 
-    // 2. Notifica imediatamente o servidor para atualizar o arquivo shared_deleted_ids e remover do shared_production_entries
+    // 2. Notifica imediatamente o servidor local
     try {
       const syncRes = await fetch('/api/sync/production/delete', {
         method: 'POST',
@@ -3242,35 +3450,17 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       console.warn('Erro ao registrar exclusão no servidor:', syncErr);
     }
 
-    // 3. Exclusão no Supabase (PostgreSQL) para garantir que não volte no polling do Supabase
+    // 3. Exclusão e tombstone no Supabase (PostgreSQL)
     try {
-      await deleteProductionEntriesFromSupabase(idsToDelete);
+      await Promise.all([
+        deleteProductionEntriesFromSupabase(idsToDelete),
+        recordDeletedProductionIdsInSupabase(idsToDelete, loggedUser?.name || 'Gestão de Produção')
+      ]);
     } catch (supErr) {
       console.warn('Erro ao deletar lote no Supabase:', supErr);
     }
 
-    // 4. Registra tombstone de exclusão persistente e remove em lote no Firestore
-    try {
-      for (let i = 0; i < idsToDelete.length; i += 400) {
-        const batch = writeBatch(db);
-        const chunk = idsToDelete.slice(i, i + 400);
-        chunk.forEach(id => {
-          // Grava tombstone permanente para que nenhum snapshot ou outro sistema recrie na tela de Gestão de Produção
-          batch.set(doc(db, 'deletedProductionEntries', id), {
-            id,
-            deletedAt: new Date().toISOString(),
-            deletedBy: loggedUser?.name || 'Gestão de Produção'
-          });
-          // Tenta excluir do documento original
-          batch.delete(doc(db, 'productionEntries', id));
-        });
-        await batch.commit();
-      }
-    } catch (fireErr) {
-      console.warn('Aviso na exclusão de lote no Firestore (tombstones asseguram exclusão local):', fireErr);
-    }
-
-    // 5. Limpeza final definitiva no estado local
+    // 4. Limpeza final definitiva no estado local
     const finalDeleted = new Set(getLocalDeletedProductionIds());
     setProductionData(prev => {
       const cleaned = prev.filter(e => !finalDeleted.has(e.id));
@@ -3285,7 +3475,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       return;
     }
     if (selectedEntries.length === 0) return;
-    
+
     openConfirm(
       'Confirmar Exclusão em Massa',
       `Deseja realmente excluir os ${selectedEntries.length} lançamentos selecionados? Esta ação é definitiva e removerá os dados de todos os aparelhos e do banco de dados.`,
@@ -3294,9 +3484,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           setIsInitializing(true);
           const idsToDelete = [...selectedEntries];
           setSelectedEntries([]);
-
           await deleteProductionEntriesPermanently(idsToDelete);
-
           addNotification(`${idsToDelete.length} registros excluídos com sucesso de todo o sistema.`);
         } catch (error) {
           console.error('Error deleting batch:', error);
@@ -3314,13 +3502,10 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       const currentEmployees = updatedEmployees || employees;
       const currentCollaborators = updatedCollaborators || collaborators;
       const operatorNamesSet = new Set<string>();
-      
       const silencedNames = getSilencedNamesSet(currentCollaborators, currentEmployees);
 
       currentEmployees.forEach(e => {
-        // Ignora sumariamente se o funcionário estiver silenciado
         if (isEmployeeSilenced(e, currentCollaborators)) return;
-
         const nameNorm = normalizeText(e.name);
         const statusNorm = normalizeText(e.status);
         if (
@@ -3331,7 +3516,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           return;
         }
         if (silencedNames.has(nameNorm)) return;
-
         if (e.name && e.name !== 'Em Contratação' && isEmployed(e.status) && (e.role || '').toLowerCase().includes('operador')) {
           operatorNamesSet.add(e.name.trim());
         }
@@ -3345,11 +3529,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           operatorNamesSet.add(c.name.trim());
         }
       });
-      
+
       const uniqueOps = Array.from(operatorNamesSet).sort();
-      await setDoc(doc(db, 'settings', 'global'), { operators: uniqueOps }, { merge: true });
       setOperators(uniqueOps);
       localStorage.setItem('manupackaging_operators', JSON.stringify(uniqueOps));
+      await mergeSettingsInSupabase('global', { operators: uniqueOps });
     } catch (err) {
       console.error('Error syncing operators setting:', err);
     }
@@ -3358,7 +3542,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const handleToggleSilenceCollaborator = async (col: Collaborator, shouldSilence: boolean, reason?: string) => {
     try {
       const now = new Date().toISOString();
-      const colRef = doc(db, 'collaborators', col.id);
       const updatedColData: Partial<Collaborator> = {
         isSilenced: shouldSilence,
         status: shouldSilence ? ((col as any).status || 'Silenciado') : 'Ativo',
@@ -3366,10 +3549,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         silenceReason: shouldSilence ? (reason || 'Silenciado via Base de Dados') : null,
         updatedAt: now
       };
-      await setDoc(colRef, updatedColData, { merge: true });
-      saveCollaboratorToSupabase({ ...col, ...updatedColData }).catch(() => {});
+      const mergedCol = { ...col, ...updatedColData };
+      await saveCollaboratorToSupabase(mergedCol);
 
-      // Atualiza os slots correspondentes em 'employees'
       const normTarget = normalizeText(col.name);
       const updatedEmployeesList = [...employees];
       for (const emp of updatedEmployeesList) {
@@ -3386,32 +3568,30 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             status: emp.status,
             updatedAt: now
           };
-          await setDoc(doc(db, 'employees', emp.id), empUpdates, { merge: true });
-          saveEmployeeToSupabase({ ...emp, ...empUpdates }).catch(() => {});
+          await saveEmployeeToSupabase({ ...emp, ...empUpdates });
         }
       }
 
-      const updatedCollaborators = collaborators.map(c => 
-        c.id === col.id ? { ...c, ...updatedColData } : c
+      const updatedCollaborators = collaborators.map(c =>
+        c.id === col.id ? mergedCol : c
       );
       setCollaborators(updatedCollaborators);
       setEmployees(updatedEmployeesList);
 
-      // Log de pessoal
       const logId = Math.random().toString(36).substring(2, 15);
-      const logData = {
+      const logData: PersonnelLog = {
         id: logId,
         userId: currentUser?.uid || 'system',
         date: now,
         employeeName: col.name,
         action: (shouldSilence ? 'Silenciamento' : 'Reativação') as any,
-        details: shouldSilence 
+        details: shouldSilence
           ? `Colaborador silenciado: ocultado de todas as listas de seleção do sistema (${reason || 'Sem motivo informado'})`
           : `Colaborador reativado no sistema`,
         user: loggedUser?.name || 'Sistema'
       };
-      await setDoc(doc(db, 'personnelLogs', logId), logData);
-      savePersonnelLogToSupabase(logData).catch(() => {});
+      setPersonnelLogs(prev => [logData, ...prev]);
+      await savePersonnelLogToSupabase(logData);
 
       await syncOperatorsSetting(updatedEmployeesList, updatedCollaborators);
     } catch (err) {
@@ -3432,18 +3612,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         return;
       }
 
-      // Colaborador original que estava sendo editado
       const prevCol = selectedCollaborator;
       const prevId = prevCol?.id || data.id;
       const prevRegistration = prevCol?.registration;
       const prevName = prevCol?.name;
 
-      // Validação estrita de matrícula única no Cadastro Global
-      const duplicateCol = collaborators.find(c => 
-        c && 
-        c.registration && 
-        c.registration.trim().toLowerCase() === cleanReg.toLowerCase() && 
-        c.id !== prevId && 
+      const duplicateCol = collaborators.find(c =>
+        c &&
+        c.registration &&
+        c.registration.trim().toLowerCase() === cleanReg.toLowerCase() &&
+        c.id !== prevId &&
         c.id !== `col_${cleanReg}`
       );
       if (duplicateCol) {
@@ -3451,10 +3629,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         return;
       }
 
-      // ID estável baseado na matrícula para manter consistência
       const targetId = prevId || `col_${cleanReg}`;
-      const colRef = doc(db, 'collaborators', targetId);
-
       const now = new Date().toISOString();
       const finalCollaboratorData: Collaborator = {
         id: targetId,
@@ -3472,24 +3647,16 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         updatedAt: now
       };
 
-      // Limpar campos undefined antes de persistir no Firestore
       const sanitizedColData = cleanUndefined(finalCollaboratorData);
-      await setDoc(colRef, sanitizedColData, { merge: true });
-      saveCollaboratorToSupabase(finalCollaboratorData).catch(() => {});
+      const savedOk = await saveCollaboratorToSupabase(sanitizedColData);
+      if (!savedOk) throw new Error('Falha ao gravar colaborador no Supabase');
 
-      // Se o ID anterior era diferente de targetId, remove o documento obsoleto
       if (prevId && prevId !== targetId) {
-        try {
-          await deleteDoc(doc(db, 'collaborators', prevId));
-          deleteCollaboratorFromSupabase(prevId).catch(() => {});
-        } catch (delErr) {
-          console.warn('Erro ao remover documento anterior do colaborador:', delErr);
-        }
+        await deleteCollaboratorFromSupabase(prevId).catch(() => {});
       }
 
-      // 1. PROPAGAR ALTERAÇÃO PARA SLOTS DE FUNCIONÁRIOS (employees)
       const updatedEmployeesList = [...employees];
-      const affectedEmployees = updatedEmployeesList.filter(e => 
+      const affectedEmployees = updatedEmployeesList.filter(e =>
         (targetId && e.collaboratorId === targetId) ||
         (prevId && e.collaboratorId === prevId) ||
         (prevRegistration && e.registration === prevRegistration) ||
@@ -3516,31 +3683,43 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         emp.registration = finalCollaboratorData.registration;
         emp.collaboratorId = targetId;
 
-        await setDoc(doc(db, 'employees', emp.id), cleanUndefined(updates), { merge: true });
+        await saveEmployeeToSupabase(cleanUndefined({ ...emp, ...updates }));
       }
 
-      // 2. PROPAGAR ALTERAÇÃO PARA REGISTROS DE FÉRIAS (vacations)
       if (prevRegistration || prevName || cleanReg) {
         try {
-          const vacationsToUpdate = vacations.filter(v => 
+          const vacationsToUpdate = vacations.filter(v =>
             (prevRegistration && v.registration === prevRegistration) ||
             (cleanReg && v.registration === cleanReg) ||
             (prevName && normalizeText(v.employeeName) === normalizeText(prevName))
           );
           for (const vac of vacationsToUpdate) {
-            await setDoc(doc(db, 'vacations', vac.id), {
+            const updatedVac = {
+              ...vac,
               employeeName: finalCollaboratorData.name,
               registration: finalCollaboratorData.registration,
               role: finalCollaboratorData.role,
               updatedAt: now
-            }, { merge: true });
+            };
+            await saveVacationToSupabase(updatedVac);
+          }
+          if (vacationsToUpdate.length > 0) {
+            setVacations(prev => prev.map(v => {
+              const match = vacationsToUpdate.find(u => u.id === v.id);
+              return match ? {
+                ...v,
+                employeeName: finalCollaboratorData.name,
+                registration: finalCollaboratorData.registration,
+                role: finalCollaboratorData.role,
+                updatedAt: now
+              } : v;
+            }));
           }
         } catch (vacErr) {
           console.error('Erro ao atualizar férias do colaborador:', vacErr);
         }
       }
 
-      // 3. ATUALIZAR ESTADO LOCAL IMEDIATAMENTE (REFLEXO INSTANTÂNEO NA UI)
       let updatedCollaborators = [...collaborators];
       const index = updatedCollaborators.findIndex(c => c.id === targetId || (prevId && c.id === prevId));
       if (index >= 0) {
@@ -3552,13 +3731,11 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       setEmployees(updatedEmployeesList);
       localStorage.setItem('manupackaging_employees', JSON.stringify(updatedEmployeesList));
 
-      // 4. SINCRONIZAR LISTA DE OPERADORES
       await syncOperatorsSetting(updatedEmployeesList, updatedCollaborators);
 
-      // 5. REGISTRAR HISTÓRICO DE AUDITORIA NO PERSONNEL LOGS
       try {
         const logId = Math.random().toString(36).substring(2, 15);
-        await setDoc(doc(db, 'personnelLogs', logId), {
+        const logData: PersonnelLog = {
           id: logId,
           userId: currentUser?.uid || 'system',
           date: now,
@@ -3566,7 +3743,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           action: 'Alteração' as any,
           details: `Edição no Cadastro Global (Matrícula: ${finalCollaboratorData.registration}, Cargo: ${finalCollaboratorData.role}${finalCollaboratorData.birthDate ? `, Nasc: ${finalCollaboratorData.birthDate}` : ''})`,
           user: loggedUser?.name || 'Sistema'
-        });
+        };
+        setPersonnelLogs(prev => [logData, ...prev]);
+        await savePersonnelLogToSupabase(logData);
       } catch (logErr) {
         console.warn('Erro ao registrar log de alteração:', logErr);
       }
@@ -3582,9 +3761,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         details: `${finalCollaboratorData.name} (#${finalCollaboratorData.registration}) - ${finalCollaboratorData.role}`
       });
     } catch (err) {
-      console.error('Erro ao salvar colaborador no banco de dados:', err);
+      console.error('Erro ao salvar colaborador no Supabase:', err);
       alert('Erro ao salvar colaborador no banco de dados. Verifique a conexão.');
-      handleFirestoreError(err, OperationType.WRITE, 'collaborators');
     }
   };
 
@@ -3595,11 +3773,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
     try {
       const targetCol = (collaborators || []).find(c => c.id === colId);
-      await deleteDoc(doc(db, 'collaborators', colId));
-      deleteCollaboratorFromSupabase(colId).catch(() => {});
+      await deleteCollaboratorFromSupabase(colId);
       setCollaborators(prev => prev.filter(c => c.id !== colId));
 
-      // Desvincular vagas/slots que apontavam para este colaborador
       const updatedEmployees = employees.map(emp => {
         if (emp.collaboratorId === colId || (targetCol?.registration && emp.registration === targetCol.registration)) {
           return {
@@ -3628,33 +3804,27 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       return;
     }
     try {
-      const snap = await getDocs(collection(db, 'collaborators'));
+      const rows = await fetchAllFromSupabase('collaborators', 'name', true);
       let deletedCount = 0;
       let withoutRegCount = 0;
-      
-      const regMap = new Map<string, Array<{ id: string; data: Collaborator }>>();
-      const withoutRegDocs: string[] = [];
 
-      snap.docs.forEach(docSnap => {
-        const data = docSnap.data() as Collaborator;
+      const regMap = new Map<string, Array<{ id: string; data: Collaborator }>>();
+      const idsToDelete: string[] = [];
+
+      rows.forEach(row => {
+        const data = mapRawRow<Collaborator>(row);
         const reg = String(data.registration || '').trim();
         if (!reg) {
-          withoutRegDocs.push(docSnap.id);
+          idsToDelete.push(row.id);
+          withoutRegCount++;
         } else {
           const regKey = reg.toLowerCase();
           if (!regMap.has(regKey)) regMap.set(regKey, []);
-          regMap.get(regKey)!.push({ id: docSnap.id, data: { ...data, id: docSnap.id } });
+          regMap.get(regKey)!.push({ id: row.id, data: { ...data, id: row.id } });
         }
       });
 
-      // 1. Excluir documentos sem matrícula
-      for (const docId of withoutRegDocs) {
-        await deleteDoc(doc(db, 'collaborators', docId)).catch(() => {});
-        withoutRegCount++;
-      }
-
-      // 2. Para cada matrícula com duplicatas, manter apenas 1
-      for (const [reg, docs] of regMap.entries()) {
+      for (const [, docs] of regMap.entries()) {
         if (docs.length > 1) {
           docs.sort((a, b) => {
             if (a.id === `col_${a.data.registration}`) return -1;
@@ -3663,12 +3833,15 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
             const timeB = new Date(b.data.updatedAt || b.data.createdAt || 0).getTime();
             return timeB - timeA;
           });
-
           for (let i = 1; i < docs.length; i++) {
-            await deleteDoc(doc(db, 'collaborators', docs[i].id)).catch(() => {});
+            idsToDelete.push(docs[i].id);
             deletedCount++;
           }
         }
+      }
+
+      if (idsToDelete.length > 0) {
+        await deleteCollaboratorsBatchFromSupabase(idsToDelete);
       }
 
       const cleanList = Array.from(regMap.values()).map(list => list[0].data);
@@ -3827,9 +4000,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     isShiftModalOpen
   ]);
 
-  // User Presence & Heartbeat em tempo real
+  const getCurrentScreenInfoRef = useRef(getCurrentScreenInfo);
+  getCurrentScreenInfoRef.current = getCurrentScreenInfo;
+
+  // User Presence & Heartbeat em tempo real via Supabase (intervalo econômico de 5 min)
   useEffect(() => {
-    if (!loggedUser) return;
+    if (!loggedUser || isExternalTvView || isExternalTvRoute() || isExternalCalculatorRoute() || isExternalOperatorRoute()) return;
 
     const sessionId = loggedUser.id || loggedUser.registration;
     const storageKey = `login_time_${sessionId}`;
@@ -3840,62 +4016,35 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
 
     const updatePresence = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
       const now = new Date().toISOString();
-      const currentInfo = getCurrentScreenInfo();
+      const currentInfo = getCurrentScreenInfoRef.current();
+      const sessionObj: ActiveSession = {
+        id: sessionId,
+        name: loggedUser.name,
+        registration: loggedUser.registration,
+        role: loggedUser.role,
+        lastSeen: now,
+        loginTime: loginTime!,
+        currentScreen: currentInfo.screen,
+        currentSubScreen: currentInfo.subScreen || '',
+        device: typeof window !== 'undefined' && window.innerWidth < 768 ? 'Mobile' : 'Desktop'
+      };
       try {
-        await setDoc(doc(db, 'active_sessions', sessionId), {
-          id: sessionId,
-          name: loggedUser.name,
-          registration: loggedUser.registration,
-          role: loggedUser.role,
-          lastSeen: now,
-          loginTime: loginTime,
-          currentScreen: currentInfo.screen,
-          currentSubScreen: currentInfo.subScreen || '',
-          device: typeof window !== 'undefined' && window.innerWidth < 768 ? 'Mobile' : 'Desktop'
-        }, { merge: true });
+        await upsertCollectionItemSmartToSupabase('active_sessions', sessionObj, 80);
+        setActiveSessions(prev => [sessionObj, ...prev.filter(s => s.id !== sessionId)]);
       } catch (e) {
         console.error('Erro ao atualizar presença em tempo real:', e);
       }
     };
 
-    updatePresence();
-    const interval = setInterval(updatePresence, 20000);
-
-    const handleBeforeUnload = () => {
-      updatePresence();
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    const interval = setInterval(updatePresence, 300000);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [
-    loggedUser,
-    activeTab,
-    extrusionSubTab,
-    dashboardSubTab,
-    ribbonSubTab,
-    personnelSubView,
-    maintenanceSubTab,
-    isCast1CalculatorOpen,
-    isWeeklySummaryOpen,
-    isActiveUsersModalOpen,
-    isModalOpen,
-    isHistoryModalOpen,
-    isDowntimeAnalyticsModalOpen,
-    isDowntimeReasonsModalOpen,
-    isRibbonGoalsModalOpen,
-    isCollaboratorModalOpen,
-    isEmployeeModalOpen,
-    isTrainingModalOpen,
-    isDatabaseModalOpen,
-    isSettingsModalOpen,
-    isOperatorModalOpen,
-    isRoleModalOpen,
-    isShiftModalOpen
-  ]);
+  }, [loggedUser?.id, loggedUser?.registration, loggedUser?.name, loggedUser?.role, isExternalTvView]);
 
   const recordAccessLog = async (user: { name: string; registration: string; role: string }, action: 'login' | 'logout' | 'disconnect') => {
     if (!user || !user.name) return;
@@ -3903,7 +4052,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
       const id = Math.random().toString(36).substring(2, 15);
       const now = new Date().toISOString();
       const device = typeof window !== 'undefined' && window.innerWidth < 768 ? 'Mobile' : 'Desktop';
-      await setDoc(doc(db, 'access_logs', id), {
+      const newAccessLog: AccessLog = {
         id,
         name: user.name,
         registration: user.registration,
@@ -3911,8 +4060,9 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         action,
         timestamp: now,
         device
-      });
-      // Registra também nas atividades unificadas
+      };
+      setAccessLogs(prev => [newAccessLog, ...prev].slice(0, 500));
+      await upsertCollectionItemSmartToSupabase('access_logs', newAccessLog, 500);
       recordUserActivity({
         user: { name: user.name, registration: user.registration, role: user.role },
         type: 'auth',
@@ -3929,11 +4079,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const handleClearAccessLogs = async () => {
     if (!confirm('Tem certeza que deseja limpar todo o histórico de acessos?')) return;
     try {
-      const batch = writeBatch(db);
-      accessLogs.forEach(log => {
-        batch.delete(doc(db, 'access_logs', log.id));
-      });
-      await batch.commit();
+      setAccessLogs([]);
+      await saveKvCollectionToSupabase('access_logs', []);
       addNotification('Histórico de acessos limpo com sucesso.');
     } catch (e) {
       console.error('Erro ao limpar histórico:', e);
@@ -3958,7 +4105,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     return activeSessions.filter(s => {
       if (!s.lastSeen) return false;
       const diff = nowMs - new Date(s.lastSeen).getTime();
-      return diff < 120000;
+      return diff < 240000;
     });
   }, [activeSessions]);
 
@@ -3972,7 +4119,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
           role: targetSession.role
         }, 'disconnect');
       }
-      await deleteDoc(doc(db, 'active_sessions', sessionId));
+      setActiveSessions(prev => prev.filter(s => s.id !== sessionId));
+      await deleteCollectionItemSmartFromSupabase('active_sessions', sessionId);
       addNotification('Sessão encerrada com sucesso.');
     } catch (e) {
       console.error('Erro ao desconectar usuário:', e);
@@ -3981,7 +4129,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   };
 
   const handleLogout = () => {
-    // 1. Limpa imediatamente a persistência de autenticação local de forma síncrona
     try {
       localStorage.removeItem('manupackaging_user');
       localStorage.removeItem('manupackaging_last_active');
@@ -3992,7 +4139,6 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
     const previousUser = loggedUser;
 
-    // 2. Reseta estados da interface instantaneamente sem travar a tela
     setIsMainMenuOpen(false);
     setLoggedUser(null);
     setLoginMatricula('');
@@ -4000,12 +4146,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     setConfirmLoginPass('');
     setDiscoveredUser(null);
 
-    // 3. Atualiza Firebase em segundo plano de forma assíncrona
     if (previousUser) {
       const sessionId = previousUser.id || previousUser.registration;
       recordAccessLog(previousUser, 'logout').catch(() => {});
-      deleteDoc(doc(db, 'active_sessions', sessionId)).catch((err) => {
-        console.warn('Erro ao remover sessão ativa no Firestore:', err);
+      setActiveSessions(prev => prev.filter(s => s.id !== sessionId));
+      deleteCollectionItemSmartFromSupabase('active_sessions', sessionId).catch((err) => {
+        console.warn('Erro ao remover sessão ativa no Supabase:', err);
       });
     }
   };
@@ -4202,7 +4348,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
 
       try {
         const updated = { ...user, password: pass, isFirstAccess: false };
-        await setDoc(doc(db, 'system_users', user.id), updated);
+        await saveSystemUserToSupabase(updated);
+        setSystemUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
         recordAccessLog(updated, 'login');
         setLoggedUser(updated);
         localStorage.setItem('manupackaging_user', JSON.stringify(updated));
@@ -4308,7 +4455,8 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         const biometricId = await registerBiometrics(user);
         if (biometricId) {
           const updated = { ...user, biometricId };
-          await setDoc(doc(db, 'system_users', user.id), updated);
+          await saveSystemUserToSupabase(updated);
+          setSystemUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
           setLoggedUser(updated);
           localStorage.setItem('manupackaging_user', JSON.stringify(updated));
           setBiometricScanStatus('success');
@@ -4391,12 +4539,12 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     try {
       const now = new Date().toISOString();
       const notes = customNotes || 'Uma nova alteração ou atualização do sistema foi realizada pelo administrador.';
-      await setDoc(doc(db, 'settings', 'global'), {
+      await mergeSettingsInSupabase('global', {
         appBuildTime: now,
         lastUpdated: now,
         updateNotes: notes,
         updatedBy: loggedUser?.name || 'Administrador'
-      }, { merge: true });
+      });
       alert('Notificação de atualização disparada com sucesso para todos os dispositivos instalados (PC e Celulares)!');
     } catch (err) {
       console.error('Erro ao disparar notificação de atualização:', err);
@@ -4421,15 +4569,14 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         lastUpdated: now,
         updateNotes: 'As configurações e parâmetros do sistema foram alterados e salvas.'
       };
-      
-      // Check for size limit (1MB)
+
       const estimatedSize = JSON.stringify(settingsData).length;
       if (estimatedSize > 1048576) {
         alert('As imagens selecionadas são muito pesadas e excedem o limite de salvamento (1MB). Por favor, use imagens menores.');
         return;
       }
 
-      await setDoc(doc(db, 'settings', 'global'), settingsData);
+      await mergeSettingsInSupabase('global', settingsData);
       alert('Configurações salvas e notificação de atualização sincronizada com sucesso!');
     } catch (err) {
       console.error("Erro ao salvar configurações:", err);
@@ -4776,13 +4923,19 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const handleSaveStock = async () => {
     if (!pendingUpload) return;
     try {
-      await setDoc(doc(db, 'stock_entries', stockReferenceDate), {
+      const newEntry: StockEntry = {
         id: stockReferenceDate,
         date: stockReferenceDate,
         items: pendingUpload.items,
         totalWeight: pendingUpload.totalWeight,
         updatedAt: new Date().toISOString(),
         userId: loggedUser?.id || 'anonymous'
+      };
+      const ok = await saveStockEntryToSupabase(newEntry);
+      if (!ok) throw new Error('Falha ao salvar estoque no Supabase');
+      setStockEntries(prev => {
+        const next = [newEntry, ...prev.filter(s => s.id !== stockReferenceDate)];
+        return next.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       });
       alert('Contagem física de estoque salva com sucesso!');
       setPendingUpload(null);
@@ -6548,14 +6701,21 @@ Atenciosamente,
 
     try {
       const oldEntry = editingRibbonId ? ribbonEntries.find(r => r.id === editingRibbonId) : null;
-      await setDoc(doc(db, 'ribbon_cutting_entries', entryId), cleanUndefined(payload));
+      const cleanPayload = cleanUndefined(payload);
+      await saveRibbonEntryToSupabase(cleanPayload);
 
-      // Sincroniza ocorrência de desconto de bônus (Meta não atingida ou outras)
+      setRibbonEntries(prev => {
+        const next = [cleanPayload as RibbonCuttingEntry, ...prev.filter(r => r.id !== entryId)]
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        saveRibbonCache(next);
+        return next;
+      });
+
       const incidentId = `inc_${entryId}`;
       const isSpecialStopMode = ribbonIsNoWorkDay || ribbonIsMaintenanceEntry;
       if (!isSpecialStopMode && ribbonHasBonusOccurrence) {
         const opName = (ribbonOperator || '').trim();
-        const matchedEmp = employees.find(emp => 
+        const matchedEmp = employees.find(emp =>
           emp.name.toLowerCase().trim() === opName.toLowerCase()
         );
         const finalTargetDailyM2 = payload.targetDailyM2;
@@ -6584,16 +6744,16 @@ Atenciosamente,
           updatedAt: new Date().toISOString()
         };
         try {
-          await setDoc(doc(db, 'bonus_incidents', incidentId), bonusIncident);
+          await upsertCollectionItemSmartToSupabase('bonus_incidents', bonusIncident);
           const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
           const updatedIncidents = [bonusIncident, ...storedIncidents.filter((i: any) => i.id !== incidentId)];
           localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
         } catch (incErr) {
-          console.warn('Erro ao sincronizar ocorrência de bônus no Firestore:', incErr);
+          console.warn('Erro ao sincronizar ocorrência de bônus no Supabase:', incErr);
         }
       } else if (editingRibbonId) {
         try {
-          await deleteDoc(doc(db, 'bonus_incidents', incidentId));
+          await deleteCollectionItemSmartFromSupabase('bonus_incidents', incidentId);
           const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
           const updatedIncidents = storedIncidents.filter((i: any) => i.id !== incidentId);
           localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
@@ -6624,8 +6784,7 @@ Atenciosamente,
       resetRibbonForm();
       setShowRibbonForm(false);
     } catch (err) {
-      console.error('Erro ao salvar no Firestore:', err);
-      try { handleFirestoreError(err, OperationType.WRITE, `ribbon_cutting_entries/${entryId}`); } catch (_) {}
+      console.error('Erro ao salvar no Supabase:', err);
       alert('Erro ao salvar lançamento.');
     }
   };
@@ -6642,7 +6801,7 @@ Atenciosamente,
       const fakeShifts = availableShifts.length > 0 ? availableShifts.map(s => s.name) : ['A', 'B', 'C', 'D'];
       const machines = ['Ghezzi', 'Lintech', 'Wultec'];
 
-      const batch = writeBatch(db);
+      const mockEntries: RibbonCuttingEntry[] = [];
       const today = new Date();
 
       for (let i = 1; i <= 20; i++) {
@@ -6682,7 +6841,9 @@ Atenciosamente,
           m2Tipo2: 0
         };
 
-        const payload = {
+        const mockId = generateSupabaseId('rib');
+        mockEntries.push({
+          id: mockId,
           date: dateStr,
           operator,
           shift,
@@ -6705,13 +6866,15 @@ Atenciosamente,
           jumboItems: [jumboItem],
           updatedAt: new Date().toISOString(),
           userId: currentUser?.uid || 'test-user'
-        };
-
-        const docRef = doc(collection(db, 'ribbon_cutting_entries'));
-        batch.set(docRef, payload);
+        } as RibbonCuttingEntry);
       }
 
-      await batch.commit();
+      await saveRibbonEntriesBatchToSupabase(mockEntries);
+      setRibbonEntries(prev => {
+        const next = [...mockEntries, ...prev].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        saveRibbonCache(next);
+        return next;
+      });
       alert('20 Lançamentos de teste gerados com sucesso!');
     } catch (err) {
       console.error('Erro ao gerar lançamentos de teste:', err);
@@ -6732,7 +6895,12 @@ Atenciosamente,
       'Deseja realmente excluir este lançamento do setor de Corte de Fita? Esta ação é permanente e removerá as informações do sistema e do banco de dados.',
       async () => {
         try {
-          await deleteDoc(doc(db, 'ribbon_cutting_entries', id));
+          await deleteRibbonEntryFromSupabase(id);
+          setRibbonEntries(prev => {
+            const next = prev.filter(r => r.id !== id);
+            saveRibbonCache(next);
+            return next;
+          });
           recordUserActivity({
             user: loggedUser,
             type: 'action',
@@ -6743,8 +6911,7 @@ Atenciosamente,
           });
           setSelectedRibbonIds(prev => prev.filter(item => item !== id));
         } catch (err) {
-          console.error('Erro ao excluir no Firestore:', err);
-          try { handleFirestoreError(err, OperationType.DELETE, `ribbon_cutting_entries/${id}`); } catch (_) {}
+          console.error('Erro ao excluir no Supabase:', err);
           alert('Erro ao excluir lançamento.');
         }
       }
@@ -6765,18 +6932,15 @@ Atenciosamente,
       async () => {
         try {
           setIsInitializing(true);
-          const batches = [];
-          for (let i = 0; i < selectedRibbonIds.length; i += 500) {
-            const batch = writeBatch(db);
-            selectedRibbonIds.slice(i, i + 500).forEach(id => {
-              batch.delete(doc(db, 'ribbon_cutting_entries', id));
-            });
-            batches.push(batch.commit());
-          }
-          await Promise.all(batches);
-          const count = selectedRibbonIds.length;
+          const idsToRemove = [...selectedRibbonIds];
+          await deleteRibbonEntriesBatchFromSupabase(idsToRemove);
+          setRibbonEntries(prev => {
+            const next = prev.filter(r => !idsToRemove.includes(r.id));
+            saveRibbonCache(next);
+            return next;
+          });
           setSelectedRibbonIds([]);
-          addNotification(`${count} registros de Corte de Fita excluídos com sucesso.`);
+          addNotification(`${idsToRemove.length} registros de Corte de Fita excluídos com sucesso.`);
         } catch (error) {
           console.error('Error deleting ribbon batch:', error);
           alert('Erro ao excluir registros. Verifique sua conexão.');
@@ -10329,15 +10493,19 @@ Atenciosamente,
       return;
     }
     try {
-      const id = data.id || doc(collection(db, 'training_records')).id;
+      const id = data.id || generateSupabaseId('trn');
       const isNew = !data.id;
-      const record = {
-        ...data,
+      const record: TrainingRecord = {
+        ...(data as TrainingRecord),
         id,
         createdAt: data.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      await setDoc(doc(db, 'training_records', id), record, { merge: true });
+      await saveTrainingRecordToSupabase(record);
+      setTrainingRecords(prev => {
+        const next = [record, ...prev.filter(t => t.id !== id)];
+        return next.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      });
       if (loggedUser) {
         recordUserActivity({
           user: loggedUser,
@@ -10348,9 +10516,9 @@ Atenciosamente,
           details: `${record.training || 'DDP'} - Instrutor: ${record.instructor || 'N/A'}`
         });
       }
-      await exportTrainingToPDF(record as TrainingRecord);
+      await exportTrainingToPDF(record);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'training_records');
+      console.error('Erro ao salvar ficha de treinamento:', error);
     }
   };
 
@@ -10360,7 +10528,8 @@ Atenciosamente,
       return;
     }
     try {
-      await deleteDoc(doc(db, 'training_records', id));
+      await deleteTrainingRecordFromSupabase(id);
+      setTrainingRecords(prev => prev.filter(t => t.id !== id));
       if (loggedUser) {
         recordUserActivity({
           user: loggedUser,
@@ -10372,7 +10541,7 @@ Atenciosamente,
         });
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `training_records/${id}`);
+      console.error('Erro ao excluir ficha de treinamento:', error);
     }
   };
 
@@ -10382,15 +10551,19 @@ Atenciosamente,
       return;
     }
     try {
-      const id = sheet.id || doc(collection(db, 'operator_training_sheets')).id;
-      const record = {
-        ...sheet,
+      const id = sheet.id || generateSupabaseId('opsheet');
+      const record: OperatorTrainingSheet = {
+        ...(sheet as OperatorTrainingSheet),
         id,
         lastUpdated: new Date().toISOString()
       };
-      await setDoc(doc(db, 'operator_training_sheets', id), record, { merge: true });
+      await saveOperatorTrainingSheetToSupabase(record);
+      setOperatorTrainingSheets(prev => {
+        const next = [record, ...prev.filter(s => s.id !== id)];
+        return next.sort((a, b) => (b.lastUpdated || '').localeCompare(a.lastUpdated || ''));
+      });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'operator_training_sheets');
+      console.error('Erro ao salvar ficha de operador:', error);
     }
   };
 
@@ -10400,9 +10573,10 @@ Atenciosamente,
       return;
     }
     try {
-      await deleteDoc(doc(db, 'operator_training_sheets', id));
+      await deleteOperatorTrainingSheetFromSupabase(id);
+      setOperatorTrainingSheets(prev => prev.filter(s => s.id !== id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `operator_training_sheets/${id}`);
+      console.error('Erro ao excluir ficha de operador:', error);
     }
   };
 
@@ -11017,10 +11191,11 @@ Atenciosamente,
       return;
     }
     try {
-      await setDoc(doc(db, 'settings', 'training_template'), template);
+      await saveSettingsToSupabase('training_template', template);
+      setTrainingTemplate(template);
       setIsTemplateModalOpen(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'settings/training_template');
+      console.error('Erro ao salvar modelo de treinamento:', error);
     }
   };
 
@@ -11651,13 +11826,13 @@ Atenciosamente,
       const oldSubs = employees.filter(e => e.substituteForId === vacationingEmployeeId);
       for (const oldSub of oldSubs) {
         if (oldSub.id !== substituteId) {
-          const docRef = doc(db, 'employees', oldSub.id);
-          await setDoc(docRef, {
+          await saveEmployeeToSupabase({
+            ...oldSub,
             substituteForId: '',
             substituteForName: '',
             substituteReturnDate: '',
             updatedAt: now
-          }, { merge: true });
+          });
         }
       }
 
@@ -11666,13 +11841,13 @@ Atenciosamente,
       if (substituteId) {
         newSubEmp = employees.find(e => e.id === substituteId) || null;
         if (newSubEmp) {
-          const docRef = doc(db, 'employees', substituteId);
-          await setDoc(docRef, {
+          await saveEmployeeToSupabase({
+            ...newSubEmp,
             substituteForId: vacEmp.id,
             substituteForName: vacEmp.name,
             substituteReturnDate: vacEmp.returnDate || '',
             updatedAt: now
-          }, { merge: true });
+          });
         }
       }
 
@@ -11716,18 +11891,16 @@ Atenciosamente,
       if (!emp) return;
       const now = new Date().toISOString();
       const oldReturnDate = emp.returnDate;
-      const docRef = doc(db, 'employees', employeeId);
-      await setDoc(docRef, { 
-        returnDate: newReturnDate, 
+      await saveEmployeeToSupabase({
+        ...emp,
+        returnDate: newReturnDate,
         updatedAt: now,
-        userId: currentUser.uid 
-      }, { merge: true });
+        userId: currentUser?.uid || 'system'
+      });
 
-      // Atualiza data de retorno nos substitutos vinculados
       const subs = employees.filter(e => e.substituteForId === employeeId);
       for (const s of subs) {
-        const sDoc = doc(db, 'employees', s.id);
-        await setDoc(sDoc, { substituteReturnDate: newReturnDate, updatedAt: now }, { merge: true });
+        await saveEmployeeToSupabase({ ...s, substituteReturnDate: newReturnDate, updatedAt: now });
       }
 
       setEmployees(prev => prev.map(e => {
@@ -11738,15 +11911,17 @@ Atenciosamente,
 
       const logId = Math.random().toString(36).substr(2, 9);
       const detailMsg = `Retorno alterado de ${oldReturnDate ? formatDateBR(oldReturnDate) : 'Não definido'} para ${formatDateBR(newReturnDate)}${notes ? ` • Obs: ${notes}` : ''}`;
-      await setDoc(doc(db, 'personnelLogs', logId), {
+      const newLog: PersonnelLog = {
         id: logId,
         date: now,
         employeeName: emp.name,
         action: 'Férias' as any,
         details: detailMsg,
-        user: currentUser.displayName || currentUser.email || 'Admin',
-        userId: currentUser.uid
-      });
+        user: currentUser?.displayName || currentUser?.email || 'Admin',
+        userId: currentUser?.uid || 'system'
+      };
+      setPersonnelLogs(prev => [newLog, ...prev]);
+      await savePersonnelLogToSupabase(newLog);
 
       recordUserActivity({
         user: loggedUser,
@@ -11774,24 +11949,23 @@ Atenciosamente,
       const emp = employees.find(e => e.id === employeeId);
       if (!emp) return;
       const now = new Date().toISOString();
-      const docRef = doc(db, 'employees', employeeId);
-      await setDoc(docRef, { 
-        status: 'Ativo', 
-        returnDate: '', 
+      await saveEmployeeToSupabase({
+        ...emp,
+        status: 'Ativo',
+        returnDate: '',
         updatedAt: now,
-        userId: currentUser.uid 
-      }, { merge: true });
+        userId: currentUser?.uid || 'system'
+      });
 
-      // Desvincula qualquer substituto que estava cobrindo este colaborador
       const subs = employees.filter(e => e.substituteForId === employeeId);
       for (const s of subs) {
-        const sDoc = doc(db, 'employees', s.id);
-        await setDoc(sDoc, {
+        await saveEmployeeToSupabase({
+          ...s,
           substituteForId: '',
           substituteForName: '',
           substituteReturnDate: '',
           updatedAt: now
-        }, { merge: true });
+        });
       }
 
       setEmployees(prev => prev.map(e => {
@@ -11801,15 +11975,17 @@ Atenciosamente,
       }));
 
       const logId = Math.random().toString(36).substr(2, 9);
-      await setDoc(doc(db, 'personnelLogs', logId), {
+      const newLog: PersonnelLog = {
         id: logId,
         date: now,
         employeeName: emp.name,
         action: 'Retorno Férias' as any,
         details: `Colaborador retornou das férias e foi reativado no posto ${emp.sector} - ${emp.machine} (${emp.role})`,
-        user: currentUser.displayName || currentUser.email || 'Admin',
-        userId: currentUser.uid
-      });
+        user: currentUser?.displayName || currentUser?.email || 'Admin',
+        userId: currentUser?.uid || 'system'
+      };
+      setPersonnelLogs(prev => [newLog, ...prev]);
+      await savePersonnelLogToSupabase(newLog);
 
       recordUserActivity({
         user: loggedUser,
@@ -11827,15 +12003,15 @@ Atenciosamente,
       throw err;
     }
   };
-  
+
   const handleSaveVacation = async (vac: Vacation) => {
     if (isReadOnlyAccount) {
       handleBlockedReadOnlyAction('Gravação Bloqueada', 'O agendamento de férias não é permitido no Modo de Leitura.');
       return;
     }
     try {
-      const docRef = doc(db, 'vacations', vac.id);
-      await setDoc(docRef, vac);
+      await saveVacationToSupabase(vac);
+      setVacations(prev => [vac, ...prev.filter(v => v.id !== vac.id)]);
     } catch (err) {
       console.error('Erro ao salvar férias:', err);
       throw err;
@@ -11848,8 +12024,8 @@ Atenciosamente,
       return;
     }
     try {
-      const docRef = doc(db, 'vacations', vacationId);
-      await deleteDoc(docRef);
+      await deleteVacationFromSupabase(vacationId);
+      setVacations(prev => prev.filter(v => v.id !== vacationId));
     } catch (err) {
       console.error('Erro ao excluir férias:', err);
       throw err;
@@ -11862,12 +12038,12 @@ Atenciosamente,
       return;
     }
     try {
-      const existing2026 = vacations.filter(v => v.year === 2026);
-      const deletePromises = existing2026.map(v => deleteDoc(doc(db, 'vacations', v.id)));
-      await Promise.all(deletePromises);
-
-      const savePromises = generatedVacations.map(v => setDoc(doc(db, 'vacations', v.id), v));
-      await Promise.all(savePromises);
+      const existing2026 = vacations.filter(v => v.year === 2026).map(v => v.id);
+      if (existing2026.length > 0) {
+        await deleteVacationsBatchFromSupabase(existing2026);
+      }
+      await saveVacationsBatchToSupabase(generatedVacations);
+      setVacations(prev => [...prev.filter(v => v.year !== 2026), ...generatedVacations]);
     } catch (err) {
       console.error('Erro ao gerar plano de férias:', err);
       throw err;
@@ -11914,9 +12090,9 @@ Atenciosamente,
               userId: currentUser?.uid || 'anonymous'
             };
 
-            await setDoc(doc(db, 'employees', targetEmp.id), cleanUndefined(updatedEmp), { merge: true });
+            await saveEmployeeToSupabase(cleanUndefined(updatedEmp));
 
-            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
+            const newLog: PersonnelLog = {
               id: logId,
               userId: currentUser?.uid || 'anonymous',
               date: now,
@@ -11924,7 +12100,9 @@ Atenciosamente,
               action: 'Exclusão' as any,
               details: `Slot de vaga excluído permanentemente (${sector} - ${machine} - ${shift})`,
               user: loggedUser?.name || 'Sistema'
-            }));
+            };
+            setPersonnelLogs(prev => [newLog, ...prev]);
+            await savePersonnelLogToSupabase(cleanUndefined(newLog));
 
             recordUserActivity({
               user: loggedUser,
@@ -11956,9 +12134,9 @@ Atenciosamente,
               userId: currentUser?.uid || 'anonymous'
             };
 
-            await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
+            await saveEmployeeToSupabase(cleanUndefined(empData));
 
-            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
+            const newLog: PersonnelLog = {
               id: logId,
               userId: currentUser?.uid || 'anonymous',
               date: now,
@@ -11966,7 +12144,9 @@ Atenciosamente,
               action: 'Exclusão' as any,
               details: `Slot de vaga excluído permanentemente (${sector} - ${machine} - ${shift} - ${role})`,
               user: loggedUser?.name || 'Sistema'
-            }));
+            };
+            setPersonnelLogs(prev => [newLog, ...prev]);
+            await savePersonnelLogToSupabase(cleanUndefined(newLog));
 
             recordUserActivity({
               user: loggedUser,
@@ -12212,13 +12392,12 @@ Atenciosamente,
           };
           setEmployees(prev => prev.map(item => item.id === draggedId ? updatedEmp : item));
           try {
-            const docRef = doc(db, 'employees', draggedId);
-            await setDoc(docRef, cleanUndefined(updatedEmp), { merge: true });
+            await saveEmployeeToSupabase(cleanUndefined(updatedEmp));
 
             if (dismissedToSubstitute) {
               const logId = Math.random().toString(36).substr(2, 9);
               const detailsLog = `${updatedEmp.name} em substituição a ${dismissedToSubstitute.name}, que foi desligado. Motivo: ${dismissedToSubstitute.terminationReason || 'Não informado'}`;
-              await setDoc(doc(db, 'personnelLogs', logId), {
+              const newLog: PersonnelLog = {
                 id: logId,
                 date: new Date().toISOString(),
                 employeeName: updatedEmp.name,
@@ -12226,7 +12405,9 @@ Atenciosamente,
                 details: detailsLog,
                 user: currentUser?.displayName || currentUser?.email || 'Admin',
                 userId: currentUser?.uid || ''
-              });
+              };
+              setPersonnelLogs(prev => [newLog, ...prev]);
+              await savePersonnelLogToSupabase(newLog);
 
               recordUserActivity({
                 user: loggedUser,
@@ -12244,9 +12425,9 @@ Atenciosamente,
         return;
       }
 
-      const cardEmps = employees.filter(x => 
-        normalize(x.sector) === normalize(targetSector) && 
-        normalize(x.machine) === normalize(targetMachine) && 
+      const cardEmps = employees.filter(x =>
+        normalize(x.sector) === normalize(targetSector) &&
+        normalize(x.machine) === normalize(targetMachine) &&
         normalize(x.shift) === normalize(targetShift) &&
         ['ativo', 'atestado', 'em contratacao'].includes(normalize(x.status))
       ).sort((a, b) => {
@@ -12267,7 +12448,6 @@ Atenciosamente,
       const [removed] = reordered.splice(fromIndex, 1);
       reordered.splice(toIndex, 0, removed);
 
-      // Atualização otimista na interface imediatamente
       setEmployees(prev => prev.map(item => {
         const idx = reordered.findIndex(r => r.id === item.id);
         if (idx !== -1) {
@@ -12276,10 +12456,9 @@ Atenciosamente,
         return item;
       }));
 
-      const batchPromises = reordered.map((x, idx) => {
-        const docRef = doc(db, 'employees', x.id);
-        return setDoc(docRef, { ...x, orderIndex: idx }, { merge: true });
-      });
+      const batchPromises = reordered.map((x, idx) =>
+        saveEmployeeToSupabase({ ...x, orderIndex: idx })
+      );
 
       try {
         await Promise.all(batchPromises);
@@ -12287,11 +12466,10 @@ Atenciosamente,
         console.error('Erro ao salvar nova ordenação:', err);
       }
     } else {
-      // Transferência entre máquinas, turnos ou setores diferentes
-      const targetGroupEmps = employees.filter(x => 
+      const targetGroupEmps = employees.filter(x =>
         x.id !== draggedId &&
-        normalize(x.sector) === normalize(targetSector) && 
-        normalize(x.machine) === normalize(targetMachine) && 
+        normalize(x.sector) === normalize(targetSector) &&
+        normalize(x.machine) === normalize(targetMachine) &&
         normalize(x.shift) === normalize(targetShift) &&
         ['ativo', 'atestado', 'em contratacao'].includes(normalize(x.status))
       ).sort((a, b) => {
@@ -12326,19 +12504,17 @@ Atenciosamente,
         replacedReason: dismissedToSubstitute ? (dismissedToSubstitute.terminationReason || '') : ''
       };
 
-      // Atualização otimista imediata na interface
       setEmployees(prev => prev.map(item => item.id === draggedId ? updatedEmp : item));
 
       try {
-        const docRef = doc(db, 'employees', draggedId);
-        await setDoc(docRef, cleanUndefined(updatedEmp), { merge: true });
+        await saveEmployeeToSupabase(cleanUndefined(updatedEmp));
 
         const logId = Math.random().toString(36).substr(2, 9);
-        const detailsLog = dismissedToSubstitute 
+        const detailsLog = dismissedToSubstitute
           ? `${updatedEmp.name} em substituição a ${dismissedToSubstitute.name}, que foi desligado. Motivo: ${dismissedToSubstitute.terminationReason || 'Não informado'}`
           : `Para ${targetSector} - ${targetMachine} (${targetShift})`;
 
-        await setDoc(doc(db, 'personnelLogs', logId), {
+        const newLog: PersonnelLog = {
           id: logId,
           date: new Date().toISOString(),
           employeeName: updatedEmp.name,
@@ -12346,7 +12522,9 @@ Atenciosamente,
           details: detailsLog,
           user: currentUser?.displayName || currentUser?.email || 'Admin',
           userId: currentUser?.uid || ''
-        });
+        };
+        setPersonnelLogs(prev => [newLog, ...prev]);
+        await savePersonnelLogToSupabase(newLog);
 
         recordUserActivity({
           user: loggedUser,
@@ -12707,7 +12885,7 @@ Atenciosamente,
     if (!window.confirm('Isso irá restaurar todos os dados iniciais do sistema. Continuar?')) return;
     setIsInitializing(true);
     try {
-      await seedInitialData({
+      await seedInitialDataToSupabase({
         productionEntries: INITIAL_DATA,
         employees: INITIAL_EMPLOYEES,
         logs: INITIAL_LOGS,
@@ -12821,16 +12999,9 @@ Atenciosamente,
             }).catch(() => {});
 
             // 2.1 Gravação no Banco de Dados Supabase (PostgreSQL)
-            saveProductionEntryToSupabase(fullEntry).catch(() => {});
+            await saveProductionEntryToSupabase(fullEntry);
 
-            // 3. Gravação no Banco de Dados em Nuvem (Firestore)
-            try {
-              await setDoc(doc(db, 'productionEntries', id), fullEntry);
-            } catch (fireErr) {
-              console.warn('Persistindo lançamento via servidor:', fireErr);
-            }
-
-            // 4. Notifica abas ou componentes para atualizar visão geral e relatórios imediatamente
+            // 3. Notifica abas ou componentes para atualizar visão geral e relatórios imediatamente
             try {
               window.dispatchEvent(new CustomEvent('production_data_updated', { detail: fullEntry }));
             } catch (err) {}
@@ -12862,24 +13033,6 @@ Atenciosamente,
             });
 
             addNotification(`Novo lançamento mobile realizado por ${entry.operator} na ${entry.machine}`);
-
-            // Dispara notificações push se configurado
-            try {
-              const tokensSnap = await getDocs(collection(db, 'fcm_tokens'));
-              const tokens = tokensSnap.docs.map(d => d.data().token);
-              const title = `Novo Lançamento Mobile: ${entry.machine}`;
-              const body = `${entry.operator} lançou produção para ${entry.materialType || 'Extrusão'}.`;
-
-              for (const token of tokens) {
-                fetch('/api/send-notification', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ token, title, body })
-                }).catch(err => console.error('Push failed for token', token, err));
-              }
-            } catch (err) {
-              console.error("Error triggering push notifications:", err);
-            }
           } catch (error) {
             console.error("Erro ao salvar lançamento mobile:", error);
             alert("Ocorreu um erro ao salvar o lançamento.");
@@ -18553,7 +18706,8 @@ Atenciosamente,
                                   `Tem certeza que deseja excluir o registro de estoque para o dia ${selectedStockDate.split('-').reverse().join('/')}? Esta ação não pode ser desfeita.`,
                                   async () => {
                                     try {
-                                      await deleteDoc(doc(db, 'stock_entries', selectedStockDate));
+                                      await deleteStockEntryFromSupabase(selectedStockDate);
+                                      setStockEntries(prev => prev.filter(s => s.id !== selectedStockDate && s.date !== selectedStockDate));
                                       alert('Registro excluído com sucesso.');
                                       setSelectedStockDate('');
                                       setHasAutoSelectedStock(true);
@@ -23701,7 +23855,8 @@ Atenciosamente,
               onGeneratePlan={handleGenerateVacationPlan}
               onUpdateEmployee={async (employeeId: string, updates: any) => {
                 try {
-                  await setDoc(doc(db, 'employees', employeeId), updates, { merge: true });
+                  await updateEmployeeInSupabase(employeeId, updates);
+                  setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, ...updates } : e));
                 } catch (err) {
                   console.error('Erro ao atualizar colaborador:', err);
                 }
@@ -25182,7 +25337,7 @@ Atenciosamente,
 
           // Ao salvar ou editar lançamento, remove do conjunto de excluídos se estivesse presente
           removeLocalDeletedProductionId(id);
-          deleteDoc(doc(db, 'deletedProductionEntries', id)).catch(() => {});
+          removeDeletedProductionIdFromSupabase(id).catch(() => {});
 
           // 1. Atualização Otimista Imediata no Estado React e Cache Local
           setProductionData(prev => {
@@ -25199,22 +25354,15 @@ Atenciosamente,
             body: JSON.stringify({ entries: [entry], restoreIds: [id], deletedIds: getLocalDeletedProductionIds() })
           }).catch(() => {});
 
-          // 2.1 Gravação no Banco de Dados Supabase (PostgreSQL)
-          saveProductionEntryToSupabase(entry).catch(() => {});
-
-          // 3. Gravação no Firestore
-          try {
-            await setDoc(doc(db, 'productionEntries', id), entry);
-          } catch (fireErr) {
-            console.warn('Lançamento salvo localmente e no servidor:', fireErr);
-          }
+          // 3. Gravação no Banco de Dados Supabase (PostgreSQL)
+          await saveProductionEntryToSupabase(entry);
 
           // 4. Integração com Gestão de Bônus de Produção & Extrato do Colaborador
           const bonusOcc = (entry as any).bonusOccurrence;
           const incidentId = `inc_prod_${id}`;
           if (bonusOcc && bonusOcc.enabled && bonusOcc.type) {
             const opName = (entry.operator || '').trim();
-            const matchedEmp = employees.find(emp => 
+            const matchedEmp = employees.find(emp =>
               emp.name.toLowerCase().trim() === opName.toLowerCase() ||
               (emp.registration && emp.registration === (entry as any).operatorRegistration)
             );
@@ -25230,7 +25378,7 @@ Atenciosamente,
               shift: entry.shift,
               type: bonusOcc.type,
               date: entry.date,
-              cyclePeriod: (entry.date || '').slice(0, 7), // YYYY-MM
+              cyclePeriod: (entry.date || '').slice(0, 7),
               description: bonusOcc.reason || `Ocorrência lançada no apontamento de produção (${entry.machine})`,
               penaltyRatePercent: Number(bonusOcc.penaltyRatePercent) || 0,
               isJustified: false,
@@ -25241,16 +25389,16 @@ Atenciosamente,
             };
 
             try {
-              await setDoc(doc(db, 'bonus_incidents', incidentId), bonusIncident);
+              await upsertCollectionItemSmartToSupabase('bonus_incidents', bonusIncident);
               const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
               const updatedIncidents = [bonusIncident, ...storedIncidents.filter((i: any) => i.id !== incidentId)];
               localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
             } catch (incErr) {
-              console.warn('Erro ao sincronizar ocorrência de bônus no Firestore:', incErr);
+              console.warn('Erro ao sincronizar ocorrência de bônus no Supabase:', incErr);
             }
           } else if (editingEntry) {
             try {
-              await deleteDoc(doc(db, 'bonus_incidents', incidentId));
+              await deleteCollectionItemSmartFromSupabase('bonus_incidents', incidentId);
               const storedIncidents = JSON.parse(localStorage.getItem('manupackaging_bonus_incidents') || '[]');
               const updatedIncidents = storedIncidents.filter((i: any) => i.id !== incidentId);
               localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(updatedIncidents));
@@ -25278,27 +25426,9 @@ Atenciosamente,
             action: isNew ? 'Novo lançamento de produção' : 'Atualizou lançamento de produção',
             details: `${entry.machine} - ${entry.product} (${entry.operator})`
           });
-          
+
           if (isNew) {
             addNotification(`Novo lançamento realizado por ${entry.operator} na ${entry.machine}`);
-            // Trigger push notifications
-            try {
-              const tokensSnap = await getDocs(collection(db, 'fcm_tokens'));
-              const tokens = tokensSnap.docs.map(d => d.data().token);
-              
-              const title = `Novo Lançamento: ${entry.machine}`;
-              const body = `${entry.operator} lançou produção para ${entry.product}.`;
-
-              for (const token of tokens) {
-                fetch('/api/send-notification', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ token, title, body })
-                }).catch(e => console.error('Push failed for token', token, e));
-              }
-            } catch (err) {
-              console.error("Error triggering push notifications:", err);
-            }
           }
         } catch (error) {
           console.error("Erro ao salvar:", error);
@@ -25306,7 +25436,7 @@ Atenciosamente,
         }
         setEditingEntry(null);
       }} collaborators={collaborators} employees={employees} vacations={vacations} activeMachines={launchModalMachines} presetMachine={launchModalPresetMachine} availableShifts={availableShifts} initialData={editingEntry} dashboardMonth={dashboardMonth} productionEntries={productionData} ribbonEntries={ribbonEntries} isReadOnly={isReadOnlyAccount} />
-      
+
       <EmployeeModal isOpen={isEmployeeModalOpen} onClose={() => { setIsEmployeeModalOpen(false); setSelectedEmployee(null); setSelectedSlot(null); }} onSave={async (data, action, details) => {
           if (isReadOnlyAccount || !canManagePersonnel) {
             handleBlockedReadOnlyAction(
@@ -25319,20 +25449,18 @@ Atenciosamente,
           try {
             const now = new Date().toISOString();
             const empId = data.id || Math.random().toString(36).substr(2, 9);
-            
+
             if (action === 'Contratação') {
-              const fullEmp = { ...data, id: empId, updatedAt: now, userId: currentUser.uid };
-              await setDoc(doc(db, 'employees', empId), cleanUndefined(fullEmp));
-              saveEmployeeToSupabase(fullEmp).catch(() => {});
+              const fullEmp = { ...data, id: empId, updatedAt: now, userId: currentUser?.uid || 'system' };
+              await saveEmployeeToSupabase(cleanUndefined(fullEmp));
             } else if (action === 'Exclusão') {
-              await deleteDoc(doc(db, 'employees', empId));
-              deleteEmployeeFromSupabase(empId).catch(() => {});
+              await deleteEmployeeFromSupabase(empId);
             } else if (action === 'Desligamento' || data.status === 'Desligado') {
               const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || 'Não informado';
-              const fullEmp = { 
-                ...data, 
+              const fullEmp = {
+                ...data,
                 id: empId,
-                status: 'Desligado', 
+                status: 'Desligado',
                 isSilenced: true,
                 name: data.name,
                 terminationReason,
@@ -25340,44 +25468,44 @@ Atenciosamente,
                 silencedAt: data.terminatedAt || now,
                 silenceReason: `Desligado via Quadro Geral de Pessoal - ${terminationReason}`,
                 terminatedAt: data.terminatedAt || now,
-                updatedAt: now, 
-                userId: currentUser.uid 
+                updatedAt: now,
+                userId: currentUser?.uid || 'system'
               };
-              await setDoc(doc(db, 'employees', empId), cleanUndefined(fullEmp), { merge: true });
-              saveEmployeeToSupabase(fullEmp).catch(() => {});
+              await saveEmployeeToSupabase(cleanUndefined(fullEmp));
             } else {
-              const fullEmp = { ...data, id: empId, updatedAt: now, userId: currentUser.uid };
-              await setDoc(doc(db, 'employees', empId), cleanUndefined(fullEmp), { merge: true });
-              saveEmployeeToSupabase(fullEmp).catch(() => {});
+              const fullEmp = { ...data, id: empId, updatedAt: now, userId: currentUser?.uid || 'system' };
+              await saveEmployeeToSupabase(cleanUndefined(fullEmp));
             }
 
             if (data.replacedEmployeeId && data.replacedEmployeeId !== 'vaga_excluida') {
               try {
-                await setDoc(doc(db, 'employees', data.replacedEmployeeId), {
+                await updateEmployeeInSupabase(data.replacedEmployeeId, {
                   coveredByEmployeeId: empId,
                   coveredByEmployeeName: data.name,
                   updatedAt: now
-                }, { merge: true });
+                });
               } catch (e) {
                 console.warn('Erro ao atualizar status de cobertura do colaborador desligado:', e);
               }
             }
-            
+
             const logId = Math.random().toString(36).substr(2, 9);
             const terminationReason = data.terminationReason || details?.replace(/^Motivo:\s*/i, '') || '';
-            const logDetails = (action === 'Desligamento' || data.status === 'Desligado') 
+            const logDetails = (action === 'Desligamento' || data.status === 'Desligado')
               ? (terminationReason ? `Motivo: ${terminationReason}` : (details || 'Desligamento de colaborador'))
               : (details || '');
 
-            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
+            const logEntry: PersonnelLog = {
               id: logId,
               date: now,
               employeeName: data.name || 'Vaga',
               action: action as any,
               details: logDetails,
-              user: currentUser.displayName || currentUser.email || 'Admin',
-              userId: currentUser.uid
-            }));
+              user: currentUser?.displayName || currentUser?.email || 'Admin',
+              userId: currentUser?.uid || 'system'
+            };
+            setPersonnelLogs(prev => [logEntry, ...prev]);
+            await savePersonnelLogToSupabase(cleanUndefined(logEntry));
 
             recordUserActivity({
               user: loggedUser,
@@ -25388,16 +25516,15 @@ Atenciosamente,
               details: `${data.name || 'Vaga'} - ${action}${logDetails ? ` (${logDetails})` : ''}`
             });
 
-            // Local simulate lists for the operators sync function
             const updatedEmployeesList = [...employees];
             const empIdx = updatedEmployeesList.findIndex(e => e.id === empId);
             const employeeMerged = { ...data, id: empId, updatedAt: now } as Employee;
             if (action === 'Exclusão') {
               if (empIdx >= 0) updatedEmployeesList.splice(empIdx, 1);
             } else if (action === 'Desligamento' || data.status === 'Desligado') {
-              const terminatedEmp = { 
-                ...employeeMerged, 
-                status: 'Desligado', 
+              const terminatedEmp = {
+                ...employeeMerged,
+                status: 'Desligado',
                 isSilenced: true,
                 name: data.name,
                 terminationReason: data.terminationReason || terminationReason,
@@ -25418,7 +25545,7 @@ Atenciosamente,
               const termReason = data.terminationReason || terminationReason || 'Não informado';
               const targetNameNorm = normalizeText(data.name);
               const targetReg = data.registration ? String(data.registration).trim() : '';
-              const matchedCol = collaborators.find(c => 
+              const matchedCol = collaborators.find(c =>
                 (data.collaboratorId && c.id === data.collaboratorId) ||
                 (targetReg && c.registration && String(c.registration).trim() === targetReg) ||
                 (data.name && c.name && normalizeText(c.name) === targetNameNorm)
@@ -25433,9 +25560,8 @@ Atenciosamente,
                   silenceReason: `Desligado via Quadro Geral de Pessoal - ${termReason}`,
                   updatedAt: now
                 };
-                await setDoc(doc(db, 'collaborators', matchedCol.id), cleanUndefined(updatedCol), { merge: true });
-                saveCollaboratorToSupabase(updatedCol).catch(() => {});
-                
+                await saveCollaboratorToSupabase(cleanUndefined(updatedCol));
+
                 const colIdx = updatedCollaboratorsList.findIndex(c => c.id === matchedCol.id);
                 if (colIdx >= 0) {
                   updatedCollaboratorsList[colIdx] = updatedCol;
@@ -25443,14 +25569,15 @@ Atenciosamente,
                 setCollaborators(prev => prev.map(c => c.id === matchedCol.id ? updatedCol : c));
               }
             } else if (data.collaboratorId && data.role) {
-              await setDoc(doc(db, 'collaborators', data.collaboratorId), {
+              await updateCollaboratorInSupabase(data.collaboratorId, {
                 role: data.role,
                 updatedAt: now
-              }, { merge: true });
+              });
 
               const colIdx = updatedCollaboratorsList.findIndex(c => c.id === data.collaboratorId);
               if (colIdx >= 0) {
                 updatedCollaboratorsList[colIdx] = { ...updatedCollaboratorsList[colIdx], role: data.role };
+                setCollaborators(prev => prev.map(c => c.id === data.collaboratorId ? { ...c, role: data.role } : c));
               }
             }
 
@@ -25460,7 +25587,7 @@ Atenciosamente,
             console.error(error);
           }
       }} availableShifts={availableShifts} availableMachines={activeMachines} availableRoles={availableRoles} collaborators={collaborators} customSectors={customSectors} initialData={selectedEmployee} slotInfo={selectedSlot} />
-      
+
       <ShiftModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={async (s) => {
         if (isReadOnlyAccount || !canManageSettings) {
           handleBlockedReadOnlyAction(
@@ -25472,15 +25599,17 @@ Atenciosamente,
         }
         try {
           const shiftId = Math.random().toString(36).substr(2, 9);
-          await setDoc(doc(db, 'shifts', shiftId), { ...s, id: shiftId, userId: currentUser.uid });
+          const newShift = { ...s, id: shiftId, userId: currentUser?.uid || 'system' };
+          await saveShiftToSupabase(newShift);
+          setAvailableShifts(prev => [...prev, newShift as unknown as Shift]);
         } catch (error) {
           console.error(error);
         }
       }} />
-      
+
       {/* Pill Flutuante de Alerta de Atualização Pendente (quando adiado) */}
       {isUpdateAvailable && updateDismissed && (
-        <div 
+        <div
           onClick={() => setUpdateDismissed(false)}
           className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 text-white px-5 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center gap-3 cursor-pointer animate-pulse hover:scale-105 transition-all text-xs font-black uppercase tracking-wider select-none shadow-blue-500/25"
           title="Clique para abrir e concluir o carregamento da nova versão"
@@ -25490,26 +25619,26 @@ Atenciosamente,
         </div>
       )}
 
-      <UpdateModal 
-        isOpen={isUpdateAvailable && !updateDismissed} 
+      <UpdateModal
+        isOpen={isUpdateAvailable && !updateDismissed}
         updateNotes={updateNotes}
         versionTag={updateVersionTag}
         onClose={() => {
           setUpdateDismissed(true);
           dismissVersion(updateVersionTag || 'dismissed');
-        }} 
+        }}
         onUpdate={() => {
           executeAppUpdate();
-        }} 
+        }}
       />
       <HistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} logs={personnelLogs} />
-      <TrainingModal 
-        isOpen={isTrainingModalOpen} 
-        onClose={() => setIsTrainingModalOpen(false)} 
-        collaborators={collaborators} 
-        employees={employees} 
+      <TrainingModal
+        isOpen={isTrainingModalOpen}
+        onClose={() => setIsTrainingModalOpen(false)}
+        collaborators={collaborators}
+        employees={employees}
         records={trainingRecords}
-        onSave={handleSaveTraining} 
+        onSave={handleSaveTraining}
         onDelete={(id) => {
           openConfirm(
             'Excluir Ficha',
@@ -25519,25 +25648,25 @@ Atenciosamente,
         }}
         onEditTemplate={() => setIsTemplateModalOpen(true)}
       />
-      
+
       <TrainingTemplateModal
         isOpen={isTemplateModalOpen}
         onClose={() => setIsTemplateModalOpen(false)}
         template={trainingTemplate}
         onSave={handleSaveTrainingTemplate}
       />
-      
-      <UserManagementModal 
-        isOpen={isUserManagementOpen} 
-        onClose={() => setIsUserManagementOpen(false)} 
-        users={systemUsers} 
+
+      <UserManagementModal
+        isOpen={isUserManagementOpen}
+        onClose={() => setIsUserManagementOpen(false)}
+        users={systemUsers}
         onUpdateUsers={setSystemUsers}
-        availableRoles={availableRoles} 
+        availableRoles={availableRoles}
         collaborators={collaborators}
         loggedUser={loggedUser}
         setLoggedUser={setLoggedUser}
       />
-      
+
       <ActiveUsersModal
         isOpen={isActiveUsersModalOpen}
         onClose={() => setIsActiveUsersModalOpen(false)}
@@ -25574,23 +25703,26 @@ Atenciosamente,
             const empData = {
               ...newEmp,
               id,
-              userId: currentUser.uid,
+              userId: currentUser?.uid || 'system',
               updatedAt: now
             };
-            await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
-            
+            await saveEmployeeToSupabase(cleanUndefined(empData));
+
             const logId = Math.random().toString(36).substring(2, 15);
-            await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined({
+            const logObj: PersonnelLog = {
               id: logId,
-              userId: currentUser.uid,
+              userId: currentUser?.uid || 'system',
               date: now,
               employeeName: newEmp.name,
               action: 'Contratação' as any,
               details: `Inclusão rápida via Quadro de Pessoal (${newEmp.sector} - ${newEmp.machine})`,
               user: loggedUser?.name || 'Sistema'
-            }));
-            
+            };
+            setPersonnelLogs(prev => [logObj, ...prev]);
+            await savePersonnelLogToSupabase(cleanUndefined(logObj));
+
             const simulatedEmps = [...employees, empData as Employee];
+            setEmployees(simulatedEmps);
             await syncOperatorsSetting(simulatedEmps);
           } catch (err) {
             console.error(err);
@@ -25620,7 +25752,7 @@ Atenciosamente,
       )}
       {isDatabaseModalOpen && (
         <ErrorBoundary fallbackTitle="Base de Dados de Pessoal" onClose={() => setIsDatabaseModalOpen(false)}>
-          <DatabaseModal 
+          <DatabaseModal
             isOpen={isDatabaseModalOpen}
             onClose={() => setIsDatabaseModalOpen(false)}
             employees={employees || []}
@@ -25662,26 +25794,26 @@ Atenciosamente,
                 const empData = {
                   ...newEmp,
                   id,
-                  userId: currentUser.uid,
+                  userId: currentUser?.uid || 'system',
                   updatedAt: now
                 };
-                await setDoc(doc(db, 'employees', id), cleanUndefined(empData));
-                saveEmployeeToSupabase(empData).catch(() => {});
-                
+                await saveEmployeeToSupabase(cleanUndefined(empData));
+
                 const logId = Math.random().toString(36).substring(2, 15);
-                const logObj = {
+                const logObj: PersonnelLog = {
                   id: logId,
-                  userId: currentUser.uid,
+                  userId: currentUser?.uid || 'system',
                   date: now,
                   employeeName: newEmp.name,
                   action: 'Contratação' as any,
                   details: `Inclusão direta via Banco de Dados (${newEmp.sector} - ${newEmp.machine})`,
                   user: loggedUser?.name || 'Sistema'
                 };
-                await setDoc(doc(db, 'personnelLogs', logId), cleanUndefined(logObj));
-                savePersonnelLogToSupabase(logObj).catch(() => {});
-                
+                setPersonnelLogs(prev => [logObj, ...prev]);
+                await savePersonnelLogToSupabase(cleanUndefined(logObj));
+
                 const simulatedEmps = [...employees, empData as Employee];
+                setEmployees(simulatedEmps);
                 await syncOperatorsSetting(simulatedEmps);
               } catch (err) {
                 console.error(err);
@@ -25693,24 +25825,24 @@ Atenciosamente,
                 `Tem certeza que deseja EXCLUIR o slot de ${name}? Isso removerá o registro e o slot do quadro caso seja um extra.`,
                 async () => {
                   try {
-                    await deleteDoc(doc(db, 'employees', id));
-                    deleteEmployeeFromSupabase(id).catch(() => {});
-                    
+                    await deleteEmployeeFromSupabase(id);
+
                     const now = new Date().toISOString();
                     const logId = Math.random().toString(36).substring(2, 15);
-                    const logObj = {
+                    const logObj: PersonnelLog = {
                       id: logId,
-                      userId: currentUser.uid,
+                      userId: currentUser?.uid || 'system',
                       date: now,
                       employeeName: name,
                       action: 'Exclusão' as any,
                       details: `Exclusão permanente via Banco de Dados`,
                       user: loggedUser?.name || 'Sistema'
                     };
-                    await setDoc(doc(db, 'personnelLogs', logId), logObj);
-                    savePersonnelLogToSupabase(logObj).catch(() => {});
-                    
+                    setPersonnelLogs(prev => [logObj, ...prev]);
+                    await savePersonnelLogToSupabase(logObj);
+
                     const simulatedEmps = employees.filter(e => e.id !== id);
+                    setEmployees(simulatedEmps);
                     await syncOperatorsSetting(simulatedEmps);
                   } catch (err) {
                     console.error(err);
@@ -25726,8 +25858,8 @@ Atenciosamente,
                   try {
                     const now = new Date().toISOString();
                     const targetEmp = employees.find(e => e.id === id);
-                    const empData = { 
-                      status: 'Desligado', 
+                    const empData = {
+                      status: 'Desligado',
                       isSilenced: true,
                       name: name,
                       terminationReason: 'Desligamento direto via Banco de Dados',
@@ -25735,29 +25867,27 @@ Atenciosamente,
                       silencedAt: now,
                       silenceReason: 'Desligamento direto via Banco de Dados',
                       terminatedAt: now,
-                      updatedAt: now, 
-                      userId: currentUser.uid 
+                      updatedAt: now,
+                      userId: currentUser?.uid || 'system'
                     };
-                    await setDoc(doc(db, 'employees', id), empData, { merge: true });
-                    saveEmployeeToSupabase({ ...targetEmp, ...empData, id }).catch(() => {});
-                    
+                    await saveEmployeeToSupabase({ ...targetEmp, ...empData, id });
+
                     const logId = Math.random().toString(36).substring(2, 15);
-                    const logObj = {
+                    const logObj: PersonnelLog = {
                       id: logId,
-                      userId: currentUser.uid,
+                      userId: currentUser?.uid || 'system',
                       date: now,
                       employeeName: name,
                       action: 'Desligamento' as any,
                       details: `Motivo: Desligamento direto via Banco de Dados`,
                       user: loggedUser?.name || 'Sistema'
                     };
-                    await setDoc(doc(db, 'personnelLogs', logId), logObj);
-                    savePersonnelLogToSupabase(logObj).catch(() => {});
-                    
-                    // Localiza e silencia o colaborador na base de dados
+                    setPersonnelLogs(prev => [logObj, ...prev]);
+                    await savePersonnelLogToSupabase(logObj);
+
                     const targetNameNorm = normalizeText(name);
                     const targetReg = targetEmp?.registration ? String(targetEmp.registration).trim() : '';
-                    const matchedCol = collaborators.find(c => 
+                    const matchedCol = collaborators.find(c =>
                       (targetEmp?.collaboratorId && c.id === targetEmp.collaboratorId) ||
                       (targetReg && c.registration && String(c.registration).trim() === targetReg) ||
                       (name && c.name && normalizeText(c.name) === targetNameNorm)
@@ -25773,15 +25903,14 @@ Atenciosamente,
                         silenceReason: 'Desligamento direto via Banco de Dados',
                         updatedAt: now
                       };
-                      await setDoc(doc(db, 'collaborators', matchedCol.id), cleanUndefined(updatedCol), { merge: true });
-                      saveCollaboratorToSupabase(updatedCol).catch(() => {});
+                      await saveCollaboratorToSupabase(cleanUndefined(updatedCol));
                       updatedCollaborators = updatedCollaborators.map(c => c.id === matchedCol.id ? updatedCol : c);
                       setCollaborators(updatedCollaborators);
                     }
 
-                    const simulatedEmps = employees.map(e => e.id === id ? { 
-                      ...e, 
-                      name: name, 
+                    const simulatedEmps = employees.map(e => e.id === id ? {
+                      ...e,
+                      name: name,
                       status: 'Desligado' as any,
                       isSilenced: true,
                       terminationReason: 'Desligamento direto via Banco de Dados',
@@ -26052,9 +26181,7 @@ Atenciosamente,
         onUpdate={async (newRoles) => {
           setAvailableRoles(newRoles);
           try {
-            await setDoc(doc(db, 'settings', 'global'), {
-              availableRoles: newRoles
-            }, { merge: true });
+            await mergeSettingsInSupabase('global', { availableRoles: newRoles });
           } catch (err) {
             console.error("Erro ao salvar funções:", err);
           }
@@ -26081,16 +26208,13 @@ Atenciosamente,
           setRibbonGoals(prev => {
             const updated = { ...prev, [month]: goals };
             localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-            if (db) {
-              setDoc(doc(db, 'settings', 'global'), { ribbonGoals: updated }, { merge: true }).catch(err => {
-                console.error("Erro ao salvar metas no Firestore:", err);
-              });
-            }
+            mergeSettingsInSupabase('global', { ribbonGoals: updated }).catch(err => {
+              console.error("Erro ao salvar metas no Supabase:", err);
+            });
             return updated;
           });
         }}
         setRibbonGoals={setRibbonGoals}
-        db={db}
       />
 
       {/* Paleta Global de Comandos & Navegabilidade Ultrarrápida (Ctrl + K) */}
@@ -27228,7 +27352,8 @@ const UserManagementModal: React.FC<{
       };
 
       try {
-        await setDoc(doc(db, 'system_users', editingUser.id), updatedUser, { merge: true });
+        const ok = await saveSystemUserToSupabase(updatedUser);
+        if (!ok) throw new Error('Falha ao atualizar usuário no Supabase');
         onUpdateUsers(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
         if (loggedUser && (loggedUser.id === editingUser.id || loggedUser.registration === updatedUser.registration) && setLoggedUser) {
           setLoggedUser(updatedUser);
@@ -27257,7 +27382,8 @@ const UserManagementModal: React.FC<{
         permissions: normalizedPermissions
       };
       try {
-        await setDoc(doc(db, 'system_users', id), newUser);
+        const ok = await saveSystemUserToSupabase(newUser);
+        if (!ok) throw new Error('Falha ao cadastrar usuário no Supabase');
         onUpdateUsers(prev => [...prev, newUser]);
         resetForm();
         setSuccessToast(`Usuário "${newUser.name}" cadastrado com sucesso!`);
@@ -27297,11 +27423,12 @@ const UserManagementModal: React.FC<{
     );
     setSavingInlineId(targetUser.id);
     try {
-      await setDoc(doc(db, 'system_users', targetUser.id), { permissions: updatedPerms }, { merge: true });
       const updatedUser: SystemUser = {
         ...targetUser,
         permissions: updatedPerms
       };
+      const ok = await saveSystemUserToSupabase(updatedUser);
+      if (!ok) throw new Error('Falha ao atualizar permissões no Supabase');
       onUpdateUsers(prev => prev.map(u => u.id === targetUser.id ? updatedUser : u));
       if (loggedUser && (loggedUser.id === targetUser.id || loggedUser.registration === targetUser.registration) && setLoggedUser) {
         setLoggedUser(updatedUser);
@@ -27329,7 +27456,7 @@ const UserManagementModal: React.FC<{
     try {
       onUpdateUsers(prev => prev.filter(u => u.id !== targetUserId));
       setUserToDelete(null);
-      await deleteDoc(doc(db, 'system_users', targetUserId));
+      await deleteSystemUserFromSupabase(targetUserId);
       if (editingUser?.id === targetUserId) {
         resetForm();
       }

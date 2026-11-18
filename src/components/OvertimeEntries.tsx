@@ -24,10 +24,18 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { db } from '../lib/firebase';
+import {
+  generateSupabaseId,
+  fetchAllFromSupabase,
+  mapRawRow,
+  saveOvertimeEntryToSupabase,
+  deleteOvertimeEntryFromSupabase,
+  fetchReasonsByCategoryFromSupabase,
+  saveReasonToSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 import { Employee, OvertimeEntry, OvertimeMode, SystemUser } from '../types';
 import { INITIAL_OVERTIME_ENTRIES } from '../data/initialOvertimeEntries';
 import { 
@@ -394,80 +402,89 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     appointmentsTableRef.current.scrollLeft = dragScrollLeft - walk;
   };
 
-  // Escuta em tempo real no Firestore da coleção `overtime_reasons`
+  // Escuta em tempo real no Supabase para motivos de horas extras
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'overtime_reasons'),
-      (snapshot) => {
-        const list = snapshot.docs
-          .map((docSnap) => {
-            const data = docSnap.data();
-            return (data.reason || '').trim();
-          })
-          .filter((r) => r.length > 0);
-
-        if (list.length > 0) {
+    let mounted = true;
+    const loadReasons = async () => {
+      try {
+        const list = await fetchReasonsByCategoryFromSupabase('overtime');
+        if (!mounted) return;
+        const reasons = list.map(r => r.reason).filter(Boolean);
+        if (reasons.length > 0) {
           setCustomReasons((prev) => {
-            const combined = Array.from(new Set([...prev, ...list]));
+            const combined = Array.from(new Set([...prev, ...reasons]));
             try {
               localStorage.setItem('overtime_custom_reasons', JSON.stringify(combined));
-            } catch (e) {}
+            } catch {}
             return combined;
           });
         }
-      },
-      (err) => {
-        console.warn('Erro ao sincronizar overtime_reasons:', err);
+      } catch (err) {
+        console.warn('Erro ao sincronizar overtime_reasons no Supabase:', err);
       }
-    );
-    return () => unsub();
+    };
+
+    loadReasons();
+    const unsub = subscribeSupabaseTableChanges('overtime_reasons_rt', ['reasons_library'], () => {
+      loadReasons();
+    });
+    return () => {
+      mounted = false;
+      if (unsub) unsub();
+    };
   }, []);
 
-  // Escuta em tempo real no Firestore da coleção `overtime_entries`
+  // Escuta em tempo real no Supabase da coleção `overtime_entries` (com hidratação /api/sync/overtime se vazio)
   useEffect(() => {
     setIsLoading(true);
     let isMounted = true;
-    const unsub = onSnapshot(
-      collection(db, 'overtime_entries'),
-      async (snapshot) => {
-        if (!isMounted) return;
-        const deletedIds = getDeletedOvertimeEntryIds();
-        const rawList = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data()
-        })) as any[];
 
-        // Exclui permanentemente quaisquer lançamentos que tenham sido apagados ou que sejam IDs de teste legados (ot_XXX)
+    const loadEntries = async () => {
+      try {
+        const deletedIds = getDeletedOvertimeEntryIds();
+        const rows = await fetchAllFromSupabase('overtime_entries', 'date', false);
+        if (!isMounted) return;
+
+        let rawList = rows.map(r => mapRawRow<any>(r));
+
+        // Se o Supabase estiver vazio, tenta hidratar do servidor compartilhado (/api/sync/overtime)
+        if (rawList.length === 0) {
+          try {
+            const resp = await fetch('/api/sync/overtime');
+            if (resp.ok) {
+              const json = await resp.json();
+              if (Array.isArray(json.entries) && json.entries.length > 0) {
+                rawList = json.entries;
+                // Sincroniza em segundo plano para o Supabase
+                for (const item of json.entries) {
+                  if (item && item.id && !deletedIds.has(item.id) && !String(item.id).startsWith('ot_')) {
+                    saveOvertimeEntryToSupabase(item).catch(() => {});
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+
         const list = rawList.filter((item) => {
           if (!item || item.isDeleted || deletedIds.has(item.id)) return false;
-          // Purga IDs de teste mock do sistema (ot_001 a ot_022)
           if (item.id && typeof item.id === 'string' && item.id.startsWith('ot_')) {
-            try {
-              deleteDoc(doc(db, 'overtime_entries', item.id));
-              recordDeletedOvertimeEntryId(item.id);
-            } catch {}
+            deleteOvertimeEntryFromSupabase(item.id).catch(() => {});
+            recordDeletedOvertimeEntryId(item.id);
             return false;
           }
           return true;
         }) as OvertimeEntry[];
 
-        // CRUCIAL: Se a lista for vazia (porque o usuário apagou lançamentos), mantém vazia!
-        // Não semear automaticamente para não ressuscitar registros que o usuário excluiu.
         markOvertimeAsInitialized();
 
         if (list.length === 0) {
-          const deletedIds = getDeletedOvertimeEntryIds();
           const base = INITIAL_OVERTIME_ENTRIES.filter(item => !deletedIds.has(item.id));
-          if (base.length > 0) {
-            setEntries(base);
-          } else {
-            setEntries([]);
-          }
+          setEntries(base.length > 0 ? base : []);
           setIsLoading(false);
           return;
         }
 
-        // Ordenar decrescente por data e criação
         list.sort((a, b) => {
           const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
           if (dateDiff !== 0) return dateDiff;
@@ -479,8 +496,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           localStorage.setItem('manupack_overtime_entries', JSON.stringify(list));
         } catch {}
 
-        // Se o ciclo atualmente selecionado não contiver nenhum lançamento, mas existirem lançamentos no banco,
-        // ajusta automaticamente para o ciclo dos lançamentos para que nada desapareça da tela após refresh!
         if (list.length > 0) {
           setFilterMonth((currentCycle) => {
             const hasMatches = currentCycle === 'todos' || list.some((item) => isDateInPayrollCycle(item.date, currentCycle));
@@ -496,9 +511,8 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
         }
 
         setIsLoading(false);
-      },
-      (err) => {
-        console.error('Erro ao sincronizar overtime_entries:', err);
+      } catch (err) {
+        console.error('Erro ao sincronizar overtime_entries no Supabase:', err);
         if (isMounted) {
           const deletedIds = getDeletedOvertimeEntryIds();
           setEntries((prev) => {
@@ -508,11 +522,55 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           setIsLoading(false);
         }
       }
-    );
+    };
+
+    loadEntries();
+    const unsub = subscribeSupabaseTableChanges('overtime_entries_rt', ['overtime_entries'], (_tbl, payload) => {
+      if (!isMounted) return;
+      const ev = payload?.eventType;
+      const newRow = payload?.new;
+      const oldRow = payload?.old;
+
+      if (ev === 'DELETE' && oldRow?.id) {
+        setEntries(prev => {
+          const next = prev.filter(item => item.id !== oldRow.id);
+          try { localStorage.setItem('manupack_overtime_entries', JSON.stringify(next)); } catch {}
+          return next;
+        });
+        return;
+      }
+
+      if ((ev === 'INSERT' || ev === 'UPDATE') && newRow?.id) {
+        const deletedIds = getDeletedOvertimeEntryIds();
+        const mapped = mapRawRow<any>(newRow);
+        if (!mapped || mapped.isDeleted || deletedIds.has(newRow.id) || String(newRow.id).startsWith('ot_')) {
+          setEntries(prev => {
+            const next = prev.filter(item => item.id !== newRow.id);
+            try { localStorage.setItem('manupack_overtime_entries', JSON.stringify(next)); } catch {}
+            return next;
+          });
+          return;
+        }
+        const entry = { ...mapped, id: newRow.id } as OvertimeEntry;
+        setEntries(prev => {
+          const next = [entry, ...prev.filter(x => x.id !== entry.id)];
+          next.sort((a, b) => {
+            const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+          });
+          try { localStorage.setItem('manupack_overtime_entries', JSON.stringify(next)); } catch {}
+          return next;
+        });
+        return;
+      }
+
+      loadEntries();
+    });
 
     return () => {
       isMounted = false;
-      unsub();
+      if (unsub) unsub();
     };
   }, []);
 
@@ -1015,15 +1073,11 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return next;
     });
 
-    // Salva no Firestore na coleção overtime_reasons
+    // Salva no Supabase (reasons_library category='overtime')
     try {
-      await addDoc(collection(db, 'overtime_reasons'), {
-        reason: trimmed,
-        createdAt: new Date().toISOString(),
-        createdBy: loggedUser?.name || 'Sistema'
-      });
+      await saveReasonToSupabase('overtime', trimmed, 'Geral');
     } catch (err) {
-      console.warn('Erro ao salvar novo motivo no Firestore:', err);
+      console.warn('Erro ao salvar novo motivo no Supabase:', err);
     }
   };
 
@@ -1233,7 +1287,10 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
             userId: loggedUser?.id || 'anon',
             userName: loggedUser?.name || 'Sistema'
           };
-          await addDoc(collection(db, 'overtime_entries'), batchPayload);
+          const newId = generateSupabaseId('ot');
+          const fullBatchItem: OvertimeEntry = { ...(batchPayload as any), id: newId };
+          await saveOvertimeEntryToSupabase(fullBatchItem);
+          setEntries(prev => [fullBatchItem, ...prev]);
         }
 
         if (isReasonNew && reason.trim()) {
@@ -1285,7 +1342,9 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       };
 
       if (editingEntry) {
-        await updateDoc(doc(db, 'overtime_entries', editingEntry.id), payload);
+        const updatedItem: OvertimeEntry = { ...payload, id: editingEntry.id };
+        await saveOvertimeEntryToSupabase(updatedItem);
+        setEntries(prev => prev.map(e => e.id === editingEntry.id ? updatedItem : e));
         logAuditEvent({
           action: 'UPDATE',
           module: 'Horas Extras',
@@ -1294,19 +1353,22 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
           userName: loggedUser?.name || 'Sistema',
           userRole: loggedUser?.role,
           oldState: editingEntry,
-          newState: { ...payload, id: editingEntry.id },
+          newState: updatedItem,
           reason: payload.notes || payload.reason,
         });
       } else {
-        const docRef = await addDoc(collection(db, 'overtime_entries'), payload);
+        const newId = generateSupabaseId('ot');
+        const createdItem: OvertimeEntry = { ...payload, id: newId };
+        await saveOvertimeEntryToSupabase(createdItem);
+        setEntries(prev => [createdItem, ...prev]);
         logAuditEvent({
           action: 'CREATE',
           module: 'Horas Extras',
           targetTitle: `Hora Extra - ${payload.employeeName} (${payload.overtimeHours}h)`,
-          targetId: docRef.id,
+          targetId: newId,
           userName: loggedUser?.name || 'Sistema',
           userRole: loggedUser?.role,
-          newState: { ...payload, id: docRef.id },
+          newState: createdItem,
           reason: payload.notes || payload.reason,
         });
       }
@@ -1327,20 +1389,21 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     }
   };
 
-  // Salvar apontamentos em lote importados via IA (cada dia salvo individualmente no banco de dados)
+  // Salvar apontamentos em lote importados via IA (cada dia salvo individualmente no Supabase)
   const handleSaveBatchFromAi = async (batchList: Array<Omit<OvertimeEntry, 'id'>>) => {
     try {
       const savedList: OvertimeEntry[] = [];
       for (const item of batchList) {
-        const docRef = await addDoc(collection(db, 'overtime_entries'), item);
-        const savedItem: OvertimeEntry = { ...item, id: docRef.id };
+        const newId = generateSupabaseId('ot');
+        const savedItem: OvertimeEntry = { ...item, id: newId };
+        await saveOvertimeEntryToSupabase(savedItem);
         savedList.push(savedItem);
 
         logAuditEvent({
           action: 'CREATE',
           module: 'Horas Extras',
           targetTitle: `Hora Extra (IA) - ${item.employeeName} (${item.overtimeHours}h - ${item.date})`,
-          targetId: docRef.id,
+          targetId: newId,
           userName: loggedUser?.name || 'Sistema',
           userRole: loggedUser?.role,
           newState: savedItem,
@@ -1408,12 +1471,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return;
     }
     try {
-      await updateDoc(doc(db, 'overtime_entries', entry.id), {
+      const updated: OvertimeEntry = {
+        ...entry,
         status: 'approved',
         approvedBy: loggedUser?.name || 'Supervisão de Produção',
         approvedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      });
+      };
+      setEntries(prev => prev.map(e => e.id === entry.id ? updated : e));
+      await saveOvertimeEntryToSupabase(updated);
     } catch (err) {
       console.error('Erro ao aprovar hora extra:', err);
     }
@@ -1432,13 +1498,19 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
   const handleConfirmReject = async () => {
     if (!rejectionModalId || !rejectionReasonText.trim()) return;
     try {
-      await updateDoc(doc(db, 'overtime_entries', rejectionModalId), {
-        status: 'rejected',
-        rejectionReason: rejectionReasonText.trim(),
-        approvedBy: loggedUser?.name || 'Supervisão de Produção',
-        approvedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      const target = entries.find(e => e.id === rejectionModalId);
+      if (target) {
+        const updated: OvertimeEntry = {
+          ...target,
+          status: 'rejected',
+          rejectionReason: rejectionReasonText.trim(),
+          approvedBy: loggedUser?.name || 'Supervisão de Produção',
+          approvedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        setEntries(prev => prev.map(e => e.id === rejectionModalId ? updated : e));
+        await saveOvertimeEntryToSupabase(updated);
+      }
       setRejectionModalId(null);
       setRejectionReasonText('');
     } catch (err) {
@@ -1451,30 +1523,18 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     if (!deleteConfirmId || isReadOnly) return;
     const targetId = deleteConfirmId;
     try {
-      // 1. Atualização Otimista Imediata
       setEntries((prev) => prev.filter((item) => item.id !== targetId));
       setSelectedEntryIds((prev) => prev.filter((id) => id !== targetId));
       setDeleteConfirmId(null);
 
-      // 2. Grava no Tombstone definitivo para impedir qualquer ressurreição
       recordDeletedOvertimeEntryId(targetId);
-
-      // 3. Marca como excluído para consultas concorrentes e deleta do Firestore
-      try {
-        await updateDoc(doc(db, 'overtime_entries', targetId), {
-          isDeleted: true,
-          deletedAt: new Date().toISOString()
-        });
-      } catch {}
-
-      // 4. Deleta permanentemente do Firestore
-      await deleteDoc(doc(db, 'overtime_entries', targetId));
+      await deleteOvertimeEntryFromSupabase(targetId);
     } catch (err) {
       console.error('Erro ao excluir lançamento de hora extra:', err);
     }
   };
 
-  // Função para carregar ou restaurar os 22 lançamentos de teste oficiais no sistema
+  // Função para carregar ou restaurar os lançamentos de teste oficiais no sistema
   const handleLoadTestEntries = async () => {
     if (isReadOnly) {
       if (onBlockedAction) {
@@ -1485,7 +1545,6 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       return;
     }
 
-    // Limpa tombstones para permitir recarregar testes limpos
     try {
       localStorage.removeItem('manupack_deleted_overtime_entry_ids');
     } catch {}
@@ -1493,17 +1552,15 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
     setIsSeedingTests(true);
     try {
       for (const item of INITIAL_OVERTIME_ENTRIES) {
-        await setDoc(doc(db, 'overtime_entries', item.id), item);
+        await saveOvertimeEntryToSupabase(item);
       }
-      // Grava também os novos motivos na coleção overtime_reasons
       const newReasons = [
         'Troca emergencial de matriz e anel de ar Cast 2',
         'Apoio no fechamento de lote para auditoria ISO 9001',
         'Retrabalho de bobinas stretch para expedição imediata'
       ];
       for (const r of newReasons) {
-        const slug = r.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-        await setDoc(doc(db, 'overtime_reasons', slug), { reason: r, createdAt: new Date().toISOString() }, { merge: true });
+        await saveReasonToSupabase('overtime', r, 'Geral');
       }
 
       setEntries(INITIAL_OVERTIME_ENTRIES);
@@ -1657,12 +1714,12 @@ export const OvertimeEntries: React.FC<OvertimeEntriesProps> = ({
       // 2. Grava permanentemente no Tombstone
       recordDeletedOvertimeEntryIds(idsToDelete);
 
-      // 3. Deleta cada documento do Firestore
+      // 3. Deleta cada documento do Supabase
       for (const id of idsToDelete) {
         try {
-          await deleteDoc(doc(db, 'overtime_entries', id));
+          await deleteOvertimeEntryFromSupabase(id);
         } catch (e) {
-          console.warn('Erro ao deletar documento individual:', id, e);
+          console.warn('Erro ao deletar documento individual no Supabase:', id, e);
         }
       }
     } catch (err) {

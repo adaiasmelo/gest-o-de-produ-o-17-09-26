@@ -10,8 +10,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieC
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ProductionEntry, RibbonCuttingEntry, Employee } from '../types';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { fetchCollectionSmartFromSupabase, upsertCollectionItemSmartToSupabase } from '../lib/supabase';
 
 interface WeeklyProductionSummaryModalProps {
   isOpen: boolean;
@@ -269,23 +268,23 @@ export const WeeklyProductionSummaryModal: React.FC<WeeklyProductionSummaryModal
       console.warn('Error loading local meeting data', e);
     }
 
-    // Try Firestore
-    const fetchFirestore = async () => {
+    // Carregar reunião do Supabase
+    const fetchSupabaseMeeting = async () => {
       try {
-        const docRef = doc(db, 'weekly_meetings', `${startDateStr}_${endDateStr}`);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && isMounted) {
-          const fsData = docSnap.data() as Partial<WeeklyMeetingFormState>;
-          setFormState(prev => ({ ...prev, ...fsData }));
+        const targetId = `${startDateStr}_${endDateStr}`;
+        const meetings = await fetchCollectionSmartFromSupabase<WeeklyMeetingFormState & { id: string }>('weekly_meetings');
+        const found = meetings.find(m => m.id === targetId);
+        if (found && isMounted) {
+          setFormState(prev => ({ ...prev, ...found }));
           try {
-            localStorage.setItem(meetingStorageKey, JSON.stringify({ ...formState, ...fsData }));
+            localStorage.setItem(meetingStorageKey, JSON.stringify({ ...formState, ...found }));
           } catch {}
         }
-      } catch (err) {
-        // Fallback to local only
+      } catch {
+        // Fallback local
       }
     };
-    fetchFirestore();
+    fetchSupabaseMeeting();
 
     return () => { isMounted = false; };
   }, [meetingStorageKey, startDateStr, endDateStr]);
@@ -314,17 +313,17 @@ export const WeeklyProductionSummaryModal: React.FC<WeeklyProductionSummaryModal
     setSaveStatus('saving');
     try {
       localStorage.setItem(meetingStorageKey, JSON.stringify(formState));
-      const docRef = doc(db, 'weekly_meetings', `${startDateStr}_${endDateStr}`);
-      await setDoc(docRef, {
+      await upsertCollectionItemSmartToSupabase('weekly_meetings', {
+        id: `${startDateStr}_${endDateStr}`,
         ...formState,
         startDate: startDateStr,
         endDate: endDateStr,
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
     } catch (e) {
-      console.warn('Error saving to Firestore:', e);
+      console.warn('Error saving meeting to Supabase:', e);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
     }

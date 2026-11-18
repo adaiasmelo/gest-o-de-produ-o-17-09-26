@@ -1,9 +1,13 @@
-import { doc, setDoc, collection, onSnapshot, writeBatch, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { UserActivityLog, UserActivityType } from '../types';
+import {
+  fetchCollectionSmartFromSupabase,
+  upsertCollectionItemSmartToSupabase,
+  saveKvCollectionToSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
+import { UserActivityLog, UserActivityType, ActiveSession } from '../types';
 
 const ACTIVITY_CACHE_KEY = 'manupackaging_user_activity_logs_cache';
-const MAX_LOCAL_CACHE = 200;
+const MAX_LOCAL_CACHE = 80;
 
 interface LastNavigationTracker {
   screen: string;
@@ -16,6 +20,7 @@ let lastNavigation: LastNavigationTracker = {
   subScreen: '',
   timestamp: 0
 };
+let lastPresenceTouchMs = 0;
 
 export const loadActivityLogsFromCache = (): UserActivityLog[] => {
   try {
@@ -54,7 +59,7 @@ export interface RecordActivityParams {
 
 /**
  * Registra o histórico persistente de navegação de telas e ações executadas
- * pelos usuários, atualizando também a presença em tempo real.
+ * pelos usuários no Supabase, atualizando também a presença em tempo real.
  */
 export const recordUserActivity = async ({
   user,
@@ -68,12 +73,11 @@ export const recordUserActivity = async ({
 
   const nowMs = Date.now();
 
-  // Previne duplicação excessiva caso a mesma tela seja informada em loop em menos de 4 segundos
   if (type === 'screen_view') {
     if (
       lastNavigation.screen === screen &&
       lastNavigation.subScreen === (subScreen || '') &&
-      nowMs - lastNavigation.timestamp < 4000
+      nowMs - lastNavigation.timestamp < 30000
     ) {
       return null;
     }
@@ -103,7 +107,6 @@ export const recordUserActivity = async ({
     device
   };
 
-  // Salva no cache local imediatamente
   try {
     const cached = loadActivityLogsFromCache();
     const updated = [newLog, ...cached.filter(c => c.id !== id)].slice(0, MAX_LOCAL_CACHE);
@@ -112,24 +115,23 @@ export const recordUserActivity = async ({
     console.warn('Falha ao atualizar cache local de atividade:', err);
   }
 
-  // Notifica componentes locais
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('user_activity_recorded', { detail: newLog }));
   }
 
-  // 1. Grava no Firestore no histórico permanente de atividades
+  // 1. Grava no Supabase no histórico de atividades (máximo 80 registros recentes)
   try {
-    await setDoc(doc(db, 'user_activity_logs', id), newLog);
+    await upsertCollectionItemSmartToSupabase('user_activity_logs', newLog, 80);
   } catch (err) {
-    console.warn('Erro ao salvar log de atividade no Firestore:', err);
+    console.warn('Erro ao salvar log de atividade no Supabase:', err);
   }
 
-  // 2. Atualiza a sessão ativa do usuário com a tela e ação atual (para visualização em tempo real)
-  try {
-    const sessionId = user.id || user.registration;
-    await setDoc(
-      doc(db, 'active_sessions', sessionId),
-      {
+  // 2. Atualiza a sessão ativa no máximo 1x a cada 60s para screen_view (ou sempre para ações/auth)
+  if (type !== 'screen_view' || nowMs - lastPresenceTouchMs >= 60000) {
+    lastPresenceTouchMs = nowMs;
+    try {
+      const sessionId = user.id || user.registration;
+      const sessionItem: ActiveSession = {
         id: sessionId,
         name: user.name,
         registration: user.registration,
@@ -139,64 +141,91 @@ export const recordUserActivity = async ({
         lastAction: action + (details ? ` (${details})` : ''),
         lastActionTime: timestamp,
         lastSeen: timestamp,
+        loginTime: timestamp,
         device
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    console.warn('Erro ao atualizar tela na sessão ativa:', err);
+      };
+      await upsertCollectionItemSmartToSupabase('active_sessions', sessionItem, 100);
+    } catch (err) {
+      console.warn('Erro ao atualizar tela na sessão ativa (Supabase):', err);
+    }
   }
 
   return newLog;
 };
 
 /**
- * Escuta em tempo real o histórico de todas as telas e atividades realizadas por todos os usuários
+ * Escuta em tempo real o histórico de todas as telas e atividades via Supabase
  */
 export const subscribeUserActivities = (
   onData: (logs: UserActivityLog[]) => void,
   onError?: (error: any) => void
 ) => {
-  return onSnapshot(
-    collection(db, 'user_activity_logs'),
-    (snapshot) => {
-      const logs = snapshot.docs.map((docSnap) => ({
-        ...docSnap.data(),
-        id: docSnap.id
-      })) as UserActivityLog[];
+  const cached = loadActivityLogsFromCache();
+  if (cached.length > 0) {
+    onData(cached);
+  }
 
-      // Ordena por data decrescente (mais recentes primeiro)
-      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  let isActive = true;
 
-      // Atualiza o cache local
-      saveActivityLogsToCache(logs);
-      onData(logs);
-    },
-    (err) => {
-      console.warn('Erro ao escutar user_activity_logs:', err);
+  let lastRemoteFetchMs = 0;
+
+  const fetchLatest = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastRemoteFetchMs < 20000) return;
+    lastRemoteFetchMs = now;
+    try {
+      const logs = await fetchCollectionSmartFromSupabase<UserActivityLog>('user_activity_logs');
+      if (!isActive) return;
+      if (logs.length > 0) {
+        logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        saveActivityLogsToCache(logs);
+        onData(logs);
+      }
+    } catch (err) {
       if (onError) onError(err);
-      // Fallback para cache local se offline
-      const cached = loadActivityLogsFromCache();
-      if (cached.length > 0) onData(cached);
     }
-  );
+  };
+
+  fetchLatest(true);
+
+  const unsubRealtime = subscribeSupabaseTableChanges('activity_logs_realtime', ['settings'], (tbl, payload) => {
+    if (tbl !== 'settings') return;
+    const changedId = payload?.new?.id || payload?.old?.id;
+    if (changedId !== 'kv_user_activity_logs') return;
+    const items = payload?.new?.data?.items;
+    if (Array.isArray(items)) {
+      const sorted = [...items].sort((a: UserActivityLog, b: UserActivityLog) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      saveActivityLogsToCache(sorted);
+      if (isActive) onData(sorted);
+    } else {
+      fetchLatest(false);
+    }
+  });
+
+  const handleLocalEvent = (e: Event) => {
+    const custom = e as CustomEvent<UserActivityLog>;
+    if (custom.detail && isActive) {
+      onData(loadActivityLogsFromCache());
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('user_activity_recorded', handleLocalEvent);
+  }
+
+  return () => {
+    isActive = false;
+    if (unsubRealtime) unsubRealtime();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('user_activity_recorded', handleLocalEvent);
+    }
+  };
 };
 
 /**
- * Exclusão em lote do histórico de atividades (acesso restrito para administradores)
+ * Exclusão em lote do histórico de atividades no Supabase
  */
 export const clearUserActivities = async (logsToDelete: UserActivityLog[]) => {
   if (logsToDelete.length === 0) return;
-  const batch = writeBatch(db);
-  // Firestore suporta no máximo 500 operações por batch
-  const limitBatch = logsToDelete.slice(0, 450);
-  limitBatch.forEach((log) => {
-    batch.delete(doc(db, 'user_activity_logs', log.id));
-  });
-  await batch.commit();
-
-  // Limpa o cache local
-  const remainingIds = new Set(limitBatch.map(l => l.id));
-  const cached = loadActivityLogsFromCache().filter(l => !remainingIds.has(l.id));
-  saveActivityLogsToCache(cached);
+  await saveKvCollectionToSupabase('user_activity_logs', []);
+  saveActivityLogsToCache([]);
 };

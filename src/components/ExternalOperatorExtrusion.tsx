@@ -21,8 +21,7 @@ import {
   KeyRound,
   ArrowLeft
 } from 'lucide-react';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { saveSystemUserToSupabase } from '../lib/supabase';
 import { SystemUser, Employee, Collaborator, Vacation, Shift, ProductionEntry, RibbonCuttingEntry } from '../types';
 import LaunchModal from './LaunchModal';
 import { triggerHaptic } from '../utils/haptics';
@@ -476,7 +475,7 @@ export const ExternalOperatorExtrusion: React.FC<ExternalOperatorExtrusionProps>
         }
       };
 
-      await setDoc(doc(db, 'system_users', userId), userPayload, { merge: true });
+      await saveSystemUserToSupabase(userPayload);
 
       const session = {
         name: operatorName,

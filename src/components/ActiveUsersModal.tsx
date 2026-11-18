@@ -50,11 +50,11 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Filtra sessões ativas com pulso nos últimos 2 minutos (120.000 ms)
+  // Filtra sessões ativas com pulso nos últimos 4 minutos (240.000 ms)
   const onlineSessions = activeSessions.filter(s => {
     if (!s.lastSeen) return false;
     const diff = now - new Date(s.lastSeen).getTime();
-    return diff < 120000;
+    return diff < 240000;
   });
 
   const filteredOnlineSessions = onlineSessions.filter(s => 

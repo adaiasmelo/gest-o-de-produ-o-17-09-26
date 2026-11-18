@@ -1,12 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  onSnapshot 
-} from 'firebase/firestore';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -35,7 +27,14 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import {
+  generateSupabaseId,
+  fetchMaintenanceIssuesFromSupabase,
+  saveMaintenanceIssueToSupabase,
+  updateMaintenanceIssueInSupabase,
+  deleteMaintenanceIssueFromSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 import { MaintenanceIssue, MaintenancePriority, MaintenanceStatus, MaintenanceProgressEntry, SystemUser, Employee, ProductionEntry, RibbonCuttingEntry, Shift } from '../types';
 import { MaintenanceDowntimeAnalyticsView } from './MaintenanceDowntimeAnalyticsView';
 import jsPDF from 'jspdf';
@@ -462,22 +461,58 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     return Array.from(setOfMachines).sort();
   }, [employees]);
 
-  // Fetch issues real-time
+  // Fetch issues real-time from Supabase
   useEffect(() => {
-    const q = collection(db, 'maintenance_issues');
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data: MaintenanceIssue[] = [];
-      snapshot.forEach((doc) => {
-        data.push({ id: doc.id, ...doc.data() } as MaintenanceIssue);
-      });
-      setIssues(data);
-      setSelectedIssueIds((prev) => prev.filter((id) => data.some((d) => d.id === id)));
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'maintenance_issues');
+    let mounted = true;
+    const loadIssues = async () => {
+      try {
+        const data = await fetchMaintenanceIssuesFromSupabase();
+        if (!mounted) return;
+        setIssues(data);
+        setSelectedIssueIds((prev) => prev.filter((id) => data.some((d) => d.id === id)));
+      } catch (error) {
+        console.error('Erro ao carregar manutenção do Supabase:', error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadIssues();
+    const unsubscribe = subscribeSupabaseTableChanges('maintenance_realtime', ['maintenance_requests'], (_tbl, payload) => {
+      if (!mounted) return;
+      if (payload?.eventType === 'DELETE' && payload?.old?.id) {
+        const deletedId = payload.old.id;
+        setIssues(prev => prev.filter(i => i.id !== deletedId));
+        setSelectedIssueIds(prev => prev.filter(id => id !== deletedId));
+        return;
+      }
+      if ((payload?.eventType === 'INSERT' || payload?.eventType === 'UPDATE') && payload?.new) {
+        const row = payload.new;
+        const mapped: MaintenanceIssue = (row.raw_data && typeof row.raw_data === 'object' && Object.keys(row.raw_data).length > 0)
+          ? { ...row.raw_data, id: row.id }
+          : {
+              id: row.id,
+              machine: row.machine || 'Geral / Nenhuma',
+              cause: row.description || '',
+              priority: row.priority || 'Média',
+              status: row.status || 'Pendente',
+              reporter: row.requester || 'Operador',
+              sector: 'Geral',
+              createdAt: row.created_at || new Date().toISOString()
+            };
+        setIssues(prev => {
+          const exists = prev.some(i => i.id === mapped.id);
+          return exists ? prev.map(i => (i.id === mapped.id ? mapped : i)) : [mapped, ...prev];
+        });
+        return;
+      }
+      loadIssues();
     });
 
-    return () => unsubscribe();
+    return () => {
+      mounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const toggleIssueSelection = (id: string) => {
@@ -496,12 +531,16 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     setIsExportPdfModalOpen(true);
   };
 
-  // Auto-migrate old machine names and generate missing titles in Firestore based on the cause
+  // Auto-migrate old machine names and generate missing titles in Supabase
+  const migratedIssueIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (issues.length === 0) return;
 
     const migrateIssues = async () => {
       for (const issue of issues) {
+        if (!issue.id || migratedIssueIdsRef.current.has(issue.id)) continue;
+        migratedIssueIdsRef.current.add(issue.id);
+
         const updates: any = {};
 
         // 1. Machine name migration
@@ -523,8 +562,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
         if (Object.keys(updates).length > 0) {
           try {
-            console.log(`Migrando ocorrência de manutenção ${issue.id}:`, updates);
-            await updateDoc(doc(db, 'maintenance_issues', issue.id), updates);
+            await updateMaintenanceIssueInSupabase(issue.id, updates);
           } catch (err) {
             console.error(`Erro ao migrar ocorrência de manutenção ${issue.id}:`, err);
           }
@@ -659,29 +697,31 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
     try {
       if (editingIssue) {
-        // Edit existing issue
-        await updateDoc(doc(db, 'maintenance_issues', editingIssue.id), {
+        const updatedFields = {
           title: finalTitle,
           cause: formCause,
           priority: formPriority,
           sector: formSector,
           machine: formMachine || 'Geral / Nenhuma'
-        });
+        };
+        setIssues(prev => prev.map(i => i.id === editingIssue.id ? { ...i, ...updatedFields } : i));
+        await saveMaintenanceIssueToSupabase({ ...editingIssue, ...updatedFields });
       } else {
-        // Add new issue
-        const newIssue = {
+        const newId = generateSupabaseId('maint');
+        const newIssue: MaintenanceIssue = {
+          id: newId,
           title: finalTitle,
           cause: formCause,
           priority: formPriority,
           sector: formSector,
           machine: formMachine || 'Geral / Nenhuma',
-          reporter: loggedUser?.name || formReporter || auth.currentUser?.displayName || 'Operador',
+          reporter: loggedUser?.name || formReporter || 'Operador',
           status: 'Pendente' as MaintenanceStatus,
           createdAt: new Date().toISOString(),
-          userId: auth.currentUser?.uid || 'anonymous'
+          userId: loggedUser?.id || 'anonymous'
         };
-
-        await addDoc(collection(db, 'maintenance_issues'), newIssue);
+        setIssues(prev => [newIssue, ...prev]);
+        await saveMaintenanceIssueToSupabase(newIssue);
       }
 
       // Reset form
@@ -694,7 +734,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       setEditingIssue(null);
       setIsAddModalOpen(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'maintenance_issues');
+      console.error('Erro ao salvar solicitação de manutenção no Supabase:', error);
     }
   };
 
@@ -709,9 +749,10 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     }
     if (!window.confirm('Deseja realmente excluir esta causa de manutenção?')) return;
     try {
-      await deleteDoc(doc(db, 'maintenance_issues', id));
+      setIssues(prev => prev.filter(i => i.id !== id));
+      await deleteMaintenanceIssueFromSupabase(id);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `maintenance_issues/${id}`);
+      console.error('Erro ao excluir solicitação de manutenção no Supabase:', error);
     }
   };
 
@@ -733,12 +774,14 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     } else {
       // Toggle back to Pendente directly
       try {
-        await updateDoc(doc(db, 'maintenance_issues', issue.id), {
+        setIssues(prev => prev.map(i => i.id === issue.id ? { ...i, status: 'Pendente', resolvedAt: undefined } : i));
+        await saveMaintenanceIssueToSupabase({
+          ...issue,
           status: 'Pendente',
           resolvedAt: null
         });
       } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${issue.id}`);
+        console.error('Erro ao atualizar status no Supabase:', error);
       }
     }
   };
@@ -756,15 +799,19 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     }
 
     try {
-      await updateDoc(doc(db, 'maintenance_issues', selectedIssueForNotes.id), {
+      const resolvedAt = new Date().toISOString();
+      const target = selectedIssueForNotes;
+      setIssues(prev => prev.map(i => i.id === target.id ? { ...i, status: 'Resolvido', solution: resolutionNotes, resolvedAt } : i));
+      await saveMaintenanceIssueToSupabase({
+        ...target,
         status: 'Resolvido',
         solution: resolutionNotes,
-        resolvedAt: new Date().toISOString()
+        resolvedAt
       });
       setSelectedIssueForNotes(null);
       setResolutionNotes('');
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${selectedIssueForNotes.id}`);
+      console.error('Erro ao concluir solicitação no Supabase:', error);
     }
   };
 
@@ -778,9 +825,10 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       return;
     }
     try {
-      await updateDoc(doc(db, 'maintenance_issues', id), { status });
+      setIssues(prev => prev.map(i => i.id === id ? { ...i, status } : i));
+      await updateMaintenanceIssueInSupabase(id, { status });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${id}`);
+      console.error('Erro ao atualizar status no Supabase:', error);
     }
   };
 
@@ -837,16 +885,19 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         id: stepId,
         text: trimmed,
         date: isoDate,
-        author: loggedUser?.name || auth.currentUser?.displayName || 'Manutenção',
+        author: loggedUser?.name || 'Manutenção',
       };
 
       const existing = Array.isArray(progressModalIssue.progressUpdates)
         ? progressModalIssue.progressUpdates
         : [];
+      const updatedSteps = [...existing, newEntry];
 
-      await updateDoc(doc(db, 'maintenance_issues', progressModalIssue.id), {
+      setIssues(prev => prev.map(i => i.id === progressModalIssue.id ? { ...i, status: 'Em Andamento', progressUpdates: updatedSteps } : i));
+      await saveMaintenanceIssueToSupabase({
+        ...progressModalIssue,
         status: 'Em Andamento',
-        progressUpdates: [...existing, newEntry],
+        progressUpdates: updatedSteps,
       });
 
       setNewProgressText('');
@@ -858,7 +909,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       setProgressFeedback('Etapa salva em Em Andamento! Clique em uma etapa caso precise editar ou excluir.');
       setTimeout(() => setProgressFeedback(null), 5000);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${progressModalIssue.id}`);
+      console.error('Erro ao salvar etapa de andamento no Supabase:', error);
     } finally {
       setIsSavingProgress(false);
     }
@@ -906,12 +957,14 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           : s
       );
 
-      await updateDoc(doc(db, 'maintenance_issues', issue.id), {
+      setIssues(prev => prev.map(i => i.id === issue.id ? { ...i, progressUpdates: updatedList } : i));
+      await saveMaintenanceIssueToSupabase({
+        ...issue,
         progressUpdates: updatedList,
       });
       setEditingStepKey(null);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${issue.id}`);
+      console.error('Erro ao editar etapa no Supabase:', error);
     } finally {
       setIsUpdatingStep(false);
     }
@@ -929,14 +982,16 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       const currentList = Array.isArray(issue.progressUpdates) ? issue.progressUpdates : [];
       const updatedList = currentList.filter((s) => s.id !== stepId);
 
-      await updateDoc(doc(db, 'maintenance_issues', issue.id), {
+      setIssues(prev => prev.map(i => i.id === issue.id ? { ...i, progressUpdates: updatedList } : i));
+      await saveMaintenanceIssueToSupabase({
+        ...issue,
         progressUpdates: updatedList,
       });
       setConfirmDeleteStepKey(null);
       setEditingStepKey(null);
       setSelectedTimelineStepKey(null);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${issue.id}`);
+      console.error('Erro ao excluir etapa no Supabase:', error);
     } finally {
       setIsUpdatingStep(false);
     }

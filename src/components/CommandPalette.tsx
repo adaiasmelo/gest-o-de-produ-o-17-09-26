@@ -661,13 +661,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'doc-database',
         category: 'documents',
         title: 'Gestão de Banco de Dados & Backup',
-        subtitle: 'Exportar cópias de segurança, auditar registros e sincronizar Firestore',
+        subtitle: 'Exportar cópias de segurança, auditar registros e sincronizar Supabase',
         badge: 'Admin',
         badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
         icon: <Database size={18} />,
         iconBg: 'bg-purple-500/10 text-purple-600',
         iconColor: 'text-purple-600',
-        keywords: ['banco de dados', 'backup', 'firestore', 'exportar dados', 'restaurar'],
+        keywords: ['banco de dados', 'backup', 'supabase', 'exportar dados', 'restaurar'],
         action: () => {
           onClose();
           onOpenModal('database');

@@ -5,8 +5,7 @@ import {
   Layers, Briefcase, Clock, ChevronRight, Check, Trash2, Image as ImageIcon,
   Bell, FileDown, UserPlus, Database, RefreshCw
 } from "lucide-react";
-import { doc, setDoc } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { mergeSettingsInSupabase } from "../lib/supabase";
 import { 
   getRibbonMachineGoal, 
   getRibbonTotalGoal, 
@@ -492,7 +491,7 @@ export const SettingsModal: React.FC<{
                         onChange={e => setGoals(prev => {
                           const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
                           localStorage.setItem('manupackaging_goals', JSON.stringify(updated));
-                          setDoc(doc(db, 'settings', 'global'), { goals: updated }, { merge: true });
+                          mergeSettingsInSupabase('global', { goals: updated });
                           return updated;
                         })} 
                         className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-lg font-black text-center text-slate-800 outline-none focus:ring-2 focus:ring-orange-200 tracking-tight"
@@ -525,10 +524,10 @@ export const SettingsModal: React.FC<{
                               const updated = { ...prev, [dashboardMonth]: val };
                               localStorage.setItem('manupackaging_extrusion_waste_limits', JSON.stringify(updated));
                               localStorage.setItem('manupackaging_extrusion_waste_limit', String(val));
-                              setDoc(doc(db, 'settings', 'global'), { 
+                              mergeSettingsInSupabase('global', { 
                                 extrusionWasteLimits: updated,
                                 extrusionWasteLimit: val 
-                              }, { merge: true });
+                              });
                               return updated;
                             });
                           }
@@ -570,7 +569,7 @@ export const SettingsModal: React.FC<{
                           onChange={e => setEremaGoals?.(prev => {
                             const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
                             localStorage.setItem('manupackaging_erema_goals', JSON.stringify(updated));
-                            setDoc(doc(db, 'settings', 'global'), { eremaGoals: updated }, { merge: true });
+                            mergeSettingsInSupabase('global', { eremaGoals: updated });
                             return updated;
                           })} 
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-lg font-black text-center text-slate-800 outline-none focus:ring-2 focus:ring-emerald-400"
@@ -594,7 +593,7 @@ export const SettingsModal: React.FC<{
                             const val = Number(e.target.value) || 0;
                             setEremaStandardGoal12h(val);
                             saveEremaStandardGoal(val);
-                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: val }, { merge: true });
+                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: val });
                           }} 
                           className="w-full bg-slate-50 border border-emerald-300 rounded-xl px-4 py-2.5 text-lg font-black text-center text-emerald-950 outline-none focus:ring-2 focus:ring-emerald-500"
                         />
@@ -606,7 +605,7 @@ export const SettingsModal: React.FC<{
                           onClick={() => {
                             setEremaStandardGoal12h(DEFAULT_EREMA_STANDARD_GOAL);
                             saveEremaStandardGoal(DEFAULT_EREMA_STANDARD_GOAL);
-                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: DEFAULT_EREMA_STANDARD_GOAL }, { merge: true });
+                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: DEFAULT_EREMA_STANDARD_GOAL });
                           }}
                           className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
                             eremaStandardGoal12h === DEFAULT_EREMA_STANDARD_GOAL 
@@ -622,7 +621,7 @@ export const SettingsModal: React.FC<{
                             const val = 4200;
                             setEremaStandardGoal12h(val);
                             saveEremaStandardGoal(val);
-                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: val }, { merge: true });
+                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: val });
                           }}
                           className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
                             eremaStandardGoal12h === 4200 
@@ -638,7 +637,7 @@ export const SettingsModal: React.FC<{
                             const val = 5200;
                             setEremaStandardGoal12h(val);
                             saveEremaStandardGoal(val);
-                            setDoc(doc(db, 'settings', 'global'), { eremaStandardGoal12h: val }, { merge: true });
+                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: val });
                           }}
                           className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
                             eremaStandardGoal12h === 5200 
@@ -689,7 +688,7 @@ export const SettingsModal: React.FC<{
                                 : { ghezzi: newG, ghezze: newG, lintech: curL, lintec: curL, wultec: curW, wutec: curW };
                               const updated = { ...prev, [dashboardMonth]: updatedObj };
                               localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-                              setDoc(doc(db, 'settings', 'global'), { ribbonGoals: updated }, { merge: true });
+                              mergeSettingsInSupabase('global', { ribbonGoals: updated });
                               return updated;
                             });
                           }} 
@@ -722,7 +721,7 @@ export const SettingsModal: React.FC<{
                                 : { ghezzi: curG, ghezze: curG, lintech: newL, lintec: newL, wultec: curW, wutec: curW };
                               const updated = { ...prev, [dashboardMonth]: updatedObj };
                               localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-                              setDoc(doc(db, 'settings', 'global'), { ribbonGoals: updated }, { merge: true });
+                              mergeSettingsInSupabase('global', { ribbonGoals: updated });
                               return updated;
                             });
                           }} 
@@ -755,7 +754,7 @@ export const SettingsModal: React.FC<{
                                 : { ghezzi: curG, ghezze: curG, lintech: curL, lintec: curL, wultec: newW, wutec: newW };
                               const updated = { ...prev, [dashboardMonth]: updatedObj };
                               localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-                              setDoc(doc(db, 'settings', 'global'), { ribbonGoals: updated }, { merge: true });
+                              mergeSettingsInSupabase('global', { ribbonGoals: updated });
                               return updated;
                             });
                           }} 
@@ -987,7 +986,7 @@ export const SettingsModal: React.FC<{
                             const compressed = await compressImage(reader.result as string, 800, 300);
                             setChartPdfLogo?.(compressed);
                             localStorage.setItem('manupackaging_chart_pdf_logo', compressed);
-                            setDoc(doc(db, 'settings', 'global'), { chartPdfLogo: compressed }, { merge: true });
+                            mergeSettingsInSupabase('global', { chartPdfLogo: compressed });
                           };
                           reader.readAsDataURL(file);
                         }
@@ -1015,7 +1014,7 @@ export const SettingsModal: React.FC<{
                                 const compressed = await compressImage(reader.result as string, 800, 300);
                                 setChartPdfLogo?.(compressed);
                                 localStorage.setItem('manupackaging_chart_pdf_logo', compressed);
-                                setDoc(doc(db, 'settings', 'global'), { chartPdfLogo: compressed }, { merge: true });
+                                mergeSettingsInSupabase('global', { chartPdfLogo: compressed });
                               };
                               reader.readAsDataURL(file);
                             }
@@ -1025,7 +1024,7 @@ export const SettingsModal: React.FC<{
                           <button onClick={() => {
                             setChartPdfLogo?.(null);
                             localStorage.removeItem('manupackaging_chart_pdf_logo');
-                            setDoc(doc(db, 'settings', 'global'), { chartPdfLogo: null }, { merge: true });
+                            mergeSettingsInSupabase('global', { chartPdfLogo: null });
                           }} className="px-3.5 py-2 bg-white border border-slate-200 text-[10px] font-black uppercase text-red-500 rounded-xl hover:bg-red-50 transition-all flex items-center gap-1">
                             <Trash2 size={12} />
                             Remover Logo
@@ -1039,13 +1038,13 @@ export const SettingsModal: React.FC<{
                 <div className="p-6 bg-blue-50 rounded-3xl border border-blue-100 space-y-3">
                   <div className="flex items-center gap-3">
                     <Bell size={20} className="text-blue-600" />
-                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Notificações Push (PWA)</p>
+                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Notificações em Tempo Real (Supabase)</p>
                   </div>
                   <p className="text-[10px] font-bold text-slate-600 leading-relaxed">
-                    O sistema agora suporta notificações push mesmo com o aplicativo fechado. Para funcionar, é necessário configurar a <code className="bg-blue-100 px-1 rounded">FIREBASE_SERVICE_ACCOUNT</code> e <code className="bg-blue-100 px-1 rounded">VITE_FIREBASE_VAPID_KEY</code> nas configurações.
+                    As notificações e alertas de novos lançamentos operam diretamente via Supabase Realtime, sem dependência de serviços ou cotas externas.
                   </p>
                   <p className="text-[9px] font-medium text-slate-400 italic">
-                    Nota: O erro "[vite] fail to connect" no console é normal. Certifique-se de permitir as notificações no seu navegador e "Instalar" o App como PWA.
+                    Nota: Certifique-se de permitir as notificações no seu navegador e "Instalar" o App como PWA.
                   </p>
                 </div>
 

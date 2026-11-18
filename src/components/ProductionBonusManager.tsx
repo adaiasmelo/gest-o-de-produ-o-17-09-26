@@ -10,8 +10,12 @@ import {
   Timer, Gauge, Scale, Sparkles, CheckSquare, Wrench, PlayCircle, LogOut, MonitorPlay, Pencil
 } from 'lucide-react';
 import { Employee, RibbonCuttingEntry } from '../types';
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import {
+  fetchCollectionSmartFromSupabase,
+  saveKvCollectionToSupabase,
+  deleteCollectionItemSmartFromSupabase,
+  subscribeSupabaseTableChanges
+} from '../lib/supabase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BiAnalyticsView } from './BiAnalyticsView';
@@ -264,48 +268,63 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
   const [simStartupMin, setSimStartupMin] = useState<number>(35);
   const [simEarlyDeparture, setSimEarlyDeparture] = useState<'none' | 'communicated' | 'unnotified'>('none');
 
-  // Firestore synchronization
+  // Supabase synchronization (100% Realtime)
   useEffect(() => {
-    const unsubIncidents = onSnapshot(collection(db, 'bonus_incidents'), (snapshot) => {
-      if (!snapshot.empty) {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as BonusIncident));
-        setIncidents(list);
-        localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(list));
-      }
-    }, () => {});
+    let mounted = true;
+    const loadBonusData = async () => {
+      try {
+        const [incList, goalList] = await Promise.all([
+          fetchCollectionSmartFromSupabase<BonusIncident>('bonus_incidents'),
+          fetchCollectionSmartFromSupabase<MachineGoalConfig>('machine_goal_configs')
+        ]);
+        if (!mounted) return;
+        if (incList.length > 0) {
+          setIncidents(incList);
+          try { localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(incList)); } catch {}
+        }
+        if (goalList.length > 0) {
+          setMachineGoals(goalList);
+          try { localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(goalList)); } catch {}
+        }
+      } catch {}
+    };
 
-    const unsubMachineGoals = onSnapshot(collection(db, 'machine_goal_configs'), (snapshot) => {
-      if (!snapshot.empty) {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MachineGoalConfig));
-        setMachineGoals(list);
-        localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(list));
+    loadBonusData();
+    const unsub = subscribeSupabaseTableChanges('bonus_manager_rt', ['settings'], (_tbl, payload) => {
+      const changedId = payload?.new?.id || payload?.old?.id;
+      if (changedId === 'kv_bonus_incidents') {
+        if (Array.isArray(payload?.new?.data?.items)) {
+          setIncidents(payload.new.data.items);
+          try { localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(payload.new.data.items)); } catch {}
+        } else {
+          loadBonusData();
+        }
+      } else if (changedId === 'kv_machine_goal_configs') {
+        if (Array.isArray(payload?.new?.data?.items)) {
+          setMachineGoals(payload.new.data.items);
+          try { localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(payload.new.data.items)); } catch {}
+        } else {
+          loadBonusData();
+        }
       }
-    }, () => {});
+    });
 
     return () => {
-      unsubIncidents();
-      unsubMachineGoals();
+      mounted = false;
+      if (unsub) unsub();
     };
   }, []);
 
   const persistIncidents = async (list: BonusIncident[]) => {
     setIncidents(list);
-    localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(list));
-    try {
-      for (const item of list) {
-        await setDoc(doc(db, 'bonus_incidents', item.id), item);
-      }
-    } catch {}
+    try { localStorage.setItem('manupackaging_bonus_incidents', JSON.stringify(list)); } catch {}
+    await saveKvCollectionToSupabase('bonus_incidents', list);
   };
 
   const persistMachineGoals = async (list: MachineGoalConfig[]) => {
     setMachineGoals(list);
-    localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(list));
-    try {
-      for (const item of list) {
-        await setDoc(doc(db, 'machine_goal_configs', item.id), item);
-      }
-    } catch {}
+    try { localStorage.setItem('manupackaging_bonus_machine_goals', JSON.stringify(list)); } catch {}
+    await saveKvCollectionToSupabase('machine_goal_configs', list);
   };
 
   // Reference value for operator monthly bonus (single meta of R$ 250, editable)
@@ -1022,9 +1041,9 @@ export const ProductionBonusManager: React.FC<ProductionBonusManagerProps> = ({
       const updated = incidents.filter(i => i.id !== id);
       await persistIncidents(updated);
       try {
-        await deleteDoc(doc(db, 'bonus_incidents', id));
+        await deleteCollectionItemSmartFromSupabase('bonus_incidents', id);
       } catch (err) {
-        console.error('Erro ao excluir no Firestore:', err);
+        console.error('Erro ao excluir no Supabase:', err);
       }
     }
   };

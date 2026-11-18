@@ -1,9 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Search, Plus, Trash2, Database, ShieldCheck, UserPlus, UserX, Edit2, VolumeX, Volume2 } from 'lucide-react';
 import { Employee, EmployeeStatus, Collaborator } from '../types';
-import { db } from '../lib/firebase';
 import { saveCollaboratorToSupabase } from '../lib/supabase';
-import { setDoc, doc } from 'firebase/firestore';
 import { IMPORTED_COLLABORATORS } from '../constants/importedCollaborators';
 import { isCollaboratorSilenced, isEmployeeSilenced, normalizeText } from '../utils/silenceUtils';
 import ErrorBoundary from './ErrorBoundary';
@@ -305,15 +303,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
       );
     } else {
       try {
-        const colRef = doc(db, 'collaborators', silenceModal.collaborator.id);
-        await setDoc(colRef, {
+        await saveCollaboratorToSupabase({
+          ...silenceModal.collaborator,
           isSilenced: silenceModal.shouldSilence,
           silencedAt: silenceModal.shouldSilence ? new Date().toISOString() : null,
           silenceReason: silenceModal.shouldSilence ? (silenceReasonInput.trim() || 'Silenciado via Base de Dados') : null,
           updatedAt: new Date().toISOString()
-        }, { merge: true });
+        });
       } catch (err) {
-        console.error('Error toggling silence:', err);
+        console.error('Error toggling silence in Supabase:', err);
       }
     }
     setSilenceModal(null);
@@ -720,8 +718,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                             role: item.role,
                             updatedAt: new Date().toISOString()
                           };
-                          await setDoc(doc(db, 'collaborators', stableId), colData, { merge: true });
-                          saveCollaboratorToSupabase(colData).catch(() => {});
+                          await saveCollaboratorToSupabase(colData);
                           count++;
                         }
                         alert(`Sucesso! ${count} colaboradores foram sincronizados no Cadastro Global.`);
