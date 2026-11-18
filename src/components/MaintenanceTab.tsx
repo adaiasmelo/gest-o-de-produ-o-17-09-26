@@ -1189,7 +1189,9 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     });
   };
 
-  const resolveLogoForPdf = (src: string): Promise<{ dataUrl: string; width: number; height: number } | null> => {
+  const resolveLogoForPdf = (
+    src: string
+  ): Promise<{ dataUrl: string; width: number; height: number; bgColor: [number, number, number] } | null> => {
     return new Promise((resolve) => {
       if (!src) {
         resolve(null);
@@ -1212,7 +1214,67 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
             return;
           }
           ctx.drawImage(img, 0, 0, w, h);
-          resolve({ dataUrl: canvas.toDataURL('image/png'), width: w, height: h });
+
+          let bgColor: [number, number, number] = [255, 255, 255];
+          try {
+            const imgData = ctx.getImageData(0, 0, w, h).data;
+            const samplePixel = (px: number, py: number): [number, number, number, number] => {
+              const cx = Math.max(0, Math.min(w - 1, px));
+              const cy = Math.max(0, Math.min(h - 1, py));
+              const idx = (cy * w + cx) * 4;
+              return [imgData[idx], imgData[idx + 1], imgData[idx + 2], imgData[idx + 3]];
+            };
+
+            const x1 = Math.min(w - 1, 1);
+            const y1 = Math.min(h - 1, 1);
+            const x2 = Math.max(0, w - 2);
+            const y2 = Math.max(0, h - 2);
+            const corners = [
+              samplePixel(x1, y1),
+              samplePixel(x2, y1),
+              samplePixel(x1, y2),
+              samplePixel(x2, y2),
+            ];
+
+            const allOpaque = corners.every((c) => c[3] >= 200);
+            if (allOpaque) {
+              const rVals = corners.map((c) => c[0]);
+              const gVals = corners.map((c) => c[1]);
+              const bVals = corners.map((c) => c[2]);
+              const uniform =
+                Math.max(...rVals) - Math.min(...rVals) <= 25 &&
+                Math.max(...gVals) - Math.min(...gVals) <= 25 &&
+                Math.max(...bVals) - Math.min(...bVals) <= 25;
+              if (uniform) {
+                const avgR = Math.round(rVals.reduce((s, v) => s + v, 0) / 4);
+                const avgG = Math.round(gVals.reduce((s, v) => s + v, 0) / 4);
+                const avgB = Math.round(bVals.reduce((s, v) => s + v, 0) / 4);
+                if (avgR >= 242 && avgG >= 242 && avgB >= 242) {
+                  bgColor = [255, 255, 255];
+                } else {
+                  bgColor = [avgR, avgG, avgB];
+                }
+              }
+            } else {
+              // Transparent corners: keep crisp white header unless the foreground logo itself is nearly all-white
+              const step = Math.max(1, Math.floor((w * h) / 2500));
+              let lumSum = 0;
+              let opaqueCount = 0;
+              for (let i = 0; i < imgData.length; i += 4 * step) {
+                if (imgData[i + 3] > 128) {
+                  lumSum += 0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2];
+                  opaqueCount += 1;
+                }
+              }
+              if (opaqueCount > 0 && lumSum / opaqueCount > 225) {
+                bgColor = [15, 23, 42];
+              }
+            }
+          } catch {
+            bgColor = [255, 255, 255];
+          }
+
+          resolve({ dataUrl: canvas.toDataURL('image/png'), width: w, height: h, bgColor });
         } catch {
           resolve(null);
         }
@@ -1240,23 +1302,40 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       const loadedLogo = await resolveLogoForPdf(logoSrc);
       const companyLabel = (systemName || 'MANUPACKAGING').trim().toUpperCase();
 
-      // 1. Cabeçalho com Logo da Empresa
-      doc.setFillColor(15, 23, 42); // slate-900
+      // 1. Cabeçalho adaptado exatamente à cor de fundo da logo (sem moldura/quadrado)
+      const headerBg: [number, number, number] = loadedLogo ? loadedLogo.bgColor : [255, 255, 255];
+      const headerLum = 0.299 * headerBg[0] + 0.587 * headerBg[1] + 0.114 * headerBg[2];
+      const isLightHeader = headerLum > 165;
+
+      doc.setFillColor(headerBg[0], headerBg[1], headerBg[2]);
       doc.rect(0, 0, 210, 38, 'F');
+
+      if (isLightHeader) {
+        doc.setFillColor(37, 99, 235);
+        doc.rect(0, 0, 210, 2.5, 'F');
+      }
 
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(147, 197, 253); // blue-300
+      if (isLightHeader) {
+        doc.setTextColor(37, 99, 235);
+      } else {
+        doc.setTextColor(191, 219, 254);
+      }
       doc.text(companyLabel, 15, 11.5);
 
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(isLightHeader ? 15 : 255, isLightHeader ? 23 : 255, isLightHeader ? 42 : 255);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(14);
       doc.text('RELATÓRIO DE SOLICITAÇÕES DE MANUTENÇÃO', 15, 19);
 
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(203, 213, 225);
+      if (isLightHeader) {
+        doc.setTextColor(100, 116, 139);
+      } else {
+        doc.setTextColor(226, 232, 240);
+      }
       doc.text(
         `GERADO EM: ${new Date().toLocaleDateString('pt-BR')} ÀS ${new Date().toLocaleTimeString('pt-BR')}`,
         15,
@@ -1268,33 +1347,29 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         31.5
       );
 
-      // Moldura branca para destacar o logo da empresa no cabeçalho
-      const boxX = 166;
-      const boxY = 6;
-      const boxW = 29;
-      const boxH = 26;
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(boxX, boxY, boxW, boxH, 3, 3, 'F');
+      // Logo inserido diretamente no cabeçalho na mesma cor de fundo
+      const boxX = 158;
+      const boxY = 5;
+      const boxW = 37;
+      const boxH = 28;
 
       if (loadedLogo) {
-        const maxW = boxW - 4;
-        const maxH = boxH - 4;
-        const ratio = Math.min(maxW / loadedLogo.width, maxH / loadedLogo.height);
+        const ratio = Math.min(boxW / loadedLogo.width, boxH / loadedLogo.height);
         const drawW = loadedLogo.width * ratio;
         const drawH = loadedLogo.height * ratio;
-        const drawX = boxX + (boxW - drawW) / 2;
+        const drawX = boxX + (boxW - drawW);
         const drawY = boxY + (boxH - drawH) / 2;
         doc.addImage(loadedLogo.dataUrl, 'PNG', drawX, drawY, drawW, drawH);
       } else if (logoSrc) {
         try {
-          doc.addImage(logoSrc, 'PNG', boxX + 2.5, boxY + 2, boxW - 5, boxH - 4);
+          doc.addImage(logoSrc, 'PNG', boxX + 4, boxY + 2, boxW - 4, boxH - 4);
         } catch (logoErr) {
           console.warn('Não foi possível renderizar o logo no PDF:', logoErr);
         }
       }
 
-      doc.setFillColor(59, 130, 246);
-      doc.rect(0, 38, 210, 1.5, 'F');
+      doc.setFillColor(isLightHeader ? 37 : 59, isLightHeader ? 99 : 130, isLightHeader ? 235 : 246);
+      doc.rect(0, 38, 210, isLightHeader ? 1.2 : 1.5, 'F');
 
       let currentY = 48;
 
