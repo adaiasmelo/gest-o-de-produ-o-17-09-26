@@ -880,26 +880,32 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 mt-2.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMaintenanceSubTab('causes');
-                        setMaintenanceInitialCreateOpen(true);
-                        onNavigateTab('maintenance');
-                      }}
-                      className="flex-1 py-1.5 px-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 border border-orange-200"
-                    >
-                      Nova Solicitação
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenModal('downtime_analytics')}
-                      className="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 shadow-sm"
-                    >
-                      BI Paradas
-                    </button>
-                  </div>
+                  {(isAdmin || (userPerms.maintenance.enabled && userPerms.maintenance.newRequest) || (userPerms.extrusion.enabled && userPerms.extrusion.comparison) || (userPerms.maintenance.enabled && userPerms.maintenance.analytics)) && (
+                    <div className="flex items-center gap-1.5 mt-2.5">
+                      {(isAdmin || (userPerms.maintenance.enabled && userPerms.maintenance.newRequest)) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMaintenanceSubTab('causes');
+                            setMaintenanceInitialCreateOpen(true);
+                            onNavigateTab('maintenance');
+                          }}
+                          className="flex-1 py-1.5 px-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 border border-orange-200"
+                        >
+                          Nova Solicitação
+                        </button>
+                      )}
+                      {(isAdmin || (userPerms.extrusion.enabled && userPerms.extrusion.comparison) || (userPerms.maintenance.enabled && userPerms.maintenance.analytics)) && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenModal('downtime_analytics')}
+                          className="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center cursor-pointer active:scale-95 shadow-sm"
+                        >
+                          BI Paradas
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1054,11 +1060,11 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               </button>
             )}
 
-            {(isAdmin || (userPerms.maintenance.enabled && (userPerms.maintenance.causes || userPerms.maintenance.requests || userPerms.maintenance.newRequest))) && (
+            {(isAdmin || (userPerms.maintenance.enabled && (userPerms.maintenance.requests || userPerms.maintenance.newRequest))) && (
               <button
                 onClick={() => {
                   setMaintenanceSubTab('causes');
-                  setMaintenanceInitialCreateOpen(false);
+                  setMaintenanceInitialCreateOpen(!isAdmin && !!userPerms.maintenance.newRequest && !userPerms.maintenance.requests);
                   onNavigateTab('maintenance');
                 }}
                 className="bg-white p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] border border-slate-100 text-slate-800 flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-sm active:scale-95 transition-all group cursor-pointer hover:border-blue-200"
@@ -1101,7 +1107,7 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
               </button>
             )}
 
-            {(isAdmin || ((userPerms.extrusion.enabled && userPerms.extrusion.comparison) || (userPerms.maintenance.enabled && userPerms.maintenance.causes))) && (
+            {(isAdmin || ((userPerms.extrusion.enabled && userPerms.extrusion.comparison) || (userPerms.maintenance.enabled && userPerms.maintenance.analytics))) && (
               <button
                 onClick={() => onOpenModal('downtime_analytics')}
                 className="bg-gradient-to-br from-slate-900 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center gap-2 sm:gap-3 md:gap-4 shadow-lg shadow-slate-900/20 border border-blue-500/30 active:scale-95 transition-all group cursor-pointer"

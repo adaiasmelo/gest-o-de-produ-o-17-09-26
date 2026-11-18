@@ -233,7 +233,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const hasExtrusionAccess = isAdmin || !!userPerms.extrusion?.enabled || !!userPerms.extrusion?.summary || !!userPerms.extrusion?.charts || !!userPerms.extrusion?.comparison || !!userPerms.extrusion?.reports || !!userPerms.extrusion?.stock;
   const hasRibbonAccess = isAdmin || !!userPerms.ribbon?.enabled || !!userPerms.ribbon?.summary || !!userPerms.ribbon?.charts || !!userPerms.ribbon?.comparison || !!userPerms.ribbon?.reports || !!userPerms.ribbon?.goals || !!userPerms.ribbon?.monthlyReport || !!userPerms.ribbon?.exportExcel || !!userPerms.ribbon?.productivity;
   const hasPersonnelAccess = isAdmin || !!userPerms.personnel?.enabled || !!userPerms.personnel?.board || !!userPerms.personnel?.vacations || !!userPerms.personnel?.lunch || !!userPerms.personnel?.overtime || !!userPerms.personnel?.overtimeEntries || !!userPerms.personnel?.evaluations || !!userPerms.personnel?.bonus;
-  const hasMaintenanceAccess = isAdmin || !!userPerms.maintenance?.enabled || !!userPerms.maintenance?.requests || !!userPerms.maintenance?.causes;
+  const hasMaintenanceAccess = isAdmin || !!userPerms.maintenance?.enabled || !!userPerms.maintenance?.requests || !!userPerms.maintenance?.analytics || !!userPerms.maintenance?.newRequest || !!userPerms.maintenance?.machineStops || !!userPerms.maintenance?.exportPdf || !!userPerms.maintenance?.sendOutlook;
   const hasProjectionAccess = isAdmin || !!userPerms.projection?.enabled;
 
   return (
@@ -936,7 +936,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               </div>
 
               <div className="space-y-1">
-                {(isAdmin || !!userPerms.maintenance?.causes || !!userPerms.maintenance?.requests) && (
+                {(isAdmin || !!userPerms.maintenance?.requests || !!userPerms.maintenance?.newRequest || !!userPerms.maintenance?.machineStops || !!userPerms.maintenance?.exportPdf || !!userPerms.maintenance?.sendOutlook) && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(() => onNavigateMaintenance('causes'))}
@@ -960,7 +960,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   </button>
                 )}
 
-                {(isAdmin || !!userPerms.maintenance?.causes || !!userPerms.maintenance?.requests) && (
+                {(isAdmin || !!userPerms.maintenance?.analytics) && (
                   <button
                     type="button"
                     onClick={() => handleSelectOption(() => onNavigateMaintenance('analytics'))}

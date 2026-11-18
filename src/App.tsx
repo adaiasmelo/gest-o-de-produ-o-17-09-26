@@ -4886,6 +4886,24 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
     }
   }, [activeTab, personnelSubView, userPerms, isAdmin]);
 
+  // Garante que, dentro de Manutenção, o usuário só permaneça na sub-aba autorizada
+  useEffect(() => {
+    if (isAdmin || activeTab !== 'maintenance') return;
+    const canRequests = !!(
+      userPerms.maintenance.requests ||
+      userPerms.maintenance.newRequest ||
+      userPerms.maintenance.machineStops ||
+      userPerms.maintenance.exportPdf ||
+      userPerms.maintenance.sendOutlook
+    );
+    const canAnalytics = !!userPerms.maintenance.analytics;
+    if (maintenanceSubTab === 'analytics' && !canAnalytics && canRequests) {
+      setMaintenanceSubTab('causes');
+    } else if (maintenanceSubTab !== 'analytics' && !canRequests && canAnalytics) {
+      setMaintenanceSubTab('analytics');
+    }
+  }, [activeTab, maintenanceSubTab, userPerms, isAdmin]);
+
   // Helper de normalização e compatibilidade de máquinas do corte de fita (Ghezzi, Lintech, Wultec)
   const matchRibbonMachine = (entryMachine: string | undefined, targetKey: string) => {
     if (!targetKey || targetKey === 'all') return true;
@@ -13981,39 +13999,43 @@ Atenciosamente,
 
                         {openMenuSections.maintenance && (
                           <div className="pl-2 border-l-2 border-slate-200/90 ml-3.5 space-y-1 my-1 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('maintenance');
-                                setMaintenanceSubTab('causes');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'maintenance' && maintenanceSubTab !== 'analytics'
-                                  ? 'bg-blue-100 text-blue-700 font-black'
-                                  : 'text-slate-600 hover:text-blue-600 hover:bg-white'
-                              }`}
-                            >
-                              <Wrench size={14} className="shrink-0 text-blue-600" />
-                              <span>Solicitações de Manutenção</span>
-                            </button>
+                            {(isAdmin || userPerms.maintenance.requests || userPerms.maintenance.newRequest || userPerms.maintenance.machineStops || userPerms.maintenance.exportPdf || userPerms.maintenance.sendOutlook) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('maintenance');
+                                  setMaintenanceSubTab('causes');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'maintenance' && maintenanceSubTab !== 'analytics'
+                                    ? 'bg-blue-100 text-blue-700 font-black'
+                                    : 'text-slate-600 hover:text-blue-600 hover:bg-white'
+                                }`}
+                              >
+                                <Wrench size={14} className="shrink-0 text-blue-600" />
+                                <span>Solicitações de Manutenção</span>
+                              </button>
+                            )}
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('maintenance');
-                                setMaintenanceSubTab('analytics');
-                                setIsMainMenuOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                                activeTab === 'maintenance' && maintenanceSubTab === 'analytics'
-                                  ? 'bg-slate-900 text-white font-black'
-                                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                              }`}
-                            >
-                              <BarChart3 size={14} className="shrink-0 text-emerald-600" />
-                              <span>Paradas &amp; Disponibilidade</span>
-                            </button>
+                            {(isAdmin || userPerms.maintenance.analytics) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('maintenance');
+                                  setMaintenanceSubTab('analytics');
+                                  setIsMainMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                  activeTab === 'maintenance' && maintenanceSubTab === 'analytics'
+                                    ? 'bg-slate-900 text-white font-black'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                                }`}
+                              >
+                                <BarChart3 size={14} className="shrink-0 text-emerald-600" />
+                                <span>Paradas &amp; Disponibilidade</span>
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -24208,6 +24230,12 @@ Atenciosamente,
             initialSubTab={maintenanceSubTab}
             initialCreateRequestOpen={maintenanceInitialCreateOpen}
             onConsumeCreateRequestOpen={() => setMaintenanceInitialCreateOpen(false)}
+            canViewRequests={isAdmin || !!userPerms.maintenance.requests}
+            canViewAnalytics={isAdmin || !!userPerms.maintenance.analytics}
+            canCreateRequest={isAdmin || (!!userPerms.maintenance.newRequest && !isReadOnlyAccount)}
+            canViewMachineStops={isAdmin || !!userPerms.maintenance.machineStops}
+            canExportPdf={isAdmin || !!userPerms.maintenance.exportPdf}
+            canSendOutlook={isAdmin || (!!userPerms.maintenance.sendOutlook && !isReadOnlyAccount)}
             productionData={productionData}
             ribbonEntries={ribbonEntries}
             availableShifts={availableShifts}

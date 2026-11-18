@@ -240,30 +240,42 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
   const handleMaintenanceMasterToggle = () => {
     if (disabled) return;
     const allActive = norm.maintenance?.requests && 
-                      norm.maintenance?.causes && 
-                      norm.maintenance?.newRequest;
+                      norm.maintenance?.analytics && 
+                      norm.maintenance?.newRequest &&
+                      norm.maintenance?.machineStops &&
+                      norm.maintenance?.exportPdf &&
+                      norm.maintenance?.sendOutlook;
     
     const newVal = !allActive;
     const newMaint: MaintenancePermissions = {
       enabled: newVal,
       requests: newVal,
-      causes: newVal,
-      newRequest: newVal
+      analytics: newVal,
+      newRequest: newVal,
+      machineStops: newVal,
+      exportPdf: newVal,
+      sendOutlook: newVal
     };
     updatePerms({ maintenance: newMaint });
   };
 
-  const handleMaintenanceSubToggle = (key: keyof Omit<MaintenancePermissions, 'enabled'>) => {
+  const handleMaintenanceSubToggle = (key: 'requests' | 'analytics' | 'newRequest' | 'machineStops' | 'exportPdf' | 'sendOutlook') => {
     if (disabled) return;
     const current = norm.maintenance || {
-      enabled: false, requests: false, causes: false, newRequest: false
+      enabled: false, requests: false, analytics: false, newRequest: false, machineStops: false, exportPdf: false, sendOutlook: false
     };
-    const updated = {
-      ...current,
+    const updated: MaintenancePermissions = {
+      enabled: false,
+      requests: !!current.requests,
+      analytics: !!current.analytics,
+      newRequest: !!current.newRequest,
+      machineStops: !!current.machineStops,
+      exportPdf: !!current.exportPdf,
+      sendOutlook: !!current.sendOutlook,
       [key]: !current[key]
     };
-    const anyActive = updated.requests || updated.causes || updated.newRequest;
-    updated.enabled = anyActive;
+    const anyActive = updated.requests || updated.analytics || updated.newRequest || updated.machineStops || updated.exportPdf || updated.sendOutlook;
+    updated.enabled = !!anyActive;
     updatePerms({ maintenance: updated });
   };
 
@@ -369,8 +381,11 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
 
   const countMaintenance = [
     norm.maintenance?.requests,
-    norm.maintenance?.causes,
-    norm.maintenance?.newRequest
+    norm.maintenance?.analytics,
+    norm.maintenance?.newRequest,
+    norm.maintenance?.machineStops,
+    norm.maintenance?.exportPdf,
+    norm.maintenance?.sendOutlook
   ].filter(Boolean).length;
 
   const countSettings = [
@@ -843,10 +858,10 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                   countMaintenance > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {countMaintenance}/3 ativas
+                  {countMaintenance}/6 ativas
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-slate-400">Solicitações, ordem de serviço e causas</p>
+              <p className="text-[8.5px] font-medium text-slate-400">Solicitações, paradas &amp; disponibilidade e botões de ação</p>
             </div>
           </div>
 
@@ -855,14 +870,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               type="button"
               onClick={handleMaintenanceMasterToggle}
               className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
-                countMaintenance === 3
+                countMaintenance === 6
                   ? 'bg-amber-600 text-white shadow-xs'
                   : countMaintenance > 0
                     ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countMaintenance === 3 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countMaintenance === 6 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -877,9 +892,12 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         {expandedSections.maintenance && (
           <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
             {[
-              { key: 'requests' as const, label: 'Solicitações de Manutenção', desc: 'Visualizar lista e histórico de chamados' },
-              { key: 'causes' as const, label: 'Análise de Causas & BI', desc: 'Diagnóstico de paradas e intervenções' },
-              { key: 'newRequest' as const, label: 'Abrir Nova Solicitação', desc: 'Permissão para abrir novos chamados oficiais' }
+              { key: 'requests' as const, label: 'Solicitações de Manutenção', desc: 'Visualizar e gerenciar chamados e soluções' },
+              { key: 'analytics' as const, label: 'Paradas & Disponibilidade', desc: 'Aba de gráficos de paradas, OEE e disponibilidade' },
+              { key: 'newRequest' as const, label: 'Nova Solicitação', desc: 'Exibir ou ocultar o botão de criar nova solicitação' },
+              { key: 'machineStops' as const, label: 'Parada de Máquina', desc: 'Exibir botão Paradas de Máquina (100%)' },
+              { key: 'exportPdf' as const, label: 'Exportar PDF', desc: 'Exibir botão Exportar PDF nas solicitações' },
+              { key: 'sendOutlook' as const, label: 'Enviar por Outlook', desc: 'Exibir botão Enviar por Outlook nas solicitações' }
             ].map(item => {
               const active = !!norm.maintenance?.[item.key];
               return (

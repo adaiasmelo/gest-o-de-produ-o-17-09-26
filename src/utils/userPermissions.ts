@@ -62,8 +62,11 @@ export const DEFAULT_PERSONNEL_PERMISSIONS: PersonnelPermissions = {
 export const DEFAULT_MAINTENANCE_PERMISSIONS: MaintenancePermissions = {
   enabled: true,
   requests: true,
-  causes: true,
-  newRequest: true
+  analytics: true,
+  newRequest: true,
+  machineStops: true,
+  exportPdf: true,
+  sendOutlook: true
 };
 
 export const DEFAULT_PROJECTION_PERMISSIONS: ProjectionPermissions = {
@@ -158,8 +161,11 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       maintenance: {
         enabled: false,
         requests: false,
-        causes: false,
-        newRequest: false
+        analytics: false,
+        newRequest: false,
+        machineStops: false,
+        exportPdf: false,
+        sendOutlook: false
       },
       projection: {
         enabled: false
@@ -235,8 +241,11 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       maintenance: {
         enabled: true,
         requests: true,
-        causes: true,
-        newRequest: false
+        analytics: true,
+        newRequest: false,
+        machineStops: true,
+        exportPdf: true,
+        sendOutlook: false
       },
       projection: {
         enabled: true
@@ -312,8 +321,11 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       maintenance: {
         enabled: true,
         requests: true,
-        causes: true,
-        newRequest: true
+        analytics: true,
+        newRequest: true,
+        machineStops: true,
+        exportPdf: true,
+        sendOutlook: true
       },
       projection: {
         enabled: true
@@ -389,8 +401,11 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       maintenance: {
         enabled: true,
         requests: true,
-        causes: true,
-        newRequest: true
+        analytics: true,
+        newRequest: true,
+        machineStops: true,
+        exportPdf: true,
+        sendOutlook: true
       },
       projection: {
         enabled: true
@@ -456,8 +471,11 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
     maintenance: {
       enabled: true,
       requests: true,
-      causes: true,
-      newRequest: true
+      analytics: true,
+      newRequest: true,
+      machineStops: true,
+      exportPdf: true,
+      sendOutlook: true
     },
     projection: {
       enabled: true
@@ -530,8 +548,11 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       maintenance: {
         enabled: true,
         requests: true,
-        causes: true,
-        newRequest: true
+        analytics: true,
+        newRequest: true,
+        machineStops: true,
+        exportPdf: true,
+        sendOutlook: true
       },
       projection: {
         enabled: true
@@ -629,10 +650,23 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
 
   // Manutenção
   const rawMaint = perms?.maintenance;
-  const maintRequests = rawMaint ? !!rawMaint.requests : (hasGranular ? false : true);
-  const maintCauses = rawMaint ? !!rawMaint.causes : (hasGranular ? false : true);
+  const maintRequests = rawMaint
+    ? (rawMaint.requests !== undefined ? !!rawMaint.requests : !!rawMaint.causes)
+    : (hasGranular ? false : true);
+  const maintAnalytics = rawMaint
+    ? (rawMaint.analytics !== undefined ? !!rawMaint.analytics : !!rawMaint.causes)
+    : (hasGranular ? false : true);
   const maintNewRequest = !isReadOnly && (rawMaint ? !!rawMaint.newRequest : (hasGranular ? false : true));
-  const maintHasAny = maintRequests || maintCauses || maintNewRequest;
+  const maintMachineStops = rawMaint
+    ? (rawMaint.machineStops !== undefined ? !!rawMaint.machineStops : maintRequests)
+    : (hasGranular ? false : true);
+  const maintExportPdf = rawMaint
+    ? (rawMaint.exportPdf !== undefined ? !!rawMaint.exportPdf : maintRequests)
+    : (hasGranular ? false : true);
+  const maintSendOutlook = !isReadOnly && (rawMaint
+    ? (rawMaint.sendOutlook !== undefined ? !!rawMaint.sendOutlook : maintRequests)
+    : (hasGranular ? false : true));
+  const maintHasAny = maintRequests || maintAnalytics || maintNewRequest || maintMachineStops || maintExportPdf || maintSendOutlook;
   const maintEnabled = maintHasAny || (rawMaint?.enabled === true);
 
   // Projeção
@@ -718,8 +752,11 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
     maintenance: {
       enabled: maintEnabled,
       requests: maintRequests,
-      causes: maintCauses,
-      newRequest: maintNewRequest
+      analytics: maintAnalytics,
+      newRequest: maintNewRequest,
+      machineStops: maintMachineStops,
+      exportPdf: maintExportPdf,
+      sendOutlook: maintSendOutlook
     },
     projection: {
       enabled: projEnabled
@@ -821,6 +858,18 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
 
   // 6. Se o usuário tem acesso à Manutenção
   if (hasMaintenance) {
+    if (
+      perms.maintenance?.requests ||
+      perms.maintenance?.newRequest ||
+      perms.maintenance?.machineStops ||
+      perms.maintenance?.exportPdf ||
+      perms.maintenance?.sendOutlook
+    ) {
+      return { tab: 'maintenance', maintenanceSubTab: 'causes' };
+    }
+    if (perms.maintenance?.analytics) {
+      return { tab: 'maintenance', maintenanceSubTab: 'analytics' };
+    }
     return { tab: 'maintenance', maintenanceSubTab: 'causes' };
   }
 

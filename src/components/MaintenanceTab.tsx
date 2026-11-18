@@ -42,7 +42,12 @@ import {
   Cell,
   ResponsiveContainer,
   Tooltip,
-  Legend
+  Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid
 } from 'recharts';
 
 interface MaintenanceTabProps {
@@ -59,6 +64,12 @@ interface MaintenanceTabProps {
   initialSubTab?: 'causes' | 'analytics';
   initialCreateRequestOpen?: boolean;
   onConsumeCreateRequestOpen?: () => void;
+  canViewRequests?: boolean;
+  canViewAnalytics?: boolean;
+  canCreateRequest?: boolean;
+  canViewMachineStops?: boolean;
+  canExportPdf?: boolean;
+  canSendOutlook?: boolean;
   productionData?: ProductionEntry[];
   ribbonEntries?: RibbonCuttingEntry[];
   availableShifts?: Shift[];
@@ -115,6 +126,12 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   initialSubTab = 'causes',
   initialCreateRequestOpen = false,
   onConsumeCreateRequestOpen,
+  canViewRequests = true,
+  canViewAnalytics = true,
+  canCreateRequest = true,
+  canViewMachineStops = true,
+  canExportPdf = true,
+  canSendOutlook = true,
   productionData = [],
   ribbonEntries = [],
   availableShifts = [],
@@ -122,30 +139,53 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   systemLogo,
   systemName,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'causes' | 'analytics'>(
-    initialSubTab === 'analytics' ? 'analytics' : 'causes'
-  );
+  const allowRequestsView = canViewRequests || (canCreateRequest && !isReadOnly) || canViewMachineStops || canExportPdf || (canSendOutlook && !isReadOnly);
+  const allowAnalyticsView = canViewAnalytics;
+  const allowCreateButton = canCreateRequest && !isReadOnly;
+  const allowMachineStopsButton = canViewMachineStops;
+  const allowExportPdfButton = canExportPdf;
+  const allowSendOutlookButton = canSendOutlook && !isReadOnly;
+
+  const [activeSubTab, setActiveSubTab] = useState<'causes' | 'analytics'>(() => {
+    if (initialSubTab === 'analytics' && allowAnalyticsView) return 'analytics';
+    if (!allowRequestsView && allowAnalyticsView) return 'analytics';
+    return 'causes';
+  });
 
   useEffect(() => {
-    if (initialSubTab) {
-      setActiveSubTab(initialSubTab === 'analytics' ? 'analytics' : 'causes');
+    if (initialSubTab === 'analytics' && allowAnalyticsView) {
+      setActiveSubTab('analytics');
+    } else if (initialSubTab !== 'analytics' && allowRequestsView) {
+      setActiveSubTab('causes');
+    } else if (allowAnalyticsView && !allowRequestsView) {
+      setActiveSubTab('analytics');
     }
-  }, [initialSubTab]);
+  }, [initialSubTab, allowAnalyticsView, allowRequestsView]);
+
+  useEffect(() => {
+    if (activeSubTab === 'analytics' && !allowAnalyticsView && allowRequestsView) {
+      setActiveSubTab('causes');
+    } else if (activeSubTab !== 'analytics' && !allowRequestsView && allowAnalyticsView) {
+      setActiveSubTab('analytics');
+    }
+  }, [activeSubTab, allowAnalyticsView, allowRequestsView]);
 
   useEffect(() => {
     if (initialCreateRequestOpen) {
-      setActiveSubTab('causes');
-      setEditingIssue(null);
-      setFormTitle('');
-      setFormCause('');
-      setFormPriority('Média');
-      setFormSector('');
-      setFormMachine('');
-      setFormReporter(loggedUser?.name || '');
-      setIsAddModalOpen(true);
+      if (allowCreateButton) {
+        setActiveSubTab('causes');
+        setEditingIssue(null);
+        setFormTitle('');
+        setFormCause('');
+        setFormPriority('Média');
+        setFormSector('');
+        setFormMachine('');
+        setFormReporter(loggedUser?.name || '');
+        setIsAddModalOpen(true);
+      }
       onConsumeCreateRequestOpen?.();
     }
-  }, [initialCreateRequestOpen, loggedUser, onConsumeCreateRequestOpen]);
+  }, [initialCreateRequestOpen, allowCreateButton, loggedUser, onConsumeCreateRequestOpen]);
 
   const [issues, setIssues] = useState<MaintenanceIssue[]>([]);
   const [isPrintingPdf, setIsPrintingPdf] = useState(false);
@@ -158,6 +198,9 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   // PDF Export Modal State
   const [isExportPdfModalOpen, setIsExportPdfModalOpen] = useState(false);
   const [isOutlookShareModalOpen, setIsOutlookShareModalOpen] = useState(false);
+  const [isProportionalStopsModalOpen, setIsProportionalStopsModalOpen] = useState(false);
+  const [stopsModalMonth, setStopsModalMonth] = useState<string>(dashboardMonth || 'Todos');
+  const [stopsModalGroupBy, setStopsModalGroupBy] = useState<'machine' | 'operator'>('machine');
   const [pdfStatusOption, setPdfStatusOption] = useState<'Todos' | 'Pendente' | 'Em Andamento' | 'Resolvido'>('Todos');
   const [pdfDateFilterType, setPdfDateFilterType] = useState<'Todos' | 'Dia' | 'Mês' | 'Ano'>('Todos');
   const [pdfSelectedDay, setPdfSelectedDay] = useState(new Date().toISOString().split('T')[0]);
@@ -216,6 +259,128 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
   // Resolution Notes State
   const [resolutionNotes, setResolutionNotes] = useState('');
+
+  // Available months for Proportional Stops (100%) modal
+  const stopsAvailableMonths = useMemo(() => {
+    const set = new Set<string>();
+    (productionData || []).forEach((e) => {
+      if (e?.date && e.date.length >= 7) {
+        const y = parseInt(e.date.substring(0, 4), 10);
+        if (!isNaN(y) && y >= 2026) set.add(e.date.substring(0, 7));
+      }
+    });
+    (ribbonEntries || []).forEach((e) => {
+      if (e?.date && e.date.length >= 7) {
+        const y = parseInt(e.date.substring(0, 4), 10);
+        if (!isNaN(y) && y >= 2026) set.add(e.date.substring(0, 7));
+      }
+    });
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [productionData, ribbonEntries]);
+
+  useEffect(() => {
+    if (dashboardMonth && stopsAvailableMonths.includes(dashboardMonth)) {
+      setStopsModalMonth(dashboardMonth);
+    } else if (stopsAvailableMonths.length > 0 && stopsModalMonth !== 'Todos' && !stopsAvailableMonths.includes(stopsModalMonth)) {
+      setStopsModalMonth(stopsAvailableMonths[0]);
+    }
+  }, [dashboardMonth, stopsAvailableMonths]);
+
+  // Proportional Stops 100% Data (Cast 1, Cast 2, Erema, Ghezzi, Lintech, Wultec)
+  const plantProportionalStopsData = useMemo(() => {
+    const normExtMachine = (raw?: string): string | null => {
+      const m = (raw || '').trim().toLowerCase();
+      if (!m) return null;
+      if (m.includes('cast 1') || m.includes('cast1') || m.includes('extrusora 1') || m.includes('extrusora1')) return 'Cast 1';
+      if (m.includes('cast 2') || m.includes('cast2') || m.includes('extrusora 2') || m.includes('extrusora2')) return 'Cast 2';
+      if (m.includes('erema')) return 'Erema';
+      return null;
+    };
+
+    const normRibMachine = (raw?: string): string | null => {
+      const m = (raw || '').trim().toLowerCase();
+      if (!m) return null;
+      if (m.includes('ghezzi') || m.includes('gehl') || m.includes('ghezze') || m.includes('giese') || m.includes('geze')) return 'Ghezzi';
+      if (m.includes('lintech') || m.includes('lintec')) return 'Lintech';
+      if (m.includes('wultec') || m.includes('ultech') || m.includes('ultec') || m.includes('wutec') || m.includes('utec') || m.includes('uteck') || m.includes('otec') || m.includes('oltech')) return 'Wultec';
+      return null;
+    };
+
+    const machineOrder = ['Cast 1', 'Cast 2', 'Erema', 'Ghezzi', 'Lintech', 'Wultec'];
+    const groupMap: Record<string, { name: string; sector: string; manut: number; proc: number; outros: number }> = {};
+
+    if (stopsModalGroupBy === 'machine') {
+      groupMap['Cast 1'] = { name: 'Cast 1', sector: 'Extrusão', manut: 0, proc: 0, outros: 0 };
+      groupMap['Cast 2'] = { name: 'Cast 2', sector: 'Extrusão', manut: 0, proc: 0, outros: 0 };
+      groupMap['Erema'] = { name: 'Erema', sector: 'Reciclagem', manut: 0, proc: 0, outros: 0 };
+      groupMap['Ghezzi'] = { name: 'Ghezzi', sector: 'Corte de Fita', manut: 0, proc: 0, outros: 0 };
+      groupMap['Lintech'] = { name: 'Lintech', sector: 'Corte de Fita', manut: 0, proc: 0, outros: 0 };
+      groupMap['Wultec'] = { name: 'Wultec', sector: 'Corte de Fita', manut: 0, proc: 0, outros: 0 };
+    }
+
+    (productionData || []).forEach((e) => {
+      if (!e || !e.date) return;
+      const year = parseInt(e.date.split('-')[0], 10);
+      if (isNaN(year) || year < 2026) return;
+      if (stopsModalMonth !== 'Todos' && !e.date.startsWith(stopsModalMonth)) return;
+      const isExcludedMonth = e.date.substring(5, 7) === '05' || e.date.substring(5, 7) === '06';
+      const isExistingPastEntry = !e.updatedAt || e.updatedAt < '2026-06-12T17:44:00Z';
+      if (isExcludedMonth && (e.machine || '').toLowerCase().includes('cast 2') && isExistingPastEntry) {
+        return;
+      }
+      const machine = normExtMachine(e.machine);
+      if (!machine) return;
+
+      const key = stopsModalGroupBy === 'machine' ? machine : (e.operator || 'Sem Operador').trim();
+      if (!groupMap[key]) {
+        groupMap[key] = { name: key, sector: machine === 'Erema' ? 'Reciclagem' : 'Extrusão', manut: 0, proc: 0, outros: 0 };
+      }
+      groupMap[key].manut += e.manutencaoMin || 0;
+      groupMap[key].proc += e.processoMin || 0;
+      groupMap[key].outros += e.outrosMin || 0;
+    });
+
+    (ribbonEntries || []).forEach((e) => {
+      if (!e || !e.date) return;
+      const year = parseInt(e.date.split('-')[0], 10);
+      if (isNaN(year) || year < 2026) return;
+      if (stopsModalMonth !== 'Todos' && !e.date.startsWith(stopsModalMonth)) return;
+      const machine = normRibMachine(e.machine);
+      if (!machine) return;
+
+      const key = stopsModalGroupBy === 'machine' ? machine : (e.operator || 'Sem Operador').trim();
+      if (!groupMap[key]) {
+        groupMap[key] = { name: key, sector: 'Corte de Fita', manut: 0, proc: 0, outros: 0 };
+      }
+      groupMap[key].manut += e.manutencaoMin || 0;
+      groupMap[key].proc += e.processoMin || 0;
+      groupMap[key].outros += e.outrosMin || 0;
+    });
+
+    const rows = Object.values(groupMap)
+      .map((d) => {
+        const total = d.manut + d.proc + d.outros;
+        return {
+          name: d.name,
+          sector: d.sector,
+          manutMin: Math.round(d.manut),
+          procMin: Math.round(d.proc),
+          outrosMin: Math.round(d.outros),
+          totalMin: Math.round(total),
+          manutPct: total > 0 ? Number(((d.manut / total) * 100).toFixed(1)) : 0,
+          procPct: total > 0 ? Number(((d.proc / total) * 100).toFixed(1)) : 0,
+          outrosPct: total > 0 ? Number(((d.outros / total) * 100).toFixed(1)) : 0,
+        };
+      })
+      .filter((d) => d.totalMin > 0);
+
+    if (stopsModalGroupBy === 'machine') {
+      rows.sort((a, b) => machineOrder.indexOf(a.name) - machineOrder.indexOf(b.name));
+    } else {
+      rows.sort((a, b) => b.totalMin - a.totalMin);
+    }
+    return rows;
+  }, [productionData, ribbonEntries, stopsModalMonth, stopsModalGroupBy]);
 
   // Auto-fill lists based on database
   const [sectors, setSectors] = useState<string[]>(['Extrusão', 'Reciclagem', 'Corte de Fita', 'Manutenção', 'Administração']);
@@ -965,31 +1130,35 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       
       {/* Sub-navegação interna de Manutenção */}
       <div className="bg-white p-2 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 max-w-2xl mx-auto">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('causes')}
-          className={`flex-1 py-2.5 px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeSubTab === 'causes'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Wrench size={15} />
-          <span>Solicitações de Manutenção</span>
-        </button>
+        {allowRequestsView && (
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('causes')}
+            className={`flex-1 py-2.5 px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'causes'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Wrench size={15} />
+            <span>Solicitações de Manutenção</span>
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('analytics')}
-          className={`flex-1 py-2.5 px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeSubTab === 'analytics'
-              ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <BarChart3 size={15} />
-          <span>Paradas &amp; Disponibilidade</span>
-        </button>
+        {allowAnalyticsView && (
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('analytics')}
+            className={`flex-1 py-2.5 px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'analytics'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <BarChart3 size={15} />
+            <span>Paradas &amp; Disponibilidade</span>
+          </button>
+        )}
       </div>
 
       {activeSubTab === 'analytics' ? (
@@ -1017,37 +1186,54 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
             </p>
           </div>
           <div className="flex flex-wrap gap-3 banner-actions-group">
-            <button
-              onClick={() => {
-                setEditingIssue(null);
-                setFormTitle('');
-                setFormCause('');
-                setFormPriority('Média');
-                setFormSector('');
-                setFormMachine('');
-                setFormReporter(loggedUser?.name || '');
-                setIsAddModalOpen(true);
-              }}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 shadow-lg shadow-blue-500/20 transition-all border border-blue-500"
-            >
-              <Plus size={16} />
-              <span>Nova Solicitação</span>
-            </button>
-            <button
-              onClick={() => setIsExportPdfModalOpen(true)}
-              className="bg-slate-700 hover:bg-slate-600 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 transition-all border border-slate-600"
-            >
-              <Download size={16} />
-              <span>Exportar PDF</span>
-            </button>
-            <button
-              onClick={shareViaOutlook}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 transition-all border border-indigo-500 shadow-lg shadow-indigo-500/20"
-              title="Compartilhar lista filtrada de causas agrupada por máquina via Outlook"
-            >
-              <Mail size={16} />
-              <span>Enviar por Outlook</span>
-            </button>
+            {allowCreateButton && (
+              <button
+                onClick={() => {
+                  setEditingIssue(null);
+                  setFormTitle('');
+                  setFormCause('');
+                  setFormPriority('Média');
+                  setFormSector('');
+                  setFormMachine('');
+                  setFormReporter(loggedUser?.name || '');
+                  setIsAddModalOpen(true);
+                }}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 shadow-lg shadow-blue-500/20 transition-all border border-blue-500 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>Nova Solicitação</span>
+              </button>
+            )}
+            {allowMachineStopsButton && (
+              <button
+                type="button"
+                onClick={() => setIsProportionalStopsModalOpen(true)}
+                className="bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 shadow-lg shadow-rose-500/20 transition-all border border-rose-500 cursor-pointer"
+                title="Abrir gráfico proporcional de paradas (100%) de Extrusão e Corte de Fita"
+              >
+                <BarChart3 size={16} />
+                <span>Paradas de Máquina (100%)</span>
+              </button>
+            )}
+            {allowExportPdfButton && (
+              <button
+                onClick={() => setIsExportPdfModalOpen(true)}
+                className="bg-slate-700 hover:bg-slate-600 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 transition-all border border-slate-600 cursor-pointer"
+              >
+                <Download size={16} />
+                <span>Exportar PDF</span>
+              </button>
+            )}
+            {allowSendOutlookButton && (
+              <button
+                onClick={shareViaOutlook}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-wider px-6 py-4 rounded-2xl flex items-center gap-2.5 transition-all border border-indigo-500 shadow-lg shadow-indigo-500/20 cursor-pointer"
+                title="Compartilhar lista filtrada de causas agrupada por máquina via Outlook"
+              >
+                <Mail size={16} />
+                <span>Enviar por Outlook</span>
+              </button>
+            )}
           </div>
         </div>
         
@@ -1264,24 +1450,28 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           <div className="space-y-1">
             <h3 className="text-slate-700 font-black text-sm uppercase tracking-wider">Nenhuma solicitação encontrada</h3>
             <p className="text-slate-400 text-xs max-w-sm">
-              Não há solicitações correspondentes aos filtros selecionados. Tente ajustar os filtros ou crie uma nova solicitação.
+              {allowCreateButton
+                ? 'Não há solicitações correspondentes aos filtros selecionados. Tente ajustar os filtros ou crie uma nova solicitação.'
+                : 'Não há solicitações correspondentes aos filtros selecionados. Tente ajustar os filtros para visualizar outros registros.'}
             </p>
           </div>
-          <button
-            onClick={() => {
-              setEditingIssue(null);
-              setFormTitle('');
-              setFormCause('');
-              setFormPriority('Média');
-              setFormSector('');
-              setFormMachine('');
-              setFormReporter(loggedUser?.name || '');
-              setIsAddModalOpen(true);
-            }}
-            className="mt-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider px-5 py-3 rounded-2xl shadow-md transition-all"
-          >
-            Nova Solicitação
-          </button>
+          {allowCreateButton && (
+            <button
+              onClick={() => {
+                setEditingIssue(null);
+                setFormTitle('');
+                setFormCause('');
+                setFormPriority('Média');
+                setFormSector('');
+                setFormMachine('');
+                setFormReporter(loggedUser?.name || '');
+                setIsAddModalOpen(true);
+              }}
+              className="mt-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider px-5 py-3 rounded-2xl shadow-md transition-all cursor-pointer"
+            >
+              Nova Solicitação
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-10">
@@ -1910,6 +2100,160 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                   <span>Abrir Outlook</span>
                 </button>
               </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Modal: Breakdown Proporcional de Paradas (100%) — Extrusão & Corte de Fita */}
+      {isProportionalStopsModalOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[120] flex items-center justify-center p-4"
+          onClick={() => setIsProportionalStopsModalOpen(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.96, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-[2rem] w-full max-w-4xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 bg-slate-50/70">
+              <div>
+                <h3 className="text-sm sm:text-base font-black uppercase text-slate-800 tracking-wider">
+                  Breakdown Proporcional de Paradas (100%)
+                </h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                  Cast 1, Cast 2, Erema &amp; Máquinas do Corte de Fita (Ghezzi, Lintech, Wultec)
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={stopsModalMonth}
+                  onChange={(e) => setStopsModalMonth(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-bold text-slate-700"
+                >
+                  <option value="Todos">Todos os Meses</option>
+                  {stopsAvailableMonths.map((m) => {
+                    const [y, mo] = m.split('-');
+                    const names = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                    const label = `${names[parseInt(mo, 10) - 1] || mo}/${y}`;
+                    return (
+                      <option key={m} value={m}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setStopsModalGroupBy('machine')}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      stopsModalGroupBy === 'machine' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                    }`}
+                  >
+                    Máquinas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStopsModalGroupBy('operator')}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      stopsModalGroupBy === 'operator' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                    }`}
+                  >
+                    Operador
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsProportionalStopsModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 rounded-xl transition-all cursor-pointer"
+                  aria-label="Fechar gráfico"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              <div className="h-[320px] w-full">
+                {plantProportionalStopsData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={plantProportionalStopsData} margin={{ top: 10, right: 16, left: -16, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="name" stroke="#94a3b8" style={{ fontSize: 10, fontWeight: 'bold' }} />
+                      <YAxis domain={[0, 100]} tickFormatter={(tick) => `${tick}%`} stroke="#475569" style={{ fontSize: 10, fontWeight: 'bold' }} />
+                      <Tooltip
+                        formatter={(val: any, name: any, props: any) => {
+                          const p = props?.payload;
+                          const min =
+                            name === 'Parada Manutenção'
+                              ? p?.manutMin
+                              : name === 'Parada Processo'
+                              ? p?.procMin
+                              : p?.outrosMin;
+                          return [`${val}% (${min ?? 0} min)`, name];
+                        }}
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 'bold' }}
+                      />
+                      <Legend iconType="rect" wrapperStyle={{ fontSize: 11, fontWeight: 'bold', paddingTop: 10 }} />
+                      <Bar dataKey="manutPct" name="Parada Manutenção" stackId="stops-pct" fill="#ef4444" unit="%" />
+                      <Bar dataKey="procPct" name="Parada Processo" stackId="stops-pct" fill="#f59e0b" unit="%" />
+                      <Bar dataKey="outrosPct" name="Outras Paradas" stackId="stops-pct" fill="#64748b" unit="%" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-slate-400 font-bold text-xs uppercase">
+                    Sem inatividades registradas para o período selecionado
+                  </div>
+                )}
+              </div>
+
+              {/* Resumo Numérico por Máquina / Operador */}
+              {plantProportionalStopsData.length > 0 && (
+                <div className="border border-slate-100 rounded-2xl overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">{stopsModalGroupBy === 'machine' ? 'Máquina' : 'Operador'}</th>
+                        <th className="py-2.5 px-3 text-right text-red-600">Manutenção</th>
+                        <th className="py-2.5 px-3 text-right text-amber-600">Processo</th>
+                        <th className="py-2.5 px-3 text-right text-slate-600">Outros</th>
+                        <th className="py-2.5 px-3 text-right">Total Parado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs tabular-nums">
+                      {plantProportionalStopsData.map((row) => (
+                        <tr key={row.name} className="hover:bg-slate-50/70">
+                          <td className="py-2.5 px-3 font-extrabold text-slate-800">
+                            {row.name}
+                            {stopsModalGroupBy === 'machine' && (
+                              <span className="ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                                {row.sector}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-red-600">
+                            {row.manutPct}% <span className="text-[10px] text-slate-400 font-medium">({row.manutMin}m)</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-amber-600">
+                            {row.procPct}% <span className="text-[10px] text-slate-400 font-medium">({row.procMin}m)</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-600">
+                            {row.outrosPct}% <span className="text-[10px] text-slate-400 font-medium">({row.outrosMin}m)</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-extrabold text-slate-900">{row.totalMin} min</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </motion.div>
         </div>

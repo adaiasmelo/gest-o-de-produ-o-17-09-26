@@ -332,9 +332,13 @@ export interface PersonnelPermissions {
 
 export interface MaintenancePermissions {
   enabled: boolean;
-  requests: boolean;     // Solicitações / Ordens de Serviço
-  causes: boolean;       // Causas & Indicadores de Parada
-  newRequest: boolean;   // Nova Solicitação
+  requests: boolean;     // Solicitações de Manutenção
+  analytics?: boolean;   // Paradas & Disponibilidade (Gráficos e OEE)
+  newRequest: boolean;   // Nova Solicitação (exibir ou ocultar botão)
+  machineStops?: boolean; // Parada de Máquina (botão Paradas de Máquina 100%)
+  exportPdf?: boolean;    // Exportar PDF (botão Exportar PDF)
+  sendOutlook?: boolean;  // Enviar por Outlook (botão Enviar por Outlook)
+  causes?: boolean;      // Legado (retrocompatibilidade)
 }
 
 export interface ProjectionPermissions {

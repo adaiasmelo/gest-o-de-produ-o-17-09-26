@@ -499,6 +499,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onNavigateTab('maintenance', 'causes');
         }
       },
+      {
+        id: 'nav-maintenance-analytics',
+        category: 'navigation',
+        title: 'Manutenção > Paradas & Disponibilidade',
+        subtitle: 'Gráficos de paradas de máquina, OEE, MTBF, MTTR e disponibilidade',
+        badge: 'Manutenção',
+        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        icon: <BarChart3 size={18} />,
+        iconBg: 'bg-emerald-500/10 text-emerald-600',
+        iconColor: 'text-emerald-600',
+        keywords: ['paradas', 'disponibilidade', 'oee', 'mtbf', 'mttr', 'graficos manutencao'],
+        action: () => {
+          onClose();
+          onNavigateTab('maintenance', 'analytics');
+        }
+      },
 
       // ==========================================
       // MÁQUINAS & EQUIPAMENTOS
