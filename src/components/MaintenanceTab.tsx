@@ -220,6 +220,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingIssue, setEditingIssue] = useState<MaintenanceIssue | null>(null);
   const [selectedIssueForNotes, setSelectedIssueForNotes] = useState<MaintenanceIssue | null>(null);
+  const [activeActionCardId, setActiveActionCardId] = useState<string | null>(null);
 
   // PDF Export Modal & Multi-Selection State
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
@@ -305,6 +306,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     setSelectedTimelineStepKey(null);
     setEditingStepKey(null);
     setConfirmDeleteStepKey(null);
+    setActiveActionCardId(null);
   }, [activeSubTab, statusFilter, priorityFilter, sectorFilter]);
 
   const progressModalIssue = useMemo(
@@ -750,6 +752,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     if (!window.confirm('Deseja realmente excluir esta causa de manutenção?')) return;
     try {
       setIssues(prev => prev.filter(i => i.id !== id));
+      setActiveActionCardId(prev => (prev === id ? null : prev));
       await deleteMaintenanceIssueFromSupabase(id);
     } catch (error) {
       console.error('Erro ao excluir solicitação de manutenção no Supabase:', error);
@@ -2373,198 +2376,310 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         </div>
       ) : (
         <div className="space-y-10">
-          {Object.entries(groupedIssues).map(([sector, machinesGroup]) => (
-            <div key={sector} className="bg-slate-50/40 rounded-[2.5rem] p-6 md:p-8 border border-slate-100 space-y-6">
-              {/* Sector Header */}
-              <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse"></span>
-                  <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
-                    Setor: {sector}
-                  </h3>
-                </div>
-                <span className="bg-blue-50 text-blue-700 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-blue-100">
-                  {Object.values(machinesGroup).flat().length} {Object.values(machinesGroup).flat().length === 1 ? 'pendência' : 'pendências'}
-                </span>
-              </div>
+          {Object.entries(groupedIssues).map(([sector, machinesGroup]) => {
+            const normSector = sector
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '');
+            const isExtrusionSector = normSector.includes('extrusao');
 
-              {/* Machines inside this sector */}
-              <div className="space-y-8 pl-1 md:pl-4">
-                {Object.entries(machinesGroup).map(([machine, machineIssues]) => (
-                  <div key={machine} className="space-y-4">
-                    {/* Machine Sub-Header */}
-                    <div className="flex items-center gap-2">
-                      <Settings className="text-slate-400 w-4 h-4 animate-spin-slow" style={{ animationDuration: '8s' }} />
-                      <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wide">
-                        Equipamento: <span className="text-slate-900 font-black">{machine}</span>
-                      </h4>
-                      <span className="bg-slate-200/80 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-lg font-mono">
-                        {machineIssues.length}
-                      </span>
-                    </div>
+            const renderIssueCard = (issue: MaintenanceIssue) => {
+              const dateStr = new Date(issue.createdAt).toLocaleDateString('pt-BR');
+              const resolvedDateStr = issue.resolvedAt ? new Date(issue.resolvedAt).toLocaleDateString('pt-BR') : '';
+              const StatusIcon = statusColors[issue.status]?.icon || Clock;
+              const isResolved = issue.status === 'Resolvido';
+              const isSelectedForPdf = selectedIssueIds.includes(issue.id);
+              const isCardActionsOpen = activeActionCardId === issue.id;
 
-                    {/* Cards grid of this machine */}
-                    <div className="grid grid-cols-1 gap-4">
-                      <AnimatePresence mode="popLayout">
-                        {machineIssues.map((issue) => {
-                          const dateStr = new Date(issue.createdAt).toLocaleDateString('pt-BR');
-                          const resolvedDateStr = issue.resolvedAt ? new Date(issue.resolvedAt).toLocaleDateString('pt-BR') : '';
-                          const StatusIcon = statusColors[issue.status]?.icon || Clock;
-                          const isResolved = issue.status === 'Resolvido';
-                          const isSelectedForPdf = selectedIssueIds.includes(issue.id);
+              return (
+                <motion.div
+                  layout
+                  key={issue.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  onClick={() => setActiveActionCardId((prev) => (prev === issue.id ? null : issue.id))}
+                  className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 cursor-pointer ${
+                    isSelectedForPdf
+                      ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/15'
+                      : isCardActionsOpen
+                      ? 'border-indigo-300 ring-2 ring-indigo-500/15 shadow-md'
+                      : isResolved
+                      ? 'border-emerald-100 bg-emerald-50/20 opacity-85'
+                      : 'border-slate-100 hover:shadow-md'
+                  }`}
+                >
+                  {/* Top Content: Checkbox (para PDF) + Info */}
+                  <div className="flex items-start gap-4 w-full">
+                    {allowExportPdfButton && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleIssueSelection(issue.id);
+                        }}
+                        title={
+                          isSelectedForPdf
+                            ? 'Desmarcar solicitação'
+                            : 'Selecionar solicitação para exportar em PDF'
+                        }
+                        className="mt-1 shrink-0 text-slate-400 hover:text-blue-600 transition-all focus:outline-none cursor-pointer"
+                      >
+                        {isSelectedForPdf ? (
+                          <CheckSquare className="w-6 h-6 text-blue-600" />
+                        ) : (
+                          <Square className="w-6 h-6 hover:scale-105" />
+                        )}
+                      </button>
+                    )}
 
-                          return (
-                            <motion.div
-                              layout
-                              key={issue.id}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 ${
-                                isSelectedForPdf
-                                  ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/15'
-                                  : isResolved
-                                  ? 'border-emerald-100 bg-emerald-50/20 opacity-85'
-                                  : 'border-slate-100 hover:shadow-md'
-                              }`}
-                            >
-                              {/* Top Content: Checkbox (para PDF) + Info */}
-                              <div className="flex items-start gap-4 w-full">
-                                {allowExportPdfButton && (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleIssueSelection(issue.id)}
-                                    title={
-                                      isSelectedForPdf
-                                        ? 'Desmarcar solicitação'
-                                        : 'Selecionar solicitação para exportar em PDF'
-                                    }
-                                    className="mt-1 shrink-0 text-slate-400 hover:text-blue-600 transition-all focus:outline-none cursor-pointer"
-                                  >
-                                    {isSelectedForPdf ? (
-                                      <CheckSquare className="w-6 h-6 text-blue-600" />
-                                    ) : (
-                                      <Square className="w-6 h-6 hover:scale-105" />
-                                    )}
-                                  </button>
-                                )}
+                    <div className="space-y-2.5 flex-1 min-w-0">
+                      {/* Priority and Area Tags */}
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border ${priorityColors[issue.priority]?.bg}`}>
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${priorityColors[issue.priority]?.dot}`}></span>
+                          {issue.priority}
+                        </span>
+                        
+                        <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                          {issue.sector}
+                        </span>
 
-                                <div className="space-y-2.5 flex-1 min-w-0">
-                                  {/* Priority and Area Tags */}
-                                  <div className="flex flex-wrap gap-2 items-center">
-                                    <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border ${priorityColors[issue.priority]?.bg}`}>
-                                      <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${priorityColors[issue.priority]?.dot}`}></span>
-                                      {issue.priority}
-                                    </span>
-                                    
-                                    <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-                                      {issue.sector}
-                                    </span>
+                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono">
+                          {issue.machine}
+                        </span>
 
-                                    <span className="px-2.5 py-1 text-[9px] font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono">
-                                      {issue.machine}
-                                    </span>
+                        <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg flex items-center gap-1 ${statusColors[issue.status]?.text} ${statusColors[issue.status]?.bg}`}>
+                          <StatusIcon size={12} />
+                          {issue.status}
+                        </span>
+                      </div>
 
-                                    <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg flex items-center gap-1 ${statusColors[issue.status]?.text} ${statusColors[issue.status]?.bg}`}>
-                                      <StatusIcon size={12} />
-                                      {issue.status}
-                                    </span>
-                                  </div>
+                      {/* Title and Cause Description */}
+                      <div className="space-y-1">
+                        <h3 className={`text-sm md:text-base font-black text-slate-850 leading-snug ${isResolved ? 'line-through text-slate-400' : ''}`}>
+                          {issue.title || generateTitleFromCause(issue.cause)}
+                        </h3>
+                        {issue.title && issue.title !== issue.cause && (
+                          <p className={`text-xs md:text-sm text-slate-500 whitespace-pre-wrap leading-relaxed ${isResolved ? 'line-through text-slate-400' : ''}`}>
+                            {issue.cause}
+                          </p>
+                        )}
+                      </div>
 
-                                  {/* Title and Cause Description */}
-                                  <div className="space-y-1">
-                                    <h3 className={`text-sm md:text-base font-black text-slate-850 leading-snug ${isResolved ? 'line-through text-slate-400' : ''}`}>
-                                      {issue.title || generateTitleFromCause(issue.cause)}
-                                    </h3>
-                                    {issue.title && issue.title !== issue.cause && (
-                                      <p className={`text-xs md:text-sm text-slate-500 whitespace-pre-wrap leading-relaxed ${isResolved ? 'line-through text-slate-400' : ''}`}>
-                                        {issue.cause}
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  {/* Footer Info: Reporter, Dates */}
-                                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 font-medium">
-                                    <span>Por: <strong className="text-slate-500">{issue.reporter}</strong></span>
-                                    <span>Aberto em: <strong>{dateStr}</strong></span>
-                                    {isResolved && issue.resolvedAt && (
-                                      <span className="text-emerald-600">Resolvido em: <strong>{resolvedDateStr}</strong></span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Horizontal Actions Bar (below requester info, above timeline) */}
-                              <div className="maintenance-card-actions flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100 w-full">
-                                <div className="flex flex-wrap gap-2 items-center">
-                                  {!isResolved && (
-                                    <>
-                                      <button
-                                        onClick={() => handleUpdateStatus(issue.id, 'Pendente')}
-                                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer ${issue.status === 'Pendente' ? 'bg-slate-200 border-slate-300 text-slate-800 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                      >
-                                        Pendente
-                                      </button>
-                                      <button
-                                        onClick={() => openProgressModal(issue)}
-                                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer ${issue.status === 'Em Andamento' ? 'bg-blue-600 border-blue-700 text-white shadow-sm shadow-blue-500/10' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200'}`}
-                                        title="Abrir janela de andamento e registrar etapas"
-                                      >
-                                        Em Andamento
-                                      </button>
-                                      <button
-                                        onClick={() => toggleIssueStatus(issue)}
-                                        className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white cursor-pointer"
-                                        title="Registrar solução e concluir solicitação"
-                                      >
-                                        Concluir
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center gap-2 ml-auto">
-                                  <button
-                                    onClick={() => handleStartEdit(issue)}
-                                    title="Editar Solicitação"
-                                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
-                                  >
-                                    <Edit2 size={13} />
-                                    <span>Editar</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => handleDeleteIssue(issue.id)}
-                                    title="Excluir Solicitação"
-                                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all border border-red-100 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
-                                  >
-                                    <Trash2 size={13} />
-                                    <span>Excluir</span>
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Full-width Solution or Collapsible Timeline below actions */}
-                              {issue.status === 'Resolvido' && (!issue.progressUpdates || issue.progressUpdates.length === 0) && issue.solution && (
-                                <div className="w-full bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-100 text-xs text-slate-600">
-                                  <strong className="text-emerald-800 block mb-0.5 font-bold uppercase text-[9px] tracking-wider">Solução / Obs:</strong>
-                                  {issue.solution}
-                                </div>
-                              )}
-
-                              {(issue.status === 'Em Andamento' || (issue.progressUpdates && issue.progressUpdates.length > 0)) && (
-                                renderVerticalTimeline(issue, false)
-                              )}
-                            </motion.div>
-                          );
-                        })}
-                      </AnimatePresence>
+                      {/* Footer Info: Reporter, Dates */}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 font-medium">
+                        <span>Por: <strong className="text-slate-500">{issue.reporter}</strong></span>
+                        <span>Aberto em: <strong>{dateStr}</strong></span>
+                        {isResolved && issue.resolvedAt && (
+                          <span className="text-emerald-600">Resolvido em: <strong>{resolvedDateStr}</strong></span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                ))}
+
+                  {/* Horizontal Actions Bar (below requester info, above timeline) */}
+                  {(!isResolved || isCardActionsOpen) && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="maintenance-card-actions flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100 w-full"
+                    >
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {!isResolved && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatus(issue.id, 'Pendente');
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer ${issue.status === 'Pendente' ? 'bg-slate-200 border-slate-300 text-slate-800 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                            >
+                              Pendente
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openProgressModal(issue);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer ${issue.status === 'Em Andamento' ? 'bg-blue-600 border-blue-700 text-white shadow-sm shadow-blue-500/10' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200'}`}
+                              title="Abrir janela de andamento e registrar etapas"
+                            >
+                              Em Andamento
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleIssueStatus(issue);
+                              }}
+                              className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white cursor-pointer"
+                              title="Registrar solução e concluir solicitação"
+                            >
+                              Concluir
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      {isCardActionsOpen && (
+                        <div className="flex items-center gap-2 ml-auto">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEdit(issue);
+                            }}
+                            title="Editar Solicitação"
+                            className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
+                          >
+                            <Edit2 size={13} />
+                            <span>Editar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteIssue(issue.id);
+                            }}
+                            title="Excluir Solicitação"
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all border border-red-100 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
+                          >
+                            <Trash2 size={13} />
+                            <span>Excluir</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Full-width Solution or Collapsible Timeline below actions */}
+                  {issue.status === 'Resolvido' && (!issue.progressUpdates || issue.progressUpdates.length === 0) && issue.solution && (
+                    <div className="w-full bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-100 text-xs text-slate-600">
+                      <strong className="text-emerald-800 block mb-0.5 font-bold uppercase text-[9px] tracking-wider">Solução / Obs:</strong>
+                      {issue.solution}
+                    </div>
+                  )}
+
+                  {(issue.status === 'Em Andamento' || (issue.progressUpdates && issue.progressUpdates.length > 0)) && (
+                    <div onClick={(e) => e.stopPropagation()} className="w-full">
+                      {renderVerticalTimeline(issue, false)}
+                    </div>
+                  )}
+                </motion.div>
+              );
+            };
+
+            const renderMachineGroup = (machineName: string, machineIssues: MaintenanceIssue[]) => (
+              <div key={machineName} className="space-y-4 min-w-0">
+                {/* Machine Sub-Header */}
+                <div className="flex items-center gap-2">
+                  <Settings className="text-slate-400 w-4 h-4 animate-spin-slow" style={{ animationDuration: '8s' }} />
+                  <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                    Equipamento: <span className="text-slate-900 font-black">{machineName}</span>
+                  </h4>
+                  <span className="bg-slate-200/80 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-lg font-mono">
+                    {machineIssues.length}
+                  </span>
+                </div>
+
+                {/* Cards list of this machine */}
+                {machineIssues.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4">
+                    <AnimatePresence mode="popLayout">
+                      {machineIssues.map((issue) => renderIssueCard(issue))}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <div className="bg-white/70 border border-dashed border-slate-200 rounded-3xl p-8 text-center text-xs font-semibold text-slate-400">
+                    Nenhuma solicitação encontrada para {machineName}.
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+
+            if (isExtrusionSector) {
+              const isCast1Name = (m: string) => {
+                const norm = m.toLowerCase().replace(/\s+/g, '');
+                return norm.includes('cast1') || norm.includes('extrusora1');
+              };
+              const isCast2Name = (m: string) => {
+                const norm = m.toLowerCase().replace(/\s+/g, '');
+                return norm.includes('cast2') || norm.includes('extrusora2');
+              };
+
+              const cast1Entries: MaintenanceIssue[] = [];
+              const cast2Entries: MaintenanceIssue[] = [];
+              const otherExtrusionMachines: Array<[string, MaintenanceIssue[]]> = [];
+
+              Object.entries(machinesGroup).forEach(([machine, list]) => {
+                if (isCast1Name(machine)) {
+                  cast1Entries.push(...list);
+                } else if (isCast2Name(machine)) {
+                  cast2Entries.push(...list);
+                } else {
+                  otherExtrusionMachines.push([machine, list]);
+                }
+              });
+
+              return (
+                <div key={sector} className="bg-slate-50/40 rounded-[2.5rem] p-6 md:p-8 border border-slate-100 space-y-6">
+                  {/* Sector Header */}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse"></span>
+                      <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
+                        Setor: {sector}
+                      </h3>
+                    </div>
+                    <span className="bg-blue-50 text-blue-700 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-blue-100">
+                      {Object.values(machinesGroup).flat().length} {Object.values(machinesGroup).flat().length === 1 ? 'pendência' : 'pendências'}
+                    </span>
+                  </div>
+
+                  {/* Two Columns Split: Cast 1 (Left) | Cast 2 (Right) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pl-1 md:pl-2">
+                    {renderMachineGroup('Cast 1', cast1Entries)}
+                    {renderMachineGroup('Cast 2', cast2Entries)}
+                  </div>
+
+                  {otherExtrusionMachines.length > 0 && (
+                    <div className="space-y-8 pl-1 md:pl-2 pt-2">
+                      {otherExtrusionMachines.map(([machine, machineIssues]) =>
+                        renderMachineGroup(machine, machineIssues)
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div key={sector} className="bg-slate-50/40 rounded-[2.5rem] p-6 md:p-8 border border-slate-100 space-y-6">
+                {/* Sector Header */}
+                <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse"></span>
+                    <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
+                      Setor: {sector}
+                    </h3>
+                  </div>
+                  <span className="bg-blue-50 text-blue-700 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-blue-100">
+                    {Object.values(machinesGroup).flat().length} {Object.values(machinesGroup).flat().length === 1 ? 'pendência' : 'pendências'}
+                  </span>
+                </div>
+
+                {/* Machines inside this sector */}
+                <div className="space-y-8 pl-1 md:pl-4">
+                  {Object.entries(machinesGroup).map(([machine, machineIssues]) =>
+                    renderMachineGroup(machine, machineIssues)
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
