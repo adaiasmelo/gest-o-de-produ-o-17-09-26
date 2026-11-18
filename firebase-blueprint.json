@@ -206,6 +206,8 @@
         "reporter": { "type": "string" },
         "status": { "type": "string", "enum": ["Pendente", "Em Andamento", "Resolvido"] },
         "notes": { "type": "string" },
+        "solution": { "type": "string" },
+        "progressUpdates": { "type": "array" },
         "createdAt": { "type": "string" },
         "resolvedAt": { "type": "string" },
         "userId": { "type": "string" }

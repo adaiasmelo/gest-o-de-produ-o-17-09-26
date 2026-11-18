@@ -28,10 +28,15 @@ import {
   Loader2,
   Mail,
   Wrench,
-  BarChart3
+  BarChart3,
+  Calendar,
+  History,
+  Check,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { MaintenanceIssue, MaintenancePriority, MaintenanceStatus, SystemUser, Employee, ProductionEntry, RibbonCuttingEntry, Shift } from '../types';
+import { MaintenanceIssue, MaintenancePriority, MaintenanceStatus, MaintenanceProgressEntry, SystemUser, Employee, ProductionEntry, RibbonCuttingEntry, Shift } from '../types';
 import { MaintenanceDowntimeAnalyticsView } from './MaintenanceDowntimeAnalyticsView';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -115,6 +120,29 @@ const generateTitleFromCause = (cause: string): string => {
     return firstSentence.slice(0, 47) + '...';
   }
   return firstSentence;
+};
+
+const formatDateTimeLocalInput = (date: Date = new Date()): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}`;
+};
+
+const formatBrDateTime = (dateStr?: string): string => {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+const getSortedProgressUpdates = (issue: MaintenanceIssue): MaintenanceProgressEntry[] => {
+  if (!Array.isArray(issue.progressUpdates) || issue.progressUpdates.length === 0) return [];
+  return [...issue.progressUpdates].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
 };
 
 export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({ 
@@ -259,6 +287,34 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
   // Resolution Notes State
   const [resolutionNotes, setResolutionNotes] = useState('');
+
+  // Progress / Vertical Timeline Modal & Step Editing State
+  const [progressModalIssueId, setProgressModalIssueId] = useState<string | null>(null);
+  const [newProgressText, setNewProgressText] = useState('');
+  const [newProgressDate, setNewProgressDate] = useState(() => formatDateTimeLocalInput());
+  const [isSavingProgress, setIsSavingProgress] = useState(false);
+  const [progressFeedback, setProgressFeedback] = useState<string | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [selectedTimelineStepKey, setSelectedTimelineStepKey] = useState<string | null>(null);
+  const [editingStepKey, setEditingStepKey] = useState<string | null>(null);
+  const [confirmDeleteStepKey, setConfirmDeleteStepKey] = useState<string | null>(null);
+  const [editStepText, setEditStepText] = useState('');
+  const [editStepDate, setEditStepDate] = useState('');
+  const [isUpdatingStep, setIsUpdatingStep] = useState(false);
+  const [expandedTimelineIssueIds, setExpandedTimelineIssueIds] = useState<Record<string, boolean>>({});
+
+  // Recolher automaticamente todas as linhas do tempo e limpar seleções ao mudar de tela/aba/filtro
+  useEffect(() => {
+    setExpandedTimelineIssueIds({});
+    setSelectedTimelineStepKey(null);
+    setEditingStepKey(null);
+    setConfirmDeleteStepKey(null);
+  }, [activeSubTab, statusFilter, priorityFilter, sectorFilter]);
+
+  const progressModalIssue = useMemo(
+    () => (progressModalIssueId ? issues.find((i) => i.id === progressModalIssueId) || null : null),
+    [issues, progressModalIssueId]
+  );
 
   // Available months for Proportional Stops (100%) modal
   const stopsAvailableMonths = useMemo(() => {
@@ -747,6 +803,176 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     }
   };
 
+  const openProgressModal = (issue: MaintenanceIssue) => {
+    const hasSteps = Array.isArray(issue.progressUpdates) && issue.progressUpdates.length > 0;
+    if (isReadOnly && issue.status !== 'Em Andamento' && !hasSteps) {
+      if (onBlockedAction) {
+        onBlockedAction('Alteração Bloqueada', 'A alteração de status de manutenção não é permitida no Modo de Leitura.');
+      } else {
+        alert('Operação não permitida no Modo de Leitura.');
+      }
+      return;
+    }
+    setProgressModalIssueId(issue.id);
+    setNewProgressText('');
+    setNewProgressDate(formatDateTimeLocalInput());
+    setSelectedTimelineStepKey(null);
+    setEditingStepKey(null);
+    setConfirmDeleteStepKey(null);
+    setProgressFeedback(null);
+    setProgressError(null);
+  };
+
+  const closeProgressModal = () => {
+    setProgressModalIssueId(null);
+    setSelectedTimelineStepKey(null);
+    setEditingStepKey(null);
+    setConfirmDeleteStepKey(null);
+    setExpandedTimelineIssueIds({});
+  };
+
+  const handleAddProgressStep = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!progressModalIssue) return;
+    if (isReadOnly) {
+      if (onBlockedAction) {
+        onBlockedAction('Gravação Bloqueada', 'O registro de andamento não é permitido no Modo de Leitura.');
+      }
+      return;
+    }
+    const trimmed = newProgressText.trim();
+    if (!trimmed) {
+      setProgressError('Descreva a observação do andamento antes de salvar.');
+      return;
+    }
+
+    setIsSavingProgress(true);
+    setProgressError(null);
+    try {
+      const stepId = `step_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const parsedDate = newProgressDate ? new Date(newProgressDate) : new Date();
+      const isoDate = isNaN(parsedDate.getTime()) ? new Date().toISOString() : parsedDate.toISOString();
+      const newEntry: MaintenanceProgressEntry = {
+        id: stepId,
+        text: trimmed,
+        date: isoDate,
+        author: loggedUser?.name || auth.currentUser?.displayName || 'Manutenção',
+      };
+
+      const existing = Array.isArray(progressModalIssue.progressUpdates)
+        ? progressModalIssue.progressUpdates
+        : [];
+
+      await updateDoc(doc(db, 'maintenance_issues', progressModalIssue.id), {
+        status: 'Em Andamento',
+        progressUpdates: [...existing, newEntry],
+      });
+
+      setNewProgressText('');
+      setNewProgressDate(formatDateTimeLocalInput());
+      // Manter desselecionado para que Editar/Excluir só apareçam quando o usuário clicar na etapa
+      setSelectedTimelineStepKey(null);
+      setEditingStepKey(null);
+      setConfirmDeleteStepKey(null);
+      setProgressFeedback('Etapa salva em Em Andamento! Clique em uma etapa caso precise editar ou excluir.');
+      setTimeout(() => setProgressFeedback(null), 5000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${progressModalIssue.id}`);
+    } finally {
+      setIsSavingProgress(false);
+    }
+  };
+
+  const handleStartEditStep = (issueId: string, step: MaintenanceProgressEntry) => {
+    if (isReadOnly) {
+      if (onBlockedAction) {
+        onBlockedAction('Alteração Bloqueada', 'A edição de observações não é permitida no Modo de Leitura.');
+      }
+      return;
+    }
+    const key = `${issueId}:${step.id}`;
+    setSelectedTimelineStepKey(key);
+    setEditingStepKey(key);
+    setConfirmDeleteStepKey(null);
+    setEditStepText(step.text);
+    const d = new Date(step.date);
+    setEditStepDate(isNaN(d.getTime()) ? formatDateTimeLocalInput() : formatDateTimeLocalInput(d));
+  };
+
+  const handleSaveEditStep = async (issue: MaintenanceIssue, stepId: string) => {
+    if (isReadOnly) {
+      if (onBlockedAction) {
+        onBlockedAction('Alteração Bloqueada', 'A edição de observações não é permitida no Modo de Leitura.');
+      }
+      return;
+    }
+    const trimmed = editStepText.trim();
+    if (!trimmed) return;
+
+    setIsUpdatingStep(true);
+    try {
+      const parsedDate = editStepDate ? new Date(editStepDate) : new Date();
+      const isoDate = isNaN(parsedDate.getTime()) ? new Date().toISOString() : parsedDate.toISOString();
+      const currentList = Array.isArray(issue.progressUpdates) ? issue.progressUpdates : [];
+      const updatedList = currentList.map((s) =>
+        s.id === stepId
+          ? {
+              ...s,
+              text: trimmed,
+              date: isoDate,
+              updatedAt: new Date().toISOString(),
+            }
+          : s
+      );
+
+      await updateDoc(doc(db, 'maintenance_issues', issue.id), {
+        progressUpdates: updatedList,
+      });
+      setEditingStepKey(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${issue.id}`);
+    } finally {
+      setIsUpdatingStep(false);
+    }
+  };
+
+  const handleDeleteStep = async (issue: MaintenanceIssue, stepId: string) => {
+    if (isReadOnly) {
+      if (onBlockedAction) {
+        onBlockedAction('Exclusão Bloqueada', 'A exclusão de observações não é permitida no Modo de Leitura.');
+      }
+      return;
+    }
+    setIsUpdatingStep(true);
+    try {
+      const currentList = Array.isArray(issue.progressUpdates) ? issue.progressUpdates : [];
+      const updatedList = currentList.filter((s) => s.id !== stepId);
+
+      await updateDoc(doc(db, 'maintenance_issues', issue.id), {
+        progressUpdates: updatedList,
+      });
+      setConfirmDeleteStepKey(null);
+      setEditingStepKey(null);
+      setSelectedTimelineStepKey(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `maintenance_issues/${issue.id}`);
+    } finally {
+      setIsUpdatingStep(false);
+    }
+  };
+
+  const handleOpenConcludeFromProgress = (issue: MaintenanceIssue) => {
+    if (isReadOnly) {
+      if (onBlockedAction) {
+        onBlockedAction('Alteração Bloqueada', 'A conclusão de apontamentos de manutenção não é permitida no Modo de Leitura.');
+      }
+      return;
+    }
+    setProgressModalIssueId(null);
+    setSelectedIssueForNotes(issue);
+    setResolutionNotes(issue.solution || '');
+  };
+
   // Share maintenance issues formatted by machine via Outlook
   const shareViaOutlook = async () => {
     if (isReadOnly) {
@@ -861,6 +1087,16 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           htmlText += `<span style="white-space: pre-line;">${issue.cause || 'Nenhuma descrição fornecida.'}</span>`;
           htmlText += `</div>`;
 
+          const sortedSteps = getSortedProgressUpdates(issue);
+          if (sortedSteps.length > 0) {
+            htmlText += `<div style="font-size: 9pt; color: #1e40af; margin-left: 15px; background-color: #eff6ff; padding: 10px; border-radius: 6px; border: 1px solid #bfdbfe; margin-top: 8px;">`;
+            htmlText += `<strong>LINHA DO TEMPO (ANDAMENTO):</strong><br/>`;
+            sortedSteps.forEach((st, sIdx) => {
+              htmlText += `<div style="margin-top: 4px;">${sIdx + 1}. [${formatBrDateTime(st.date)} - ${st.author}] ${st.text}</div>`;
+            });
+            htmlText += `</div>`;
+          }
+
           if (issue.status === 'Resolvido' && issue.solution) {
             htmlText += `<div style="font-size: 9.5pt; color: #065f46; margin-left: 15px; background-color: #ecfdf5; padding: 10px; border-radius: 6px; border: 1px solid #d1fae5; margin-top: 8px;">`;
             htmlText += `<strong>SOLUÇÃO / RESOLUÇÃO:</strong><br/>`;
@@ -911,6 +1147,13 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           plainText += `     Setor: ${issue.sector || 'Não especificado'}\n`;
           plainText += `     Relatado por: ${issue.reporter || 'Não especificado'} em ${dateStr}\n`;
           plainText += `     Descrição:\n     ${issue.cause || 'Nenhuma descrição fornecida.'}\n`;
+          const sortedStepsPlain = getSortedProgressUpdates(issue);
+          if (sortedStepsPlain.length > 0) {
+            plainText += `     Andamento (Linha do Tempo):\n`;
+            sortedStepsPlain.forEach((st, sIdx) => {
+              plainText += `       ${sIdx + 1}. [${formatBrDateTime(st.date)} - ${st.author}] ${st.text}\n`;
+            });
+          }
           if (issue.status === 'Resolvido' && issue.solution) {
             plainText += `     Solução/Resolução:\n     ${issue.solution}\n`;
           }
@@ -1043,8 +1286,15 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         const col3 = `PRIORIDADE: ${priorityUpper}\nSTATUS: ${statusUpper}`;
         
         const reporterNormal = issue.reporter || 'Não especificado';
+        const sortedStepsPdf = getSortedProgressUpdates(issue);
+        const timelineBlock =
+          sortedStepsPdf.length > 0
+            ? `\n\nANDAMENTO:\n${sortedStepsPdf
+                .map((st, sIdx) => `${sIdx + 1}. (${formatBrDateTime(st.date)}) ${st.text}`)
+                .join('\n')}`
+            : '';
         const solutionNormal = issue.solution || 'Nenhuma nota de solução registrada.';
-        const col4 = `RELATADO POR: ${reporterNormal}\n\nSOLUÇÃO / RESOLUÇÃO:\n${solutionNormal}`;
+        const col4 = `RELATADO POR: ${reporterNormal}${timelineBlock}\n\nSOLUÇÃO / RESOLUÇÃO:\n${solutionNormal}`;
         
         return [col1, col2, col3, col4];
       });
@@ -1123,6 +1373,294 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     } finally {
       setIsGeneratingPdf(false);
     }
+  };
+
+  const renderVerticalTimeline = (issue: MaintenanceIssue, inModal = false) => {
+    const sortedSteps = getSortedProgressUpdates(issue);
+    const isResolved = issue.status === 'Resolvido';
+    const resolvedDateStr = issue.resolvedAt ? formatBrDateTime(issue.resolvedAt) : '';
+    const isExpanded = inModal || !!expandedTimelineIssueIds[issue.id];
+    const etapasLabel = `${sortedSteps.length} ${sortedSteps.length === 1 ? 'etapa realizada' : 'etapas realizadas'}`;
+
+    const toggleExpand = () => {
+      if (inModal) return;
+      setExpandedTimelineIssueIds((prev) => {
+        const nextVal = !prev[issue.id];
+        if (!nextVal) {
+          // Limpa seleção ao recolher
+          setSelectedTimelineStepKey((cur) => (cur?.startsWith(`${issue.id}:`) ? null : cur));
+          setEditingStepKey((cur) => (cur?.startsWith(`${issue.id}:`) ? null : cur));
+          setConfirmDeleteStepKey((cur) => (cur?.startsWith(`${issue.id}:`) ? null : cur));
+        }
+        return { ...prev, [issue.id]: nextVal };
+      });
+    };
+
+    return (
+      <div className={inModal ? 'space-y-4' : 'w-full bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3.5 md:p-4 space-y-3'}>
+        <div
+          onClick={!inModal ? toggleExpand : undefined}
+          className={`flex flex-wrap items-center justify-between gap-2 ${!inModal ? 'cursor-pointer select-none' : ''}`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <History size={14} className={isResolved ? 'text-emerald-600' : 'text-blue-600'} />
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+              Em Andamento
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+              {etapasLabel}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {!isReadOnly && sortedSteps.length > 0 && isExpanded && (
+              <span className="text-[9px] font-bold text-slate-400">
+                Clique na etapa para editar ou excluir
+              </span>
+            )}
+            {!inModal && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpand();
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <span>{isExpanded ? 'Recolher' : 'Expandir'}</span>
+                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="relative pl-6 space-y-3 pt-1">
+            {/* Vertical connecting rail */}
+            <div
+              className={`absolute left-[11px] top-3 bottom-2 w-0.5 ${
+                isResolved ? 'bg-emerald-200' : 'bg-blue-200'
+              }`}
+            />
+
+            {/* Opening Step (shown in modal) */}
+            {inModal && (
+              <div className="relative">
+                <div className="absolute -left-6 top-1 w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[9px] font-black ring-4 ring-white">
+                  0
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 font-bold mb-1">
+                    <span className="uppercase tracking-wider text-slate-700 font-black">Abertura da Solicitação</span>
+                    <span>{formatBrDateTime(issue.createdAt)} • {issue.reporter}</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">{issue.cause}</p>
+                </div>
+              </div>
+            )}
+
+            {sortedSteps.length === 0 && (
+              <div className="relative">
+                <div className="absolute -left-6 top-1 w-5 h-5 rounded-full bg-blue-100 text-blue-600 border border-blue-300 flex items-center justify-center text-[9px] font-black ring-4 ring-white">
+                  •
+                </div>
+                <div className="bg-white border border-dashed border-blue-200 rounded-xl p-3 text-xs text-slate-500">
+                  Nenhuma etapa registrada ainda. Adicione a primeira etapa abaixo.
+                </div>
+              </div>
+            )}
+
+            {sortedSteps.map((step, index) => {
+              const stepKey = `${issue.id}:${step.id}`;
+              const isSelected = selectedTimelineStepKey === stepKey;
+              const isEditing = editingStepKey === stepKey;
+              const isConfirmingDelete = confirmDeleteStepKey === stepKey;
+
+              return (
+                <div key={step.id} className="relative">
+                  <div
+                    className={`absolute -left-6 top-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black ring-4 ring-white shadow-xs ${
+                      isResolved
+                        ? 'bg-emerald-600 text-white'
+                        : isSelected
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-blue-600 text-white'
+                    }`}
+                  >
+                    {index + 1}
+                  </div>
+
+                  <div
+                    onClick={() => {
+                      if (isEditing) return;
+                      setSelectedTimelineStepKey((prev) => (prev === stepKey ? null : stepKey));
+                      setConfirmDeleteStepKey(null);
+                    }}
+                    className={`rounded-xl border p-3 transition-all ${
+                      isEditing
+                        ? 'bg-white border-blue-400 ring-2 ring-blue-100'
+                        : isSelected
+                        ? 'bg-blue-50/70 border-blue-300 shadow-xs cursor-pointer'
+                        : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50/20 cursor-pointer'
+                    }`}
+                  >
+                    {isEditing ? (
+                      <div className="space-y-2.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">
+                            Editar Etapa #{index + 1}
+                          </span>
+                          <input
+                            type="datetime-local"
+                            value={editStepDate}
+                            onChange={(e) => setEditStepDate(e.target.value)}
+                            className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700"
+                          />
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={editStepText}
+                          onChange={(e) => setEditStepText(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Descreva a observação atualizada..."
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingStepKey(null)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isUpdatingStep || !editStepText.trim()}
+                            onClick={() => handleSaveEditStep(issue, step.id)}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check size={12} />
+                            <span>Salvar</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                            <Calendar size={11} className="text-blue-500" />
+                            <span className="text-slate-700">{formatBrDateTime(step.date)}</span>
+                            <span>•</span>
+                            <span className="text-blue-700 font-black uppercase">{step.author}</span>
+                            {step.updatedAt && (
+                              <span className="text-[9px] text-slate-400 italic">(editado)</span>
+                            )}
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                            Etapa {index + 1}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                          {step.text}
+                        </p>
+
+                        {isSelected && !isReadOnly && (
+                          <div
+                            className="mt-2.5 pt-2 border-t border-blue-200/70 flex flex-wrap items-center justify-end gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {isConfirmingDelete ? (
+                              <>
+                                <span className="text-[10px] font-bold text-red-600 mr-auto">
+                                  Confirmar exclusão desta etapa?
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteStepKey(null)}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                                >
+                                  Não
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isUpdatingStep}
+                                  onClick={() => handleDeleteStep(issue, step.id)}
+                                  className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                                >
+                                  Sim, Excluir
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditStep(issue.id, step)}
+                                  className="px-2.5 py-1 bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer"
+                                >
+                                  <Edit2 size={11} />
+                                  <span>Editar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteStepKey(stepKey)}
+                                  className="px-2.5 py-1 bg-white hover:bg-red-600 hover:text-white text-red-600 border border-red-200 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer"
+                                >
+                                  <Trash2 size={11} />
+                                  <span>Excluir</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Final resolution node on vertical timeline */}
+            {isResolved && (
+              <div className="relative">
+                <div className="absolute -left-6 top-1.5 w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center ring-4 ring-white shadow-xs">
+                  <Check size={11} />
+                </div>
+                <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
+                      Conclusão Final
+                    </span>
+                    {resolvedDateStr && (
+                      <span className="text-[10px] font-bold text-emerald-700">{resolvedDateStr}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {issue.solution || 'Solicitação concluída sem notas adicionais.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Add next step button directly inside card timeline */}
+            {!isResolved && !inModal && !isReadOnly && (
+              <div className="relative pt-0.5">
+                <div className="absolute -left-6 top-2 w-5 h-5 rounded-full bg-blue-100 border-2 border-blue-500 text-blue-600 flex items-center justify-center ring-4 ring-white">
+                  <Plus size={11} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openProgressModal(issue)}
+                  className="w-full text-left px-3 py-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/40 hover:bg-blue-50 text-blue-700 text-[11px] font-black uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
+                >
+                  <span>+ Adicionar próxima etapa</span>
+                  <span className="text-[10px] font-bold text-blue-500">Em Andamento</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -1438,6 +1976,35 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         </div>
       </div>
 
+      {/* Abas Rápidas de Status (Pendentes, Em Andamento, Concluídas) */}
+      <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap gap-2">
+        {[
+          { value: 'Todos' as const, label: 'Todas', count: issues.length, activeClass: 'bg-slate-900 text-white shadow-sm' },
+          { value: 'Pendente' as const, label: 'Pendentes', count: issues.filter(i => i.status === 'Pendente').length, activeClass: 'bg-orange-500 text-white shadow-sm' },
+          { value: 'Em Andamento' as const, label: 'Em Andamento', count: issues.filter(i => i.status === 'Em Andamento').length, activeClass: 'bg-blue-600 text-white shadow-sm' },
+          { value: 'Resolvido' as const, label: 'Concluídas', count: issues.filter(i => i.status === 'Resolvido').length, activeClass: 'bg-emerald-600 text-white shadow-sm' },
+        ].map((tab) => {
+          const isActive = statusFilter === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setStatusFilter(tab.value)}
+              className={`flex-1 min-w-[130px] py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                isActive
+                  ? tab.activeClass
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Main Table / Grid of Causes */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -1521,14 +2088,15 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95 }}
-                              className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 ${isResolved ? 'border-emerald-100 bg-emerald-50/20 opacity-85' : 'border-slate-100 hover:shadow-md'}`}
+                              className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 ${isResolved ? 'border-emerald-100 bg-emerald-50/20 opacity-85' : 'border-slate-100 hover:shadow-md'}`}
                             >
-                              <div className="flex items-start gap-4 flex-1">
+                              {/* Top Content: Checkbox + Info */}
+                              <div className="flex items-start gap-4 w-full">
                                 {/* Quick Resolve Checkbox Checkmark */}
                                 <button
                                   onClick={() => toggleIssueStatus(issue)}
                                   title={isResolved ? "Marcar como Pendente" : "Marcar como Resolvido"}
-                                  className="mt-1 shrink-0 text-slate-400 hover:text-blue-500 transition-all focus:outline-none"
+                                  className="mt-1 shrink-0 text-slate-400 hover:text-blue-500 transition-all focus:outline-none cursor-pointer"
                                 >
                                   {isResolved ? (
                                     <CheckSquare className="w-6 h-6 text-emerald-500" />
@@ -1537,7 +2105,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                                   )}
                                 </button>
 
-                                <div className="space-y-2.5 flex-1">
+                                <div className="space-y-2.5 flex-1 min-w-0">
                                   {/* Priority and Area Tags */}
                                   <div className="flex flex-wrap gap-2 items-center">
                                     <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border ${priorityColors[issue.priority]?.bg}`}>
@@ -1579,62 +2147,70 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                                       <span className="text-emerald-600">Resolvido em: <strong>{resolvedDateStr}</strong></span>
                                     )}
                                   </div>
-
-                                  {issue.solution && (
-                                    <div className="mt-2 bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-100 text-xs text-slate-600">
-                                      <strong className="text-emerald-800 block mb-0.5 font-bold uppercase text-[9px] tracking-wider">Solução / Obs:</strong>
-                                      {issue.solution}
-                                    </div>
-                                  )}
                                 </div>
                               </div>
 
-                              {/* Actions column on the right */}
-                              <div className="maintenance-card-actions flex md:flex-col items-end gap-2.5 pt-4 md:pt-0 border-t md:border-t-0 border-slate-100 justify-end">
-                                
-                                {/* Status Dropdown Picker for direct transition (Pendente -> Em Andamento etc) */}
-                                {!isResolved && (
-                                  <div className="flex flex-wrap gap-2 justify-end">
-                                    <button
-                                      onClick={() => handleUpdateStatus(issue.id, 'Pendente')}
-                                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${issue.status === 'Pendente' ? 'bg-slate-200 border-slate-300 text-slate-800 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                    >
-                                      Pendente
-                                    </button>
-                                    <button
-                                      onClick={() => handleUpdateStatus(issue.id, 'Em Andamento')}
-                                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${issue.status === 'Em Andamento' ? 'bg-blue-600 border-blue-700 text-white shadow-sm shadow-blue-500/10' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                    >
-                                      Em Andamento
-                                    </button>
-                                    <button
-                                      onClick={() => toggleIssueStatus(issue)}
-                                      className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white"
-                                      title="Registrar solução e concluir solicitação"
-                                    >
-                                      Concluir
-                                    </button>
-                                  </div>
-                                )}
+                              {/* Horizontal Actions Bar (below requester info, above timeline) */}
+                              <div className="maintenance-card-actions flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100 w-full">
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  {!isResolved && (
+                                    <>
+                                      <button
+                                        onClick={() => handleUpdateStatus(issue.id, 'Pendente')}
+                                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer ${issue.status === 'Pendente' ? 'bg-slate-200 border-slate-300 text-slate-800 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                      >
+                                        Pendente
+                                      </button>
+                                      <button
+                                        onClick={() => openProgressModal(issue)}
+                                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer ${issue.status === 'Em Andamento' ? 'bg-blue-600 border-blue-700 text-white shadow-sm shadow-blue-500/10' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200'}`}
+                                        title="Abrir janela de andamento e registrar etapas"
+                                      >
+                                        Em Andamento
+                                      </button>
+                                      <button
+                                        onClick={() => toggleIssueStatus(issue)}
+                                        className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white cursor-pointer"
+                                        title="Registrar solução e concluir solicitação"
+                                      >
+                                        Concluir
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
 
-                                <div className="flex gap-2">
+                                <div className="flex items-center gap-2 ml-auto">
                                   <button
                                     onClick={() => handleStartEdit(issue)}
                                     title="Editar Solicitação"
-                                    className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-2xl hover:scale-105 transition-all border border-slate-200"
+                                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
                                   >
-                                    <Edit2 size={16} />
+                                    <Edit2 size={13} />
+                                    <span>Editar</span>
                                   </button>
 
                                   <button
                                     onClick={() => handleDeleteIssue(issue.id)}
                                     title="Excluir Solicitação"
-                                    className="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl hover:scale-105 transition-all border border-red-100"
+                                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all border border-red-100 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
                                   >
-                                    <Trash2 size={16} />
+                                    <Trash2 size={13} />
+                                    <span>Excluir</span>
                                   </button>
                                 </div>
                               </div>
+
+                              {/* Full-width Solution or Collapsible Timeline below actions */}
+                              {issue.status === 'Resolvido' && (!issue.progressUpdates || issue.progressUpdates.length === 0) && issue.solution && (
+                                <div className="w-full bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-100 text-xs text-slate-600">
+                                  <strong className="text-emerald-800 block mb-0.5 font-bold uppercase text-[9px] tracking-wider">Solução / Obs:</strong>
+                                  {issue.solution}
+                                </div>
+                              )}
+
+                              {(issue.status === 'Em Andamento' || (issue.progressUpdates && issue.progressUpdates.length > 0)) && (
+                                renderVerticalTimeline(issue, false)
+                              )}
                             </motion.div>
                           );
                         })}
@@ -2253,6 +2829,140 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                     </tbody>
                   </table>
                 </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+      {/* Modal: Em Andamento — Guia Vertical de Observações */}
+      {progressModalIssue && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[110] flex items-center justify-center p-4"
+          onClick={closeProgressModal}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            {/* Header */}
+            <div className="p-6 bg-blue-600 text-white flex justify-between items-start gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded-md bg-blue-700 text-blue-100 text-[9px] font-black uppercase tracking-wider">
+                    {progressModalIssue.sector}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/15 text-white text-[9px] font-bold font-mono">
+                    {progressModalIssue.machine}
+                  </span>
+                </div>
+                <h3 className="font-black uppercase tracking-wide text-sm md:text-base">
+                  Em Andamento
+                </h3>
+                <p className="text-blue-100 text-xs mt-0.5 line-clamp-1">
+                  {progressModalIssue.title || generateTitleFromCause(progressModalIssue.cause)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeProgressModal}
+                className="p-1.5 bg-blue-700 hover:bg-blue-800 rounded-lg text-white transition-all cursor-pointer"
+                aria-label="Fechar janela de andamento"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Body: Timeline + New Step Form */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {renderVerticalTimeline(progressModalIssue, true)}
+
+              {progressModalIssue.status !== 'Resolvido' && !isReadOnly && (
+                <form
+                  onSubmit={handleAddProgressStep}
+                  className="bg-blue-50/60 border border-blue-200 rounded-2xl p-4 md:p-5 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
+                      <Plus size={13} />
+                      <span>
+                        {getSortedProgressUpdates(progressModalIssue).length === 0
+                          ? 'Registrar Primeira Etapa de Andamento'
+                          : 'Adicionar Próxima Etapa'}
+                      </span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={newProgressDate}
+                      onChange={(e) => setNewProgressDate(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-blue-200 rounded-xl text-[11px] font-bold text-slate-700 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <textarea
+                    rows={3}
+                    value={newProgressText}
+                    onChange={(e) => {
+                      setNewProgressText(e.target.value);
+                      if (progressError) setProgressError(null);
+                    }}
+                    placeholder="Ex: Foi solicitado no dia 15/05 a compra do eixo do rolo guia junto ao setor de compras..."
+                    className="w-full px-4 py-3 bg-white border border-blue-200 rounded-2xl text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  />
+
+                  {progressError && (
+                    <p className="text-[11px] font-bold text-red-600">{progressError}</p>
+                  )}
+
+                  {progressFeedback && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-2">
+                      <CheckCircle2 size={14} />
+                      <span>{progressFeedback}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={isSavingProgress}
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-blue-500/15 transition-all cursor-pointer"
+                    >
+                      {isSavingProgress ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Check size={14} />
+                      )}
+                      <span>
+                        {progressModalIssue.status !== 'Em Andamento'
+                          ? 'Salvar e Colocar em Andamento'
+                          : 'Salvar Etapa'}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={closeProgressModal}
+                className="px-4 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-black uppercase text-slate-600 transition-all cursor-pointer"
+              >
+                Fechar
+              </button>
+
+              {progressModalIssue.status !== 'Resolvido' && !isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenConcludeFromProgress(progressModalIssue)}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-emerald-500/15 transition-all cursor-pointer"
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Finalizar e Concluir</span>
+                </button>
               )}
             </div>
           </motion.div>

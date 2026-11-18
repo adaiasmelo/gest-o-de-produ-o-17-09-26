@@ -597,6 +597,14 @@ export interface CompanyNotice {
   updatedAt?: string;
 }
 
+export interface MaintenanceProgressEntry {
+  id: string;
+  text: string;
+  date: string;
+  author: string;
+  updatedAt?: string;
+}
+
 export interface MaintenanceIssue {
   id: string;
   title?: string;
@@ -608,6 +616,7 @@ export interface MaintenanceIssue {
   status: MaintenanceStatus;
   notes?: string;
   solution?: string;
+  progressUpdates?: MaintenanceProgressEntry[];
   createdAt: string;
   resolvedAt?: string;
   userId: string;
