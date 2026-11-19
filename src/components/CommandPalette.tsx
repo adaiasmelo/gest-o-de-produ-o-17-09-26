@@ -210,14 +210,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       {
         id: 'action-tv-projection',
         category: 'actions',
-        title: 'Ativar Projeção em TV / Painel Industrial',
+        title: 'Abrir Gestão Visual / Painel Industrial',
         subtitle: 'Modo automático em tela cheia com alternância de métricas de fábrica',
-        badge: 'Modo TV',
-        badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+        badge: 'Gestão Visual',
+        badgeColor: 'bg-[#E7F3F8] text-[#005A7D] border-[#005A7D]/25',
         icon: <Tv size={18} />,
-        iconBg: 'bg-indigo-500/10 text-indigo-600',
-        iconColor: 'text-indigo-600',
-        keywords: ['tv', 'projecao', 'painel', 'telao', 'fullscreen', 'tela cheia', 'dashboard tv'],
+        iconBg: 'bg-[#005A7D]/10 text-[#005A7D]',
+        iconColor: 'text-[#005A7D]',
+        keywords: ['gestao visual', 'tv', 'projecao', 'painel', 'telao', 'fullscreen', 'tela cheia', 'dashboard tv'],
         action: () => {
           onClose();
           onNavigateTab('projection');

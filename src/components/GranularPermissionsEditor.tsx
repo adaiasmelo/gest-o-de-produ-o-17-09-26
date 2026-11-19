@@ -52,6 +52,30 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     });
   };
 
+  // --- Handler do Painel Geral / Início ---
+  const handleToggleDashboardHome = () => {
+    if (disabled) return;
+    const nextVal = !norm.canViewDashboard;
+    if (nextVal && !norm.homeCards?.enabled) {
+      updatePerms({
+        canViewDashboard: true,
+        homeCards: {
+          enabled: true,
+          productionSummary: true,
+          machines: true,
+          losses: true,
+          downtime: true,
+          workforce: true,
+          ribbonSummary: true,
+          quickActions: !norm.isReadOnly,
+          pwa: true
+        }
+      });
+    } else {
+      updatePerms({ canViewDashboard: nextVal });
+    }
+  };
+
   // --- Handlers de Seção Cards da Tela de Início ---
   const handleHomeCardsMasterToggle = () => {
     if (disabled) return;
@@ -66,6 +90,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
 
     const newVal = !allActive;
     updatePerms({
+      ...(newVal ? { canViewDashboard: true } : {}),
       homeCards: {
         enabled: newVal,
         productionSummary: newVal,
@@ -93,9 +118,10 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       quickActions: false,
       pwa: false
     };
+    const nextCardValue = !current[key];
     const updated = {
       ...current,
-      [key]: !current[key]
+      [key]: nextCardValue
     };
     const anyActive = updated.productionSummary ||
                       updated.machines ||
@@ -106,7 +132,10 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                       updated.quickActions ||
                       updated.pwa;
     updated.enabled = anyActive;
-    updatePerms({ homeCards: updated });
+    updatePerms({
+      ...(nextCardValue && anyActive ? { canViewDashboard: true } : {}),
+      homeCards: updated
+    });
   };
 
   // --- Handlers de Seção Extrusão ---
@@ -242,6 +271,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     const allActive = norm.maintenance?.requests && 
                       norm.maintenance?.analytics && 
                       norm.maintenance?.newRequest &&
+                      norm.maintenance?.editRequest &&
+                      norm.maintenance?.deleteRequest &&
                       norm.maintenance?.machineStops &&
                       norm.maintenance?.exportPdf &&
                       norm.maintenance?.sendOutlook;
@@ -252,6 +283,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
       requests: newVal,
       analytics: newVal,
       newRequest: newVal,
+      editRequest: newVal,
+      deleteRequest: newVal,
       machineStops: newVal,
       exportPdf: newVal,
       sendOutlook: newVal
@@ -259,22 +292,48 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     updatePerms({ maintenance: newMaint });
   };
 
-  const handleMaintenanceSubToggle = (key: 'requests' | 'analytics' | 'newRequest' | 'machineStops' | 'exportPdf' | 'sendOutlook') => {
+  const handleMaintenanceSubToggle = (
+    key: 'requests' | 'analytics' | 'newRequest' | 'editRequest' | 'deleteRequest' | 'machineStops' | 'exportPdf' | 'sendOutlook'
+  ) => {
     if (disabled) return;
     const current = norm.maintenance || {
-      enabled: false, requests: false, analytics: false, newRequest: false, machineStops: false, exportPdf: false, sendOutlook: false
+      enabled: false,
+      requests: false,
+      analytics: false,
+      newRequest: false,
+      editRequest: false,
+      deleteRequest: false,
+      machineStops: false,
+      exportPdf: false,
+      sendOutlook: false
     };
+    const nextValue = !current[key];
     const updated: MaintenancePermissions = {
       enabled: false,
       requests: !!current.requests,
       analytics: !!current.analytics,
       newRequest: !!current.newRequest,
+      editRequest: !!current.editRequest,
+      deleteRequest: !!current.deleteRequest,
       machineStops: !!current.machineStops,
       exportPdf: !!current.exportPdf,
       sendOutlook: !!current.sendOutlook,
-      [key]: !current[key]
+      [key]: nextValue
     };
-    const anyActive = updated.requests || updated.analytics || updated.newRequest || updated.machineStops || updated.exportPdf || updated.sendOutlook;
+    // Ao selecionar "Nova Solicitação", seleciona automaticamente "Editar Solicitação" e "Excluir Solicitação"
+    if (key === 'newRequest' && nextValue) {
+      updated.editRequest = true;
+      updated.deleteRequest = true;
+    }
+    const anyActive =
+      updated.requests ||
+      updated.analytics ||
+      updated.newRequest ||
+      updated.editRequest ||
+      updated.deleteRequest ||
+      updated.machineStops ||
+      updated.exportPdf ||
+      updated.sendOutlook;
     updated.enabled = !!anyActive;
     updatePerms({ maintenance: updated });
   };
@@ -383,6 +442,8 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
     norm.maintenance?.requests,
     norm.maintenance?.analytics,
     norm.maintenance?.newRequest,
+    norm.maintenance?.editRequest,
+    norm.maintenance?.deleteRequest,
     norm.maintenance?.machineStops,
     norm.maintenance?.exportPdf,
     norm.maintenance?.sendOutlook
@@ -454,7 +515,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         norm.canViewDashboard ? 'bg-white border-blue-200 shadow-xs' : 'bg-slate-50/60 border-slate-200'
       }`}>
         <div className="flex items-center justify-between p-3 sm:p-3.5 bg-slate-50/80 gap-2">
-          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={() => updatePerms({ canViewDashboard: !norm.canViewDashboard })}>
+          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleToggleDashboardHome}>
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
               norm.canViewDashboard ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-500'
             }`}>
@@ -475,7 +536,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
 
           <button
             type="button"
-            onClick={() => updatePerms({ canViewDashboard: !norm.canViewDashboard })}
+            onClick={handleToggleDashboardHome}
             className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
               norm.canViewDashboard
                 ? 'bg-blue-600 text-white shadow-xs'
@@ -858,7 +919,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                   countMaintenance > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {countMaintenance}/6 ativas
+                  {countMaintenance}/8 ativas
                 </span>
               </div>
               <p className="text-[8.5px] font-medium text-slate-400">Solicitações, paradas &amp; disponibilidade e botões de ação</p>
@@ -870,14 +931,14 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
               type="button"
               onClick={handleMaintenanceMasterToggle}
               className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
-                countMaintenance === 6
+                countMaintenance === 8
                   ? 'bg-amber-600 text-white shadow-xs'
                   : countMaintenance > 0
                     ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {countMaintenance === 6 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+              {countMaintenance === 8 ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
             </button>
             <button
               type="button"
@@ -894,7 +955,9 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
             {[
               { key: 'requests' as const, label: 'Solicitações de Manutenção', desc: 'Visualizar e gerenciar chamados e soluções' },
               { key: 'analytics' as const, label: 'Paradas & Disponibilidade', desc: 'Aba de gráficos de paradas, OEE e disponibilidade' },
-              { key: 'newRequest' as const, label: 'Nova Solicitação', desc: 'Exibir ou ocultar o botão de criar nova solicitação' },
+              { key: 'newRequest' as const, label: 'Nova Solicitação', desc: 'Criar nova solicitação (seleciona Editar e Excluir automaticamente)' },
+              { key: 'editRequest' as const, label: 'Editar Solicitação', desc: 'Exibir botão Editar ao clicar no card da solicitação' },
+              { key: 'deleteRequest' as const, label: 'Excluir Solicitação', desc: 'Exibir botão Excluir ao clicar no card da solicitação' },
               { key: 'machineStops' as const, label: 'Parada de Máquina', desc: 'Exibir botão Paradas de Máquina (100%)' },
               { key: 'exportPdf' as const, label: 'Exportar PDF', desc: 'Exibir botão Exportar PDF nas solicitações' },
               { key: 'sendOutlook' as const, label: 'Enviar por Outlook', desc: 'Exibir botão Enviar por Outlook nas solicitações' }
@@ -927,27 +990,27 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
         )}
       </div>
 
-      {/* 5. MÓDULO PROJEÇÃO TV */}
+      {/* 5. MÓDULO GESTÃO VISUAL */}
       <div className={`rounded-2xl border transition-all overflow-hidden ${
-        norm.projection?.enabled ? 'bg-white border-purple-200 shadow-xs' : 'bg-slate-50/60 border-slate-200'
+        norm.projection?.enabled ? 'bg-white border-[#005A7D]/30 shadow-xs' : 'bg-slate-50/60 border-slate-200'
       }`}>
         <div className="flex items-center justify-between p-3 sm:p-3.5 bg-slate-50/80 gap-2">
           <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleProjectionToggle}>
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-              norm.projection?.enabled ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-200 text-slate-500'
+              norm.projection?.enabled ? 'bg-[#005A7D] text-[#C5F028] shadow-xs' : 'bg-slate-200 text-slate-500'
             }`}>
               <Tv size={16} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Projeção TV</span>
+                <span className="text-xs font-black uppercase text-slate-800 tracking-tight">Gestão Visual</span>
                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
-                  norm.projection?.enabled ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-500'
+                  norm.projection?.enabled ? 'bg-[#E7F3F8] text-[#005A7D]' : 'bg-slate-200 text-slate-500'
                 }`}>
                   {norm.projection?.enabled ? 'Ativo' : 'Inativo'}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-slate-400">Transmissão contínua em Smart TVs e telões da fábrica</p>
+              <p className="text-[8.5px] font-medium text-slate-400">Painel de Gestão Visual e transmissão contínua em Smart TVs e telões da fábrica</p>
             </div>
           </div>
 
@@ -956,7 +1019,7 @@ export const GranularPermissionsEditor: React.FC<GranularPermissionsEditorProps>
             onClick={handleProjectionToggle}
             className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 ${
               norm.projection?.enabled
-                ? 'bg-purple-600 text-white shadow-xs'
+                ? 'bg-[#005A7D] text-[#C5F028] shadow-xs'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >

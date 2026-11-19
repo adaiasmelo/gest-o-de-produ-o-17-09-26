@@ -71,6 +71,8 @@ interface MaintenanceTabProps {
   canViewRequests?: boolean;
   canViewAnalytics?: boolean;
   canCreateRequest?: boolean;
+  canEditRequest?: boolean;
+  canDeleteRequest?: boolean;
   canViewMachineStops?: boolean;
   canExportPdf?: boolean;
   canSendOutlook?: boolean;
@@ -156,6 +158,8 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   canViewRequests = true,
   canViewAnalytics = true,
   canCreateRequest = true,
+  canEditRequest = true,
+  canDeleteRequest = true,
   canViewMachineStops = true,
   canExportPdf = true,
   canSendOutlook = true,
@@ -166,9 +170,12 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   systemLogo,
   systemName,
 }) => {
-  const allowRequestsView = canViewRequests || (canCreateRequest && !isReadOnly) || canViewMachineStops || canExportPdf || (canSendOutlook && !isReadOnly);
-  const allowAnalyticsView = canViewAnalytics;
   const allowCreateButton = canCreateRequest && !isReadOnly;
+  const allowEditButton = canEditRequest && !isReadOnly;
+  const allowDeleteButton = canDeleteRequest && !isReadOnly;
+  const hasCardEditOrDelete = allowEditButton || allowDeleteButton;
+  const allowRequestsView = canViewRequests || allowCreateButton || allowEditButton || allowDeleteButton || canViewMachineStops || canExportPdf || (canSendOutlook && !isReadOnly);
+  const allowAnalyticsView = canViewAnalytics;
   const allowMachineStopsButton = canViewMachineStops;
   const allowExportPdfButton = canExportPdf;
   const allowSendOutlookButton = canSendOutlook && !isReadOnly;
@@ -436,8 +443,8 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     return rows;
   }, [productionData, ribbonEntries, stopsModalMonth, stopsModalGroupBy]);
 
-  // Auto-fill lists based on database
-  const [sectors, setSectors] = useState<string[]>(['Extrusão', 'Reciclagem', 'Corte de Fita', 'Manutenção', 'Administração']);
+  // Auto-fill lists based on database (apenas setores de produção: Extrusão, Corte de Fita e Reciclagem)
+  const [sectors, setSectors] = useState<string[]>(['Extrusão', 'Corte de Fita', 'Reciclagem']);
 
   // Calculate registered machines dynamically from the personnel page (employees database)
   const machines = useMemo(() => {
@@ -559,7 +566,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
         // 2. Generate title based on cause if missing
         if (!issue.title) {
-          updates.title = generateTitleFromCause(issue.cause);
+          updates.title = generateTitleFromCause(issue.cause).toUpperCase();
         }
 
         if (Object.keys(updates).length > 0) {
@@ -642,6 +649,78 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     };
   }, [issues]);
 
+  // Issues filtered by status, priority and search (before sector filter) for sector counts
+  const issuesMatchingNonSectorFilters = useMemo(() => {
+    let list = [...issues];
+    if (statusFilter !== 'Todos') {
+      list = list.filter(i => i.status === statusFilter);
+    }
+    return list.filter(issue => {
+      const matchesPriority = priorityFilter === 'Todos' || issue.priority === priorityFilter;
+      const matchesSearch = (issue.title || '').toLowerCase().includes(search.toLowerCase()) ||
+                            issue.cause.toLowerCase().includes(search.toLowerCase()) ||
+                            issue.machine.toLowerCase().includes(search.toLowerCase()) ||
+                            issue.reporter.toLowerCase().includes(search.toLowerCase());
+      return matchesPriority && matchesSearch;
+    });
+  }, [issues, statusFilter, priorityFilter, search]);
+
+  // Sector counts and ordered selectable sectors for the Setor selector
+  const sectorSelectorData = useMemo(() => {
+    const countsBySector: Record<string, number> = {};
+    issuesMatchingNonSectorFilters.forEach(issue => {
+      const sec = issue.sector || 'Geral';
+      countsBySector[sec] = (countsBySector[sec] || 0) + 1;
+    });
+
+    const totalAllBySector: Record<string, number> = {};
+    issues.forEach(issue => {
+      const sec = issue.sector || 'Geral';
+      totalAllBySector[sec] = (totalAllBySector[sec] || 0) + 1;
+    });
+
+    const normalizeSecKey = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    const isExcludedSector = (s: string) => {
+      const n = normalizeSecKey(s);
+      return n === 'manutencao' || n === 'administracao';
+    };
+
+    const preferredOrder = ['extrusao', 'corte de fita', 'fita', 'reciclagem'];
+    const sectorOrderScore = (s: string) => {
+      const n = normalizeSecKey(s);
+      const idx = preferredOrder.findIndex(p => n === p || n.includes(p));
+      return idx === -1 ? 99 : idx;
+    };
+
+    const allCandidates = Array.from(
+      new Set([
+        ...Object.keys(totalAllBySector),
+        ...sectors,
+        ...(sectorFilter !== 'Todos' ? [sectorFilter] : [])
+      ])
+    ).filter(sec => Boolean(sec) && !isExcludedSector(sec));
+
+    allCandidates.sort((a, b) => {
+      const scoreDiff = sectorOrderScore(a) - sectorOrderScore(b);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.localeCompare(b, 'pt-BR');
+    });
+
+    const activeIssueSectors = allCandidates.filter(sec => (totalAllBySector[sec] || 0) > 0);
+    const hasNonExtrusionIssues = activeIssueSectors.some(sec => !normalizeSecKey(sec).includes('extrusao'));
+
+    return {
+      countsBySector,
+      totalAllBySector,
+      allCandidates,
+      activeIssueSectors,
+      hasNonExtrusionIssues,
+      totalFiltered: issuesMatchingNonSectorFilters.length
+    };
+  }, [issues, issuesMatchingNonSectorFilters, sectors, sectorFilter]);
+
   // Group issues by Sector and Machine
   const groupedIssues = useMemo(() => {
     const groups: { [sector: string]: { [machine: string]: MaintenanceIssue[] } } = {};
@@ -662,18 +741,27 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     return groups;
   }, [filteredAndSortedIssues]);
 
-  // Unique Sectors in existing data to suggest
+  // Unique Sectors in existing data to suggest (excluindo Manutenção e Administração)
   useEffect(() => {
     if (issues.length > 0) {
-      const uniqueSectors = Array.from(new Set(issues.map(i => i.sector))).filter(Boolean);
+      const uniqueSectors = Array.from(new Set<string>(issues.map(i => i.sector).filter((s): s is string => Boolean(s)))).filter(sec => {
+        const norm = sec.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        return norm !== 'manutencao' && norm !== 'administracao';
+      });
       
       setSectors(prev => Array.from(new Set([...prev, ...uniqueSectors])));
     }
   }, [issues]);
 
   const handleStartEdit = (issue: MaintenanceIssue) => {
+    if (!allowEditButton) {
+      if (onBlockedAction) {
+        onBlockedAction('Edição Bloqueada', 'Você não possui permissão para editar solicitações de manutenção.');
+      }
+      return;
+    }
     setEditingIssue(issue);
-    setFormTitle(issue.title || '');
+    setFormTitle((issue.title || '').toUpperCase());
     setFormCause(issue.cause);
     setFormPriority(issue.priority);
     setFormSector(issue.sector);
@@ -684,18 +772,24 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
   const handleSubmitIssue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isReadOnly) {
+    if (isReadOnly || (editingIssue ? !allowEditButton : !allowCreateButton)) {
       if (onBlockedAction) {
-        onBlockedAction('Gravação Bloqueada', 'O cadastro ou alteração de apontamentos de manutenção não é permitido no Modo de Leitura.');
+        onBlockedAction(
+          'Operação Bloqueada',
+          editingIssue
+            ? 'Você não possui permissão para editar solicitações de manutenção.'
+            : 'Você não possui permissão para cadastrar novas solicitações de manutenção.'
+        );
       } else {
-        alert('Operação não permitida no Modo de Leitura.');
+        alert('Operação não permitida para o seu perfil.');
       }
       setIsAddModalOpen(false);
       return;
     }
     if (!formCause || !formSector) return;
 
-    const finalTitle = formTitle.trim() || generateTitleFromCause(formCause);
+    const finalTitle = (formTitle.trim() || generateTitleFromCause(formCause)).toUpperCase();
+    const submittedSector = formSector.trim();
 
     try {
       if (editingIssue) {
@@ -703,7 +797,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           title: finalTitle,
           cause: formCause,
           priority: formPriority,
-          sector: formSector,
+          sector: submittedSector,
           machine: formMachine || 'Geral / Nenhuma'
         };
         setIssues(prev => prev.map(i => i.id === editingIssue.id ? { ...i, ...updatedFields } : i));
@@ -715,7 +809,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           title: finalTitle,
           cause: formCause,
           priority: formPriority,
-          sector: formSector,
+          sector: submittedSector,
           machine: formMachine || 'Geral / Nenhuma',
           reporter: loggedUser?.name || formReporter || 'Operador',
           status: 'Pendente' as MaintenanceStatus,
@@ -724,6 +818,10 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
         };
         setIssues(prev => [newIssue, ...prev]);
         await saveMaintenanceIssueToSupabase(newIssue);
+        // Se o usuário estiver filtrando um setor específico diferente, alterna para o setor recém-criado
+        if (sectorFilter !== 'Todos' && sectorFilter !== submittedSector) {
+          setSectorFilter(submittedSector);
+        }
       }
 
       // Reset form
@@ -741,11 +839,11 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
   };
 
   const handleDeleteIssue = async (id: string) => {
-    if (isReadOnly) {
+    if (isReadOnly || !allowDeleteButton) {
       if (onBlockedAction) {
-        onBlockedAction('Exclusão Bloqueada', 'A exclusão de apontamentos de manutenção não é permitida no Modo de Leitura.');
+        onBlockedAction('Exclusão Bloqueada', 'Você não possui permissão para excluir solicitações de manutenção.');
       } else {
-        alert('Operação não permitida no Modo de Leitura.');
+        alert('Operação não permitida para o seu perfil.');
       }
       return;
     }
@@ -2346,33 +2444,74 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
           <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">Carregando Causas de Manutenção...</span>
         </div>
       ) : filteredAndSortedIssues.length === 0 ? (
-        <div className="bg-slate-50 rounded-[2rem] p-12 text-center border border-slate-100 flex flex-col items-center justify-center gap-4">
-          <HelpCircle size={48} className="text-slate-300" />
-          <div className="space-y-1">
-            <h3 className="text-slate-700 font-black text-sm uppercase tracking-wider">Nenhuma solicitação encontrada</h3>
-            <p className="text-slate-400 text-xs max-w-sm">
-              {allowCreateButton
-                ? 'Não há solicitações correspondentes aos filtros selecionados. Tente ajustar os filtros ou crie uma nova solicitação.'
-                : 'Não há solicitações correspondentes aos filtros selecionados. Tente ajustar os filtros para visualizar outros registros.'}
-            </p>
-          </div>
-          {allowCreateButton && (
-            <button
-              onClick={() => {
-                setEditingIssue(null);
-                setFormTitle('');
-                setFormCause('');
-                setFormPriority('Média');
-                setFormSector('');
-                setFormMachine('');
-                setFormReporter(loggedUser?.name || '');
-                setIsAddModalOpen(true);
-              }}
-              className="mt-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider px-5 py-3 rounded-2xl shadow-md transition-all cursor-pointer"
-            >
-              Nova Solicitação
-            </button>
+        <div className="bg-slate-50/40 rounded-[2.5rem] p-6 md:p-8 border border-slate-100 space-y-6">
+          {/* Mantém o seletor de Setor visível mesmo quando o setor selecionado não tem pendências */}
+          {sectorFilter !== 'Todos' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 pb-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse shrink-0"></span>
+                <span className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
+                  Setor:
+                </span>
+                <select
+                  aria-label="Selecionar Setor"
+                  value={sectorFilter}
+                  onChange={(e) => setSectorFilter(e.target.value)}
+                  className="px-3.5 py-1.5 bg-white hover:bg-blue-50/60 border border-slate-200 hover:border-blue-300 rounded-xl text-xs md:text-sm font-black uppercase tracking-wider text-blue-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                >
+                  <option value="Todos">Todos os Setores ({sectorSelectorData.totalFiltered})</option>
+                  {sectorSelectorData.allCandidates.map((sec) => (
+                    <option key={sec} value={sec}>
+                      {sec} ({sectorSelectorData.countsBySector[sec] || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="bg-slate-100 text-slate-500 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-slate-200">
+                0 pendências
+              </span>
+            </div>
           )}
+
+          <div className="bg-slate-50 rounded-[2rem] p-12 text-center border border-slate-100 flex flex-col items-center justify-center gap-4">
+            <HelpCircle size={48} className="text-slate-300" />
+            <div className="space-y-1">
+              <h3 className="text-slate-700 font-black text-sm uppercase tracking-wider">Nenhuma solicitação encontrada</h3>
+              <p className="text-slate-400 text-xs max-w-sm">
+                {allowCreateButton
+                  ? 'Não há solicitações correspondentes aos filtros selecionados. Tente selecionar outro setor ou crie uma nova solicitação.'
+                  : 'Não há solicitações correspondentes aos filtros selecionados. Tente selecionar outro setor para visualizar outros registros.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {sectorFilter !== 'Todos' && (
+                <button
+                  type="button"
+                  onClick={() => setSectorFilter('Todos')}
+                  className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black uppercase tracking-wider px-5 py-3 rounded-2xl shadow-xs transition-all cursor-pointer"
+                >
+                  Ver Todos os Setores
+                </button>
+              )}
+              {allowCreateButton && (
+                <button
+                  onClick={() => {
+                    setEditingIssue(null);
+                    setFormTitle('');
+                    setFormCause('');
+                    setFormPriority('Média');
+                    setFormSector(sectorFilter !== 'Todos' ? sectorFilter : '');
+                    setFormMachine('');
+                    setFormReporter(loggedUser?.name || '');
+                    setIsAddModalOpen(true);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider px-5 py-3 rounded-2xl shadow-md transition-all cursor-pointer"
+                >
+                  Nova Solicitação
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-10">
@@ -2382,6 +2521,78 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               .normalize('NFD')
               .replace(/[\u0300-\u036f]/g, '');
             const isExtrusionSector = normSector.includes('extrusao');
+            const showSectorDropdown = sectorSelectorData.hasNonExtrusionIssues || sectorFilter !== 'Todos' || sectorSelectorData.allCandidates.length > 1;
+            const sectorIssuesCount = Object.values(machinesGroup).flat().length;
+
+            const renderSectorHeader = () => (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 pb-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse shrink-0"></span>
+                  <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
+                    Setor:
+                  </h3>
+                  {showSectorDropdown ? (
+                    <select
+                      aria-label="Selecionar Setor"
+                      value={sectorFilter === 'Todos' ? sector : sectorFilter}
+                      onChange={(e) => setSectorFilter(e.target.value)}
+                      className="px-3.5 py-1.5 bg-white hover:bg-blue-50/60 border border-slate-200 hover:border-blue-300 rounded-xl text-xs md:text-sm font-black uppercase tracking-wider text-blue-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                    >
+                      {sectorSelectorData.allCandidates.map((sec) => (
+                        <option key={sec} value={sec}>
+                          {sec} ({sectorSelectorData.countsBySector[sec] || 0})
+                        </option>
+                      ))}
+                      {sectorSelectorData.activeIssueSectors.length > 1 && (
+                        <option value="Todos">
+                          Todos os Setores ({sectorSelectorData.totalFiltered})
+                        </option>
+                      )}
+                    </select>
+                  ) : (
+                    <span className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
+                      {sector}
+                    </span>
+                  )}
+
+                  {sectorSelectorData.activeIssueSectors.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-1.5 ml-1">
+                      {sectorSelectorData.activeIssueSectors.map((sec) => {
+                        const isSelectedSec = sectorFilter === sec;
+                        const count = sectorSelectorData.countsBySector[sec] || 0;
+                        return (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => setSectorFilter(isSelectedSec ? 'Todos' : sec)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
+                              isSelectedSec
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-700'
+                            }`}
+                          >
+                            {sec} ({count})
+                          </button>
+                        );
+                      })}
+                      {sectorFilter !== 'Todos' && (
+                        <button
+                          type="button"
+                          onClick={() => setSectorFilter('Todos')}
+                          className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 transition-all cursor-pointer"
+                        >
+                          Todos ({sectorSelectorData.totalFiltered})
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <span className="bg-blue-50 text-blue-700 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-blue-100">
+                  {sectorIssuesCount} {sectorIssuesCount === 1 ? 'pendência' : 'pendências'}
+                </span>
+              </div>
+            );
 
             const renderIssueCard = (issue: MaintenanceIssue) => {
               const dateStr = new Date(issue.createdAt).toLocaleDateString('pt-BR');
@@ -2389,7 +2600,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               const StatusIcon = statusColors[issue.status]?.icon || Clock;
               const isResolved = issue.status === 'Resolvido';
               const isSelectedForPdf = selectedIssueIds.includes(issue.id);
-              const isCardActionsOpen = activeActionCardId === issue.id;
+              const isCardActionsOpen = hasCardEditOrDelete && activeActionCardId === issue.id;
 
               return (
                 <motion.div
@@ -2398,8 +2609,13 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  onClick={() => setActiveActionCardId((prev) => (prev === issue.id ? null : issue.id))}
-                  className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 cursor-pointer ${
+                  onClick={() => {
+                    if (!hasCardEditOrDelete) return;
+                    setActiveActionCardId((prev) => (prev === issue.id ? null : issue.id));
+                  }}
+                  className={`bg-white rounded-3xl p-5 md:p-6 border transition-all duration-300 shadow-sm flex flex-col gap-4 ${
+                    hasCardEditOrDelete ? 'cursor-pointer' : ''
+                  } ${
                     isSelectedForPdf
                       ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/15'
                       : isCardActionsOpen
@@ -2457,10 +2673,10 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
                       {/* Title and Cause Description */}
                       <div className="space-y-1">
-                        <h3 className={`text-sm md:text-base font-black text-slate-850 leading-snug ${isResolved ? 'line-through text-slate-400' : ''}`}>
-                          {issue.title || generateTitleFromCause(issue.cause)}
+                        <h3 className={`text-sm md:text-base font-black text-slate-850 leading-snug uppercase ${isResolved ? 'line-through text-slate-400' : ''}`}>
+                          {(issue.title || generateTitleFromCause(issue.cause)).toUpperCase()}
                         </h3>
-                        {issue.title && issue.title !== issue.cause && (
+                        {issue.title && issue.title.toUpperCase() !== issue.cause.toUpperCase() && (
                           <p className={`text-xs md:text-sm text-slate-500 whitespace-pre-wrap leading-relaxed ${isResolved ? 'line-through text-slate-400' : ''}`}>
                             {issue.cause}
                           </p>
@@ -2525,31 +2741,35 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
                       {isCardActionsOpen && (
                         <div className="flex items-center gap-2 ml-auto">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStartEdit(issue);
-                            }}
-                            title="Editar Solicitação"
-                            className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
-                          >
-                            <Edit2 size={13} />
-                            <span>Editar</span>
-                          </button>
+                          {allowEditButton && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartEdit(issue);
+                              }}
+                              title="Editar Solicitação"
+                              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
+                            >
+                              <Edit2 size={13} />
+                              <span>Editar</span>
+                            </button>
+                          )}
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteIssue(issue.id);
-                            }}
-                            title="Excluir Solicitação"
-                            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all border border-red-100 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
-                          >
-                            <Trash2 size={13} />
-                            <span>Excluir</span>
-                          </button>
+                          {allowDeleteButton && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteIssue(issue.id);
+                              }}
+                              title="Excluir Solicitação"
+                              className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all border border-red-100 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                              <span>Excluir</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2626,18 +2846,8 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
 
               return (
                 <div key={sector} className="bg-slate-50/40 rounded-[2.5rem] p-6 md:p-8 border border-slate-100 space-y-6">
-                  {/* Sector Header */}
-                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse"></span>
-                      <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
-                        Setor: {sector}
-                      </h3>
-                    </div>
-                    <span className="bg-blue-50 text-blue-700 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-blue-100">
-                      {Object.values(machinesGroup).flat().length} {Object.values(machinesGroup).flat().length === 1 ? 'pendência' : 'pendências'}
-                    </span>
-                  </div>
+                  {/* Sector Header with Sector Selector */}
+                  {renderSectorHeader()}
 
                   {/* Two Columns Split: Cast 1 (Left) | Cast 2 (Right) */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pl-1 md:pl-2">
@@ -2656,24 +2866,17 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               );
             }
 
+            const machineEntries = Object.entries(machinesGroup);
+            const useTwoColumnMachines = machineEntries.length > 1;
+
             return (
               <div key={sector} className="bg-slate-50/40 rounded-[2.5rem] p-6 md:p-8 border border-slate-100 space-y-6">
-                {/* Sector Header */}
-                <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
-                  <div className="flex items-center gap-3">
-                    <span className="w-3 h-3 rounded-full bg-blue-600 animate-pulse"></span>
-                    <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-800">
-                      Setor: {sector}
-                    </h3>
-                  </div>
-                  <span className="bg-blue-50 text-blue-700 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-blue-100">
-                    {Object.values(machinesGroup).flat().length} {Object.values(machinesGroup).flat().length === 1 ? 'pendência' : 'pendências'}
-                  </span>
-                </div>
+                {/* Sector Header with Sector Selector */}
+                {renderSectorHeader()}
 
                 {/* Machines inside this sector */}
-                <div className="space-y-8 pl-1 md:pl-4">
-                  {Object.entries(machinesGroup).map(([machine, machineIssues]) =>
+                <div className={useTwoColumnMachines ? 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pl-1 md:pl-2' : 'space-y-8 pl-1 md:pl-4'}>
+                  {machineEntries.map(([machine, machineIssues]) =>
                     renderMachineGroup(machine, machineIssues)
                   )}
                 </div>
@@ -2716,15 +2919,15 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
             <form onSubmit={handleSubmitIssue} className="p-6 md:p-8 space-y-5 overflow-y-auto max-h-[75vh]">
               {/* Title Input */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Título / Resumo (Opcional)</label>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Título / Resumo (Opcional — Sempre em Maiúsculas)</label>
                 <input
                   type="text"
-                  placeholder="Ex: Vazamento de óleo, Sensor com defeito, Correia gasta..."
+                  placeholder="EX: VAZAMENTO DE ÓLEO, SENSOR COM DEFEITO, CORREIA GASTA..."
                   value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-medium"
+                  onChange={(e) => setFormTitle(e.target.value.toUpperCase())}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs uppercase focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-slate-700 font-bold"
                 />
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-1">Se deixado em branco, o título será gerado a partir da descrição abaixo.</p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-1">Preenchimento padronizado em LETRAS MAIÚSCULAS. Se deixado em branco, o título será gerado em maiúsculas a partir da descrição abaixo.</p>
               </div>
 
               {/* Description */}

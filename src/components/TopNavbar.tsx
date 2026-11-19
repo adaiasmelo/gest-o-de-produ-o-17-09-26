@@ -393,7 +393,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             </div>
           )}
 
-          {/* 5. PROJEÇÃO TV */}
+          {/* 5. GESTÃO VISUAL */}
           {hasProjectionAccess && (
             <div className="shrink-0">
               <button
@@ -403,24 +403,21 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   setAnchorRect(null);
                   onNavigateProjection();
                 }}
-                className={`group flex items-center gap-2 sm:gap-2.5 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer active:scale-95 ${
+                className={`group flex items-center gap-2 sm:gap-2.5 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer active:scale-95 whitespace-nowrap ${
                   activeTab === 'projection'
-                    ? 'bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 scale-[1.02]'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-500/15 hover:-translate-y-0.5'
+                    ? 'bg-gradient-to-r from-[#003E58] via-[#005A7D] to-[#007399] text-[#C5F028] shadow-lg shadow-[#005A7D]/25 border border-[#A8D419] scale-[1.02]'
+                    : 'bg-white hover:bg-[#E7F3F8] text-[#005A7D] hover:text-[#003E58] border border-[#005A7D]/25 hover:border-[#A8D419] hover:shadow-md hover:-translate-y-0.5'
                 }`}
-                title="Abrir Modo Projeção em TV / Smart TV"
+                title="Abrir Gestão Visual (Painel Industrial / Smart TV)"
               >
                 <div className={`p-1 rounded-lg transition-colors ${
                   activeTab === 'projection' 
-                    ? 'bg-white/20 text-white' 
-                    : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'
+                    ? 'bg-[#A8D419] text-[#003E58]' 
+                    : 'bg-[#E7F3F8] text-[#005A7D] group-hover:bg-[#005A7D] group-hover:text-[#C5F028]'
                 }`}>
                   <Tv size={15} />
                 </div>
-                <span>Projeção TV</span>
-                {activeTab === 'projection' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-ping"></span>
-                )}
+                <span>Gestão Visual</span>
               </button>
             </div>
           )}

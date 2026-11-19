@@ -3952,7 +3952,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
         else subScreen = 'Solicitações de Manutenção';
         break;
       case 'projection':
-        screen = 'Projeção TV';
+        screen = 'Gestão Visual';
         subScreen = 'Painel Contínuo';
         break;
       default:
@@ -4970,7 +4970,7 @@ const DEFAULT_ECO_BALANCE_SETTINGS: EcoBalanceSettings = {
   const canManageSettings = isAdmin || (userPerms.settings.enabled && !isReadOnlyAccount);
   const canEditProduction = isAdmin || ((userPerms.extrusion.newEntry || userPerms.ribbon.newEntry) && !isReadOnlyAccount);
   const canManagePersonnel = isAdmin || (userPerms.personnel.manage && !isReadOnlyAccount);
-  const canViewHome = isAdmin || (userPerms.canViewDashboard && ((userPerms.extrusion.enabled && userPerms.extrusion.summary) || (userPerms.ribbon.enabled && userPerms.ribbon.summary)));
+  const canViewHome = isAdmin || !!userPerms.canViewDashboard;
 
   const handleOpenSectorLaunchModal = () => {
     if (isReadOnlyAccount || !canEditProduction) {
@@ -12931,7 +12931,12 @@ Atenciosamente,
           productionData={productionData}
           ribbonEntries={ribbonEntries}
           goals={goals}
+          eremaGoals={eremaGoals}
+          ribbonGoals={ribbonGoals}
+          extrusionWasteLimit={extrusionWasteLimit}
+          extrusionWasteLimits={extrusionWasteLimits}
           dashboardMonth={dashboardMonth}
+          availableShifts={availableShifts}
           collaborators={collaborators}
           systemName={systemName}
           systemLogo={systemLogo}
@@ -14360,7 +14365,7 @@ Atenciosamente,
                       </div>
                     )}
 
-                    {/* Projeção TV */}
+                    {/* Gestão Visual */}
                     {(isAdmin || userPerms.projection.enabled) && (
                       <button
                         type="button"
@@ -14371,16 +14376,16 @@ Atenciosamente,
                         }}
                         className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                           activeTab === 'projection'
-                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25'
-                            : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
+                            ? 'bg-gradient-to-r from-[#003E58] to-[#005A7D] text-[#C5F028] shadow-md shadow-[#005A7D]/25 border border-[#A8D419]'
+                            : 'text-[#005A7D] hover:bg-[#E7F3F8] hover:text-[#003E58]'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <Tv size={18} className={activeTab === 'projection' ? 'text-white' : 'text-indigo-600'} />
-                          <span>Projeção em TV / Smart TV</span>
+                          <Tv size={18} className={activeTab === 'projection' ? 'text-[#C5F028]' : 'text-[#005A7D]'} />
+                          <span>Gestão Visual</span>
                         </div>
                         {activeTab === 'projection' && (
-                          <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full uppercase font-bold">Ativo</span>
+                          <span className="text-[9px] bg-[#A8D419] text-[#003E58] px-2 py-0.5 rounded-full uppercase font-black">Ativo</span>
                         )}
                       </button>
                     )}
@@ -24808,6 +24813,8 @@ Atenciosamente,
             canViewRequests={isAdmin || !!userPerms.maintenance.requests}
             canViewAnalytics={isAdmin || !!userPerms.maintenance.analytics}
             canCreateRequest={isAdmin || (!!userPerms.maintenance.newRequest && !isReadOnlyAccount)}
+            canEditRequest={isAdmin || (!!userPerms.maintenance.editRequest && !isReadOnlyAccount)}
+            canDeleteRequest={isAdmin || (!!userPerms.maintenance.deleteRequest && !isReadOnlyAccount)}
             canViewMachineStops={isAdmin || !!userPerms.maintenance.machineStops}
             canExportPdf={isAdmin || !!userPerms.maintenance.exportPdf}
             canSendOutlook={isAdmin || (!!userPerms.maintenance.sendOutlook && !isReadOnlyAccount)}
@@ -24825,7 +24832,12 @@ Atenciosamente,
             productionData={productionData}
             ribbonEntries={ribbonEntries}
             goals={goals}
+            eremaGoals={eremaGoals}
+            ribbonGoals={ribbonGoals}
+            extrusionWasteLimit={extrusionWasteLimit}
+            extrusionWasteLimits={extrusionWasteLimits}
             dashboardMonth={dashboardMonth}
+            availableShifts={availableShifts}
             collaborators={collaborators}
             systemName={systemName}
             systemLogo={systemLogo || undefined}

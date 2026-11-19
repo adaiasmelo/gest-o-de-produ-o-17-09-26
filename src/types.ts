@@ -335,6 +335,8 @@ export interface MaintenancePermissions {
   requests: boolean;     // Solicitações de Manutenção
   analytics?: boolean;   // Paradas & Disponibilidade (Gráficos e OEE)
   newRequest: boolean;   // Nova Solicitação (exibir ou ocultar botão)
+  editRequest?: boolean; // Editar Solicitação (exibir botão Editar ao clicar no card)
+  deleteRequest?: boolean; // Excluir Solicitação (exibir botão Excluir ao clicar no card)
   machineStops?: boolean; // Parada de Máquina (botão Paradas de Máquina 100%)
   exportPdf?: boolean;    // Exportar PDF (botão Exportar PDF)
   sendOutlook?: boolean;  // Enviar por Outlook (botão Enviar por Outlook)

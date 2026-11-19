@@ -171,8 +171,8 @@ export const InteractiveBreadcrumbs: React.FC<InteractiveBreadcrumbsProps> = ({
     }
   } else if (activeTab === 'projection') {
     crumbs.push({
-      label: 'Projeção TV Industrial',
-      icon: <Tv size={13} className="text-indigo-600" />,
+      label: 'Gestão Visual',
+      icon: <Tv size={13} className="text-[#005A7D]" />,
       isCurrent: true
     });
   }

@@ -64,6 +64,8 @@ export const DEFAULT_MAINTENANCE_PERMISSIONS: MaintenancePermissions = {
   requests: true,
   analytics: true,
   newRequest: true,
+  editRequest: true,
+  deleteRequest: true,
   machineStops: true,
   exportPdf: true,
   sendOutlook: true
@@ -163,6 +165,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         requests: false,
         analytics: false,
         newRequest: false,
+        editRequest: false,
+        deleteRequest: false,
         machineStops: false,
         exportPdf: false,
         sendOutlook: false
@@ -243,6 +247,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         requests: true,
         analytics: true,
         newRequest: false,
+        editRequest: false,
+        deleteRequest: false,
         machineStops: true,
         exportPdf: true,
         sendOutlook: false
@@ -323,6 +329,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         requests: true,
         analytics: true,
         newRequest: true,
+        editRequest: true,
+        deleteRequest: true,
         machineStops: true,
         exportPdf: true,
         sendOutlook: true
@@ -403,6 +411,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
         requests: true,
         analytics: true,
         newRequest: true,
+        editRequest: true,
+        deleteRequest: true,
         machineStops: true,
         exportPdf: true,
         sendOutlook: true
@@ -473,6 +483,8 @@ export function createPresetPermissions(preset: 'readOnly' | 'operator' | 'super
       requests: true,
       analytics: true,
       newRequest: true,
+      editRequest: true,
+      deleteRequest: true,
       machineStops: true,
       exportPdf: true,
       sendOutlook: true
@@ -550,6 +562,8 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
         requests: true,
         analytics: true,
         newRequest: true,
+        editRequest: true,
+        deleteRequest: true,
         machineStops: true,
         exportPdf: true,
         sendOutlook: true
@@ -595,17 +609,19 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
 
   // Cards da Tela de Início
   const rawHome = perms?.homeCards;
-  const homeProdSummary = rawHome?.productionSummary !== undefined ? !!rawHome.productionSummary : true;
-  const homeMachines = rawHome?.machines !== undefined ? !!rawHome.machines : true;
-  const homeLosses = rawHome?.losses !== undefined ? !!rawHome.losses : true;
-  const homeDowntime = rawHome?.downtime !== undefined ? !!rawHome.downtime : true;
-  const homeWorkforce = rawHome?.workforce !== undefined ? !!rawHome.workforce : true;
-  const homeRibbonSummary = rawHome?.ribbonSummary !== undefined ? !!rawHome.ribbonSummary : true;
-  const homeQuickActions = !isReadOnly && (rawHome?.quickActions !== undefined ? !!rawHome.quickActions : true);
-  const homePwa = !isReadOnly && (rawHome?.pwa !== undefined ? !!rawHome.pwa : true);
+  const defaultHomeCardValue = perms?.canViewDashboard === false ? false : true;
+  const homeProdSummary = rawHome?.productionSummary !== undefined ? !!rawHome.productionSummary : defaultHomeCardValue;
+  const homeMachines = rawHome?.machines !== undefined ? !!rawHome.machines : defaultHomeCardValue;
+  const homeLosses = rawHome?.losses !== undefined ? !!rawHome.losses : defaultHomeCardValue;
+  const homeDowntime = rawHome?.downtime !== undefined ? !!rawHome.downtime : defaultHomeCardValue;
+  const homeWorkforce = rawHome?.workforce !== undefined ? !!rawHome.workforce : defaultHomeCardValue;
+  const homeRibbonSummary = rawHome?.ribbonSummary !== undefined ? !!rawHome.ribbonSummary : defaultHomeCardValue;
+  const homeQuickActions = !isReadOnly && (rawHome?.quickActions !== undefined ? !!rawHome.quickActions : defaultHomeCardValue);
+  const homePwa = rawHome?.pwa !== undefined ? !!rawHome.pwa : defaultHomeCardValue;
+  const homeHasAnyCard = homeProdSummary || homeMachines || homeLosses || homeDowntime || homeWorkforce || homeRibbonSummary || homeQuickActions || homePwa;
   const homeEnabled = rawHome?.enabled !== undefined 
-    ? (rawHome.enabled && (homeProdSummary || homeMachines || homeLosses || homeDowntime || homeWorkforce || homeRibbonSummary || homeQuickActions || homePwa))
-    : true;
+    ? (!!rawHome.enabled && homeHasAnyCard)
+    : homeHasAnyCard;
 
   // Extrusão
   const rawExt = perms?.extrusion;
@@ -657,6 +673,12 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
     ? (rawMaint.analytics !== undefined ? !!rawMaint.analytics : !!rawMaint.causes)
     : (hasGranular ? false : true);
   const maintNewRequest = !isReadOnly && (rawMaint ? !!rawMaint.newRequest : (hasGranular ? false : true));
+  const maintEditRequest = !isReadOnly && (rawMaint
+    ? (rawMaint.editRequest !== undefined ? !!rawMaint.editRequest : maintNewRequest)
+    : (hasGranular ? false : true));
+  const maintDeleteRequest = !isReadOnly && (rawMaint
+    ? (rawMaint.deleteRequest !== undefined ? !!rawMaint.deleteRequest : maintNewRequest)
+    : (hasGranular ? false : true));
   const maintMachineStops = rawMaint
     ? (rawMaint.machineStops !== undefined ? !!rawMaint.machineStops : maintRequests)
     : (hasGranular ? false : true);
@@ -666,7 +688,7 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
   const maintSendOutlook = !isReadOnly && (rawMaint
     ? (rawMaint.sendOutlook !== undefined ? !!rawMaint.sendOutlook : maintRequests)
     : (hasGranular ? false : true));
-  const maintHasAny = maintRequests || maintAnalytics || maintNewRequest || maintMachineStops || maintExportPdf || maintSendOutlook;
+  const maintHasAny = maintRequests || maintAnalytics || maintNewRequest || maintEditRequest || maintDeleteRequest || maintMachineStops || maintExportPdf || maintSendOutlook;
   const maintEnabled = maintHasAny || (rawMaint?.enabled === true);
 
   // Projeção
@@ -754,6 +776,8 @@ export function normalizeUserPermissions(perms?: UserPermissions | null, role?: 
       requests: maintRequests,
       analytics: maintAnalytics,
       newRequest: maintNewRequest,
+      editRequest: maintEditRequest,
+      deleteRequest: maintDeleteRequest,
       machineStops: maintMachineStops,
       exportPdf: maintExportPdf,
       sendOutlook: maintSendOutlook
@@ -800,29 +824,14 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
   const hasMaintenance = !!perms.maintenance?.enabled;
   const hasProjection = !!perms.projection?.enabled;
 
-  const canExtrusionHome = hasExtrusion && !!perms.extrusion?.summary;
-  const canRibbonHome = hasRibbon && !!perms.ribbon?.summary;
-  const canViewHome = perms.canViewDashboard && (canExtrusionHome || canRibbonHome);
+  const canViewHome = !!perms.canViewDashboard;
 
-  // 1. Caso Especial: Usuário com foco em Pessoal (sem acesso à produção geral da fábrica)
-  if (hasPersonnel && !canExtrusionHome && !canRibbonHome) {
-    if (perms.personnel.board) return { tab: 'personnel', personnelSubView: 'board' };
-    if (perms.personnel.vacations) return { tab: 'personnel', personnelSubView: 'vacations' };
-    if (perms.personnel.lunch) return { tab: 'personnel', personnelSubView: 'lunch' };
-    if (perms.personnel.overtime) return { tab: 'personnel', personnelSubView: 'overtime' };
-    if (perms.personnel.overtimeEntries) return { tab: 'personnel', personnelSubView: 'overtime_entries' };
-    if (perms.personnel.evaluations) return { tab: 'personnel', personnelSubView: 'evaluations' };
-    if (perms.personnel.bonus) return { tab: 'personnel', personnelSubView: 'bonus' };
-    if (perms.personnel.training) return { tab: 'personnel', personnelSubView: 'training' };
-    return { tab: 'personnel', personnelSubView: 'board' };
-  }
-
-  // 2. Se o usuário tem permissão para a tela inicial (Dashboard / Produção Geral) e possui Extrusão ou Ribbon ativos
+  // 1. Se o usuário tem permissão para a tela inicial (Início • Painel Geral), abre diretamente nela
   if (canViewHome) {
     return { tab: 'home' };
   }
 
-  // 3. Se o usuário tem acesso ao módulo de Pessoal e Equipe
+  // 2. Se o usuário tem acesso ao módulo de Pessoal e Equipe
   if (hasPersonnel) {
     if (perms.personnel.board) return { tab: 'personnel', personnelSubView: 'board' };
     if (perms.personnel.vacations) return { tab: 'personnel', personnelSubView: 'vacations' };
@@ -861,6 +870,8 @@ export function getInitialUserLanding(permissions?: UserPermissions | null, isAd
     if (
       perms.maintenance?.requests ||
       perms.maintenance?.newRequest ||
+      perms.maintenance?.editRequest ||
+      perms.maintenance?.deleteRequest ||
       perms.maintenance?.machineStops ||
       perms.maintenance?.exportPdf ||
       perms.maintenance?.sendOutlook

@@ -1156,16 +1156,16 @@ export const IndustrialBentoGrid: React.FC<IndustrialBentoGridProps> = ({
             )}
 
             {(isAdmin || userPerms.projection.enabled) && (
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-indigo-950/30 border border-indigo-500/30 group">
+              <div className="bg-gradient-to-br from-[#003E58] via-[#005A7D] to-[#007399] p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] text-white flex flex-col items-center justify-between gap-2.5 sm:gap-4 shadow-lg shadow-[#005A7D]/30 border-2 border-[#A8D419]/70 group">
                 <div
                   onClick={() => onNavigateTab('projection')}
                   className="flex flex-col items-center gap-2 sm:gap-3 md:gap-4 cursor-pointer active:scale-95 transition-transform w-full"
                 >
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-indigo-500/20 text-indigo-300 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Tv className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 animate-pulse" />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-[#A8D419]/20 text-[#C5F028] rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform border border-[#A8D419]/40">
+                    <Tv className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" />
                   </div>
-                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug">
-                    Projeção TV (Smart TV)
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-widest text-center leading-snug text-[#C5F028]">
+                    Gestão Visual (Smart TV)
                   </span>
                 </div>
                 <button
