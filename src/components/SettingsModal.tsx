@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Search, Target, Settings, Cpu, Smartphone, ShieldCheck, Download, 
   Share, ExternalLink, RotateCcw, X, Upload, Video, Play, Sparkles, 
@@ -134,6 +134,142 @@ export const SettingsModal: React.FC<{
   const [eremaStandardGoal12h, setEremaStandardGoal12h] = useState<number>(() => getEremaStandardGoal());
   const [selectedTechMachine, setSelectedTechMachine] = useState<'Ghezzi' | 'Lintech' | 'Wultec'>('Ghezzi');
 
+  // Local string drafts for all goal inputs — allows completely clearing fields without snapping to 0 or defaults,
+  // and prevents realtime cloud snapshots from overwriting what the user is typing.
+  const [extrusionGoalInput, setExtrusionGoalInput] = useState<string>('');
+  const [wasteLimitInput, setWasteLimitInput] = useState<string>('');
+  const [eremaMonthGoalInput, setEremaMonthGoalInput] = useState<string>('');
+  const [eremaStandard12hInput, setEremaStandard12hInput] = useState<string>('');
+  const [ghezziGoalInput, setGhezziGoalInput] = useState<string>('');
+  const [lintechGoalInput, setLintechGoalInput] = useState<string>('');
+  const [wultecGoalInput, setWultecGoalInput] = useState<string>('');
+
+  // Batched + debounced cloud sync to eliminate out-of-order keystroke writes and oscillation
+  const pendingCloudPayloadRef = useRef<Record<string, any>>({});
+  const cloudSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPendingGoalSync = useCallback(async () => {
+    if (cloudSyncTimerRef.current) {
+      clearTimeout(cloudSyncTimerRef.current);
+      cloudSyncTimerRef.current = null;
+    }
+    const payload = pendingCloudPayloadRef.current;
+    if (Object.keys(payload).length > 0) {
+      pendingCloudPayloadRef.current = {};
+      await mergeSettingsInSupabase('global', payload);
+    }
+  }, []);
+
+  const scheduleGoalCloudSync = useCallback((partialPayload: Record<string, any>) => {
+    pendingCloudPayloadRef.current = {
+      ...pendingCloudPayloadRef.current,
+      ...partialPayload,
+    };
+    if (cloudSyncTimerRef.current) {
+      clearTimeout(cloudSyncTimerRef.current);
+    }
+    cloudSyncTimerRef.current = setTimeout(() => {
+      flushPendingGoalSync();
+    }, 650);
+  }, [flushPendingGoalSync]);
+
+  // Flush any pending goal sync when modal closes or unmounts
+  useEffect(() => {
+    if (!isOpen) {
+      flushPendingGoalSync();
+    }
+    return () => {
+      if (cloudSyncTimerRef.current) {
+        clearTimeout(cloudSyncTimerRef.current);
+        cloudSyncTimerRef.current = null;
+      }
+      const payload = pendingCloudPayloadRef.current;
+      if (Object.keys(payload).length > 0) {
+        pendingCloudPayloadRef.current = {};
+        mergeSettingsInSupabase('global', payload);
+      }
+    };
+  }, [isOpen, flushPendingGoalSync]);
+
+  // Hydrate local draft strings ONLY when modal opens or dashboardMonth changes
+  // (never on incoming cloud snapshot echoes while user is editing)
+  const hydratedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen) {
+      hydratedKeyRef.current = null;
+      return;
+    }
+    const key = `${dashboardMonth}`;
+    if (hydratedKeyRef.current === key) return;
+    hydratedKeyRef.current = key;
+
+    const extVal = goals[dashboardMonth] ?? GOAL_VALUE;
+    const wasteVal =
+      extrusionWasteLimits && extrusionWasteLimits[dashboardMonth] !== undefined
+        ? extrusionWasteLimits[dashboardMonth]
+        : (extrusionWasteLimit ?? 8.0);
+    const eremaVal = eremaGoals[dashboardMonth] ?? 70000;
+    const erema12hVal = getEremaStandardGoal();
+    const gVal = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'ghezzi');
+    const lVal = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'lintech');
+    const wVal = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'wultec');
+
+    setExtrusionGoalInput(String(extVal));
+    setWasteLimitInput(String(wasteVal));
+    setEremaMonthGoalInput(String(eremaVal));
+    setEremaStandardGoal12h(erema12hVal);
+    setEremaStandard12hInput(String(erema12hVal));
+    setGhezziGoalInput(String(gVal));
+    setLintechGoalInput(String(lVal));
+    setWultecGoalInput(String(wVal));
+  }, [isOpen, dashboardMonth, goals, extrusionWasteLimits, extrusionWasteLimit, eremaGoals, ribbonGoals]);
+
+  const parseDraftInt = (val: string): number => {
+    const cleaned = val.replace(/[^\d]/g, '');
+    if (!cleaned) return 0;
+    const n = parseInt(cleaned, 10);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const liveWasteLimitNum = (() => {
+    const normalized = wasteLimitInput.replace(',', '.').trim();
+    if (normalized === '') return 0;
+    const parsed = parseFloat(normalized);
+    return isNaN(parsed) ? 0 : Math.max(0, parsed);
+  })();
+
+  const liveGhezziGoal = parseDraftInt(ghezziGoalInput);
+  const liveLintechGoal = parseDraftInt(lintechGoalInput);
+  const liveWultecGoal = parseDraftInt(wultecGoalInput);
+  const liveRibbonTotalGoal = liveGhezziGoal + liveLintechGoal + liveWultecGoal;
+
+  const updateRibbonMachineDraft = (machine: 'ghezzi' | 'lintech' | 'wultec', rawValue: string) => {
+    const sanitized = rawValue.replace(/[^\d]/g, '');
+    if (machine === 'ghezzi') setGhezziGoalInput(sanitized);
+    else if (machine === 'lintech') setLintechGoalInput(sanitized);
+    else setWultecGoalInput(sanitized);
+
+    if (sanitized === '') return;
+
+    const numVal = parseInt(sanitized, 10);
+    if (isNaN(numVal)) return;
+
+    const nextG = machine === 'ghezzi' ? numVal : (ghezziGoalInput !== '' ? parseDraftInt(ghezziGoalInput) : getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'ghezzi'));
+    const nextL = machine === 'lintech' ? numVal : (lintechGoalInput !== '' ? parseDraftInt(lintechGoalInput) : getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'lintech'));
+    const nextW = machine === 'wultec' ? numVal : (wultecGoalInput !== '' ? parseDraftInt(wultecGoalInput) : getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'wultec'));
+
+    setRibbonGoals(prev => {
+      const currentVal = prev[dashboardMonth];
+      const updatedObj = typeof currentVal === 'object' && currentVal !== null
+        ? { ...(currentVal as any), ghezzi: nextG, ghezze: nextG, lintech: nextL, lintec: nextL, wultec: nextW, wutec: nextW }
+        : { ghezzi: nextG, ghezze: nextG, lintech: nextL, lintec: nextL, wultec: nextW, wutec: nextW };
+      const updated = { ...prev, [dashboardMonth]: updatedObj as any };
+      localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
+      scheduleGoalCloudSync({ ribbonGoals: updated });
+      return updated;
+    });
+  };
+
   const tabs = [
     { id: 'filters', label: 'Filtros', icon: Search, hidden: !isAdminUser && !settingsPerms?.filters },
     { id: 'goals', label: 'Metas', icon: Target, hidden: !isAdminUser && !settingsPerms?.goals },
@@ -152,6 +288,7 @@ export const SettingsModal: React.FC<{
 
   const handleSave = async () => {
     setIsSaving(true);
+    await flushPendingGoalSync();
     await onSave();
     setIsSaving(false);
   };
@@ -486,14 +623,24 @@ export const SettingsModal: React.FC<{
                     </label>
                     <div className="relative">
                       <input 
-                        type="number" 
-                        value={goals[dashboardMonth] || GOAL_VALUE} 
-                        onChange={e => setGoals(prev => {
-                          const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
-                          localStorage.setItem('manupackaging_goals', JSON.stringify(updated));
-                          mergeSettingsInSupabase('global', { goals: updated });
-                          return updated;
-                        })} 
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Ex: 1200000"
+                        value={extrusionGoalInput} 
+                        onChange={e => {
+                          const sanitized = e.target.value.replace(/[^\d]/g, '');
+                          setExtrusionGoalInput(sanitized);
+                          if (sanitized === '') return;
+                          const numVal = parseInt(sanitized, 10);
+                          if (isNaN(numVal)) return;
+                          setGoals(prev => {
+                            const updated = { ...prev, [dashboardMonth]: numVal };
+                            localStorage.setItem('manupackaging_goals', JSON.stringify(updated));
+                            scheduleGoalCloudSync({ goals: updated });
+                            return updated;
+                          });
+                        }}
+                        onBlur={() => flushPendingGoalSync()}
                         className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-lg font-black text-center text-slate-800 outline-none focus:ring-2 focus:ring-orange-200 tracking-tight"
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-400 text-[10px]">KG</span>
@@ -507,26 +654,32 @@ export const SettingsModal: React.FC<{
                         Tolerância / Limite de Rejeito (Eco B)
                       </label>
                       <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
-                        {((extrusionWasteLimits && extrusionWasteLimits[dashboardMonth] !== undefined ? extrusionWasteLimits[dashboardMonth] : extrusionWasteLimit) || 8.0).toFixed(1).replace('.', ',')}%
+                        {liveWasteLimitNum.toFixed(1).replace('.', ',')}%
                       </span>
                     </div>
                     <div className="relative">
                       <input 
-                        type="number" 
-                        step="0.1"
-                        min="0"
-                        max="100"
-                        value={extrusionWasteLimits && extrusionWasteLimits[dashboardMonth] !== undefined ? extrusionWasteLimits[dashboardMonth] : (extrusionWasteLimit ?? 8.0)} 
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Ex: 8.0"
+                        value={wasteLimitInput} 
                         onChange={e => {
-                          const val = Math.max(0, Number(e.target.value) || 0);
+                          const raw = e.target.value.replace(',', '.').replace(/[^0-9.]/g, '');
+                          const dotParts = raw.split('.');
+                          const sanitized = dotParts.length > 2 ? `${dotParts[0]}.${dotParts.slice(1).join('')}` : raw;
+                          setWasteLimitInput(sanitized);
+                          if (sanitized === '' || sanitized === '.') return;
+                          const parsed = parseFloat(sanitized);
+                          if (isNaN(parsed)) return;
+                          const val = Math.min(100, Math.max(0, parsed));
                           if (setExtrusionWasteLimits) {
                             setExtrusionWasteLimits(prev => {
                               const updated = { ...prev, [dashboardMonth]: val };
                               localStorage.setItem('manupackaging_extrusion_waste_limits', JSON.stringify(updated));
                               localStorage.setItem('manupackaging_extrusion_waste_limit', String(val));
-                              mergeSettingsInSupabase('global', { 
+                              scheduleGoalCloudSync({
                                 extrusionWasteLimits: updated,
-                                extrusionWasteLimit: val 
+                                extrusionWasteLimit: val,
                               });
                               return updated;
                             });
@@ -534,7 +687,8 @@ export const SettingsModal: React.FC<{
                           if (setExtrusionWasteLimit) {
                             setExtrusionWasteLimit(val);
                           }
-                        }} 
+                        }}
+                        onBlur={() => flushPendingGoalSync()}
                         className="w-full bg-white border border-rose-200 rounded-2xl px-4 py-3 text-lg font-black text-center text-rose-600 outline-none focus:ring-2 focus:ring-rose-200 tracking-tight"
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-rose-400 text-xs">%</span>
@@ -564,14 +718,24 @@ export const SettingsModal: React.FC<{
                       <p className="text-[8.5px] text-slate-400 font-medium">Usada nos gráficos e projeções mensais</p>
                       <div className="relative">
                         <input 
-                          type="number" 
-                          value={eremaGoals[dashboardMonth] || 70000} 
-                          onChange={e => setEremaGoals?.(prev => {
-                            const updated = {...prev, [dashboardMonth]: Number(e.target.value)};
-                            localStorage.setItem('manupackaging_erema_goals', JSON.stringify(updated));
-                            mergeSettingsInSupabase('global', { eremaGoals: updated });
-                            return updated;
-                          })} 
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Ex: 70000"
+                          value={eremaMonthGoalInput} 
+                          onChange={e => {
+                            const sanitized = e.target.value.replace(/[^\d]/g, '');
+                            setEremaMonthGoalInput(sanitized);
+                            if (sanitized === '') return;
+                            const numVal = parseInt(sanitized, 10);
+                            if (isNaN(numVal)) return;
+                            setEremaGoals?.(prev => {
+                              const updated = { ...prev, [dashboardMonth]: numVal };
+                              localStorage.setItem('manupackaging_erema_goals', JSON.stringify(updated));
+                              scheduleGoalCloudSync({ eremaGoals: updated });
+                              return updated;
+                            });
+                          }}
+                          onBlur={() => flushPendingGoalSync()}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-lg font-black text-center text-slate-800 outline-none focus:ring-2 focus:ring-emerald-400"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-emerald-500 text-[10px]">KG/MÊS</span>
@@ -587,14 +751,21 @@ export const SettingsModal: React.FC<{
                       <p className="text-[8.5px] text-slate-400 font-medium">Meta padrão pré-carregada na tela de novo lançamento</p>
                       <div className="relative">
                         <input 
-                          type="number" 
-                          value={eremaStandardGoal12h} 
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Ex: 2600"
+                          value={eremaStandard12hInput} 
                           onChange={e => {
-                            const val = Number(e.target.value) || 0;
+                            const sanitized = e.target.value.replace(/[^\d]/g, '');
+                            setEremaStandard12hInput(sanitized);
+                            if (sanitized === '') return;
+                            const val = parseInt(sanitized, 10);
+                            if (isNaN(val)) return;
                             setEremaStandardGoal12h(val);
                             saveEremaStandardGoal(val);
-                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: val });
-                          }} 
+                            scheduleGoalCloudSync({ eremaStandardGoal12h: val });
+                          }}
+                          onBlur={() => flushPendingGoalSync()}
                           className="w-full bg-slate-50 border border-emerald-300 rounded-xl px-4 py-2.5 text-lg font-black text-center text-emerald-950 outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-emerald-600 text-[10px]">KG / 12H</span>
@@ -604,8 +775,9 @@ export const SettingsModal: React.FC<{
                           type="button"
                           onClick={() => {
                             setEremaStandardGoal12h(DEFAULT_EREMA_STANDARD_GOAL);
+                            setEremaStandard12hInput(String(DEFAULT_EREMA_STANDARD_GOAL));
                             saveEremaStandardGoal(DEFAULT_EREMA_STANDARD_GOAL);
-                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: DEFAULT_EREMA_STANDARD_GOAL });
+                            scheduleGoalCloudSync({ eremaStandardGoal12h: DEFAULT_EREMA_STANDARD_GOAL });
                           }}
                           className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
                             eremaStandardGoal12h === DEFAULT_EREMA_STANDARD_GOAL 
@@ -620,8 +792,9 @@ export const SettingsModal: React.FC<{
                           onClick={() => {
                             const val = 4200;
                             setEremaStandardGoal12h(val);
+                            setEremaStandard12hInput(String(val));
                             saveEremaStandardGoal(val);
-                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: val });
+                            scheduleGoalCloudSync({ eremaStandardGoal12h: val });
                           }}
                           className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
                             eremaStandardGoal12h === 4200 
@@ -636,8 +809,9 @@ export const SettingsModal: React.FC<{
                           onClick={() => {
                             const val = 5200;
                             setEremaStandardGoal12h(val);
+                            setEremaStandard12hInput(String(val));
                             saveEremaStandardGoal(val);
-                            mergeSettingsInSupabase('global', { eremaStandardGoal12h: val });
+                            scheduleGoalCloudSync({ eremaStandardGoal12h: val });
                           }}
                           className={`px-2 py-1 rounded text-[8.5px] font-black uppercase border transition-all cursor-pointer ${
                             eremaStandardGoal12h === 5200 
@@ -660,7 +834,7 @@ export const SettingsModal: React.FC<{
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Defina o objetivo individual para cada máquina (m² e equivalência em jumbos)</p>
                     </div>
                     <span className="text-[10px] font-extrabold px-3 py-1 bg-blue-100/70 text-blue-800 rounded-full">
-                      Total: {getRibbonTotalGoal(ribbonGoals, dashboardMonth).toLocaleString('pt-BR')} m² ({formatJumboUnits(calcJumboUnits(getRibbonTotalGoal(ribbonGoals, dashboardMonth)))})
+                      Total: {liveRibbonTotalGoal.toLocaleString('pt-BR')} m² ({formatJumboUnits(calcJumboUnits(liveRibbonTotalGoal))})
                     </span>
                   </div>
 
@@ -670,28 +844,17 @@ export const SettingsModal: React.FC<{
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-black uppercase text-blue-600">Ghezzi</span>
                         <span className="text-[9px] font-bold text-slate-400">
-                          {formatJumboUnits(calcJumboUnits(getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'ghezzi')))}
+                          {formatJumboUnits(calcJumboUnits(liveGhezziGoal))}
                         </span>
                       </div>
                       <div className="relative">
                         <input 
-                          type="number" 
-                          value={getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'ghezzi')} 
-                          onChange={e => {
-                            const newG = Number(e.target.value) || 0;
-                            const curL = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'lintech');
-                            const curW = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'wultec');
-                            setRibbonGoals(prev => {
-                              const currentVal = prev[dashboardMonth];
-                              const updatedObj = typeof currentVal === 'object' && currentVal !== null
-                                ? { ...currentVal, ghezzi: newG, ghezze: newG, lintech: curL, lintec: curL, wultec: curW, wutec: curW }
-                                : { ghezzi: newG, ghezze: newG, lintech: curL, lintec: curL, wultec: curW, wutec: curW };
-                              const updated = { ...prev, [dashboardMonth]: updatedObj };
-                              localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-                              mergeSettingsInSupabase('global', { ribbonGoals: updated });
-                              return updated;
-                            });
-                          }} 
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Ex: 350000"
+                          value={ghezziGoalInput} 
+                          onChange={e => updateRibbonMachineDraft('ghezzi', e.target.value)}
+                          onBlur={() => flushPendingGoalSync()}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800 outline-none focus:ring-2 focus:ring-blue-400"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-300 text-[9px]">M²</span>
@@ -703,28 +866,17 @@ export const SettingsModal: React.FC<{
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-black uppercase text-indigo-600">Lintech</span>
                         <span className="text-[9px] font-bold text-slate-400">
-                          {formatJumboUnits(calcJumboUnits(getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'lintech')))}
+                          {formatJumboUnits(calcJumboUnits(liveLintechGoal))}
                         </span>
                       </div>
                       <div className="relative">
                         <input 
-                          type="number" 
-                          value={getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'lintech')} 
-                          onChange={e => {
-                            const curG = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'ghezzi');
-                            const newL = Number(e.target.value) || 0;
-                            const curW = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'wultec');
-                            setRibbonGoals(prev => {
-                              const currentVal = prev[dashboardMonth];
-                              const updatedObj = typeof currentVal === 'object' && currentVal !== null
-                                ? { ...currentVal, ghezzi: curG, ghezze: curG, lintech: newL, lintec: newL, wultec: curW, wutec: curW }
-                                : { ghezzi: curG, ghezze: curG, lintech: newL, lintec: newL, wultec: curW, wutec: curW };
-                              const updated = { ...prev, [dashboardMonth]: updatedObj };
-                              localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-                              mergeSettingsInSupabase('global', { ribbonGoals: updated });
-                              return updated;
-                            });
-                          }} 
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Ex: 350000"
+                          value={lintechGoalInput} 
+                          onChange={e => updateRibbonMachineDraft('lintech', e.target.value)}
+                          onBlur={() => flushPendingGoalSync()}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-400"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-300 text-[9px]">M²</span>
@@ -736,28 +888,17 @@ export const SettingsModal: React.FC<{
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-black uppercase text-teal-600">Wultec</span>
                         <span className="text-[9px] font-bold text-slate-400">
-                          {formatJumboUnits(calcJumboUnits(getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'wultec')))}
+                          {formatJumboUnits(calcJumboUnits(liveWultecGoal))}
                         </span>
                       </div>
                       <div className="relative">
                         <input 
-                          type="number" 
-                          value={getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'wultec')} 
-                          onChange={e => {
-                            const curG = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'ghezzi');
-                            const curL = getRibbonMachineGoal(ribbonGoals, dashboardMonth, 'lintech');
-                            const newW = Number(e.target.value) || 0;
-                            setRibbonGoals(prev => {
-                              const currentVal = prev[dashboardMonth];
-                              const updatedObj = typeof currentVal === 'object' && currentVal !== null
-                                ? { ...currentVal, ghezzi: curG, ghezze: curG, lintech: curL, lintec: curL, wultec: newW, wutec: newW }
-                                : { ghezzi: curG, ghezze: curG, lintech: curL, lintec: curL, wultec: newW, wutec: newW };
-                              const updated = { ...prev, [dashboardMonth]: updatedObj };
-                              localStorage.setItem('manupackaging_ribbon_goals', JSON.stringify(updated));
-                              mergeSettingsInSupabase('global', { ribbonGoals: updated });
-                              return updated;
-                            });
-                          }} 
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Ex: 300000"
+                          value={wultecGoalInput} 
+                          onChange={e => updateRibbonMachineDraft('wultec', e.target.value)}
+                          onBlur={() => flushPendingGoalSync()}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800 outline-none focus:ring-2 focus:ring-teal-400"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-300 text-[9px]">M²</span>
